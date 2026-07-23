@@ -14,7 +14,7 @@
  * runWebResearch returnerer da findings='' med tom kildeliste.
  */
 
-import { tavilySearch, type TavilyHit } from './tavily';
+import { tavilySearchDetailed, type TavilyHit } from './tavily';
 import { fetchAndExtract } from './extract';
 import { openai } from '$lib/server/openai';
 import { expandResearchQueries, type ResearchTopic } from './research-domains';
@@ -28,6 +28,8 @@ export interface WebResearchSource {
 export interface WebResearchResult {
 	findings: string;
 	sources: WebResearchSource[];
+	/** Relevante bilde-URL-er for søket (når includeImages er satt). */
+	images: string[];
 }
 
 export interface WebResearchOptions {
@@ -50,6 +52,8 @@ export interface WebResearchOptions {
 	deep?: boolean;
 	/** Emnetype som styrer vinkel-variantene i dyp modus. */
 	deepTopic?: ResearchTopic;
+	/** Be Tavily returnere relevante bilder (til kilde-kort i chatten). */
+	includeImages?: boolean;
 }
 
 const MAX_SNIPPET_CHARS = 600;
@@ -101,31 +105,45 @@ async function summarizeFindings(query: string, rawSources: string[]): Promise<s
 	return completion.choices[0]?.message?.content?.trim() ?? '';
 }
 
-/** Slå opp treff for én eller flere søkestrenger og flett dem (dedup på URL). */
-async function gatherHits(queries: string[], opts: WebResearchOptions): Promise<TavilyHit[]> {
+/** Slå opp treff (og bilder) for én eller flere søkestrenger og flett dem. */
+async function gatherHits(
+	queries: string[],
+	opts: WebResearchOptions
+): Promise<{ hits: TavilyHit[]; images: string[] }> {
 	const perQuery = await Promise.all(
 		queries.map((q) =>
-			tavilySearch(q, {
+			tavilySearchDetailed(q, {
 				maxResults: opts.maxResults ?? 6,
 				includeDomains: opts.includeDomains,
 				excludeDomains: opts.excludeDomains,
 				includeRawContent: true,
 				searchDepth: 'advanced',
 				topic: opts.topic,
-				days: opts.days
+				days: opts.days,
+				includeImages: opts.includeImages
 			})
 		)
 	);
 
-	// Flett og dedup på URL, behold høyeste score.
+	// Flett og dedup treff på URL, behold høyeste score.
 	const byUrl = new Map<string, TavilyHit>();
-	for (const hits of perQuery) {
+	const images: string[] = [];
+	const seenImg = new Set<string>();
+	for (const { hits, images: imgs } of perQuery) {
 		for (const hit of hits) {
 			const existing = byUrl.get(hit.url);
 			if (!existing || hit.score > existing.score) byUrl.set(hit.url, hit);
 		}
+		for (const img of imgs) {
+			if (!seenImg.has(img)) {
+				seenImg.add(img);
+				images.push(img);
+			}
+		}
 	}
-	return Array.from(byUrl.values()).sort((a, b) => b.score - a.score);
+
+	const hits = Array.from(byUrl.values()).sort((a, b) => b.score - a.score);
+	return { hits, images };
 }
 
 export async function runWebResearch(
@@ -133,12 +151,12 @@ export async function runWebResearch(
 	opts: WebResearchOptions = {}
 ): Promise<WebResearchResult> {
 	const trimmed = query.trim();
-	if (!trimmed) return { findings: '', sources: [] };
+	if (!trimmed) return { findings: '', sources: [], images: [] };
 
 	const queries =
 		opts.deep && opts.deepTopic ? expandResearchQueries(trimmed, opts.deepTopic) : [trimmed];
 
-	const hits = await gatherHits(queries, opts);
+	const { hits, images } = await gatherHits(queries, opts);
 
 	// Dyp modus fortjener flere kilder i oppsummeringen.
 	const extractLimit = opts.maxExtract ?? (opts.deep ? 6 : 4);
@@ -159,8 +177,8 @@ export async function runWebResearch(
 		raw.push(`[${domain}]\n${text.slice(0, MAX_RAW_CHARS)}`);
 	}
 
-	if (sources.length === 0) return { findings: '', sources: [] };
+	if (sources.length === 0) return { findings: '', sources: [], images };
 
 	const findings = await summarizeFindings(trimmed, raw);
-	return { findings, sources };
+	return { findings, sources, images };
 }

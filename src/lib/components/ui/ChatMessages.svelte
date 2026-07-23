@@ -22,6 +22,7 @@
 	import WidgetProposalCard from '$lib/components/domain/WidgetProposalCard.svelte';
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
+	import ChatResearchCard from '$lib/components/domain/ChatResearchCard.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import { daySpacerBefore, dayKey, toDate } from '$lib/client/chat-day-sections';
 	import { longpress } from '$lib/actions/longpress';
@@ -183,6 +184,9 @@
 				{/if}
 				{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
 					<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
+				{/if}
+				{#if msg.researchCard}
+					<ChatResearchCard card={msg.researchCard} />
 				{/if}
 				{#if onStarMessage}
 					<button

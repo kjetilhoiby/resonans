@@ -16,6 +16,8 @@ import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/f
 import { runWebResearch } from '$lib/server/web/web-research';
 import { resolveResearchScope, type ThemeResearchDomains } from '$lib/server/web/research-domains';
 import { saveThemeResearch, getThemeResearchDomains } from '$lib/server/services/theme-research-service';
+import { buildResearchCard, type ResearchCard, type ResearchCardMap } from '$lib/chat/research-card';
+import { geocodePlace } from '$lib/utils/geocode';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -137,13 +139,14 @@ async function executeWebSearch(
 	// Kildevalg (kuraterte + per-tema domener), topic/tidsvindu og evt. dyp modus
 	// utledes fra spørsmålet via resolveResearchScope.
 	const scope = resolveResearchScope(query, opts.themeDomains ?? null);
-	const { findings, sources } = await runWebResearch(query, {
+	const { findings, sources, images } = await runWebResearch(query, {
 		includeDomains: scope.includeDomains,
 		excludeDomains: scope.excludeDomains,
 		topic: scope.tavilyTopic,
 		days: scope.days,
 		deep: opts.deep,
-		deepTopic: scope.topic
+		deepTopic: scope.topic,
+		includeImages: true
 	});
 
 	if (sources.length === 0) {
@@ -152,6 +155,8 @@ async function executeWebSearch(
 			query,
 			findings: '',
 			sources: [],
+			images: [],
+			topic: scope.topic,
 			message: `Ingen brukbare treff for "${query}". (Mangler evt. TAVILY_API_KEY.)`
 		};
 	}
@@ -161,8 +166,34 @@ async function executeWebSearch(
 		query,
 		findings,
 		sources,
+		images,
+		topic: scope.topic,
 		message: `Fant og oppsummerte ${sources.length} kilder for "${query}".`
 	};
+}
+
+/**
+ * Kart-koordinat for et reise-tema til kilde-kortet. Bruker lagrede koordinater
+ * fra tripProfile når de finnes; ellers geokodes destinasjonen (best-effort).
+ * Returnerer null hvis temaet ikke er et reise-tema / mangler destinasjon.
+ */
+async function resolveThemeMap(themeId: string, userId: string): Promise<ResearchCardMap | null> {
+	const { themes } = await import('$lib/db/schema');
+	const theme = await db.query.themes.findFirst({
+		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
+		columns: { tripProfile: true }
+	});
+	const tp = theme?.tripProfile;
+	if (!tp?.destination) return null;
+	const label = tp.country ? `${tp.destination}, ${tp.country}` : tp.destination;
+
+	if (typeof tp.lat === 'number' && typeof tp.lng === 'number') {
+		return { lat: tp.lat, lng: tp.lng, label };
+	}
+
+	const geo = await geocodePlace(label).catch(() => null);
+	if (geo) return { lat: geo.lat, lng: geo.lon, label };
+	return null;
 }
 
 // Definer tools/functions som AI-en kan bruke
@@ -2436,6 +2467,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		let statusWidget: import('$lib/ai/tools/weather-forecast').WeatherStatusWidget | null = null;
 		let photoAnnotation: import('$lib/ai/tools/annotate-photo').PhotoAnnotationResult | null = null;
 		let photoAnnotationImageUrl: string | null = null;
+		let researchCard: ResearchCard | null = null;
 
 		await emitProgress(onProgress, 'model_response', 'Første modellrespons mottatt.', {
 			finishReason: completion.choices[0]?.finish_reason ?? null,
@@ -3023,6 +3055,20 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							} catch (saveError) {
 								console.warn('  🌐 Kunne ikke lagre research til tema:', saveError);
 							}
+						}
+
+						// Bygg kilde-kort til UI (bunnpanel med kilder + bilder, kart for reise).
+						if (result.success) {
+							let map: ResearchCardMap | null = null;
+							if (result.topic === 'travel' && targetThemeId) {
+								map = await resolveThemeMap(targetThemeId, userId).catch(() => null);
+							}
+							researchCard = buildResearchCard({
+								query: searchQuery,
+								sources: result.sources,
+								images: result.images,
+								map
+							});
 						}
 
 						messages.push({
@@ -3806,6 +3852,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		if (statusWidget) assistantMetadata.statusWidget = statusWidget;
 		if (photoAnnotation) assistantMetadata.photoAnnotation = photoAnnotation;
 		if (photoAnnotationImageUrl) assistantMetadata.photoAnnotationImageUrl = photoAnnotationImageUrl;
+		if (researchCard) assistantMetadata.researchCard = researchCard;
 
 		await emitProgress(onProgress, 'finalizing', 'Lagrer og ferdigstiller svar...');
 
@@ -3842,6 +3889,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			statusWidget,
 			photoAnnotation,
 			photoAnnotationImageUrl,
+			researchCard,
 		};
 	} catch (error) {
 		console.error('Error in chat API:', error);

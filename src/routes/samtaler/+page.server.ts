@@ -200,7 +200,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			statusWidget: (m.metadata as { statusWidget?: unknown } | null)?.statusWidget ?? null,
 			photoAnnotation: (m.metadata as { photoAnnotation?: unknown } | null)?.photoAnnotation ?? null,
 			photoAnnotationImageUrl: (m.metadata as { photoAnnotationImageUrl?: unknown } | null)?.photoAnnotationImageUrl ?? null,
-			eventCard: (m.metadata as { eventCard?: unknown } | null)?.eventCard ?? null
+			eventCard: (m.metadata as { eventCard?: unknown } | null)?.eventCard ?? null,
+			researchCard: (m.metadata as { researchCard?: unknown } | null)?.researchCard ?? null
 		}))
 	};
 };
