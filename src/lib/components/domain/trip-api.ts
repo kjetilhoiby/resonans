@@ -46,6 +46,15 @@ export interface ImagePin {
 /** Kjørespor importert fra Tesla, per ISO-dato: [lon, lat]-par (GeoJSON-rekkefølge). */
 export type DriveRoutes = Record<string, Array<[number, number]>>;
 
+/** En opplastet gåtur/økt som kan importeres inn i kartfortellingen. */
+export interface ImportableWalk {
+	eventId: string;
+	sportType: string | null;
+	title: string;
+	startedAt: string;
+	distanceMeters: number | null;
+}
+
 export interface TripProfile {
 	destination?: string;
 	country?: string;
@@ -453,6 +462,10 @@ export interface TripApi {
 	saveTripProfile(themeId: string, profile: TripProfile): Promise<boolean>;
 	/** Importerer kjørespor fra Tesla inn i tripProfile.driveRoutes. null ved feil. */
 	importTeslaRoutes(themeId: string): Promise<{ days: number; points: number } | null>;
+	/** Kandidat-gåturer å importere inn i kartfortellingen. null ved feil. */
+	listImportableWalks(themeId: string): Promise<ImportableWalk[] | null>;
+	/** Importerer én gåtur (spor + bilder) inn i tripProfile. null ved feil. */
+	importWalk(themeId: string, eventId: string): Promise<{ days: number; points: number; images: number } | null>;
 
 	/* TripBudget */
 	/** Transaksjoner i periode og/eller via søk. null ved feil. */
@@ -582,6 +595,23 @@ export const tripApi: TripApi = {
 		const res = await fetch(`/api/tema/${themeId}/trip/import-tesla-routes`, { method: 'POST' });
 		if (!res.ok) return null;
 		return (await res.json()) as { days: number; points: number };
+	},
+
+	async listImportableWalks(themeId) {
+		const res = await fetch(`/api/tema/${themeId}/trip/import-walk`);
+		if (!res.ok) return null;
+		const data = (await res.json()) as { walks: ImportableWalk[] };
+		return data.walks ?? [];
+	},
+
+	async importWalk(themeId, eventId) {
+		const res = await fetch(`/api/tema/${themeId}/trip/import-walk`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ eventId })
+		});
+		if (!res.ok) return null;
+		return (await res.json()) as { days: number; points: number; images: number };
 	},
 
 	async getTransactions(query) {

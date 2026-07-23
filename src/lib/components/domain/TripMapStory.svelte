@@ -24,6 +24,7 @@
 		type DiaryEntry,
 		type DriveRoutes,
 		type ImagePin,
+		type ImportableWalk,
 		type GeoCoord
 	} from './trip-api';
 	import TripMapStoryFull from './TripMapStoryFull.svelte';
@@ -74,6 +75,11 @@
 	let importHint = $state('');
 	let error = $state('');
 	let fullscreen = $state(false);
+	// Gåtur-import: velger med kandidat-turer.
+	let walkPickerOpen = $state(false);
+	let loadingWalks = $state(false);
+	let walkCandidates = $state<ImportableWalk[]>([]);
+	let importingWalkId = $state<string | null>(null);
 
 	let map: MapLibreMap | null = null;
 	let mapLoaded = $state(false);
@@ -396,6 +402,68 @@
 		}
 	}
 
+	// Åpne velgeren og hent kandidat-gåturer å importere.
+	async function openWalkPicker() {
+		walkPickerOpen = true;
+		importHint = '';
+		error = '';
+		if (walkCandidates.length > 0) return;
+		loadingWalks = true;
+		try {
+			const walks = await api.listImportableWalks(themeId);
+			walkCandidates = walks ?? [];
+			if (walkCandidates.length === 0) importHint = 'Fant ingen gåturer i perioden.';
+		} catch {
+			error = 'Klarte ikke hente gåturer.';
+		} finally {
+			loadingWalks = false;
+		}
+	}
+
+	// Importer en valgt gåtur: spor + bilder inn i kartfortellingen.
+	async function importWalk(walk: ImportableWalk) {
+		importingWalkId = walk.eventId;
+		importHint = '';
+		error = '';
+		try {
+			const result = await api.importWalk(themeId, walk.eventId);
+			if (!result) {
+				error = 'Klarte ikke importere turen.';
+				return;
+			}
+			const profile = await api.getTripProfile(themeId);
+			if (profile?.driveRoutes) {
+				routes = profile.driveRoutes;
+				onDriveRoutesChange?.(routes);
+			}
+			if (profile?.imagePins) {
+				pins = profile.imagePins;
+				onImagePinsChange?.(pins);
+			}
+			const parts = [`${walk.title} lagt til`];
+			if (result.images > 0) parts.push(`${result.images} ${result.images === 1 ? 'bilde' : 'bilder'}`);
+			importHint = parts.join(' · ');
+			walkPickerOpen = false;
+		} catch {
+			error = 'Klarte ikke importere turen.';
+		} finally {
+			importingWalkId = null;
+		}
+	}
+
+	function fmtWalkDate(iso: string): string {
+		try {
+			return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
+		} catch {
+			return iso.slice(0, 10);
+		}
+	}
+
+	function fmtWalkDistance(m: number | null): string {
+		if (m == null) return '';
+		return m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${m} m`;
+	}
+
 	onMount(() => {
 		void (async () => {
 			if (!diaryEntries) await loadDiary();
@@ -467,6 +535,15 @@
 				<button
 					type="button"
 					class="tms-btn"
+					class:tms-btn-active={walkPickerOpen}
+					onclick={() => (walkPickerOpen ? (walkPickerOpen = false) : openWalkPicker())}
+					data-track="reise-kart:importer-gatur"
+				>
+					{walkPickerOpen ? '✕ Lukk' : '🥾 Gåtur'}
+				</button>
+				<button
+					type="button"
+					class="tms-btn"
 					class:tms-btn-active={placing}
 					onclick={() => (placing = !placing)}
 					disabled={uploading}
@@ -477,6 +554,37 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if walkPickerOpen}
+		<div class="tms-walk-picker">
+			{#if loadingWalks}
+				<p class="tms-hint">Henter gåturer…</p>
+			{:else if walkCandidates.length === 0}
+				<p class="tms-hint">Ingen gåturer å importere i perioden.</p>
+			{:else}
+				<p class="tms-hint">Velg en tur — sporet og bildene legges inn i fortellingen.</p>
+				<ul class="tms-walk-list">
+					{#each walkCandidates as walk (walk.eventId)}
+						<li>
+							<button
+								type="button"
+								class="tms-walk-item"
+								onclick={() => importWalk(walk)}
+								disabled={importingWalkId !== null}
+								data-track="reise-kart:velg-gatur"
+							>
+								<span class="tms-walk-title">{walk.title}</span>
+								<span class="tms-walk-meta">
+									{fmtWalkDate(walk.startedAt)}{#if walk.distanceMeters != null} · {fmtWalkDistance(walk.distanceMeters)}{/if}
+								</span>
+								{#if importingWalkId === walk.eventId}<span class="tms-walk-status">Importerer…</span>{/if}
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
 
 	{#if placing}
 		<p class="tms-hint">Trykk på kartet der bildet hører hjemme.</p>
@@ -570,6 +678,56 @@
 		margin: 0;
 		font-size: 0.8rem;
 		color: var(--tp-accent);
+	}
+	.tms-walk-picker {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.tms-walk-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-height: 220px;
+		overflow-y: auto;
+	}
+	.tms-walk-item {
+		width: 100%;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 10px;
+		text-align: left;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 8px;
+		padding: 8px 10px;
+		cursor: pointer;
+	}
+	.tms-walk-item:hover:not(:disabled) {
+		border-color: var(--tp-accent);
+	}
+	.tms-walk-item:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.tms-walk-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--tp-text);
+		text-transform: capitalize;
+	}
+	.tms-walk-meta {
+		font-size: 0.78rem;
+		color: var(--tp-text-soft);
+	}
+	.tms-walk-status {
+		font-size: 0.78rem;
+		color: var(--tp-accent);
+		margin-left: auto;
 	}
 	.tms-error {
 		margin: 0;

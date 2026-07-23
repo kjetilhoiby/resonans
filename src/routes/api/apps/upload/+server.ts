@@ -230,6 +230,13 @@ async function handleImageUpload(
 	const eventType = (ctx.formData.get('eventType') as string) || 'observation';
 	const dataType = (ctx.formData.get('dataType') as string) || 'image';
 	const caption = ctx.formData.get('caption') as string | null;
+	// Fotoets tid/sted (fra Ekko): brukes til å plassere bildet langs turens spor
+	// i 3D-avspilling og kartfortelling. Alle valgfrie.
+	const capturedAt = (ctx.formData.get('capturedAt') as string | null)?.trim() || null;
+	const latRaw = ctx.formData.get('lat') as string | null;
+	const lonRaw = ctx.formData.get('lon') as string | null;
+	const lat = latRaw != null && latRaw !== '' && Number.isFinite(Number(latRaw)) ? Number(latRaw) : null;
+	const lon = lonRaw != null && lonRaw !== '' && Number.isFinite(Number(lonRaw)) ? Number(lonRaw) : null;
 
 	const { url, publicId } = await uploadToCloudinary(file, ctx.app.id);
 
@@ -246,7 +253,10 @@ async function handleImageUpload(
 				mimeType: file.type,
 				fileName: file.name,
 				sizeBytes: file.size,
-				caption: caption
+				caption: caption,
+				...(capturedAt ? { capturedAt } : {}),
+				...(lat != null ? { lat } : {}),
+				...(lon != null ? { lon } : {})
 			},
 			metadata: {
 				sourceApp: ctx.app.id,
