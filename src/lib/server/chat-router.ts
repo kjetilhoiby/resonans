@@ -1,6 +1,7 @@
 import { detectPromptFocusModules } from '$lib/server/openai';
 import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA, FAMILY_DOMAIN_TRIGGER, HOME_DOMAIN_TRIGGER, JOBB_DOMAIN_TRIGGER } from '$lib/domains';
+import { classifyResearchTopic } from '$lib/server/web/research-domains';
 
 export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'self' | 'home' | 'jobb' | 'planning' | 'themes' | 'general';
 export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'procedure_management' | 'general_chat';
@@ -31,6 +32,8 @@ export interface ChatRoutingDecision {
 	domainHints?: string[];
 	mode: ChatMode;
 	modelSuggestion?: string;
+	/** Set when the query clearly needs fresh web data — chatten tvinger web_search. */
+	forceWebSearch?: boolean;
 	/** Set when the router detects the user wants to navigate to a specific book */
 	routedBook?: { bookId: string; bookTitle: string; themeId: string };
 	/** Set when the router detects the user wants to navigate to a specific film */
@@ -111,7 +114,16 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		skills.add('theme_management');
 	}
 
-	if (/nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|politikk|valg|børs|marked|iran|ukraina|gaza/.test(text)) {
+	// Research-deteksjon: reise/steds-spørsmål og ferske/tidsavhengige fakta skal
+	// slå opp på nett før svar. classifyResearchTopic er felles sannhet med
+	// resolveResearchScope (samme regex-sett), så tvang og kildevalg henger sammen.
+	const researchTopic = classifyResearchTopic(input);
+	let forceWebSearch = false;
+	if (researchTopic === 'travel') {
+		forceWebSearch = true;
+		hints.push('Brukeren spør om et sted/aktiviteter. Bruk web_search FØR du svarer, og sett saveToTheme=true når spørsmålet hører til det aktive temaet.');
+	} else if (researchTopic === 'news' || /nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|politikk|valg|børs|marked|iran|ukraina|gaza/.test(text)) {
+		forceWebSearch = true;
 		hints.push('Bruk web_search for ferske eller tidsavhengige fakta før du svarer.');
 	}
 
@@ -139,7 +151,8 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		focusModules,
 		hints,
 		domainHints: domainHints.length > 0 ? domainHints : undefined,
-		mode
+		mode,
+		forceWebSearch
 	};
 }
 

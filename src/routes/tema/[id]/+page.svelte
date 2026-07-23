@@ -33,6 +33,7 @@
 		themeFiles={data.themeFiles}
 		finds={data.finds}
 		themeResearch={data.themeResearch}
+		themeResearchDomains={data.themeResearchDomains}
 		tripProfile={data.tripProfile}
 		ferieProfile={data.ferieProfile}
 		tripLists={data.tripLists}
