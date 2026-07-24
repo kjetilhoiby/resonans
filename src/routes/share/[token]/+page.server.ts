@@ -9,6 +9,7 @@ import {
 } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { projectQuizBoard, toQuizSessionState, type QuizBoardView } from '$lib/server/assistant/quiz-logic';
+import { loadWalkPlayback } from '$lib/server/walk-playback';
 import {
 	maskEmail,
 	recordShareAccess,
@@ -233,6 +234,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		const board = await loadQuizBoard(share.resourceId, share.ownerUserId);
 		if (!board) throw error(404, 'Quizen finnes ikke lenger.');
 		return { ...baseResult, resource: { kind: 'quizSession' as const, board } };
+	}
+
+	if (share.resourceType === 'walkPlayback') {
+		const walk = await loadWalkPlayback(share.ownerUserId, share.resourceId);
+		if (!walk) throw error(404, 'Turen finnes ikke lenger.');
+		return { ...baseResult, resource: { kind: 'walkPlayback' as const, ownerName, ...walk } };
 	}
 
 	throw error(400, 'Ukjent ressurstype.');

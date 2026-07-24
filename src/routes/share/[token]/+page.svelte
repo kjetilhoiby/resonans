@@ -3,10 +3,16 @@
 	import SharedChecklistView from '$lib/components/domain/share/SharedChecklistView.svelte';
 	import SharedThemeListView from '$lib/components/domain/share/SharedThemeListView.svelte';
 	import SharedTripPositionView from '$lib/components/domain/share/SharedTripPositionView.svelte';
+	import SharedWalkPlaybackView from '$lib/components/domain/share/SharedWalkPlaybackView.svelte';
 	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
 	import QuizBoard from '$lib/components/domain/quiz/QuizBoard.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// Delt 3D-avspilling: egen mørk fullskjermsvisning (ikke det lyse share-skallet).
+	const walk = $derived(
+		data.status === 'ok' && data.resource.kind === 'walkPlayback' ? data.resource : null
+	);
 
 	// Delt spillskjerm: egen mørk fullskjermsvisning (ikke det lyse share-skallet).
 	const quiz = $derived(
@@ -24,7 +30,10 @@
 </script>
 
 <svelte:head>
-	{#if trip}
+	{#if walk}
+		<title>{walk.title} — 3D-avspilling</title>
+		<meta name="robots" content="noindex" />
+	{:else if trip}
 		<title>{tripTitle}</title>
 		<meta name="robots" content="noindex" />
 		<meta property="og:title" content={tripTitle} />
@@ -41,7 +50,9 @@
 	{/if}
 </svelte:head>
 
-{#if quiz}
+{#if walk}
+	<SharedWalkPlaybackView resource={walk} />
+{:else if quiz}
 	<AppPage>
 		<PageSection>
 			<PageHeader title="Quiz" />

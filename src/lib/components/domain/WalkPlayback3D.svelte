@@ -1,0 +1,475 @@
+<!--
+  WalkPlayback3D — 3D-avspilling av en gåtur.
+
+  Kartet ligger fixed i bakgrunnen med terrenghøyde (raster-DEM) og en pitchet
+  himmel, så landskapet reiser seg i relieff. Ved «spill av» flyr kamera langs
+  ruten mens linja vokser og kameraet holder reiseretningen (bearing) — en 3D
+  fly-through, ikke en flat 2D-animasjon. Vedlagte bilder dukker opp som markører
+  når kamera passerer stedet de ble tatt; tapp for å se dem i full størrelse.
+
+  Bygget på den delte mørke basiskart-stilen (RESONANS_DARK_MAP_STYLE) og
+  partialPath fra kartfortellingen. Terrenget bruker gratis Terrarium-fliser
+  (ingen API-nøkkel); feiler de, faller kartet trygt tilbake til flatt relieff.
+-->
+<script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
+	import { partialPath } from './trip-map-story';
+	import type { WalkPlayback, WalkImagePin } from './walk-playback';
+
+	interface Props {
+		playback: WalkPlayback;
+		title: string;
+		sportType?: string | null;
+		startedAt?: string | null;
+		ownerName?: string | null;
+	}
+
+	let { playback, title, sportType = null, startedAt = null, ownerName = null }: Props = $props();
+
+	const coords = $derived(playback.coords);
+	const imagePins = $derived(playback.imagePins);
+
+	// Gratis global terreng-DEM (Terrarium-encoding). Ingen nøkkel; feiler den,
+	// blir kartet bare flatt — ingen krasj.
+	const TERRAIN_DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
+	let mapContainer = $state<HTMLDivElement | null>(null);
+	let map: MapLibreMap | null = null;
+	let mapReady = $state(false);
+	let headMarker: MapLibreMarker | null = null;
+	const imageMarkers: Array<{ pin: WalkImagePin; el: HTMLElement }> = [];
+
+	let playing = $state(false);
+	let finished = $state(false);
+	let lightbox = $state<WalkImagePin | null>(null);
+	let raf: number | null = null;
+	let smoothedBearing = 0;
+
+	const reduceMotion =
+		typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+	// Fly-through-lengde skalert med sporlengde, men holdt i et behagelig vindu.
+	const playDurationMs = $derived(Math.min(22_000, Math.max(8_000, coords.length * 70)));
+	const FOLLOW_ZOOM = 14.6;
+	const FOLLOW_PITCH = 62;
+
+	function fmtDistance(m: number): string {
+		return m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`;
+	}
+	function fmtDuration(s: number | null): string {
+		if (s == null) return '';
+		const h = Math.floor(s / 3600);
+		const min = Math.round((s % 3600) / 60);
+		return h > 0 ? `${h} t ${min} min` : `${min} min`;
+	}
+	function fmtStart(iso: string | null): string {
+		if (!iso) return '';
+		try {
+			return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+				new Date(iso)
+			);
+		} catch {
+			return '';
+		}
+	}
+
+	function bearingBetween(a: [number, number], b: [number, number]): number {
+		const toRad = (d: number) => (d * Math.PI) / 180;
+		const toDeg = (r: number) => (r * 180) / Math.PI;
+		const lon1 = toRad(a[0]);
+		const lat1 = toRad(a[1]);
+		const lon2 = toRad(b[0]);
+		const lat2 = toRad(b[1]);
+		const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+		const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+		return (toDeg(Math.atan2(y, x)) + 360) % 360;
+	}
+
+	// Korteste vinkel-lerp så bearing ikke spinner den lange veien rundt.
+	function lerpAngle(from: number, to: number, t: number): number {
+		let diff = ((to - from + 540) % 360) - 180;
+		return (from + diff * t + 360) % 360;
+	}
+
+	function setRouteData(part: Array<[number, number]>) {
+		const src = map?.getSource('walk-route') as { setData: (d: unknown) => void } | undefined;
+		src?.setData({
+			type: 'Feature',
+			properties: {},
+			geometry: { type: 'LineString', coordinates: part }
+		});
+	}
+
+	function revealImagesUpTo(fraction: number) {
+		for (const { pin, el } of imageMarkers) {
+			el.classList.toggle('is-visible', pin.fraction <= fraction + 0.001);
+		}
+	}
+
+	function fitWholeRoute(animate: boolean) {
+		if (!map) return;
+		const [[minLon, minLat], [maxLon, maxLat]] = playback.bounds;
+		if (coords.length >= 2) {
+			import('maplibre-gl').then(({ LngLatBounds }) => {
+				if (!map) return;
+				const b = new LngLatBounds([minLon, minLat], [maxLon, maxLat]);
+				map.easeTo({ pitch: 30, bearing: 0, duration: animate ? 900 : 0 });
+				map.fitBounds(b, { padding: 70, maxZoom: 15, pitch: 30, animate });
+			});
+		} else if (coords.length === 1) {
+			map.jumpTo({ center: coords[0], zoom: 14, pitch: 30 });
+		}
+	}
+
+	function stopLoop() {
+		if (raf != null) cancelAnimationFrame(raf);
+		raf = null;
+	}
+
+	function play() {
+		if (!map || !mapReady || coords.length < 2) return;
+		stopLoop();
+		finished = false;
+		playing = true;
+
+		if (reduceMotion) {
+			setRouteData(coords);
+			revealImagesUpTo(1);
+			fitWholeRoute(false);
+			playing = false;
+			finished = true;
+			return;
+		}
+
+		smoothedBearing = coords.length >= 2 ? bearingBetween(coords[0], coords[1]) : 0;
+		map.jumpTo({ center: coords[0], zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
+
+		const t0 = performance.now();
+		const step = (now: number) => {
+			if (!map) return;
+			const t = Math.min(1, (now - t0) / playDurationMs);
+			const eased = 1 - Math.pow(1 - t, 2);
+			const part = partialPath(coords, eased);
+			setRouteData(part);
+			revealImagesUpTo(eased);
+
+			const lead = part[part.length - 1] ?? coords[0];
+			const prev = part.length >= 2 ? part[part.length - 2] : coords[0];
+			const targetBearing = bearingBetween(prev, lead);
+			smoothedBearing = lerpAngle(smoothedBearing, targetBearing, 0.15);
+			headMarker?.setLngLat(lead);
+			map.jumpTo({ center: lead, zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
+
+			if (t < 1) {
+				raf = requestAnimationFrame(step);
+			} else {
+				playing = false;
+				finished = true;
+				fitWholeRoute(true);
+			}
+		};
+		raf = requestAnimationFrame(step);
+	}
+
+	async function initMap() {
+		if (!mapContainer || typeof window === 'undefined' || map) return;
+		const { Map, Marker } = await import('maplibre-gl');
+
+		map = new Map({
+			container: mapContainer,
+			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
+			center: playback.center[0] === 0 && playback.center[1] === 0 ? [10.75, 59.91] : playback.center,
+			zoom: 9,
+			pitch: 30,
+			attributionControl: false
+		});
+
+		map.on('load', () => {
+			if (!map) return;
+			mapReady = true;
+			map.resize();
+
+			// Terreng-relieff. Trygt om DEM-flisene feiler — kartet blir bare flatt.
+			try {
+				map.addSource('terrain-dem', {
+					type: 'raster-dem',
+					tiles: [TERRAIN_DEM_TILES],
+					encoding: 'terrarium',
+					tileSize: 256,
+					maxzoom: 15,
+					attribution: 'Terrain © AWS Terrain Tiles'
+				});
+				map.setTerrain({ source: 'terrain-dem', exaggeration: 1.35 });
+				map.setSky({
+					'sky-color': '#0b1020',
+					'horizon-color': '#25304d',
+					'fog-color': '#0b0f1a',
+					'sky-horizon-blend': 0.6,
+					'horizon-fog-blend': 0.6,
+					'fog-ground-blend': 0.4
+				});
+			} catch {
+				// Ignorer — pitchet fly-through fungerer også uten terreng.
+			}
+
+			map.addSource('walk-route', {
+				type: 'geojson',
+				data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } }
+			});
+			map.addLayer({
+				id: 'walk-route-shadow',
+				type: 'line',
+				source: 'walk-route',
+				layout: { 'line-cap': 'round', 'line-join': 'round' },
+				paint: { 'line-color': 'rgba(0,0,0,0.45)', 'line-width': 8 }
+			});
+			map.addLayer({
+				id: 'walk-route-line',
+				type: 'line',
+				source: 'walk-route',
+				layout: { 'line-cap': 'round', 'line-join': 'round' },
+				paint: { 'line-color': '#7c8ef5', 'line-width': 4 }
+			});
+
+			// Ledende «hode»-prikk.
+			if (coords.length) {
+				const headEl = document.createElement('div');
+				headEl.className = 'wpb-head';
+				headMarker = new Marker({ element: headEl }).setLngLat(coords[0]).addTo(map);
+			}
+
+			// Bilde-markører (skjult til kamera passerer stedet).
+			for (const pin of imagePins) {
+				const el = document.createElement('button');
+				el.className = 'wpb-img-marker';
+				el.type = 'button';
+				el.setAttribute('aria-label', pin.caption || 'Bilde fra turen');
+				const img = document.createElement('img');
+				img.src = pin.url;
+				img.alt = pin.caption ?? '';
+				img.loading = 'lazy';
+				el.appendChild(img);
+				el.addEventListener('click', () => (lightbox = pin));
+				new Marker({ element: el, anchor: 'bottom' }).setLngLat([pin.lon, pin.lat]).addTo(map);
+				imageMarkers.push({ pin, el });
+			}
+
+			fitWholeRoute(false);
+			// Start avspillingen automatisk (respekterer reduce-motion inne i play()).
+			play();
+		});
+	}
+
+	onMount(() => {
+		void initMap();
+	});
+
+	onDestroy(() => {
+		stopLoop();
+		map?.remove();
+		map = null;
+	});
+</script>
+
+<div class="wpb-root">
+	<div bind:this={mapContainer} class="wpb-map"></div>
+	<div class="wpb-veil" aria-hidden="true"></div>
+
+	<header class="wpb-header">
+		<span class="wpb-kicker">🥾 3D-avspilling{ownerName ? ` · delt av ${ownerName}` : ''}</span>
+		<h1 class="wpb-title">{title}</h1>
+		{#if startedAt}<p class="wpb-when">{fmtStart(startedAt)}</p>{/if}
+		<div class="wpb-stats">
+			<span>{fmtDistance(playback.stats.distanceMeters)}</span>
+			{#if playback.stats.durationSeconds != null}<span>· {fmtDuration(playback.stats.durationSeconds)}</span>{/if}
+			{#if playback.stats.ascentMeters > 0}<span>· ↑ {playback.stats.ascentMeters} m</span>{/if}
+			{#if imagePins.length}<span>· 📷 {imagePins.length}</span>{/if}
+		</div>
+	</header>
+
+	{#if mapReady && !playing}
+		<button type="button" class="wpb-play" onclick={play} data-track="tur-avspilling:spill-av">
+			{finished ? '↺ Spill av igjen' : '▶ Spill av'}
+		</button>
+	{/if}
+
+	{#if lightbox}
+		<button
+			type="button"
+			class="wpb-lightbox"
+			aria-label="Lukk bilde"
+			onclick={() => (lightbox = null)}
+			data-track="tur-avspilling:lukk-bilde"
+		>
+			<figure>
+				<img src={lightbox.url} alt={lightbox.caption ?? ''} />
+				{#if lightbox.caption}<figcaption>{lightbox.caption}</figcaption>{/if}
+			</figure>
+		</button>
+	{/if}
+</div>
+
+<style>
+	.wpb-root {
+		position: relative;
+		width: 100%;
+		height: 100dvh;
+		background: #0b0f1a;
+		overflow: hidden;
+	}
+	.wpb-map {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		isolation: isolate;
+	}
+	.wpb-veil {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		pointer-events: none;
+		background: radial-gradient(120% 70% at 50% 0%, rgba(0, 0, 0, 0.5) 0%, transparent 45%);
+	}
+	.wpb-header {
+		position: absolute;
+		top: max(16px, env(safe-area-inset-top));
+		left: 16px;
+		right: 16px;
+		z-index: 3;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 14px 16px;
+		border-radius: 14px;
+		background: rgba(10, 14, 26, 0.62);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		backdrop-filter: blur(8px);
+		max-width: 460px;
+		pointer-events: none;
+	}
+	.wpb-kicker {
+		font-size: 0.78rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: #7c8ef5;
+	}
+	.wpb-title {
+		margin: 0;
+		font-size: 1.3rem;
+		font-weight: 700;
+		color: #fff;
+		text-transform: capitalize;
+	}
+	.wpb-when {
+		margin: 0;
+		font-size: 0.85rem;
+		color: rgba(255, 255, 255, 0.68);
+		text-transform: capitalize;
+	}
+	.wpb-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 4px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.9);
+	}
+	.wpb-play {
+		position: absolute;
+		bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 4;
+		padding: 12px 28px;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		background: #7c8ef5;
+		color: #0b0f1a;
+		font-weight: 700;
+		font-size: 1rem;
+		cursor: pointer;
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+	}
+	.wpb-play:hover {
+		background: #93a2f7;
+	}
+	.wpb-lightbox {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		border: none;
+		background: rgba(0, 0, 0, 0.88);
+		cursor: zoom-out;
+	}
+	.wpb-lightbox figure {
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		align-items: center;
+		max-width: 100%;
+		max-height: 100%;
+	}
+	.wpb-lightbox img {
+		max-width: 100%;
+		max-height: 78dvh;
+		border-radius: 12px;
+		object-fit: contain;
+		box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+	}
+	.wpb-lightbox figcaption {
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.95rem;
+		text-align: center;
+	}
+
+	/* Markører (globalt — MapLibre rendrer utenfor scope). */
+	:global(.wpb-head) {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #fff;
+		border: 3px solid #7c8ef5;
+		box-shadow: 0 0 0 5px rgba(124, 142, 245, 0.35), 0 2px 8px rgba(0, 0, 0, 0.7);
+	}
+	:global(.wpb-img-marker) {
+		width: 46px;
+		height: 46px;
+		padding: 0;
+		border-radius: 10px;
+		overflow: hidden;
+		border: 2px solid #fff;
+		background: #0b0f1a;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+		cursor: pointer;
+		opacity: 0;
+		transform: scale(0.4) translateY(8px);
+		transition: opacity 0.4s ease, transform 0.4s ease;
+		pointer-events: none;
+	}
+	:global(.wpb-img-marker.is-visible) {
+		opacity: 1;
+		transform: scale(1) translateY(0);
+		pointer-events: auto;
+	}
+	:global(.wpb-img-marker img) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.wpb-img-marker) {
+			transition: none;
+		}
+	}
+</style>
