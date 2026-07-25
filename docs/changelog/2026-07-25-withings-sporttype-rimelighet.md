@@ -61,7 +61,7 @@ og evt. tidligere lå fortsatt som el-sykkel i `sensor_events`. Lagt til en idem
 ```sql
 UPDATE sensor_events
 SET data = jsonb_set(data, '{sportType}', '"walking"')
-WHERE source = 'withings_sync_workout'
+WHERE metadata->>'source' = 'withings_sync_workout'
   AND data->>'sportType' IN ('cycling', 'e_bike')
   AND jsonb_typeof(data->'distance') = 'number'
   AND jsonb_typeof(data->'duration') = 'number'
