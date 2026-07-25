@@ -1,0 +1,287 @@
+import { describe, it, expect } from 'vitest';
+import {
+	computeStreak,
+	streakLabel,
+	streakSublabel,
+	dueLabel,
+	dayNumber,
+	dayKeyFromNumber
+} from './streaks';
+
+// Faste datoer for forutsigbare tester. 2026-07-20 er en mandag,
+// så uke-vinduene er 13.–19. juli, 20.–26. juli osv.
+const MANDAG = '2026-07-20';
+const LORDAG = '2026-07-25';
+
+describe('dagsnøkler', () => {
+	it('konverterer fram og tilbake', () => {
+		expect(dayKeyFromNumber(dayNumber(LORDAG))).toBe(LORDAG);
+	});
+
+	it('regner ut differanse i dager på tvers av månedsskifte', () => {
+		expect(dayNumber('2026-08-01') - dayNumber('2026-07-30')).toBe(2);
+	});
+});
+
+describe('consecutive_days — dager på rad', () => {
+	const def = { rule: 'consecutive_days' as const, config: {} };
+
+	it('teller sammenhengende dager til og med i dag', () => {
+		const state = computeStreak(def, ['2026-07-23', '2026-07-24', '2026-07-25'], LORDAG);
+		expect(state.count).toBe(3);
+		expect(state.unit).toBe('day');
+		expect(state.status).toBe('ok');
+		expect(state.lastEventDay).toBe('2026-07-25');
+	});
+
+	it('holder streaken i live når dagens økt mangler, men markerer den som forfallende', () => {
+		const state = computeStreak(def, ['2026-07-23', '2026-07-24'], LORDAG);
+		expect(state.count).toBe(2);
+		expect(state.status).toBe('due_soon');
+	});
+
+	it('brytes av et hull', () => {
+		const state = computeStreak(def, ['2026-07-22', '2026-07-24', '2026-07-25'], LORDAG);
+		expect(state.count).toBe(2);
+	});
+
+	it('nullstilles når siste økt er for gammel, men husker beste rekke', () => {
+		const state = computeStreak(def, ['2026-07-20', '2026-07-21'], LORDAG);
+		expect(state.count).toBe(0);
+		expect(state.status).toBe('idle');
+		expect(state.bestCount).toBe(2);
+	});
+
+	it('teller to økter samme dag som én dag', () => {
+		const state = computeStreak(def, ['2026-07-25', '2026-07-25'], LORDAG);
+		expect(state.count).toBe(1);
+	});
+
+	it('gir tom tilstand uten hendelser', () => {
+		const state = computeStreak(def, [], LORDAG);
+		expect(state).toMatchObject({ count: 0, status: 'idle', bestCount: 0, lastEventDay: null });
+		expect(state.dots).toHaveLength(7);
+	});
+
+	it('gir sju prikker som ender på i dag', () => {
+		const state = computeStreak(def, ['2026-07-24', '2026-07-25'], LORDAG);
+		expect(state.dots).toEqual([false, false, false, false, false, true, true]);
+	});
+});
+
+describe('count_per_window — perioder på rad over en terskel', () => {
+	const def = { rule: 'count_per_window' as const, config: { windowDays: 7, threshold: 2 } };
+
+	it('teller uker der terskelen er nådd', () => {
+		const state = computeStreak(
+			def,
+			['2026-07-14', '2026-07-16', '2026-07-21', '2026-07-23'],
+			LORDAG
+		);
+		expect(state.count).toBe(2);
+		expect(state.unit).toBe('week');
+		expect(state.status).toBe('ok');
+		expect(state.windowCount).toBe(2);
+		expect(state.windowTarget).toBe(2);
+	});
+
+	it('lar en uke i arbeid stå uten å bryte streaken', () => {
+		const state = computeStreak(
+			def,
+			['2026-07-07', '2026-07-09', '2026-07-14', '2026-07-16', '2026-07-21'],
+			LORDAG
+		);
+		expect(state.count).toBe(2);
+		expect(state.windowCount).toBe(1);
+		expect(state.status).toBe('due_soon');
+	});
+
+	it('teller to hendelser samme dag som to mot terskelen', () => {
+		const state = computeStreak(def, ['2026-07-21', '2026-07-21'], LORDAG);
+		expect(state.windowCount).toBe(2);
+		expect(state.count).toBe(1);
+		expect(state.status).toBe('ok');
+	});
+
+	it('grupperer etter kalenderuke, ikke rullerende vindu', () => {
+		// Søndag 19. og mandag 20. ligger i hver sin uke — ingen av dem når terskel 2.
+		const state = computeStreak(def, ['2026-07-19', '2026-07-20'], LORDAG);
+		expect(state.windowCount).toBe(1);
+		expect(state.count).toBe(0);
+	});
+
+	it('brytes av en uke under terskelen', () => {
+		const state = computeStreak(
+			def,
+			['2026-07-07', '2026-07-09', '2026-07-16', '2026-07-21', '2026-07-23'],
+			LORDAG
+		);
+		expect(state.count).toBe(1);
+		expect(state.bestCount).toBe(1);
+	});
+
+	it('støtter andre periodelengder enn uke', () => {
+		const state = computeStreak(
+			{ rule: 'count_per_window', config: { windowDays: 14, threshold: 1 } },
+			['2026-07-21'],
+			LORDAG
+		);
+		expect(state.unit).toBe('round');
+		expect(state.count).toBe(1);
+	});
+
+	it('gir tom tilstand uten hendelser, men beholder terskelen', () => {
+		const state = computeStreak(def, [], LORDAG);
+		expect(state).toMatchObject({ count: 0, status: 'idle', windowCount: 0, windowTarget: 2 });
+	});
+});
+
+describe('max_interval — runder på rad innen et intervall', () => {
+	const def = { rule: 'max_interval' as const, config: { intervalDays: 5 } };
+
+	it('teller runder der hvert gap holdt intervallet', () => {
+		const state = computeStreak(def, ['2026-07-01', '2026-07-05', '2026-07-10'], '2026-07-12');
+		expect(state.count).toBe(3);
+		expect(state.unit).toBe('round');
+		expect(state.status).toBe('ok');
+		expect(state.nextDueDay).toBe('2026-07-15');
+		expect(state.daysUntilDue).toBe(3);
+	});
+
+	it('varsler som forfallende rett før fristen', () => {
+		const state = computeStreak(def, ['2026-07-01', '2026-07-05', '2026-07-10'], '2026-07-14');
+		expect(state.daysUntilDue).toBe(1);
+		expect(state.status).toBe('due_soon');
+		expect(state.count).toBe(3);
+	});
+
+	it('brytes når fristen er passert, men husker beste rekke', () => {
+		const state = computeStreak(def, ['2026-07-01', '2026-07-05', '2026-07-10'], '2026-07-16');
+		expect(state.status).toBe('overdue');
+		expect(state.count).toBe(0);
+		expect(state.bestCount).toBe(3);
+		expect(state.daysUntilDue).toBe(-1);
+	});
+
+	it('teller bare runder etter siste for store gap', () => {
+		const state = computeStreak(def, ['2026-07-01', '2026-07-10'], '2026-07-12');
+		expect(state.count).toBe(1);
+	});
+
+	it('teller to runder samme dag som én', () => {
+		const state = computeStreak(def, ['2026-07-10', '2026-07-10'], '2026-07-12');
+		expect(state.count).toBe(1);
+	});
+
+	it('lar dueSoonDays overstyres', () => {
+		const state = computeStreak(
+			{ rule: 'max_interval', config: { intervalDays: 14, dueSoonDays: 7 } },
+			['2026-07-10'],
+			'2026-07-18'
+		);
+		expect(state.daysUntilDue).toBe(6);
+		expect(state.status).toBe('due_soon');
+	});
+
+	it('bruker et lengre varsel-vindu for lange intervaller som standard', () => {
+		// intervalDays 14 → dueSoonDays 5
+		const ok = computeStreak(
+			{ rule: 'max_interval', config: { intervalDays: 14 } },
+			['2026-07-10'],
+			'2026-07-18'
+		);
+		expect(ok.status).toBe('ok');
+		const soon = computeStreak(
+			{ rule: 'max_interval', config: { intervalDays: 14 } },
+			['2026-07-10'],
+			'2026-07-20'
+		);
+		expect(soon.status).toBe('due_soon');
+	});
+
+	it('gir tom tilstand uten hendelser', () => {
+		const state = computeStreak(def, [], LORDAG);
+		expect(state).toMatchObject({ count: 0, status: 'idle', nextDueDay: null, daysUntilDue: null });
+	});
+
+	it('markerer brutte gap i prikkene', () => {
+		const state = computeStreak(def, ['2026-07-01', '2026-07-10', '2026-07-14'], '2026-07-15');
+		expect(state.dots).toEqual([true, false, true]);
+	});
+});
+
+describe('streakLabel', () => {
+	it('bøyer enhetene riktig', () => {
+		expect(streakLabel({ count: 1, unit: 'day' })).toBe('1 dag på rad');
+		expect(streakLabel({ count: 6, unit: 'day' })).toBe('6 dager på rad');
+		expect(streakLabel({ count: 1, unit: 'week' })).toBe('1 uke på rad');
+		expect(streakLabel({ count: 3, unit: 'week' })).toBe('3 uker på rad');
+		expect(streakLabel({ count: 5, unit: 'round' })).toBe('5 runder på rad');
+	});
+
+	it('er tom når streaken er brutt', () => {
+		expect(streakLabel({ count: 0, unit: 'day' })).toBe('');
+	});
+});
+
+describe('streakSublabel', () => {
+	it('viser forfall for periodisk vedlikehold', () => {
+		const state = computeStreak(
+			{ rule: 'max_interval', config: { intervalDays: 5 } },
+			['2026-07-10'],
+			'2026-07-14'
+		);
+		expect(streakSublabel(state)).toBe('forfaller i morgen');
+	});
+
+	it('viser framdrift mot ukesterskelen', () => {
+		const state = computeStreak(
+			{ rule: 'count_per_window', config: { windowDays: 7, threshold: 2 } },
+			['2026-07-21'],
+			LORDAG
+		);
+		expect(streakSublabel(state)).toBe('1/2 denne uka');
+	});
+
+	it('sier «denne perioden» for andre periodelengder', () => {
+		const state = computeStreak(
+			{ rule: 'count_per_window', config: { windowDays: 14, threshold: 3 } },
+			['2026-07-21'],
+			LORDAG
+		);
+		expect(streakSublabel(state)).toBe('1/3 denne perioden');
+	});
+
+	it('minner om dagens økt når vane-streaken mangler i dag', () => {
+		const state = computeStreak(
+			{ rule: 'consecutive_days', config: {} },
+			['2026-07-23', '2026-07-24'],
+			LORDAG
+		);
+		expect(streakSublabel(state)).toBe('gjenstår i dag');
+	});
+
+	it('er null når alt er i rute', () => {
+		const state = computeStreak({ rule: 'consecutive_days', config: {} }, [LORDAG], LORDAG);
+		expect(streakSublabel(state)).toBeNull();
+	});
+
+	it('sier «ikke startet» uten hendelser', () => {
+		const state = computeStreak({ rule: 'consecutive_days', config: {} }, [], LORDAG);
+		expect(streakSublabel(state)).toBe('ikke startet');
+	});
+});
+
+describe('dueLabel', () => {
+	it('beskriver forfall i naturlig språk', () => {
+		expect(dueLabel({ daysUntilDue: 0 })).toBe('forfaller i dag');
+		expect(dueLabel({ daysUntilDue: 1 })).toBe('forfaller i morgen');
+		expect(dueLabel({ daysUntilDue: 4 })).toBe('forfaller om 4 dager');
+		expect(dueLabel({ daysUntilDue: -1 })).toBe('1 dag på overtid');
+		expect(dueLabel({ daysUntilDue: -3 })).toBe('3 dager på overtid');
+	});
+
+	it('er null for regler uten forfall', () => {
+		expect(dueLabel({ daysUntilDue: null })).toBeNull();
+	});
+});

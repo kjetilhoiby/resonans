@@ -20,6 +20,7 @@ import { manageProjectTool } from '$lib/ai/tools/manage-project';
 import { manageProjectTasksTool } from '$lib/ai/tools/manage-project-tasks';
 import { manageProjectContactsTool } from '$lib/ai/tools/manage-project-contacts';
 import { manageRoutineTool } from '$lib/ai/tools/manage-routine';
+import { manageStreakTool } from '$lib/ai/tools/manage-streak';
 import { manageHomeRoutineTool } from '$lib/ai/tools/manage-home-routine';
 import { manageProcedureTool } from '$lib/ai/tools/manage-procedure';
 import { linkToProjectTool } from '$lib/ai/tools/link-to-project';
@@ -175,6 +176,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(linkToProjectTool),
 	// Rutiner, prosedyrer, tema, ukeplan
 	adaptSharedTool(manageRoutineTool),
+	adaptSharedTool(manageStreakTool),
 	adaptSharedTool(manageHomeRoutineTool),
 	adaptSharedTool(manageProcedureTool),
 	adaptSharedTool(manageThemeTool),

@@ -1089,6 +1089,27 @@ export const weekTasksFixture = {
 	onAddChild: asyncNoop,
 	onScheduleTask: () => {},
 	onScheduleItem: () => {},
+	dueMaintenance: [
+		{
+			definitionId: 'maint-hairclip',
+			title: 'Hårklipp',
+			emoji: '💈',
+			count: 4,
+			daysUntilDue: 2,
+			nextDueDay: '2026-06-14',
+			status: 'due_soon' as const
+		},
+		{
+			definitionId: 'maint-bathroom',
+			title: 'Badevask',
+			emoji: '🛁',
+			count: 0,
+			daysUntilDue: -3,
+			nextDueDay: '2026-06-09',
+			status: 'overdue' as const
+		}
+	],
+	onScheduleMaintenance: () => {},
 	selectedDayLabel: 'I dag',
 	expandedWeekParentIds: new Set<string>(),
 	editingItem: null,

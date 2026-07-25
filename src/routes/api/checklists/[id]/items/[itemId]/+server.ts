@@ -14,6 +14,7 @@ import { runInBackground } from '$lib/server/run-in-background';
 import { syncStaysForDate } from '$lib/server/stays';
 import { afterMealItemWritten, afterMealItemDeleted } from '$lib/server/services/meal-plan-sync';
 import { shouldParentBeChecked } from '$lib/components/domain/ukeplan/week-schedule-logic';
+import { logStreakRound, deleteStreakRound } from '$lib/server/services/streak-service';
 
 async function syncChecklistCompletion(checklistId: string) {
 	// Et item regnes som "behandlet" hvis det er enten avkrysset eller skipped.
@@ -75,6 +76,31 @@ async function applyItemCheckedSideEffects(
 			resultMeta = { ...meta };
 			delete resultMeta.progressRecordId;
 			await db.update(checklistItems).set({ metadata: resultMeta }).where(eq(checklistItems.id, item.id));
+		}
+	}
+
+	// Koblet streak (periodisk vedlikehold) → logg/angre en runde. Samme hendelse
+	// nullstiller forfallet og holder streaken i live, så det plukkede dag-punktet
+	// er hele registreringen — ingen egen «marker som gjort» andre steder.
+	const linkedStreakId = typeof meta.linkedStreakId === 'string' ? meta.linkedStreakId : null;
+	if (linkedStreakId) {
+		const existingEventId = typeof resultMeta.streakEventId === 'string' ? resultMeta.streakEventId : null;
+		// En slettet eller omgjort streak skal aldri blokkere avkryssing av dag-punktet.
+		try {
+			if (checked && !existingEventId) {
+				const eventId = await logStreakRound(userId, linkedStreakId, item.checkedAt ?? new Date());
+				if (eventId) {
+					resultMeta = { ...resultMeta, streakEventId: eventId };
+					await db.update(checklistItems).set({ metadata: resultMeta }).where(eq(checklistItems.id, item.id));
+				}
+			} else if (!checked && existingEventId) {
+				await deleteStreakRound(userId, existingEventId);
+				resultMeta = { ...resultMeta };
+				delete resultMeta.streakEventId;
+				await db.update(checklistItems).set({ metadata: resultMeta }).where(eq(checklistItems.id, item.id));
+			}
+		} catch (err) {
+			console.error('[streak] kunne ikke oppdatere runde for', linkedStreakId, err);
 		}
 	}
 

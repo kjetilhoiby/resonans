@@ -22,7 +22,7 @@
 	import AutoCheckModal from '$lib/components/domain/ukeplan/AutoCheckModal.svelte';
 	import { fetchTripWeather, fetchHomeWeather, type DayWeatherEntry, type DayWeatherSummary } from '$lib/components/domain/ukeplan/weather';
 	import { buildWeekPlanFlowContext } from '$lib/components/domain/ukeplan/week-plan-context';
-	import { buildScheduleLink, isAlreadyScheduled, shouldParentBeChecked, type ScheduleSource } from '$lib/components/domain/ukeplan/week-schedule-logic';
+	import { buildScheduleLink, isAlreadyScheduled, shouldParentBeChecked, type ScheduleSource, type DueMaintenance } from '$lib/components/domain/ukeplan/week-schedule-logic';
 	import type { AutoCheckPrompt } from '$lib/components/domain/ukeplan/autocheck';
 	import type {
 		SaveState, WeekInfo, ChecklistItem, WeekChecklist, WeekTask, GoalReminder,
@@ -58,6 +58,7 @@
 			dayRoutines: Record<string, DayRoutine[]>;
 			dayNotes: Record<string, string>;
 			dayHeadlines: Record<string, string>;
+			dueMaintenance: DueMaintenance[];
 			livskompassGoals: LivskompassGoal[];
 			activeTrips: ActiveTrip[];
 			activeFerie: { id: string; name: string; emoji: string; startDate: string; endDate: string }[];
@@ -603,6 +604,8 @@
 		onToggleWeekParent={toggleWeekParentExpansion} onAddChild={async (cid, pid, text) => { await _addChild(deps, cid, pid, text); }}
 		onScheduleTask={(task) => void scheduleWeekElementOnDay({ kind: 'task', task })}
 		onScheduleItem={(item) => void scheduleWeekElementOnDay({ kind: 'item', item })}
+		dueMaintenance={data.dueMaintenance ?? []}
+		onScheduleMaintenance={(maintenance) => void scheduleWeekElementOnDay({ kind: 'maintenance', maintenance })}
 		selectedDayLabel={smartDayLabel(selectedDayIso)}
 		{expandedWeekParentIds} {editingItem} {selectedDayIso}
 		dayChecklistId={dayChecklistsState[selectedDayIso]?.id ?? null}

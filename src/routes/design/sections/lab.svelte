@@ -14,24 +14,46 @@
 	</p>
 
 	<h3 class="subsection">StreakBadge</h3>
+	<p class="section-desc">
+		Ett visuelt språk for alle streaks — dager på rad, uker over en terskel og runder med
+		periodisk vedlikehold. Teksten kommer fra <code>streakSublabel()</code> i
+		<code>$lib/domain/streaks.ts</code>; badgen kjenner ingen regler selv.
+	</p>
 	<div class="variant-grid">
 		<div class="variant">
-			<StreakBadge count={12} label="Jogging" />
-			<span class="vname">Standard</span>
+			<StreakBadge count={12} unit="day"
+				dots={[true, true, true, true, true, true, true]}
+				label="Yoga"
+			/>
+			<span class="vname">Dager på rad</span>
 		</div>
 		<div class="variant">
-			<StreakBadge count={3} color="#7c8ef5"
-				weekDots={[false, false, false, false, true, true, true]}
-				label="Meditasjon"
+			<StreakBadge count={3} unit="day" color="var(--accent-light)"
+				dots={[false, false, false, false, true, true, false]}
+				label="Lett styrke" sublabel="gjenstår i dag"
 			/>
-			<span class="vname">Lav streak · blå</span>
+			<span class="vname">Forfaller i dag · blå</span>
 		</div>
 		<div class="variant">
-			<StreakBadge count={42} color="#d4829a"
-				weekDots={[true, true, true, true, true, true, true]}
-				label="Kobling"
+			<StreakBadge count={5} unit="week" color="var(--success-text)"
+				dots={[false, true, true, true, true, true, true]}
+				label="Løping" sublabel="1/2 denne uka"
 			/>
-			<span class="vname">Perfekt uke · rosa</span>
+			<span class="vname">Uker over terskel</span>
+		</div>
+		<div class="variant">
+			<StreakBadge count={4} unit="round" color="var(--accent-muted)"
+				dots={[true, true, true, true]}
+				label="Hårklipp" sublabel="forfaller om 2 dager"
+			/>
+			<span class="vname">Periodisk vedlikehold</span>
+		</div>
+		<div class="variant">
+			<StreakBadge count={0} unit="round"
+				dots={[true, true, false]}
+				label="Badevask" sublabel="3 dager på overtid"
+			/>
+			<span class="vname">Brutt · dempet</span>
 		</div>
 	</div>
 

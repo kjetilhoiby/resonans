@@ -87,7 +87,39 @@ describe('buildScheduleLink', () => {
 	});
 });
 
+describe('buildScheduleLink — periodisk vedlikehold', () => {
+	const maintenance = {
+		definitionId: 's1',
+		title: 'Hårklipp',
+		emoji: '💈',
+		count: 4,
+		daysUntilDue: 2,
+		nextDueDay: '2026-07-27',
+		status: 'due_soon' as const
+	};
+
+	it('kobler dag-punktet til streak-definisjonen', () => {
+		const { label, link } = buildScheduleLink({ kind: 'maintenance', maintenance });
+		expect(label).toBe('Hårklipp');
+		expect(link).toEqual({ streakId: 's1' });
+	});
+
+	it('renser tittelen som andre kilder', () => {
+		const { label } = buildScheduleLink({
+			kind: 'maintenance',
+			maintenance: { ...maintenance, title: 'Badevask (1/2)' }
+		});
+		expect(label).toBe('Badevask');
+	});
+});
+
 describe('isAlreadyScheduled', () => {
+	it('finner ikke-avkrysset punkt koblet til samme streak', () => {
+		const dayItems = [mkItem({ id: 'd1', checked: false, metadata: { linkedStreakId: 's1' } })];
+		expect(isAlreadyScheduled(dayItems, { streakId: 's1' })).toBe(true);
+		expect(isAlreadyScheduled(dayItems, { streakId: 's2' })).toBe(false);
+	});
+
 	it('finner ikke-avkrysset punkt koblet til samme oppgave', () => {
 		const dayItems = [mkItem({ id: 'd1', checked: false, metadata: { linkedTaskId: 't1' } })];
 		expect(isAlreadyScheduled(dayItems, { taskId: 't1' })).toBe(true);

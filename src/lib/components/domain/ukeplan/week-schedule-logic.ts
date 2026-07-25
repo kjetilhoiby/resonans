@@ -20,14 +20,28 @@ export interface ScheduleLinkPayload {
 	taskTitle?: string;
 	/** Kobler til et ukeliste-punkt (checklist_items.id). */
 	checklistItemId?: string;
+	/** Kobler til en streak-definisjon (streak_definitions.id) — periodisk vedlikehold. */
+	streakId?: string;
 	activityType?: string;
 	durationMinutes?: number;
 	distanceKm?: number;
 }
 
+/** Periodisk vedlikehold som nærmer seg forfall, klart til å plukkes ned på en dag. */
+export interface DueMaintenance {
+	definitionId: string;
+	title: string;
+	emoji: string;
+	count: number;
+	daysUntilDue: number;
+	nextDueDay: string | null;
+	status: 'due_soon' | 'overdue';
+}
+
 export type ScheduleSource =
 	| { kind: 'task'; task: WeekTask }
-	| { kind: 'item'; item: ChecklistItem };
+	| { kind: 'item'; item: ChecklistItem }
+	| { kind: 'maintenance'; maintenance: DueMaintenance };
 
 /**
  * Rensk en ukeplan-tittel til en kort dag-punkt-etikett:
@@ -80,6 +94,13 @@ export function buildScheduleLink(source: ScheduleSource): { label: string; link
 			}
 		};
 	}
+	if (source.kind === 'maintenance') {
+		const { maintenance } = source;
+		return {
+			label: scheduleLabel(maintenance.title),
+			link: { streakId: maintenance.definitionId }
+		};
+	}
 	const { item } = source;
 	const label = scheduleLabel(item.text);
 	return {
@@ -117,6 +138,7 @@ export function isAlreadyScheduled(dayItems: ChecklistItem[], link: ScheduleLink
 		const meta = it.metadata ?? {};
 		if (link.taskId && meta.linkedTaskId === link.taskId) return true;
 		if (link.checklistItemId && meta.linkedChecklistItemId === link.checklistItemId) return true;
+		if (link.streakId && meta.linkedStreakId === link.streakId) return true;
 		return false;
 	});
 }

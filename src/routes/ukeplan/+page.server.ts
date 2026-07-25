@@ -8,6 +8,7 @@ import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } fr
 import { getLivskompassGoalsForWeek } from '$lib/server/livskompass-checkin';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { materializeRoutinesForDates } from '$lib/server/services/routine-service';
+import { listDueMaintenance } from '$lib/server/services/streak-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
 
@@ -216,7 +217,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes, livskompassGoals] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes, livskompassGoals, dueMaintenance] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -291,7 +292,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		materializeRoutinesForDates(userId, week.days.map(d => d.isoDate)),
 		loadFerieThemes(userId),
 		// Ukas ett-poengs-mål fra livskompass-coachingen (tåler manglende events → [])
-		getLivskompassGoalsForWeek(userId, week.dashedKey).catch(() => [])
+		getLivskompassGoalsForWeek(userId, week.dashedKey).catch(() => []),
+		// Periodisk vedlikehold som nærmer seg forfall — plukkbart ned på en dag, slik
+		// at streaken kan forsvares før den brytes (tåler feil → [])
+		listDueMaintenance(userId).catch(() => [])
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -655,6 +659,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		),
 		dayNotes: dayNoteMap,
 		dayHeadlines: dayHeadlineMap,
+		dueMaintenance,
 		livskompassGoals,
 		activeTrips,
 		activeFerie,

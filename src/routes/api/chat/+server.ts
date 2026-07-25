@@ -1140,6 +1140,45 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_streak',
+					description: 'Administrer brukerens streaks — «hvor mange runder på rad har jeg holdt?». rule=consecutive_days for dager på rad (yoga, lett styrke). rule=count_per_window for perioder over en terskel (config.windowDays 7 + config.threshold 2 = «uker på rad med minst to løpeturer»). rule=max_interval for periodisk vedlikehold innen et intervall (config.intervalDays 5 = «hårklipp innen fem dager», 14 = «badevask innen to uker»). Vedlikehold løftes automatisk fram på ukeplanen når det nærmer seg forfall — ikke lag egne nedtellingsoppgaver for det. source: {kind:"workout",sportFamily} for treningsøkter, {kind:"sensor_event",dataType,textMatch} for sensorhendelser, {kind:"manual"} når brukeren registrerer selv. action=list/create/update/delete/log (log registrerer en gjennomført runde).',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['list', 'create', 'update', 'delete', 'log'] },
+							id: { type: 'string' },
+							title: { type: 'string' },
+							emoji: { type: 'string' },
+							rule: { type: 'string', enum: ['consecutive_days', 'count_per_window', 'max_interval'] },
+							source: {
+								type: 'object',
+								properties: {
+									kind: { type: 'string', enum: ['workout', 'sensor_event', 'manual'] },
+									sportFamily: { type: 'string', description: "running, yoga, strength, cycling, walking, swimming" },
+									dataType: { type: 'string', description: "f.eks. chore_done" },
+									textMatch: { type: 'string', description: 'Fritekst-filter, f.eks. "badevask"' }
+								},
+								required: ['kind']
+							},
+							config: {
+								type: 'object',
+								properties: {
+									windowDays: { type: 'integer', description: '7 = kalenderuke' },
+									threshold: { type: 'integer', description: 'Hendelser som kreves per periode' },
+									intervalDays: { type: 'integer', description: 'Maks dager mellom to runder' },
+									dueSoonDays: { type: 'integer', description: 'Varsle så mange dager før forfall' }
+								}
+							},
+							active: { type: 'boolean' },
+							date: { type: 'string', description: "Etterregistrering av runde: 'YYYY-MM-DD'" }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_food',
 					description: 'Hent mat-data: måltider, ukemeny, pantry/fryserinnhold. queryType: meals (måltidsliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
 					parameters: {
@@ -2876,6 +2915,12 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🔁 Manage routine:', args.action, args.title ?? args.id ?? '');
 					const { manageRoutineTool } = await import('$lib/ai/tools/manage-routine');
 					const result = await manageRoutineTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_streak') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🔥 Manage streak:', args.action, args.title ?? args.id ?? '');
+					const { manageStreakTool } = await import('$lib/ai/tools/manage-streak');
+					const result = await manageStreakTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);

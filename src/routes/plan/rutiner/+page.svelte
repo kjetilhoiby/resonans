@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { Button, Input, ChecklistCheckbox } from '$lib/components/ui';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
+	import StreakStrip from '$lib/components/domain/plan/StreakStrip.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -273,6 +274,7 @@
 	const hour = $derived(currentHour());
 
 	let pendingItem = $state<string | null>(null);
+	let loggingStreakId = $state<string | null>(null);
 
 	async function toggleItem(routine: TodaysRoutine, item: TodaysItem) {
 		if (pendingItem === item.id) return;
@@ -292,6 +294,27 @@
 			pendingItem = null;
 		}
 	}
+
+	// Registrer en gjennomført runde for en manuell streak (hårklipp, badevask, …).
+	// Samme hendelse nullstiller forfallet og holder streaken i live.
+	async function logStreakRound(definitionId: string) {
+		if (loggingStreakId) return;
+		loggingStreakId = definitionId;
+		try {
+			const res = await fetch(`/api/streaks/${definitionId}/log`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({})
+			});
+			if (!res.ok) {
+				console.error('Kunne ikke logge runde:', await res.text());
+				return;
+			}
+			await invalidateAll();
+		} finally {
+			loggingStreakId = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -299,6 +322,19 @@
 </svelte:head>
 
 <div class="rutiner">
+	{#if (data.streaks ?? []).length > 0}
+		<section class="streaks">
+			<header class="streaks-head">
+				<h2>Streaks</h2>
+			</header>
+			<StreakStrip
+				streaks={data.streaks}
+				onLogRound={logStreakRound}
+				busyId={loggingStreakId}
+			/>
+		</section>
+	{/if}
+
 	{#if (data.todaysRoutines ?? []).length > 0}
 		<section class="today">
 			<header class="today-head">
@@ -466,6 +502,20 @@
 	}
 
 	/* I dag */
+	.streaks {
+		padding: 0 16px;
+	}
+	.streaks-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 0.75rem;
+	}
+	.streaks-head h2 {
+		margin: 0;
+		font-size: 1.1rem;
+		color: var(--text-primary, #fff);
+	}
 	.today {
 		padding: 0 16px;
 	}
