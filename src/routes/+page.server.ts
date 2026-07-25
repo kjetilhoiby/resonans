@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { themes, trainingPrograms, trainingPlans, programReadinessAssessments, trackReadinessAssessments, reflections } from '$lib/db/schema';
+import { themes, trainingPrograms, trainingPlans, programReadinessAssessments, trackReadinessAssessments, trackSessions, reflections } from '$lib/db/schema';
 import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
@@ -145,6 +145,23 @@ export const load: PageServerLoad = async ({ locals }) => {
 					alternativeName: alt?.name ?? null
 				};
 			}
+
+			// Har jeg allerede trent i dag? Da er «Klar for Treningsløp» misvisende —
+			// fjern chippen (den peker på en økt som er gjort). Registrert trening
+			// materialiseres som en completed track_session (reconcile/complete-session).
+			const doneToday = await db
+				.select({ id: trackSessions.id })
+				.from(trackSessions)
+				.where(
+					and(
+						eq(trackSessions.userId, locals.userId),
+						eq(trackSessions.planId, activePlanRows[0].id),
+						eq(trackSessions.date, today),
+						eq(trackSessions.status, 'completed')
+					)
+				)
+				.limit(1);
+			if (doneToday[0]) programReadiness = null;
 		} catch (err) {
 			console.error('[home] plan readiness lookup failed:', err);
 		}

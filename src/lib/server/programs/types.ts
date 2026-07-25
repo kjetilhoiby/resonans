@@ -71,6 +71,13 @@ export interface ProgramSessionDTO {
 	isTest?: boolean;
 	testType?: ProgramTestType;
 	completion?: SessionCompletionDTO | null;
+	/**
+	 * Effort-skår for økta på samme skala overalt: faktisk skår for gjennomførte
+	 * utholdenhetsøkter (fra effort-service), konsekvent estimat for planlagte løp
+	 * (estimatePlannedRunEffort). `null`/utelatt når vi ikke har grunnlag (styrke,
+	 * korte økter). Ekko foretrekker denne over lokalt estimat.
+	 */
+	effortScore?: number | null;
 }
 
 export type ProgramPhase = 'rutine' | 'fart' | 'distanse' | 'test' | 'deload';
@@ -106,6 +113,34 @@ export interface ProgramWeekDTO {
 	phase?: ProgramPhase;
 	notes?: string;
 	sessions: ProgramSessionDTO[];
+	/** Samlet utholdenhets-effort registrert denne uka (løp + sykkel + el-sykkel). */
+	effortTotal?: number;
+}
+
+/** Ett konkret økt-eksempel med hva det gir i effort og andel av ukas mål. */
+export interface WeekEffortExampleDTO {
+	label: string;
+	effort: number;
+	/** Andel av ukas mål (midten av båndet), i prosent. */
+	pctOfBand: number;
+}
+
+/**
+ * Ukas effort-budsjett (mål) for inneværende uke — forankret i forrige ukes
+ * faktiske effort (×vekst, deload, vedlikehold). `examples`/`recipe` viser
+ * konkrete økter for å nå målet.
+ */
+export interface ProgramEffortBudgetDTO {
+	weekNumber: number;
+	spentThisWeek: number;
+	bandMin: number;
+	bandMax: number;
+	remainingMin: number;
+	remainingMax: number;
+	restRecommended: boolean;
+	deload: boolean;
+	examples: WeekEffortExampleDTO[];
+	recipe: { label: string; totalEffort: number; sessions: string[] } | null;
 }
 
 export interface ProgramActuals {
@@ -157,6 +192,8 @@ export interface ProgramDTO {
 	} | null;
 	preferences?: ProgramPreferences;
 	weeks: ProgramWeekDTO[];
+	/** Ukas effort-mål + eksempler for inneværende uke (treningsløp-modellen). */
+	effortBudget?: ProgramEffortBudgetDTO | null;
 }
 
 export interface ProgramSummaryDTO {
