@@ -226,6 +226,45 @@ export function getSportType(category: number): string {
 }
 
 /**
+ * Nedre troverdige snittfart (m/s) for en (el-)sykkeløkt. Under dette er det i praksis
+ * umulig for en sykkel — særlig en el-sykkel med motorhjelp. Withings' egen
+ * aktivitetsgjenkjenning feilstempler av og til langsom gange som «E-Biking»
+ * (kategori 272/525): en bratt gåtur med mye høydemeter (f.eks. 700 hm på 3 km) gir lav
+ * luftlinjefart, og bevegelsesmønsteret kan treffe sykkel-heuristikken. ~7 km/t ligger
+ * godt under enhver ekte sykkeltur, men klart over rask gange.
+ */
+export const MIN_PLAUSIBLE_CYCLING_SPEED_MPS = 1.95; // ~7 km/t
+
+/**
+ * Korrigerer en Withings-sporttype når fartsprofilen gjør den umulig. I dag kun
+ * sykkel-familien → gange: en (el-)sykkel som «beveget seg» i gangtempo er en
+ * feilstemplet gåtur. Ren funksjon (testbar). Returnerer sporttypen uendret når vi
+ * mangler grunnlag (for kort distanse eller manglende varighet til å stole på farten)
+ * eller farten er troverdig — så ekte sykkelturer aldri berøres.
+ *
+ * Ved kilden er billigst: reklassifiseringen forplanter seg til klynging, canonical
+ * workouts, effort og treningsprogram, og lar den korrigerte gåturen smelte sammen med
+ * en evt. GPS-økt fra Ekko i samme walking-familie i stedet for å bli en falsk tvilling.
+ */
+export function plausibleSportType(
+	sportType: string,
+	distanceMeters: number | null | undefined,
+	durationSeconds: number | null | undefined
+): string {
+	if (sportType !== 'cycling' && sportType !== 'e_bike') return sportType;
+	// For lite/kort til å stole på farten — la den stå.
+	if (!distanceMeters || distanceMeters < 500) return sportType;
+	if (!durationSeconds || durationSeconds <= 0) return sportType;
+	const speedMps = distanceMeters / durationSeconds;
+	if (speedMps >= MIN_PLAUSIBLE_CYCLING_SPEED_MPS) return sportType;
+	console.warn(
+		`[Withings] Reklassifiserte «${sportType}» → «walking»: ${(speedMps * 3.6).toFixed(1)} km/t ` +
+			`(${Math.round(distanceMeters)} m på ${Math.round(durationSeconds)} s) er umulig for sykkel.`
+	);
+	return 'walking';
+}
+
+/**
  * Parse Withings workout data
  * Smart filtering: Keep significant walks (>30 min or >2km), discard automatic short walks
  */
@@ -253,9 +292,15 @@ function parseWorkoutData(series: any[]): any[] {
 	}
 	
 	return filtered.map((workout) => {
-		const sportType = getSportType(workout.category);
 		const duration = workout.enddate - workout.startdate; // seconds
-			
+		// Rå Withings-kategori → sporttype, deretter en rimelighetssjekk på farten som fanger
+		// feilstemplet gange (langsom (el-)sykkel finnes ikke — se plausibleSportType).
+		const sportType = plausibleSportType(
+			getSportType(workout.category),
+			workout.data?.distance,
+			duration
+		);
+
 			return {
 				timestamp: new Date(workout.startdate * 1000),
 				data: {
