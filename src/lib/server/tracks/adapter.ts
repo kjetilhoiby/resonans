@@ -23,6 +23,10 @@ import {
 } from './repository';
 import { daysBetween, isoWeekday, mondayOfDate } from './curve';
 import { computeStrengthState, nextStrengthSession, summarizeStrengthSession } from './strength-engine';
+import { countsTowardEndurance } from './endurance-engine';
+import { buildWeekPlanExamples, composeWeekRecipe } from './effort-budget';
+import { getEffortBaseline, estimatePlannedRunEffort } from '$lib/server/services/effort-service';
+import type { ProgramEffortBudgetDTO } from '$lib/server/programs/types';
 
 /**
  * Ekko-kompatibilitetslaget: serverer treningsløpene gjennom den eksisterende
@@ -61,6 +65,21 @@ export function contractWeekNumber(startDate: string, date: string): number {
 	return Math.max(1, Math.floor(daysBetween(mondayOfDate(startDate), date) / 7) + 1);
 }
 
+/**
+ * Skal denne raden vises i programlista? Gjennomførte økter vises alltid (også
+ * i tidligere uker — det er historikken). Forslag vises kun for i dag/framover;
+ * gamle uberørte forslag (og hoppede økter) skjules så «uløpte løp» og ubrukte
+ * styrkeforslag ikke blir liggende. Ren funksjon — testes uten DB.
+ */
+export function isVisibleProgramSession(
+	row: { status: string; date: string },
+	today: string
+): boolean {
+	if (row.status === 'completed') return true;
+	if (row.status === 'skipped') return false;
+	return row.date >= today;
+}
+
 export function toSessionDTO(row: TrackSessionRow, plan: TrainingPlanRow): ProgramSessionDTO {
 	const payload = row.payload;
 	return {
@@ -90,6 +109,9 @@ export async function getTrackProgramSummary(userId: string, plan: TrainingPlanR
 		getSessionsForPlan(userId, plan.id),
 		countCompletedSessions(userId, plan.id)
 	]);
+	// Hoppede/lukede forslag teller ikke som «planlagte» økter — ellers ville
+	// fremdriften (fullført/total) falle når gamle forslag skjules.
+	const totalSessions = sessions.filter((r) => r.status !== 'skipped').length;
 	return {
 		id: plan.id,
 		name: plan.name,
@@ -102,15 +124,52 @@ export async function getTrackProgramSummary(userId: string, plan: TrainingPlanR
 		includeRunning: true,
 		createdAt: plan.createdAt.toISOString(),
 		completedSessions: completed,
-		totalSessions: sessions.length
+		totalSessions
 	};
 }
 
 export async function getTrackFullProgram(userId: string, plan: TrainingPlanRow): Promise<ProgramDTO> {
-	const sessions = await getSessionsForPlan(userId, plan.id);
+	const today = new Date().toISOString().slice(0, 10);
+
+	// computeTrackStates auto-kobler registrert trening (reconcile) og luker
+	// bort gamle uberørte forslag — så lista er fersk og ryddig når vi bygger den.
+	// Den gir også ukas effort-budsjett og pulsbaseline for konsistente estimater.
+	const [states, baseline, sessions] = await Promise.all([
+		computeTrackStates(userId, plan, today),
+		getEffortBaseline(userId),
+		getSessionsForPlan(userId, plan.id)
+	]);
+
+	// Faktisk utholdenhets-effort per dato (fra effort-service via canonical_workouts),
+	// så gjennomførte økter viser fasit-skåren og uketotalene stemmer med budsjettet.
+	const effortByDate = new Map<string, number>();
+	for (const w of states.enduranceWorkouts) {
+		if (!countsTowardEndurance(w.family) || w.effortScore == null) continue;
+		effortByDate.set(w.date, (effortByDate.get(w.date) ?? 0) + w.effortScore);
+	}
+	const easyPace =
+		states.enduranceState?.forventetPaceSekPerKm ?? baseline.easyPaceSecPerKm ?? 360;
+
 	const byWeek = new Map<number, ProgramSessionDTO[]>();
+	const effortByWeek = new Map<number, number>();
 	for (const row of sessions) {
+		if (!isVisibleProgramSession(row, today)) continue;
 		const dto = toSessionDTO(row, plan);
+
+		// Effort: fasit for gjennomførte utholdenhetsøkter, konsekvent estimat for
+		// planlagte løp. Styrke får ingen skår her (egen progresjon).
+		if (dto.kind === 'run') {
+			if (row.status === 'completed') {
+				const actual = effortByDate.get(row.date);
+				dto.effortScore = actual != null ? Math.round(actual) : null;
+				if (dto.effortScore != null) {
+					effortByWeek.set(dto.weekNumber, (effortByWeek.get(dto.weekNumber) ?? 0) + dto.effortScore);
+				}
+			} else if (row.payload.plannedRun) {
+				dto.effortScore = estimatePlannedRunEffort(row.payload.plannedRun, baseline);
+			}
+		}
+
 		const list = byWeek.get(dto.weekNumber) ?? [];
 		list.push(dto);
 		byWeek.set(dto.weekNumber, list);
@@ -126,8 +185,28 @@ export async function getTrackFullProgram(userId: string, plan: TrainingPlanRow)
 			weekNumber,
 			phase: 'rutine' as const,
 			deload: false,
-			sessions: weekSessions.sort((a, b) => a.dayNumber - b.dayNumber)
+			sessions: weekSessions.sort((a, b) => a.dayNumber - b.dayNumber),
+			effortTotal: effortByWeek.has(weekNumber) ? Math.round(effortByWeek.get(weekNumber)!) : 0
 		}));
+
+	// Ukas effort-mål (bånd) + konkrete eksempler for å nå det.
+	let effortBudget: ProgramEffortBudgetDTO | null = null;
+	if (states.budget) {
+		const b = states.budget;
+		const recipe = composeWeekRecipe(b.remainingMin, b.remainingMax, easyPace);
+		effortBudget = {
+			weekNumber: contractWeekNumber(plan.startDate, today),
+			spentThisWeek: b.spentThisWeek,
+			bandMin: b.bandMin,
+			bandMax: b.bandMax,
+			remainingMin: b.remainingMin,
+			remainingMax: b.remainingMax,
+			restRecommended: b.restRecommended,
+			deload: b.deload,
+			examples: buildWeekPlanExamples(easyPace, b.bandMin, b.bandMax),
+			recipe: recipe ? { label: recipe.label, totalEffort: recipe.totalEffort, sessions: recipe.sessions } : null
+		};
+	}
 
 	const summary = await getTrackProgramSummary(userId, plan);
 	return {
@@ -144,7 +223,8 @@ export async function getTrackFullProgram(userId: string, plan: TrainingPlanRow)
 		createdAt: plan.createdAt.toISOString(),
 		updatedAt: plan.updatedAt.toISOString(),
 		generatedWith: null,
-		weeks
+		weeks,
+		effortBudget
 	};
 }
 

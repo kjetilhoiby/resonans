@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
 import {
 	canonicalWorkouts,
@@ -395,6 +395,12 @@ export async function computeTrackStates(
 		today
 	);
 
+	// Rydd bort gamle uberørte forslag: et forslag i en tidligere dag som aldri
+	// ble registrert er ikke en åpen oppgave i registrering-først-modellen — merk
+	// det hoppet over så «uløpte løp» og ubrukte styrkeforslag ikke hoper seg opp.
+	// Kjøres ETTER reconcile (som først oppgraderer forslag med faktisk aktivitet).
+	await pruneStaleSuggestions(userId, plan.id, today);
+
 	const strengthState = styrkeTrack
 		? computeStrengthState(strengthSessions, strengthGoalOf(styrkeTrack), windowOf(styrkeTrack), today)
 		: null;
@@ -735,6 +741,27 @@ export async function upsertSuggestedSession(
 		})
 		.returning();
 	return created;
+}
+
+/**
+ * Merker forslag (status='suggested') fra tidligere dager som hoppet over.
+ * Idempotent: rører kun rader i fortiden som fortsatt er rene forslag — aldri
+ * gjennomførte eller dagens/framtidige. Returnerer antall ryddede rader.
+ */
+export async function pruneStaleSuggestions(userId: string, planId: string, today: string): Promise<number> {
+	const result = await db
+		.update(trackSessions)
+		.set({ status: 'skipped', updatedAt: new Date() })
+		.where(
+			and(
+				eq(trackSessions.planId, planId),
+				eq(trackSessions.userId, userId),
+				eq(trackSessions.status, 'suggested'),
+				lt(trackSessions.date, today)
+			)
+		)
+		.returning({ id: trackSessions.id });
+	return result.length;
 }
 
 export async function getTrackSessionById(userId: string, sessionId: string): Promise<TrackSessionRow | null> {

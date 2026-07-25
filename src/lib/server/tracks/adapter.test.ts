@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { contractWeekNumber, toSessionDTO } from './adapter';
+import { contractWeekNumber, isVisibleProgramSession, toSessionDTO } from './adapter';
 import { isoWeekday } from './curve';
 import { sessionPlannedDate } from '$lib/server/programs/repository';
 import type { TrackSessionRow, TrainingPlanRow } from './repository';
@@ -141,5 +141,28 @@ describe('toSessionDTO (Ekko-kontrakten)', () => {
 			completedAt: '2026-07-09T07:43:00.000Z',
 			actuals: { kind: 'run', distance: 4700, duration: 1880, paceSecondsPerKm: 400 }
 		});
+	});
+});
+
+describe('isVisibleProgramSession', () => {
+	const today = '2026-07-25';
+
+	it('viser alltid gjennomførte økter — også i tidligere uker', () => {
+		expect(isVisibleProgramSession({ status: 'completed', date: '2026-07-06' }, today)).toBe(true);
+		expect(isVisibleProgramSession({ status: 'completed', date: today }, today)).toBe(true);
+	});
+
+	it('skjuler gamle uberørte forslag (uløpte løp / ubrukt styrke)', () => {
+		expect(isVisibleProgramSession({ status: 'suggested', date: '2026-07-20' }, today)).toBe(false);
+	});
+
+	it('viser dagens og framtidige forslag', () => {
+		expect(isVisibleProgramSession({ status: 'suggested', date: today }, today)).toBe(true);
+		expect(isVisibleProgramSession({ status: 'suggested', date: '2026-07-28' }, today)).toBe(true);
+	});
+
+	it('skjuler hoppede økter', () => {
+		expect(isVisibleProgramSession({ status: 'skipped', date: today }, today)).toBe(false);
+		expect(isVisibleProgramSession({ status: 'skipped', date: '2026-07-10' }, today)).toBe(false);
 	});
 });

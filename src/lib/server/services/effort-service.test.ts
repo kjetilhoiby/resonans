@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { classifyEffortFamily, computeWorkoutEffort, type EffortBaseline, type WorkoutEffortInput } from './effort-service';
+import {
+	classifyEffortFamily,
+	computeWorkoutEffort,
+	estimatePlannedRunEffort,
+	type EffortBaseline,
+	type WorkoutEffortInput
+} from './effort-service';
 
 const baseline: EffortBaseline = { restHr: 55, maxHr: 190, derived: true };
 
@@ -223,5 +229,43 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			paceBaseline
 		)!;
 		expect(result.method).toBe('trimp');
+	});
+});
+
+describe('estimatePlannedRunEffort', () => {
+	// baseline: restHr 55, maxHr 190 → HRR-spenn 135 bpm
+	it('estimerer et rolig løp på TRIMP-skala (ikke MET-oppblåst)', () => {
+		// 9,2 km @ 6:25/km ≈ 59 min. easy → hrr 0.68 → estHr ≈ 147 → TRIMP.
+		const est = estimatePlannedRunEffort(
+			{ runType: 'easy', targetDistanceMeters: 9200, paceHintSecPerKm: 385 },
+			baseline
+		)!;
+		expect(est).toBeGreaterThan(60);
+		// Klart lavere enn det rene MET-estimatet (59 × 1.0 × 2.5 ≈ 148).
+		expect(est).toBeLessThan(130);
+	});
+
+	it('priser intervaller høyere enn et rolig løp av samme varighet', () => {
+		const easy = estimatePlannedRunEffort(
+			{ runType: 'easy', targetDistanceMeters: 6000, paceHintSecPerKm: 360 },
+			baseline
+		)!;
+		const intervals = estimatePlannedRunEffort(
+			{ runType: 'intervals', targetDistanceMeters: 6000, paceHintSecPerKm: 360 },
+			baseline
+		)!;
+		expect(intervals).toBeGreaterThan(easy);
+	});
+
+	it('utleder varighet fra måltid når distanse mangler', () => {
+		const est = estimatePlannedRunEffort({ runType: 'easy', targetDurationSeconds: 1800 }, baseline);
+		expect(est).not.toBeNull();
+	});
+
+	it('gir null uten grunnlag eller for korte økter', () => {
+		expect(estimatePlannedRunEffort({ runType: 'easy' }, baseline)).toBeNull();
+		expect(
+			estimatePlannedRunEffort({ runType: 'easy', targetDurationSeconds: 120 }, baseline)
+		).toBeNull();
 	});
 });

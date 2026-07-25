@@ -159,6 +159,61 @@ function round1(value: number): number {
 }
 
 /**
+ * Typisk intensitet (HRR-andel) for en planlagt løpstype — brukt til å estimere
+ * effort FØR økta er løpt. Rolige løp ligger i sone 2 (~0,68), harde intervaller
+ * nær terskel (~0,86).
+ */
+const PLANNED_HRR_BY_RUNTYPE: Record<string, number> = {
+	easy: 0.68,
+	long: 0.7,
+	tempo: 0.8,
+	intervals: 0.86
+};
+const DEFAULT_PLANNED_HRR = 0.68;
+
+/**
+ * Estimert effort for en PLANLAGT løpeøkt — på samme skala som faktiske økter.
+ *
+ * Nøkkelen til «konsekvent effort»: i stedet for et rent MET-estimat (som ligger
+ * systematisk høyere enn TRIMP-skårene faktiske pulsøkter får), modellerer vi en
+ * forventet snittpuls fra løpstypens intensitet og kjører den gjennom SAMME
+ * `computeWorkoutEffort` som fasit-skårene. Et rolig 9 km-løp estimeres da nær
+ * det et faktisk rolig 9 km-løp faktisk skårer, ikke ~50 % høyere.
+ *
+ * Varighet utledes fra måldistanse × måltempo (eller måltid). `null` når verken
+ * distanse+tempo eller varighet finnes, eller økta er under minstelengden.
+ */
+export function estimatePlannedRunEffort(
+	run: {
+		runType?: string | null;
+		targetDistanceMeters?: number | null;
+		targetDurationSeconds?: number | null;
+		paceHintSecPerKm?: number | null;
+	},
+	baseline: EffortBaseline
+): number | null {
+	const pace =
+		typeof run.paceHintSecPerKm === 'number' && run.paceHintSecPerKm > 0 ? run.paceHintSecPerKm : null;
+
+	let durationSeconds: number | null = null;
+	if (typeof run.targetDurationSeconds === 'number' && run.targetDurationSeconds > 0) {
+		durationSeconds = run.targetDurationSeconds;
+	} else if (typeof run.targetDistanceMeters === 'number' && run.targetDistanceMeters > 0 && pace) {
+		durationSeconds = (run.targetDistanceMeters / 1000) * pace;
+	}
+	if (!durationSeconds || durationSeconds < MIN_DURATION_SECONDS) return null;
+
+	const hrr = PLANNED_HRR_BY_RUNTYPE[(run.runType ?? '').toLowerCase()] ?? DEFAULT_PLANNED_HRR;
+	const estHr = Math.round(baseline.restHr + hrr * (baseline.maxHr - baseline.restHr));
+
+	const result = computeWorkoutEffort(
+		{ sportType: 'running', durationSeconds, avgHeartRate: estHr, paceSecPerKm: pace },
+		baseline
+	);
+	return result ? Math.round(result.score) : null;
+}
+
+/**
  * Hent en baseline (restHr, maxHr) for en bruker. Bruker enkle heuristikker:
  *  - restHr: median av Withings 'hr_min' siste 30 dager, ellers default
  *  - maxHr: høyeste observerte avgHr × 1.05 fra sleep+activity-events, ellers default

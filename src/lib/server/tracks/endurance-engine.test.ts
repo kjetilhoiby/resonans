@@ -212,9 +212,9 @@ describe('describeEnduranceDay', () => {
 		expect(beskriv([run('2026-07-08', 2.5, 496)])).toBe('Løp 2,5 km');
 	});
 
-	it('ren pendlerdag (el-sykkel) blir «Registrert:» — ikke en treningsøkt', () => {
+	it('ren pendlerdag (el-sykkel) navngis med aktivitet — uten «Registrert:»-prefiks', () => {
 		const dag = [sykkel('2026-07-07', 25, 'ebike'), sykkel('2026-07-07', 26, 'ebike')];
-		expect(beskriv(dag)).toBe('Registrert: El-sykkel 2 t');
+		expect(beskriv(dag)).toBe('El-sykkel 2 t');
 	});
 
 	it('løp + pendling samme dag: løpet leder, pendlinga henges på', () => {
@@ -224,11 +224,11 @@ describe('describeEnduranceDay', () => {
 
 	it('sykkel og el-sykkel navngis hver for seg', () => {
 		const dag = [sykkel('2026-07-07', 40, 'cycling'), sykkel('2026-07-07', 20, 'ebike')];
-		expect(beskriv(dag)).toBe('Registrert: Sykkel 1 t + El-sykkel 1 t');
+		expect(beskriv(dag)).toBe('Sykkel 1 t + El-sykkel 1 t');
 	});
 
 	it('gangfart-autologg («løp» i 10:34/km) blir nøytral aktivitet, ikke «Løp»', () => {
-		expect(beskriv([run('2026-07-07', 4.7, 634)])).toBe('Registrert: Aktivitet 50 min');
+		expect(beskriv([run('2026-07-07', 4.7, 634)])).toBe('Aktivitet 50 min');
 	});
 
 	it('løp uten distanse ennå (midt i synk) blir nøytral aktivitet — selvhelbredes senere', () => {
@@ -239,7 +239,7 @@ describe('describeEnduranceDay', () => {
 			distanceMeters: null,
 			durationSeconds: 1240
 		};
-		expect(beskriv([midtISynk])).toBe('Registrert: Aktivitet 21 min');
+		expect(beskriv([midtISynk])).toBe('Aktivitet 21 min');
 	});
 
 	it('tom dag faller tilbake til «Utholdenhet»', () => {

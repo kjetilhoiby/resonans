@@ -61,8 +61,10 @@ export function effortPerRunKm(paceSekPerKm: number): number {
  * Visningsnavn for en dag med registrert utholdenhetsaktivitet (reconcile-
  * lista i Ekko/ukeplanen). Ekte løp (isCountableRun — gåtur-vakten) navngis
  * med distanse; alt annet (pendel-sykling, el-sykkel, gangfart-autologg)
- * prefikses «Registrert:» så hverdagsaktivitet ikke framstår som en
- * gjennomført treningsøkt. Aktiviteten teller uansett i effort-budsjettet.
+ * navngis med aktivitet og varighet. Ingen «Registrert:»-prefiks — all
+ * registrert aktivitet behandles likt (jf. treningsstatus-opprydding); det er
+ * completion-haken i Ekko som skiller gjennomført fra planlagt, ikke navnet.
+ * Aktiviteten teller uansett i effort-budsjettet.
  */
 export function describeEnduranceDay(workouts: EnduranceWorkout[], fmtMin: (min: number) => string): string {
 	const runs = workouts.filter(isCountableRun);
@@ -83,7 +85,7 @@ export function describeEnduranceDay(workouts: EnduranceWorkout[], fmtMin: (min:
 	if (parts.length === 0 && otherMin > 0) parts.push(`Aktivitet ${fmtMin(otherMin)}`);
 
 	if (parts.length === 0) return 'Utholdenhet';
-	return runs.length > 0 ? parts.join(' + ') : `Registrert: ${parts.join(' + ')}`;
+	return parts.join(' + ');
 }
 
 export function curvePace(goal: EnduranceGoal, window: TrackWindow, date: string): number {
