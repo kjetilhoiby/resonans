@@ -13,6 +13,7 @@ import type {
 	MediaHistoryItem,
 	EgenfrekvensSlotSummary,
 	EgenfrekvensRecentPoint,
+	HomeStreak,
 } from './home-context';
 
 // ── Dato-hjelpere ───────────────────────────────────────────────────────
@@ -505,3 +506,37 @@ export function chunkWidgets<T>(rows: T[], size: number): T[][] {
 }
 
 export const WIDGETS_PER_PAGE = 6;
+
+/**
+ * Bygg sidene i widget-sveipen.
+ *
+ * Widgets og sjekklister chunkes som før. Streaks chunkes *separat* og legges til
+ * på slutten, slik at de får sine egne sider — gruppert på samme måte som «Ferier
+ * & reiser» er en egen side i tema-sveipen. Uten den separate chunkingen ville
+ * streaks blitt blandet inn på en halvfull widget-side.
+ *
+ * Tom streak-liste gir ingen ekstra side, så hjemmeskjermen ser uendret ut for
+ * brukere uten streaks.
+ */
+export function buildWidgetPages<T>(
+	widgetEntries: T[],
+	streakEntries: T[],
+	size: number = WIDGETS_PER_PAGE
+): T[][] {
+	const pages = chunkWidgets(widgetEntries, size);
+	if (streakEntries.length === 0) return pages;
+	// chunkWidgets gir [[]] for tom input — dropp den tomme siden når vi har streaks.
+	const base = pages.length === 1 && pages[0].length === 0 ? [] : pages;
+	return [...base, ...chunkWidgets(streakEntries, size)];
+}
+
+/** Streaks til hjemmeskjermen. Lastes lazy — sidene ligger bak et sveip. */
+export async function loadHomeStreaks(): Promise<HomeStreak[]> {
+	try {
+		const res = await fetch('/api/streaks');
+		if (!res.ok) return [];
+		return (await res.json()) as HomeStreak[];
+	} catch {
+		return [];
+	}
+}

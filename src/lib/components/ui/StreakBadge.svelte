@@ -13,6 +13,7 @@
     sublabel  hva som kreves nå (f.eks. «forfaller om 3 dager»)
     color     aksentfarge
     muted     tegn dempet (brukes når streaken er brutt / på overtid)
+    size      'md' (80px sirkel, egne sider) | 'sm' (64px, matcher DynamicWidget i widget-sonen)
 -->
 <script lang="ts">
 	import type { StreakUnit } from '$lib/domain/streaks';
@@ -25,6 +26,7 @@
 		sublabel?: string | null;
 		color?: string;
 		muted?: boolean;
+		size?: 'md' | 'sm';
 	}
 
 	let {
@@ -35,6 +37,7 @@
 		sublabel = null,
 		color = 'var(--warning-text)',
 		muted = false,
+		size = 'md',
 	}: Props = $props();
 
 	const UNIT_TEXT: Record<StreakUnit, [singular: string, plural: string]> = {
@@ -50,7 +53,7 @@
 	const accent = $derived(isMuted ? 'var(--text-muted)' : color);
 </script>
 
-<div class="streak-wrap">
+<div class="streak-wrap" class:is-sm={size === 'sm'}>
 	<div class="streak-circ" class:is-muted={isMuted} style="--c:{accent}">
 		<span class="streak-flame">{isMuted ? '💤' : '🔥'}</span>
 		<span class="streak-num" style="color:{accent}">{count}</span>
@@ -79,15 +82,23 @@
 
 <style>
 	.streak-wrap {
+		--circ: 80px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 8px;
 	}
 
+	/* Kompakt variant for widget-sonen — matcher DynamicWidget (90px bred, 64px ring). */
+	.streak-wrap.is-sm {
+		--circ: 64px;
+		width: 90px;
+		gap: 6px;
+	}
+
 	.streak-circ {
-		width: 80px;
-		height: 80px;
+		width: var(--circ);
+		height: var(--circ);
 		border-radius: 50%;
 		border: 2.5px solid var(--c);
 		background: radial-gradient(
@@ -163,5 +174,29 @@
 		color: var(--text-muted);
 		text-align: center;
 		margin-top: -4px;
+	}
+
+	/* Kompakt: mindre tall og etiketter, og labelen får plass til to linjer. */
+	.streak-wrap.is-sm .streak-flame {
+		font-size: 0.75rem;
+	}
+
+	.streak-wrap.is-sm .streak-num {
+		font-size: 0.95rem;
+	}
+
+	.streak-wrap.is-sm .streak-unit {
+		font-size: 0.52rem;
+	}
+
+	.streak-wrap.is-sm .streak-label {
+		font-size: 0.55rem;
+		letter-spacing: 0.04em;
+		line-height: 1.25;
+	}
+
+	.streak-wrap.is-sm .streak-sublabel {
+		font-size: 0.52rem;
+		margin-top: -3px;
 	}
 </style>

@@ -14,6 +14,7 @@ import type { VideoPreviewFields } from './home-media';
 import type { FlowContext } from '$lib/flows/types';
 import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
 import type { LivskompassScores, LivskompassWeekGoal } from '$lib/domains/livskompass/dimensions';
+import type { StreakState } from '$lib/domain/streaks';
 
 export const HOME_CTX = Symbol('home');
 
@@ -108,12 +109,25 @@ export interface MediaHistoryItem {
 	createdAt: string;
 }
 
+/** Streak slik hjemmeskjermen mottar den fra GET /api/streaks. */
+export interface HomeStreak {
+	definition: {
+		id: string;
+		title: string;
+		emoji: string;
+		rule: string;
+		source: { kind: string };
+	};
+	state: StreakState;
+}
+
 export interface HomeWidgetEntry {
 	id: string;
-	kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
+	kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner' | 'streak';
 	checklist?: Checklist;
 	widget?: UserWidget;
 	skeletonIndex?: number;
+	streak?: HomeStreak;
 }
 
 export interface ActionItem {
@@ -190,6 +204,7 @@ export interface HomeContext {
 	configWidget: UserWidget | null;
 	widgetPanelOpen: boolean;
 	homeWidgetPages: HomeWidgetEntry[][];
+	homeStreaks: HomeStreak[];
 	widgetPagerEl: HTMLElement | null;
 	currentWidgetPage: number;
 
