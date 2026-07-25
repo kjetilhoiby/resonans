@@ -47,6 +47,7 @@
 		type SensorSummary,
 		type MediaHistoryItem,
 		type HomeWidgetEntry,
+		type HomeStreak,
 		type AttachmentRef,
 		type ActionItem,
 		type RecentConversation,
@@ -78,6 +79,8 @@
 		fetchQuickWinItems,
 		scheduleWidgetDataPrefetch,
 		chunkWidgets,
+		buildWidgetPages,
+		loadHomeStreaks as fetchHomeStreaks,
 		WIDGETS_PER_PAGE,
 	} from './home/home-data';
 
@@ -333,6 +336,8 @@
 
 	// ── Handlingssone ─────────────────────────────────────────────────────
 	let serverActionCandidates = $state<ActionCandidate[]>([]);
+	let homeStreaks = $state<HomeStreak[]>([]);
+	async function loadHomeStreaks() { homeStreaks = await fetchHomeStreaks(); }
 	let actionsLoading = $state(true);
 	async function loadActionCandidates() { serverActionCandidates = await fetchActionCandidates(); actionsLoading = false; }
 
@@ -825,7 +830,19 @@
 		return [...orderedChecklists, ...metricWidgetEntries];
 	});
 
-	const homeWidgetPages = $derived(chunkWidgets(homeWidgetEntries, WIDGETS_PER_PAGE));
+	// Streaks får sine egne sider i sveipen (gruppert, som «Ferier & reiser» i
+	// tema-sveipen) i stedet for å blandes inn på en halvfull widget-side.
+	const streakWidgetEntries = $derived.by<HomeWidgetEntry[]>(() =>
+		homeStreaks.map((streak) => ({
+			id: `streak:${streak.definition.id}`,
+			kind: 'streak' as const,
+			streak
+		}))
+	);
+
+	const homeWidgetPages = $derived(
+		buildWidgetPages(homeWidgetEntries, streakWidgetEntries, WIDGETS_PER_PAGE)
+	);
 	let widgetPagerEl = $state<HTMLElement | null>(null);
 	let currentWidgetPage = $state(0);
 
@@ -986,7 +1003,7 @@
 			const chatPrefillParam = $page.url.searchParams.get('prefill');
 			if (chatPrefillParam) startHomeChat(chatPrefillParam);
 			else if ($page.url.searchParams.get('chat') === '1') openChat();
-			void loadEgenfrekvensRecent(); void loadActionCandidates();
+			void loadEgenfrekvensRecent(); void loadActionCandidates(); void loadHomeStreaks();
 
 			const flowParam = $page.url.searchParams.get('flow');
 			if (flowParam === 'egenfrekvens_checkin' || flowParam === 'egenfrekvens_quick') {
@@ -1034,6 +1051,7 @@
 		get configWidget() { return configWidget; }, set configWidget(v) { configWidget = v; },
 		get widgetPanelOpen() { return widgetPanelOpen; }, set widgetPanelOpen(v) { widgetPanelOpen = v; },
 		get homeWidgetPages() { return homeWidgetPages; },
+		get homeStreaks() { return homeStreaks; },
 		get widgetPagerEl() { return widgetPagerEl; }, set widgetPagerEl(v) { widgetPagerEl = v; },
 		get currentWidgetPage() { return currentWidgetPage; }, set currentWidgetPage(v) { currentWidgetPage = v; },
 

@@ -29,6 +29,8 @@ export interface ChecklistItem {
 		linkedTaskId?: string;
 		linkedTaskTitle?: string;
 		linkedChecklistItemId?: string;
+		linkedStreakId?: string;
+		streakEventId?: string;
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;

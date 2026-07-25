@@ -14,7 +14,8 @@
 	import { groupChecklistItems, sortByStatus } from '$lib/utils/checklist-group';
 	import type { WeekChecklist, WeekTask, ChecklistItem, EditingItem, EditingTask, ProcedureMatch, SaveState } from './types';
 	import { weekTasksApi, type WeekTasksApi } from './week-tasks-api';
-	import { scheduleLabel } from './week-schedule-logic';
+	import { scheduleLabel, type DueMaintenance } from './week-schedule-logic';
+	import { dueLabel, streakLabel } from '$lib/domain/streaks';
 	import {
 		checklistProgress,
 		slotState,
@@ -48,6 +49,10 @@
 		onScheduleTask: (task: WeekTask) => void;
 		/** Planlegg et ukeliste-punkt ned på valgt dag (tapp på avkryssingsboks). */
 		onScheduleItem: (item: ChecklistItem) => void;
+		/** Periodisk vedlikehold som nærmer seg forfall — plukkbart ned på valgt dag. */
+		dueMaintenance?: DueMaintenance[];
+		/** Planlegg et vedlikehold ned på valgt dag. */
+		onScheduleMaintenance: (maintenance: DueMaintenance) => void;
 		/** Etikett for valgt dag, f.eks. «I dag» / «Tor» — brukt i aria-labels. */
 		selectedDayLabel: string;
 		expandedWeekParentIds: Set<string>;
@@ -78,6 +83,8 @@
 		onAddChild,
 		onScheduleTask,
 		onScheduleItem,
+		dueMaintenance = [],
+		onScheduleMaintenance,
 		selectedDayLabel,
 		expandedWeekParentIds,
 		editingItem,
@@ -282,6 +289,35 @@
 			<span class="wp-pill">{weekTasks.length} fra tema/mål</span>
 		{/if}
 	</div>
+
+	<!--
+		Periodisk vedlikehold som nærmer seg forfall. Plukkes ned på valgt dag med
+		samme flyt som tema/mål-oppgaver — avkryssing logger runden, som både
+		nullstiller forfallet og holder streaken i live.
+	-->
+	{#if dueMaintenance.length > 0}
+		<ul class="wp-maint-list">
+			{#each dueMaintenance as maint (maint.definitionId)}
+				<li class="wp-maint" class:is-overdue={maint.status === 'overdue'}>
+					<span class="wp-maint-emoji" aria-hidden="true">{maint.emoji}</span>
+					<div class="wp-maint-main">
+						<span class="wp-maint-title">{maint.title}</span>
+						<span class="wp-maint-meta">
+							{dueLabel(maint)}{#if maint.count > 0} · {streakLabel({ count: maint.count, unit: 'round' })}{/if}
+						</span>
+					</div>
+					<button
+						type="button"
+						class="wp-maint-add"
+						aria-label={`Legg «${maint.title}» på ${selectedDayLabel}`}
+						title={`Legg på ${selectedDayLabel}`}
+						data-track="ukeplan-vedlikehold:legg-pa-dag"
+						onclick={() => onScheduleMaintenance(maint)}
+					>+</button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 
 	{#if weekTasks.length > 0}
 		<ul class="wp-task-list">
@@ -575,6 +611,7 @@
 	}
 
 	.wp-task-list,
+	.wp-maint-list,
 	.wp-checklist {
 		margin: 0;
 		padding: 0;
@@ -582,6 +619,70 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	.wp-maint-list {
+		margin-bottom: 10px;
+	}
+
+	.wp-maint {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: #0e1119;
+		border-left: 2px solid var(--warning-text);
+		border-radius: 10px;
+		padding: 8px 10px;
+	}
+
+	.wp-maint.is-overdue {
+		border-left-color: var(--error-text);
+	}
+
+	.wp-maint-emoji {
+		font-size: 1rem;
+	}
+
+	.wp-maint-main {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.wp-maint-title {
+		font-size: 0.92rem;
+		font-weight: 600;
+	}
+
+	.wp-maint-meta {
+		font-size: 0.72rem;
+		color: #8a90a3;
+	}
+
+	.wp-maint.is-overdue .wp-maint-meta {
+		color: var(--error-text);
+	}
+
+	.wp-maint-add {
+		flex: 0 0 auto;
+		width: 26px;
+		height: 26px;
+		border-radius: 8px;
+		border: 1px dashed #2a3350;
+		background: none;
+		color: #4a5470;
+		font: inherit;
+		cursor: pointer;
+		touch-action: manipulation;
+		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	}
+
+	.wp-maint-add:hover {
+		border-color: #5566b7;
+		color: #aab6ee;
+		background: #161c30;
 	}
 
 	.wp-task,

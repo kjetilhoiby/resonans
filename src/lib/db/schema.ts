@@ -734,6 +734,12 @@ export const checklistItems = pgTable('checklist_items', {
 		// av også (og omvendt ved av-kryssing). Parallell til linkedTaskId, som
 		// kobler mot tema/mål-oppgaver via progress.
 		linkedChecklistItemId?: string;
+		// Kobling til en streak-definisjon (streak_definitions.id) for periodisk
+		// vedlikehold plukket ned fra ukeplanen. Avkryssing logger en runde, som både
+		// nullstiller forfallet og holder streaken i live. `streakEventId` er runden
+		// som ble logget, slik at av-kryssing kan angre den.
+		linkedStreakId?: string;
+		streakEventId?: string;
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
@@ -833,6 +839,43 @@ export const routineDefinitions = pgTable('routine_definitions', {
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
 	idxUser: index('routine_definitions_user_idx').on(table.userId, table.active)
+}));
+
+// Streaks — «hvor mange runder på rad har jeg holdt?». Én tabell dekker både
+// vaner (yoga hver dag), frekvensmål (≥2 løpeturer i uka) og periodisk
+// vedlikehold (hårklipp hver femte dag), så alt kan vises med samme visuelle
+// språk. Beregnes on-demand fra hendelser — ingen lagret teller.
+// Regel-semantikken bor i $lib/domain/streaks.ts.
+export const streakDefinitions = pgTable('streak_definitions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),                   // "Yoga", "Hårklipp", "Løping"
+	emoji: text('emoji').notNull().default('🔥'),
+	rule: text('rule').notNull(),                     // 'consecutive_days' | 'count_per_window' | 'max_interval'
+	// Hvor hendelsene hentes fra. 'workout' leser canonical_workouts,
+	// 'sensor_event' leser sensor_events på dataType, 'manual' leser
+	// streak_log-events knyttet til denne definisjonen.
+	source: jsonb('source').$type<
+		| { kind: 'workout'; sportFamily: string }
+		| { kind: 'sensor_event'; dataType: string; textMatch?: string }
+		| { kind: 'manual' }
+	>().notNull(),
+	config: jsonb('config').$type<{
+		windowDays?: number;
+		threshold?: number;
+		intervalDays?: number;
+		dueSoonDays?: number;
+	}>().notNull().default({}),
+	active: boolean('active').notNull().default(true),
+	sortOrder: integer('sort_order').notNull().default(0),
+	metadata: jsonb('metadata').$type<{
+		themeId?: string;
+		[key: string]: any;
+	}>().notNull().default({}),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('streak_definitions_user_idx').on(table.userId, table.active)
 }));
 
 // ─── Food Domain ───────────────────────────────────────────────

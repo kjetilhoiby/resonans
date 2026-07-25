@@ -1,14 +1,27 @@
 import { listRoutineDefinitions, materializeTodaysRoutines } from '$lib/server/services/routine-service';
+import { loadStreaks } from '$lib/server/services/streak-service';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
-	const [routines, todaysRoutines] = await Promise.all([
+	const [routines, todaysRoutines, streaks] = await Promise.all([
 		listRoutineDefinitions(userId, { includeInactive: false }),
-		materializeTodaysRoutines(userId)
+		materializeTodaysRoutines(userId),
+		// Streaks hører hjemme her: en streak er «hvor godt holder jeg rutinen».
+		loadStreaks(userId)
 	]);
 
 	return {
+		streaks: streaks.map((s) => ({
+			definition: {
+				id: s.definition.id,
+				title: s.definition.title,
+				emoji: s.definition.emoji,
+				rule: s.definition.rule,
+				source: s.definition.source
+			},
+			state: s.state
+		})),
 		routines: routines.map((r) => ({
 			id: r.id,
 			title: r.title,

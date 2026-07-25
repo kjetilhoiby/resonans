@@ -28,6 +28,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			taskId?: string;
 			taskTitle?: string;
 			checklistItemId?: string;
+			streakId?: string;
 			activityType?: string;
 			durationMinutes?: number;
 			distanceKm?: number;
@@ -47,7 +48,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	// Kobling er oppgitt direkte (linkedTaskId eller linkedChecklistItemId), så vi
 	// bygger et enkelt punkt uten tekst-basert oppgavekobling/-oppretting. Tid og
 	// aktivitet parses fortsatt fra teksten så tids-chip og auto-hak virker.
-	if (link && (link.taskId || link.checklistItemId) && !parentId) {
+	if (link && (link.taskId || link.checklistItemId || link.streakId) && !parentId) {
 		const intent = parseChecklistItemIntent(text, { dayLevel: true });
 		const timeMeta =
 			intent.timeHour !== undefined ? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 } : {};
@@ -66,7 +67,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				: {};
 		const linkMeta = {
 			...(link.taskId ? { linkedTaskId: link.taskId, linkedTaskTitle: link.taskTitle ?? text.trim() } : {}),
-			...(link.checklistItemId ? { linkedChecklistItemId: link.checklistItemId } : {})
+			...(link.checklistItemId ? { linkedChecklistItemId: link.checklistItemId } : {}),
+			...(link.streakId ? { linkedStreakId: link.streakId } : {})
 		};
 		const metadata = { ...activityMeta, ...timeMeta, ...linkMeta };
 

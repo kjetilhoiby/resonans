@@ -9,10 +9,20 @@
 	import DynamicWidget from '../../composed/DynamicWidget.svelte';
 	import ChecklistWidget from '../../composed/ChecklistWidget.svelte';
 	import PagerDots from '../../ui/PagerDots.svelte';
+	import StreakBadge from '../../ui/StreakBadge.svelte';
 	import PartnerOnboardingCard from './PartnerOnboardingCard.svelte';
+	import { streakLabel, streakSublabel } from '$lib/domain/streaks';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+
+	// Samme palett som StreakStrip på /plan/rutiner, så en streak kjennes igjen på farge.
+	const STREAK_PALETTE = [
+		'var(--warning-text)',
+		'var(--accent-light)',
+		'var(--success-text)',
+		'var(--accent-muted)'
+	];
 
 	const partnerActions = $derived([
 		{ label: 'Start partner-onboarding', primary: true, onClick: ctx.openPartnerOnboardingChat },
@@ -72,6 +82,25 @@
 								onunpin={() => ctx.unpinWidget(item.widget!.id)}
 								onconfig={() => ctx.openWidgetConfigSheet(item.widget!)}
 							/>
+						{:else if item.kind === 'streak' && item.streak}
+							{@const streak = item.streak}
+							<button
+								type="button"
+								class="streak-widget"
+								data-track="hjem-streaks:apne-rutiner"
+								aria-label={`${streak.definition.title}: ${streakLabel(streak.state) || 'ingen aktiv streak'}`}
+								onclick={() => goto('/plan/rutiner')}
+							>
+								<StreakBadge
+									size="sm"
+									count={streak.state.count}
+									unit={streak.state.unit}
+									dots={streak.state.dots}
+									label={`${streak.definition.emoji} ${streak.definition.title}`}
+									sublabel={streakSublabel(streak.state)}
+									color={STREAK_PALETTE[itemIndex % STREAK_PALETTE.length]}
+								/>
+							</button>
 						{:else if item.kind === 'partner'}
 							<PartnerOnboardingCard
 								variant="widget"
@@ -153,6 +182,18 @@
 		height: 1px;
 		background: #202020;
 		margin: -2px 6px 2px;
+	}
+
+	/* Streak-badge som widget: samme flate som DynamicWidget, ingen egen ramme. */
+	.streak-widget {
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+		touch-action: manipulation;
 	}
 
 
