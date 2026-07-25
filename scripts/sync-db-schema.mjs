@@ -181,7 +181,23 @@ const DATA_MIGRATIONS = [
 	 WHERE NOT EXISTS (
 	   SELECT 1 FROM email_rules r
 	   WHERE r.user_id = u.id AND r.processing_type = 'oda_receipt'
-	 )`
+	 )`,
+	// 2026-07: Withings feilstempler av og til langsom gange (bratt terreng, mye
+	// høydemeter → lav luftlinjefart) som sykkel/el-sykkel. Etterlikner
+	// plausibleSportType() i withings-sync.ts på lagrede økter: sykkel-familien med
+	// snittfart under ~7 km/t (1,95 m/s) reklassifiseres til gange. Idempotent —
+	// etter kjøring er sportType='walking' og matcher ikke lenger. canonical_workouts
+	// er en avledet projeksjon (soft/hard-stale 2/15 min) og rebygges automatisk fra
+	// de korrigerte sensor_events ved neste lesing.
+	`UPDATE sensor_events
+	 SET data = jsonb_set(data, '{sportType}', '"walking"')
+	 WHERE source = 'withings_sync_workout'
+	   AND data->>'sportType' IN ('cycling', 'e_bike')
+	   AND jsonb_typeof(data->'distance') = 'number'
+	   AND jsonb_typeof(data->'duration') = 'number'
+	   AND (data->>'distance')::numeric >= 500
+	   AND (data->>'duration')::numeric > 0
+	   AND (data->>'distance')::numeric / (data->>'duration')::numeric < 1.95`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

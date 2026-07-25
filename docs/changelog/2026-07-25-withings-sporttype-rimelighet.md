@@ -51,6 +51,31 @@ IMG-caset (e_bike 4980 m / 4511 s → walking), bratt gåtur som vanlig sykkel, 
 turer som forblir urørt, ikke-sykkel-sporter urørt, manglende grunnlag, og terskel-oppførsel
 rett under/over ~7 km/t.
 
+### Fase 3: Data-migrering for allerede lagrede økter
+
+Fiksen i Fase 1 gjelder kun *fremtidige* synkinger. Den allerede feilstemplede økta (23. juli)
+og evt. tidligere lå fortsatt som el-sykkel i `sensor_events`. Lagt til en idempotent
+`DATA_MIGRATIONS`-statement i `scripts/sync-db-schema.mjs` som etterlikner
+`plausibleSportType()` på lagrede Withings-økter:
+
+```sql
+UPDATE sensor_events
+SET data = jsonb_set(data, '{sportType}', '"walking"')
+WHERE source = 'withings_sync_workout'
+  AND data->>'sportType' IN ('cycling', 'e_bike')
+  AND jsonb_typeof(data->'distance') = 'number'
+  AND jsonb_typeof(data->'duration') = 'number'
+  AND (data->>'distance')::numeric >= 500
+  AND (data->>'duration')::numeric > 0
+  AND (data->>'distance')::numeric / (data->>'duration')::numeric < 1.95
+```
+
+Idempotent: etter kjøring er `sportType='walking'` og raden matcher ikke lenger. Kjøres på
+deploy via `buildCommand` (`sync-db-schema.mjs`). `canonical_workouts`/`workout_daily_aggregates`
+er avledede projeksjoner med soft/hard-stale på 2/15 min, så de rebygges automatisk fra de
+korrigerte `sensor_events` ved neste lesing — den korrigerte økta havner da i walking-familien
+og smelter sammen med Ekko-gåturen.
+
 ## Beslutninger
 
 - **Fiks ved kilden, ikke i visningen.** Å korrigere sporttypen ved Withings-import er
