@@ -230,6 +230,13 @@ async function handleImageUpload(
 	const eventType = (ctx.formData.get('eventType') as string) || 'observation';
 	const dataType = (ctx.formData.get('dataType') as string) || 'image';
 	const caption = ctx.formData.get('caption') as string | null;
+	// Opptakstidspunkt (ISO) — brukes til å plassere bildet «på rett tidspunkt (og dermed sted)»
+	// i turavspillingen på web. Klienten (ekko) sender PHAsset-datoen; ellers null.
+	const takenAtRaw = (ctx.formData.get('takenAt') as string | null)?.trim() || null;
+	const takenAt =
+		takenAtRaw && Number.isFinite(Date.parse(takenAtRaw))
+			? new Date(takenAtRaw).toISOString()
+			: null;
 
 	const { url, publicId } = await uploadToCloudinary(file, ctx.app.id);
 
@@ -246,7 +253,8 @@ async function handleImageUpload(
 				mimeType: file.type,
 				fileName: file.name,
 				sizeBytes: file.size,
-				caption: caption
+				caption: caption,
+				takenAt
 			},
 			metadata: {
 				sourceApp: ctx.app.id,

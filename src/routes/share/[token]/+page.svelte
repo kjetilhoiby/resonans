@@ -5,8 +5,17 @@
 	import SharedTripPositionView from '$lib/components/domain/share/SharedTripPositionView.svelte';
 	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
 	import QuizBoard from '$lib/components/domain/quiz/QuizBoard.svelte';
+	import TrackReplay from '$lib/components/domain/TrackReplay.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// Delt tur: fullskjerms 3D-avspilling med bilder.
+	const replay = $derived(
+		data.status === 'ok' && data.resource.kind === 'workout' ? data.resource : null
+	);
+	const replayTitle = $derived(
+		data.status === 'ok' && data.ownerName ? `${data.ownerName} sin tur` : 'Delt tur'
+	);
 
 	// Delt spillskjerm: egen mørk fullskjermsvisning (ikke det lyse share-skallet).
 	const quiz = $derived(
@@ -35,13 +44,18 @@
 		<meta property="og:image" content={`/api/share-link/${tripToken}/og.png`} />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
+	{:else if replay}
+		<title>{replayTitle}</title>
+		<meta name="robots" content="noindex" />
 	{:else}
 		<title>Delt fra Resonans</title>
 		<meta name="robots" content="noindex" />
 	{/if}
 </svelte:head>
 
-{#if quiz}
+{#if replay}
+	<TrackReplay resource={replay} title={replayTitle} />
+{:else if quiz}
 	<AppPage>
 		<PageSection>
 			<PageHeader title="Quiz" />

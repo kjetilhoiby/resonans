@@ -5,6 +5,7 @@ import {
 	themeLists,
 	liveSessions,
 	quizSessions,
+	sensorEvents,
 	users
 } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -164,6 +165,56 @@ async function loadQuizBoard(resourceId: string, ownerUserId: string): Promise<Q
 	return projectQuizBoard(toQuizSessionState(session));
 }
 
+async function loadWorkoutReplay(resourceId: string, ownerUserId: string) {
+	const ev = await db.query.sensorEvents.findFirst({
+		where: and(eq(sensorEvents.id, resourceId), eq(sensorEvents.userId, ownerUserId))
+	});
+	if (!ev || ev.dataType !== 'workout') return null;
+
+	const data = (ev.data ?? {}) as Record<string, unknown>;
+	const meta = (ev.metadata ?? {}) as Record<string, unknown>;
+	const rawPoints = Array.isArray(data.trackPoints) ? (data.trackPoints as Record<string, unknown>[]) : [];
+	if (rawPoints.length < 2) return null;
+
+	const trackPoints = rawPoints.map((p) => ({
+		lat: Number(p.lat),
+		lon: Number(p.lon),
+		ele: p.ele != null ? Number(p.ele) : null,
+		time: (p.time as string) ?? null
+	}));
+
+	const sessionId = (meta.sessionId as string) ?? null;
+	let photos: Array<{ url: string; takenAt: string | null; caption: string | null }> = [];
+	if (sessionId) {
+		const imgs = await db.query.sensorEvents.findMany({
+			where: and(eq(sensorEvents.userId, ownerUserId), eq(sensorEvents.dataType, 'image')),
+			orderBy: (e, { desc }) => [desc(e.timestamp)],
+			limit: 300
+		});
+		photos = imgs
+			.filter((e) => ((e.metadata as Record<string, unknown> | null)?.sessionId ?? null) === sessionId)
+			.map((e) => {
+				const d = (e.data ?? {}) as Record<string, unknown>;
+				return {
+					url: (d.imageUrl as string) ?? '',
+					takenAt: (d.takenAt as string) ?? null,
+					caption: (d.caption as string) ?? null
+				};
+			})
+			.filter((p) => Boolean(p.url));
+	}
+
+	return {
+		sportType: (data.sportType as string) ?? null,
+		distanceM: data.distance != null ? Number(data.distance) : null,
+		durationS: data.duration != null ? Number(data.duration) : null,
+		elevationM: data.elevation != null ? Number(data.elevation) : null,
+		startedAt: ev.timestamp.toISOString(),
+		trackPoints,
+		photos
+	};
+}
+
 async function loadOwnerDisplayName(ownerUserId: string): Promise<string | null> {
 	const owner = await db.query.users.findFirst({
 		where: eq(users.id, ownerUserId),
@@ -233,6 +284,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		const board = await loadQuizBoard(share.resourceId, share.ownerUserId);
 		if (!board) throw error(404, 'Quizen finnes ikke lenger.');
 		return { ...baseResult, resource: { kind: 'quizSession' as const, board } };
+	}
+
+	if (share.resourceType === 'workout') {
+		const workout = await loadWorkoutReplay(share.resourceId, share.ownerUserId);
+		if (!workout) throw error(404, 'Turen finnes ikke lenger.');
+		return { ...baseResult, resource: { kind: 'workout' as const, ...workout } };
 	}
 
 	throw error(400, 'Ukjent ressurstype.');

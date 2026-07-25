@@ -3,7 +3,13 @@ import { shareTokens } from '$lib/db/schema';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 
-export type ShareResourceType = 'checklist' | 'themeList' | 'tripPosition' | 'quizSession' | 'storySession';
+export type ShareResourceType =
+	| 'checklist'
+	| 'themeList'
+	| 'tripPosition'
+	| 'quizSession'
+	| 'storySession'
+	| 'workout';
 export type ShareAccessMode = 'read' | 'write';
 
 export const SHARE_TOKEN_HEADER_NAME = 'x-resonans-share-token';
@@ -297,6 +303,27 @@ export async function getOrCreateStoryShareToken(
 		ownerUserId,
 		resourceType: 'storySession',
 		resourceId: storySessionId,
+		accessMode: 'read'
+	});
+}
+
+/**
+ * Finn et levende (ikke revokert/utløpt) workout-token for en delt tur (en workout-
+ * sensorhendelse), eller opprett ett. Brukes av ekkos «del på web»-knapp så turen kan
+ * spilles av i 3D med bilder på delesiden. Speiler getOrCreateQuizShareToken.
+ */
+export async function getOrCreateWorkoutShareToken(
+	ownerUserId: string,
+	workoutEventId: string
+): Promise<ShareTokenListItem> {
+	const now = new Date();
+	const existing = await listShareTokensForResource(ownerUserId, 'workout', workoutEventId);
+	const live = existing.find((t) => !t.expiresAt || t.expiresAt > now);
+	if (live) return live;
+	return createShareToken({
+		ownerUserId,
+		resourceType: 'workout',
+		resourceId: workoutEventId,
 		accessMode: 'read'
 	});
 }
