@@ -92,7 +92,7 @@
 	let mapContainer = $state<HTMLDivElement | null>(null);
 	let map: MapLibreMap | null = null;
 	let mapReady = $state(false);
-	const imageMarkers: Array<{ pin: WalkImagePin; el: HTMLElement }> = [];
+	const pinsById: Record<string, WalkImagePin> = {};
 
 	let playing = $state(false);
 	let finished = $state(false);
@@ -167,10 +167,102 @@
 		src?.setData(headFeature(lngLat));
 	}
 
-	function revealImagesUpTo(fraction: number) {
-		for (const { pin, el } of imageMarkers) {
-			el.classList.toggle('is-visible', pin.fraction <= fraction + 0.001);
-		}
+	// Bildene tegnes som et symbol-lag (kart-rendret) i stedet for DOM-markører, så de er
+	// terreng-korrekt plassert og ikke henger etter når kartet panner.
+	function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+		ctx.beginPath();
+		ctx.moveTo(x + r, y);
+		ctx.arcTo(x + w, y, x + w, y + h, r);
+		ctx.arcTo(x + w, y + h, x, y + h, r);
+		ctx.arcTo(x, y + h, x, y, r);
+		ctx.arcTo(x, y, x + w, y, r);
+		ctx.closePath();
+	}
+
+	function photoCollection(revealFraction: number) {
+		return {
+			type: 'FeatureCollection' as const,
+			features: imagePins
+				.map((pin, i) => ({ pin, i }))
+				.filter(({ pin }) => pin.fraction <= revealFraction + 0.001)
+				.map(({ pin, i }) => ({
+					type: 'Feature' as const,
+					properties: { icon: `wpb-photo-${i}`, pin: String(i) },
+					geometry: { type: 'Point' as const, coordinates: [pin.lon, pin.lat] as [number, number] }
+				}))
+		};
+	}
+
+	function setPhotosRevealed(fraction: number) {
+		const src = map?.getSource('walk-photos') as { setData: (d: unknown) => void } | undefined;
+		src?.setData(photoCollection(fraction));
+	}
+
+	/** Laster ett bilde, tegner et avrundet miniatyr på canvas og registrerer det som kart-ikon. */
+	function loadPhotoIcon(pin: WalkImagePin, i: number, size: number): Promise<void> {
+		return new Promise((resolve) => {
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = () => {
+				pinsById[String(i)] = pin;
+				const name = `wpb-photo-${i}`;
+				try {
+					const canvas = document.createElement('canvas');
+					canvas.width = size;
+					canvas.height = size;
+					const ctx = canvas.getContext('2d');
+					if (!ctx || !map) return resolve();
+					const b = 4;
+					roundRect(ctx, 0, 0, size, size, 14);
+					ctx.fillStyle = '#fff';
+					ctx.fill();
+					ctx.save();
+					roundRect(ctx, b, b, size - 2 * b, size - 2 * b, 11);
+					ctx.clip();
+					const inner = size - 2 * b;
+					const scale = Math.max(inner / img.width, inner / img.height);
+					const w = img.width * scale;
+					const h = img.height * scale;
+					ctx.drawImage(img, b + (inner - w) / 2, b + (inner - h) / 2, w, h);
+					ctx.restore();
+					const data = ctx.getImageData(0, 0, size, size);
+					if (!map.hasImage(name)) map.addImage(name, data, { pixelRatio: 2 });
+				} catch {
+					// Tainted canvas / CORS → hopp over miniatyr for dette bildet.
+				}
+				resolve();
+			};
+			img.onerror = () => resolve();
+			img.src = pin.url;
+		});
+	}
+
+	async function addPhotoLayer() {
+		if (!map || !imagePins.length) return;
+		await Promise.all(imagePins.map((pin, i) => loadPhotoIcon(pin, i, 108)));
+		if (!map) return;
+		map.addSource('walk-photos', { type: 'geojson', data: photoCollection(0) });
+		map.addLayer({
+			id: 'walk-photos',
+			type: 'symbol',
+			source: 'walk-photos',
+			layout: {
+				'icon-image': ['get', 'icon'],
+				'icon-size': 0.9,
+				'icon-anchor': 'bottom',
+				'icon-allow-overlap': true
+			}
+		});
+		map.on('click', 'walk-photos', (e) => {
+			const id = e.features?.[0]?.properties?.pin as string | undefined;
+			if (id != null && pinsById[id]) lightbox = pinsById[id];
+		});
+		map.on('mouseenter', 'walk-photos', () => {
+			if (map) map.getCanvas().style.cursor = 'pointer';
+		});
+		map.on('mouseleave', 'walk-photos', () => {
+			if (map) map.getCanvas().style.cursor = '';
+		});
 	}
 
 	function fitWholeRoute(animate: boolean) {
@@ -202,7 +294,7 @@
 		if (reduceMotion) {
 			setRouteData(coords);
 			setHeadData(coords[coords.length - 1]);
-			revealImagesUpTo(1);
+			setPhotosRevealed(1);
 			fitWholeRoute(false);
 			playing = false;
 			finished = true;
@@ -219,7 +311,7 @@
 			const eased = 1 - Math.pow(1 - t, 2);
 			const part = partialPath(coords, eased);
 			setRouteData(part);
-			revealImagesUpTo(eased);
+			setPhotosRevealed(eased);
 
 			const lead = part[part.length - 1] ?? coords[0];
 			const prev = part.length >= 2 ? part[part.length - 2] : coords[0];
@@ -241,7 +333,7 @@
 
 	async function initMap() {
 		if (!mapContainer || typeof window === 'undefined' || map) return;
-		const { Map, Marker } = await import('maplibre-gl');
+		const { Map } = await import('maplibre-gl');
 
 		map = new Map({
 			container: mapContainer,
@@ -252,7 +344,7 @@
 			attributionControl: { compact: true }
 		});
 
-		map.on('load', () => {
+		map.on('load', async () => {
 			if (!map) return;
 			mapReady = true;
 			map.resize();
@@ -317,21 +409,9 @@
 				}
 			});
 
-			// Bilde-markører (skjult til kamera passerer stedet).
-			for (const pin of imagePins) {
-				const el = document.createElement('button');
-				el.className = 'wpb-img-marker';
-				el.type = 'button';
-				el.setAttribute('aria-label', pin.caption || 'Bilde fra turen');
-				const img = document.createElement('img');
-				img.src = pin.url;
-				img.alt = pin.caption ?? '';
-				img.loading = 'lazy';
-				el.appendChild(img);
-				el.addEventListener('click', () => (lightbox = pin));
-				new Marker({ element: el, anchor: 'bottom' }).setLngLat([pin.lon, pin.lat]).addTo(map);
-				imageMarkers.push({ pin, el });
-			}
+			// Bilde-markører som kart-lag (skjult til kamera passerer stedet).
+			await addPhotoLayer();
+			if (!map) return;
 
 			fitWholeRoute(false);
 			// Start avspillingen automatisk (respekterer reduce-motion inne i play()).
