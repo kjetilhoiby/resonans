@@ -10,13 +10,16 @@
 
   Props:
     count    antall runder på rad (0 = brutt, tegnes dempet)
-    title    streakens navn (klippes til to linjer)
+    title    streakens navn (klippes etter titleLines)
     emoji    vises foran tittelen
     meta     sekundærlinje, f.eks. «6 dager på rad · gjenstår i dag»
     dots     historikk, eldste først: true = runde holdt
     color    aksentfarge
     muted    tegn dempet
     action   valgfri handling til høyre (f.eks. «Logg runde»)
+    titleLines  hvor mange linjer tittelen får før den klippes (default 2).
+                Sett 1 der korthøyden må være forutsigbar — f.eks. i widget-sonen
+                på hjemmeskjermen, der tre kort skal passe i en fast høyde.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -30,6 +33,7 @@
 		color?: string;
 		muted?: boolean;
 		action?: Snippet;
+		titleLines?: 1 | 2;
 	}
 
 	let {
@@ -41,6 +45,7 @@
 		color = 'var(--warning-text)',
 		muted = false,
 		action,
+		titleLines = 2,
 	}: Props = $props();
 
 	const isMuted = $derived(muted || count === 0);
@@ -49,7 +54,7 @@
 	const latestIdx = $derived(dots.reduce((acc, v, i) => (v ? i : acc), -1));
 </script>
 
-<div class="streak-card" class:is-muted={isMuted} style="--c:{accent}">
+<div class="streak-card" class:is-muted={isMuted} style="--c:{accent}; --title-lines:{titleLines}">
 	<div class="ring" aria-hidden="true">
 		<span class="flame">{isMuted ? '💤' : '🔥'}</span>
 		<span class="num">{count}</span>
@@ -134,10 +139,10 @@
 		font-size: 0.82rem;
 		font-weight: 600;
 		color: var(--text-primary);
-		/* Setnings-titler får to linjer før de klippes — aldri uppercase her. */
+		/* Setnings-titler klippes etter titleLines — aldri uppercase her. */
 		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
+		-webkit-line-clamp: var(--title-lines, 2);
+		line-clamp: var(--title-lines, 2);
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		line-height: 1.25;

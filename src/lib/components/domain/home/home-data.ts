@@ -509,9 +509,13 @@ export const WIDGETS_PER_PAGE = 6;
 
 /**
  * Streaks per side. Lavere enn WIDGETS_PER_PAGE fordi streak-kortene er brede
- * rader (~52px) og ikke smale kolonner — tre rader fyller widget-sonens høyde.
+ * rader (~52px) og ikke smale kolonner.
+ *
+ * To, ikke tre: widget-sonen har ~166px brukbar høyde etter padding og
+ * pager-prikker, og tre kort krever 168px (3 × 52 + 2 × 6 gap) — det nederste ble
+ * klippet. To kort sentrert fyller flaten pent og passer med margin.
  */
-export const STREAKS_PER_PAGE = 3;
+export const STREAKS_PER_PAGE = 2;
 
 /**
  * Bygg sidene i widget-sveipen.
