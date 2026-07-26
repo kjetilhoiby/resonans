@@ -2,7 +2,7 @@
 	import { tick } from 'svelte';
 	import { Button, Input, ChecklistCheckbox } from '$lib/components/ui';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
-	import StreakStrip from '$lib/components/domain/plan/StreakStrip.svelte';
+	import StreakList from '$lib/components/domain/plan/StreakList.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -327,7 +327,7 @@
 			<header class="streaks-head">
 				<h2>Streaks</h2>
 			</header>
-			<StreakStrip
+			<StreakList
 				streaks={data.streaks}
 				onLogRound={logStreakRound}
 				busyId={loggingStreakId}

@@ -5,6 +5,7 @@
 	import FormCard from '$lib/components/composed/FormCard.svelte';
 	import WeeklyEffortCard from '$lib/components/composed/WeeklyEffortCard.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import { StreakCard } from '$lib/components/ui';
 	import {
 		loadSeries,
 		effortByDay,
@@ -35,6 +36,35 @@
 		Sammensatte kort fra <code>composed/</code> slik de brukes i helse-, skjermtid- og prosjektsidene.
 		Alle er rent props-drevne og rendres her med mock-data.
 	</p>
+
+	<h3 class="subsection">StreakCard — streaks</h3>
+	<p class="section-desc">
+		Ett uttrykk for alle tre streak-regler: dager på rad, perioder over en terskel og runder med
+		periodisk vedlikehold. Brukt på <code>/plan/rutiner</code> og på streak-sidene i widget-sveipen
+		på hjemmeskjermen. Bredt kort framfor smal badge fordi titlene er brukerskrevne setninger som
+		brekker stygt i en kolonne. Metalinjen kommer fra <code>streakLabel()</code> +
+		<code>streakSublabel()</code> — kortet kjenner ingen regler selv.
+	</p>
+	<div class="streak-card-demo">
+		<StreakCard count={6} title="Løpe minst 15 minutter hver dag" emoji="🏃"
+			meta="6 dager på rad · gjenstår i dag"
+			dots={[true, true, false, true, true, true, false]}
+		/>
+		<StreakCard count={3} title="Uker med minst to løpeturer" emoji="🏃"
+			color="var(--success-text)"
+			meta="3 uker på rad · 1/2 denne uka"
+			dots={[false, true, true, true, true, true, true]}
+		/>
+		<StreakCard count={4} title="Hårklipp" emoji="💈"
+			color="var(--accent-muted)"
+			meta="4 runder på rad · forfaller om 2 dager"
+			dots={[true, true, true, true]}
+		/>
+		<StreakCard count={0} title="Badevask" emoji="🛁"
+			meta="3 dager på overtid"
+			dots={[true, true, false]}
+		/>
+	</div>
 
 	<h3 class="subsection">WeeklyEffortCard — relativ effort per uke</h3>
 	<div class="demo-card">
@@ -96,3 +126,12 @@
 		<div class="demo-card"><MetricCard metricId="weight_change" size="L" data={metricWeight} animateOnMount={false} /></div>
 	</div>
 </section>
+
+<style>
+	.streak-card-demo {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 8px;
+		max-width: 720px;
+	}
+</style>

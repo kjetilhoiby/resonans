@@ -21,6 +21,7 @@ export { default as GoalRing } from './GoalRing.svelte';
 export { default as PeriodPills } from './PeriodPills.svelte';
 export { default as PagerDots } from './PagerDots.svelte';
 export { default as StreakBadge } from './StreakBadge.svelte';
+export { default as StreakCard } from './StreakCard.svelte';
 export { default as ChipStrip } from './ChipStrip.svelte';
 export { default as ChatBubble } from './ChatBubble.svelte';
 export { default as ChatInput } from './ChatInput.svelte';

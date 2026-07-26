@@ -82,6 +82,7 @@
 		buildWidgetPages,
 		loadHomeStreaks as fetchHomeStreaks,
 		WIDGETS_PER_PAGE,
+		STREAKS_PER_PAGE,
 	} from './home/home-data';
 
 	import {
@@ -841,7 +842,7 @@
 	);
 
 	const homeWidgetPages = $derived(
-		buildWidgetPages(homeWidgetEntries, streakWidgetEntries, WIDGETS_PER_PAGE)
+		buildWidgetPages(homeWidgetEntries, streakWidgetEntries, WIDGETS_PER_PAGE, STREAKS_PER_PAGE)
 	);
 	let widgetPagerEl = $state<HTMLElement | null>(null);
 	let currentWidgetPage = $state(0);
