@@ -105,8 +105,10 @@
 
 	// Fly-through-lengde skalert med sporlengde, men holdt i et behagelig vindu.
 	const playDurationMs = $derived(Math.min(22_000, Math.max(8_000, coords.length * 70)));
-	const FOLLOW_ZOOM = 14.6;
-	const FOLLOW_PITCH = 62;
+	// Roligere kamera (lavere zoom/pitch) → færre terreng-fliser i sikte, som rekker å lastes,
+	// så vi unngår vertikale «gardiner» (stup mot ennå-ulastede høyde-0-fliser) og svarte tomrom.
+	const FOLLOW_ZOOM = 13.8;
+	const FOLLOW_PITCH = 52;
 
 	function fmtDistance(m: number): string {
 		return m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`;
@@ -265,19 +267,33 @@
 		});
 	}
 
-	function fitWholeRoute(animate: boolean) {
+	async function fitWholeRoute(animate: boolean) {
 		if (!map) return;
 		const [[minLon, minLat], [maxLon, maxLat]] = playback.bounds;
 		if (coords.length >= 2) {
-			import('maplibre-gl').then(({ LngLatBounds }) => {
-				if (!map) return;
-				const b = new LngLatBounds([minLon, minLat], [maxLon, maxLat]);
-				map.easeTo({ pitch: 30, bearing: 0, duration: animate ? 900 : 0 });
-				map.fitBounds(b, { padding: 70, maxZoom: 15, pitch: 30, animate });
-			});
+			const { LngLatBounds } = await import('maplibre-gl');
+			if (!map) return;
+			const b = new LngLatBounds([minLon, minLat], [maxLon, maxLat]);
+			map.easeTo({ pitch: 30, bearing: 0, duration: animate ? 900 : 0 });
+			map.fitBounds(b, { padding: 70, maxZoom: 14, pitch: 30, animate });
 		} else if (coords.length === 1) {
 			map.jumpTo({ center: coords[0], zoom: 14, pitch: 30 });
 		}
+	}
+
+	/** Venter til kartet har lastet ferdig flisene i sikte (eller til timeout). */
+	function waitForTiles(timeoutMs = 6000): Promise<void> {
+		return new Promise((resolve) => {
+			if (!map) return resolve();
+			let done = false;
+			const finish = () => {
+				if (done) return;
+				done = true;
+				resolve();
+			};
+			map.once('idle', finish);
+			setTimeout(finish, timeoutMs);
+		});
 	}
 
 	function stopLoop() {
@@ -356,10 +372,12 @@
 					tiles: [TERRAIN_DEM_TILES],
 					encoding: 'terrarium',
 					tileSize: 256,
-					maxzoom: 15,
+					// Lav maxzoom → få, store DEM-fliser som dekker hele turen og lastes raskt
+					// (overzoomes for nærbilde). Nok relieff for en fottur, langt mindre popping.
+					maxzoom: 12,
 					attribution: 'Terrain © AWS Terrain Tiles'
 				});
-				map.setTerrain({ source: 'terrain-dem', exaggeration: 1.35 });
+				map.setTerrain({ source: 'terrain-dem', exaggeration: 1.2 });
 				map.setSky({
 					'sky-color': '#0b1020',
 					'horizon-color': '#25304d',
@@ -413,7 +431,11 @@
 			await addPhotoLayer();
 			if (!map) return;
 
-			fitWholeRoute(false);
+			await fitWholeRoute(false);
+			// Vent til terreng- og kartfliser er lastet før fly-through, så vi ikke flyr inn i
+			// ennå-ulastede høyde-0-fliser (vertikale gardiner / svart tomrom).
+			await waitForTiles();
+			if (!map) return;
 			// Start avspillingen automatisk (respekterer reduce-motion inne i play()).
 			play();
 		});
