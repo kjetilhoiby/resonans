@@ -110,6 +110,13 @@
 	// så vi unngår vertikale «gardiner» (stup mot ennå-ulastede høyde-0-fliser) og svarte tomrom.
 	const FOLLOW_ZOOM = 13.8;
 	const FOLLOW_PITCH = 52;
+	// Lavere = roligere/saktere sving-til-side («stabilisert» uttrykk).
+	const BEARING_LERP = 0.07;
+	// Hvor langt fram (andel av ruta) kameraet sikter — ~220 m, klampet. Sikte-punktet ligger
+	// forbi en skarp sving, så kameraet begynner å dreie før vi når den, og hårnåler dempes.
+	const lookaheadFraction = $derived(
+		Math.min(0.15, Math.max(0.02, 220 / (playback.stats.distanceMeters || 1000)))
+	);
 
 	function fmtDistance(m: number): string {
 		return m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m)} m`;
@@ -344,7 +351,9 @@
 			return;
 		}
 
-		smoothedBearing = coords.length >= 2 ? bearingBetween(coords[0], coords[1]) : 0;
+		const startAhead = partialPath(coords, Math.min(1, lookaheadFraction));
+		const startAim = startAhead[startAhead.length - 1] ?? coords[1] ?? coords[0];
+		smoothedBearing = coords.length >= 2 ? bearingBetween(coords[0], startAim) : 0;
 		map.jumpTo({ center: coords[0], zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
 
 		const t0 = performance.now();
@@ -357,9 +366,14 @@
 			setPhotosRevealed(eased);
 
 			const lead = part[part.length - 1] ?? coords[0];
-			const prev = part.length >= 2 ? part[part.length - 2] : coords[0];
-			const targetBearing = bearingBetween(prev, lead);
-			smoothedBearing = lerpAngle(smoothedBearing, targetBearing, 0.15);
+			// Sikt mot et punkt et stykke fram på hele ruta (ikke bare siste segment): kameraet
+			// begynner å svinge før en skarp sving, og hårnåler/zig-zag «stabiliseres» fordi
+			// sikte-punktet ligger lenger opp ruta enn selve svingen.
+			const ahead = partialPath(coords, Math.min(1, eased + lookaheadFraction));
+			const aim = ahead[ahead.length - 1] ?? lead;
+			const targetBearing =
+				aim[0] === lead[0] && aim[1] === lead[1] ? smoothedBearing : bearingBetween(lead, aim);
+			smoothedBearing = lerpAngle(smoothedBearing, targetBearing, BEARING_LERP);
 			setHeadData(lead);
 			map.jumpTo({ center: lead, zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
 
