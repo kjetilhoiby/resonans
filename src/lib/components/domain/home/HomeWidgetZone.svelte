@@ -100,6 +100,7 @@
 								onclick={() => goto('/plan/rutiner')}
 							>
 								<StreakCard
+									titleLines={1}
 									count={streak.state.count}
 									title={streak.definition.title}
 									emoji={streak.definition.emoji}
@@ -191,14 +192,25 @@
 		margin: -2px 6px 2px;
 	}
 
-	/* Streak-sider: brede rader stablet vertikalt, tettere enn widget-gridet
-	   så tre kort får plass i sonens høyde. */
+	/* Streak-sider: brede rader stablet vertikalt, tettere enn widget-gridet. */
 	.widget-page-grid.is-streaks {
 		flex-direction: column;
 		flex-wrap: nowrap;
 		justify-content: flex-start;
 		gap: 6px;
 		padding: 0 14px 4px 0;
+	}
+
+	/* Sentrer kortene vertikalt, så én eller to streaks ikke etterlater et svart
+	   felt under. Auto-marginer framfor justify-content: center — de kollapser til
+	   0 hvis innholdet likevel blir høyere enn sonen, mens sentrering ville klippet
+	   toppkortet i stedet for bare bunnen. */
+	.widget-page-grid.is-streaks > :first-child {
+		margin-top: auto;
+	}
+
+	.widget-page-grid.is-streaks > :last-child {
+		margin-bottom: auto;
 	}
 
 	/* Streak-kortet er hele raden — knappen er bare en trykkflate uten egen ramme. */
