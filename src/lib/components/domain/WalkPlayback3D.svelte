@@ -13,8 +13,7 @@
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
+	import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 	import { partialPath } from './trip-map-story';
 	import type { WalkPlayback, WalkImagePin } from './walk-playback';
 
@@ -35,10 +34,64 @@
 	// blir kartet bare flatt — ingen krasj.
 	const TERRAIN_DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 
+	// Raster-basiskart som draperes over terrenget. Vektor-stiler gir tynne linjer
+	// (bekker/veier) som «gardiner» seg vertikalt over 3D-terreng — raster gjør ikke det,
+	// og både topo (høydekurver) og satellitt er langt lettere å lese terreng på.
+	const KARTVERKET_TOPO_TILES =
+		'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png';
+	const ESRI_SAT_TILES =
+		'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+	type Basemap = 'topo' | 'sat';
+	let basemap = $state<Basemap>('topo');
+
+	function buildStyle(initial: Basemap): StyleSpecification {
+		return {
+			version: 8,
+			sources: {
+				topo: {
+					type: 'raster',
+					tiles: [KARTVERKET_TOPO_TILES],
+					tileSize: 256,
+					maxzoom: 18,
+					attribution: '© Kartverket'
+				},
+				sat: {
+					type: 'raster',
+					tiles: [ESRI_SAT_TILES],
+					tileSize: 256,
+					maxzoom: 19,
+					attribution: 'Esri, Maxar, Earthstar Geographics'
+				}
+			},
+			layers: [
+				{
+					id: 'basemap-topo',
+					type: 'raster',
+					source: 'topo',
+					layout: { visibility: initial === 'topo' ? 'visible' : 'none' }
+				},
+				{
+					id: 'basemap-sat',
+					type: 'raster',
+					source: 'sat',
+					layout: { visibility: initial === 'sat' ? 'visible' : 'none' }
+				}
+			]
+		};
+	}
+
+	// Bytt basiskart uten å bygge kartet på nytt.
+	$effect(() => {
+		const b = basemap;
+		if (!map || !mapReady) return;
+		map.setLayoutProperty('basemap-topo', 'visibility', b === 'topo' ? 'visible' : 'none');
+		map.setLayoutProperty('basemap-sat', 'visibility', b === 'sat' ? 'visible' : 'none');
+	});
+
 	let mapContainer = $state<HTMLDivElement | null>(null);
 	let map: MapLibreMap | null = null;
 	let mapReady = $state(false);
-	let headMarker: MapLibreMarker | null = null;
 	const imageMarkers: Array<{ pin: WalkImagePin; el: HTMLElement }> = [];
 
 	let playing = $state(false);
@@ -102,6 +155,18 @@
 		});
 	}
 
+	function headFeature(lngLat: [number, number]) {
+		return {
+			type: 'Feature' as const,
+			properties: {},
+			geometry: { type: 'Point' as const, coordinates: lngLat }
+		};
+	}
+	function setHeadData(lngLat: [number, number]) {
+		const src = map?.getSource('walk-head') as { setData: (d: unknown) => void } | undefined;
+		src?.setData(headFeature(lngLat));
+	}
+
 	function revealImagesUpTo(fraction: number) {
 		for (const { pin, el } of imageMarkers) {
 			el.classList.toggle('is-visible', pin.fraction <= fraction + 0.001);
@@ -136,6 +201,7 @@
 
 		if (reduceMotion) {
 			setRouteData(coords);
+			setHeadData(coords[coords.length - 1]);
 			revealImagesUpTo(1);
 			fitWholeRoute(false);
 			playing = false;
@@ -159,7 +225,7 @@
 			const prev = part.length >= 2 ? part[part.length - 2] : coords[0];
 			const targetBearing = bearingBetween(prev, lead);
 			smoothedBearing = lerpAngle(smoothedBearing, targetBearing, 0.15);
-			headMarker?.setLngLat(lead);
+			setHeadData(lead);
 			map.jumpTo({ center: lead, zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
 
 			if (t < 1) {
@@ -179,12 +245,11 @@
 
 		map = new Map({
 			container: mapContainer,
-			style: RESONANS_DARK_MAP_STYLE,
-			transformRequest: mapTransformRequest,
+			style: buildStyle(basemap),
 			center: playback.center[0] === 0 && playback.center[1] === 0 ? [10.75, 59.91] : playback.center,
 			zoom: 9,
 			pitch: 30,
-			attributionControl: false
+			attributionControl: { compact: true }
 		});
 
 		map.on('load', () => {
@@ -234,12 +299,23 @@
 				paint: { 'line-color': '#7c8ef5', 'line-width': 4 }
 			});
 
-			// Ledende «hode»-prikk.
-			if (coords.length) {
-				const headEl = document.createElement('div');
-				headEl.className = 'wpb-head';
-				headMarker = new Marker({ element: headEl }).setLngLat(coords[0]).addTo(map);
-			}
+			// Ledende «hode»-prikk som circle-lag: tegnes i skjermrom oppå kartet, så terreng
+			// aldri skjuler den (til forskjell fra en DOM-markør, som okkluderes av 3D-terreng).
+			map.addSource('walk-head', {
+				type: 'geojson',
+				data: headFeature(coords[0] ?? playback.center)
+			});
+			map.addLayer({
+				id: 'walk-head',
+				type: 'circle',
+				source: 'walk-head',
+				paint: {
+					'circle-radius': 7,
+					'circle-color': '#ffffff',
+					'circle-stroke-color': '#7c8ef5',
+					'circle-stroke-width': 3
+				}
+			});
 
 			// Bilde-markører (skjult til kamera passerer stedet).
 			for (const pin of imagePins) {
@@ -289,6 +365,25 @@
 			{#if imagePins.length}<span>· 📷 {imagePins.length}</span>{/if}
 		</div>
 	</header>
+
+	<div class="wpb-basemap" role="group" aria-label="Kartlag">
+		<button
+			type="button"
+			class:active={basemap === 'topo'}
+			onclick={() => (basemap = 'topo')}
+			data-track="tur-avspilling:kart-topo"
+		>
+			Topo
+		</button>
+		<button
+			type="button"
+			class:active={basemap === 'sat'}
+			onclick={() => (basemap = 'sat')}
+			data-track="tur-avspilling:kart-satellitt"
+		>
+			Satellitt
+		</button>
+	</div>
 
 	{#if mapReady && !playing}
 		<button type="button" class="wpb-play" onclick={play} data-track="tur-avspilling:spill-av">
@@ -396,6 +491,33 @@
 	}
 	.wpb-play:hover {
 		background: #93a2f7;
+	}
+	.wpb-basemap {
+		position: absolute;
+		bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px));
+		left: 16px;
+		z-index: 4;
+		display: flex;
+		gap: 2px;
+		padding: 3px;
+		border-radius: 999px;
+		background: rgba(10, 14, 26, 0.62);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		backdrop-filter: blur(8px);
+	}
+	.wpb-basemap button {
+		padding: 6px 14px;
+		border: none;
+		border-radius: 999px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.7);
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.wpb-basemap button.active {
+		background: #7c8ef5;
+		color: #0b0f1a;
 	}
 	.wpb-lightbox {
 		position: fixed;
