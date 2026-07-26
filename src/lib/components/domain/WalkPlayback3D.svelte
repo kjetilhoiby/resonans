@@ -95,6 +95,7 @@
 	const pinsById: Record<string, WalkImagePin> = {};
 
 	let playing = $state(false);
+	let preparing = $state(true);
 	let finished = $state(false);
 	let lightbox = $state<WalkImagePin | null>(null);
 	let raf: number | null = null;
@@ -296,6 +297,32 @@
 		});
 	}
 
+	/**
+	 * Forhåndslaster fliser langs hele rute-korridoren ved fly-through-zoom, så avspillingen
+	 * flyr gjennom allerede-lastet terreng/kart (i stedet for å chase fliser frame for frame).
+	 * MapLibre har ingen keepBuffer; dette er «buffer»-en — vi feier kamera langs ruta og lar
+	 * flisene fylle cachen først. Skjules bak et «forbereder»-dekke.
+	 */
+	async function prewarmRoute() {
+		if (!map || coords.length < 2) return;
+		const steps = Math.min(12, Math.max(4, Math.round(coords.length / 12)));
+		const startedAtMs = performance.now();
+		for (let i = 0; i <= steps; i++) {
+			if (!map) return;
+			const idx = Math.min(coords.length - 1, Math.round((i / steps) * (coords.length - 1)));
+			const ahead = Math.min(coords.length - 1, idx + 3);
+			const behind = Math.max(0, idx - 3);
+			map.jumpTo({
+				center: coords[idx],
+				zoom: FOLLOW_ZOOM,
+				pitch: FOLLOW_PITCH,
+				bearing: bearingBetween(coords[behind], coords[ahead])
+			});
+			await waitForTiles(2000);
+			if (performance.now() - startedAtMs > 14000) break; // hard tak
+		}
+	}
+
 	function stopLoop() {
 		if (raf != null) cancelAnimationFrame(raf);
 		raf = null;
@@ -357,6 +384,9 @@
 			center: playback.center[0] === 0 && playback.center[1] === 0 ? [10.75, 59.91] : playback.center,
 			zoom: 9,
 			pitch: 30,
+			// Større flis-cache så hele rute-korridoren holdes lastet gjennom fly-through
+			// (default kan evicte fliser bak kamera → popping når man svinger tilbake).
+			maxTileCacheSize: 600,
 			attributionControl: { compact: true }
 		});
 
@@ -432,10 +462,14 @@
 			if (!map) return;
 
 			await fitWholeRoute(false);
-			// Vent til terreng- og kartfliser er lastet før fly-through, så vi ikke flyr inn i
-			// ennå-ulastede høyde-0-fliser (vertikale gardiner / svart tomrom).
+			// Vent til oversikts-flisene er lastet, fei så gjennom korridoren for å forhåndslaste
+			// fly-through-flisene, så vi ikke flyr inn i ennå-ulastede høyde-0-fliser (gardiner).
 			await waitForTiles();
 			if (!map) return;
+			await prewarmRoute();
+			if (!map) return;
+			await fitWholeRoute(false);
+			preparing = false;
 			// Start avspillingen automatisk (respekterer reduce-motion inne i play()).
 			play();
 		});
@@ -487,7 +521,14 @@
 		</button>
 	</div>
 
-	{#if mapReady && !playing}
+	{#if preparing}
+		<div class="wpb-loading" aria-live="polite">
+			<div class="wpb-spinner" aria-hidden="true"></div>
+			<span>Forbereder 3D-terreng …</span>
+		</div>
+	{/if}
+
+	{#if mapReady && !playing && !preparing}
 		<button type="button" class="wpb-play" onclick={play} data-track="tur-avspilling:spill-av">
 			{finished ? '↺ Spill av igjen' : '▶ Spill av'}
 		</button>
@@ -593,6 +634,38 @@
 	}
 	.wpb-play:hover {
 		background: #93a2f7;
+	}
+	.wpb-loading {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		align-items: center;
+		justify-content: center;
+		background: #0b0f1a;
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.wpb-spinner {
+		width: 34px;
+		height: 34px;
+		border-radius: 50%;
+		border: 3px solid rgba(255, 255, 255, 0.2);
+		border-top-color: #7c8ef5;
+		animation: wpb-spin 0.8s linear infinite;
+	}
+	@keyframes wpb-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.wpb-spinner {
+			animation-duration: 2s;
+		}
 	}
 	.wpb-basemap {
 		position: absolute;
