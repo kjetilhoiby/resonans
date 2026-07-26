@@ -55,18 +55,7 @@
 			/>
 			<span class="vname">Brutt · dempet</span>
 		</div>
-		<div class="variant">
-			<StreakBadge size="sm" count={12} unit="day"
-				dots={[true, true, true, true, true, true, true]}
-				label="🧘 Yoga" sublabel="gjenstår i dag"
-			/>
-			<span class="vname">Kompakt (widget-sonen)</span>
-		</div>
 	</div>
-	<p class="section-desc">
-		Den kompakte varianten (<code>size="sm"</code>) matcher <code>DynamicWidget</code> i mål — 90px
-		bred med 64px ring — og brukes på streak-sidene i widget-sveipen på hjemmeskjermen.
-	</p>
 
 	<h3 class="subsection">RelationSparkline</h3>
 	<p class="section-desc">Dobbel-sparkline klippet til sirkel. Siste 7 registreringer på 1–5-skala.</p>

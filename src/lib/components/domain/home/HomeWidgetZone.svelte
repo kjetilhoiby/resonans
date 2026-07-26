@@ -9,20 +9,28 @@
 	import DynamicWidget from '../../composed/DynamicWidget.svelte';
 	import ChecklistWidget from '../../composed/ChecklistWidget.svelte';
 	import PagerDots from '../../ui/PagerDots.svelte';
-	import StreakBadge from '../../ui/StreakBadge.svelte';
+	import StreakCard from '../../ui/StreakCard.svelte';
 	import PartnerOnboardingCard from './PartnerOnboardingCard.svelte';
-	import { streakLabel, streakSublabel } from '$lib/domain/streaks';
+	import { streakLabel, streakSublabel, type StreakState } from '$lib/domain/streaks';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
 
-	// Samme palett som StreakStrip på /plan/rutiner, så en streak kjennes igjen på farge.
+	// Samme palett som StreakList på /plan/rutiner, så en streak kjennes igjen på farge.
 	const STREAK_PALETTE = [
 		'var(--warning-text)',
 		'var(--accent-light)',
 		'var(--success-text)',
 		'var(--accent-muted)'
 	];
+
+	/** «6 dager på rad · gjenstår i dag» — begge delene er valgfrie. */
+	function streakMeta(state: StreakState): string | null {
+		const parts = [streakLabel(state), streakSublabel(state)].filter(
+			(p): p is string => !!p && p.length > 0
+		);
+		return parts.length > 0 ? parts.join(' · ') : null;
+	}
 
 	const partnerActions = $derived([
 		{ label: 'Start partner-onboarding', primary: true, onClick: ctx.openPartnerOnboardingChat },
@@ -44,7 +52,7 @@
 	<div class="widget-pager" bind:this={ctx.widgetPagerEl} onscroll={ctx.handleWidgetPagerScroll}>
 		{#each ctx.homeWidgetPages as page, pageIndex (`page:${pageIndex}`)}
 			<div class="widget-page" role="group" aria-label={`Widget-side ${pageIndex + 1} av ${ctx.homeWidgetPages.length}`}>
-				<div class="widget-page-grid">
+				<div class="widget-page-grid" class:is-streaks={page[0]?.kind === 'streak'}>
 					{#each page as item, itemIndex (item.id)}
 						{@const insertDivider =
 							itemIndex > 0 &&
@@ -91,13 +99,12 @@
 								aria-label={`${streak.definition.title}: ${streakLabel(streak.state) || 'ingen aktiv streak'}`}
 								onclick={() => goto('/plan/rutiner')}
 							>
-								<StreakBadge
-									size="sm"
+								<StreakCard
 									count={streak.state.count}
-									unit={streak.state.unit}
+									title={streak.definition.title}
+									emoji={streak.definition.emoji}
+									meta={streakMeta(streak.state)}
 									dots={streak.state.dots}
-									label={`${streak.definition.emoji} ${streak.definition.title}`}
-									sublabel={streakSublabel(streak.state)}
 									color={STREAK_PALETTE[itemIndex % STREAK_PALETTE.length]}
 								/>
 							</button>
@@ -184,14 +191,27 @@
 		margin: -2px 6px 2px;
 	}
 
-	/* Streak-badge som widget: samme flate som DynamicWidget, ingen egen ramme. */
+	/* Streak-sider: brede rader stablet vertikalt, tettere enn widget-gridet
+	   så tre kort får plass i sonens høyde. */
+	.widget-page-grid.is-streaks {
+		flex-direction: column;
+		flex-wrap: nowrap;
+		justify-content: flex-start;
+		gap: 6px;
+		padding: 0 14px 4px 0;
+	}
+
+	/* Streak-kortet er hele raden — knappen er bare en trykkflate uten egen ramme. */
 	.streak-widget {
+		display: block;
+		width: 100%;
 		background: none;
 		border: none;
 		padding: 0;
 		margin: 0;
 		font: inherit;
 		color: inherit;
+		text-align: left;
 		cursor: pointer;
 		touch-action: manipulation;
 	}

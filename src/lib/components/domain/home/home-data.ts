@@ -508,6 +508,12 @@ export function chunkWidgets<T>(rows: T[], size: number): T[][] {
 export const WIDGETS_PER_PAGE = 6;
 
 /**
+ * Streaks per side. Lavere enn WIDGETS_PER_PAGE fordi streak-kortene er brede
+ * rader (~52px) og ikke smale kolonner — tre rader fyller widget-sonens høyde.
+ */
+export const STREAKS_PER_PAGE = 3;
+
+/**
  * Bygg sidene i widget-sveipen.
  *
  * Widgets og sjekklister chunkes som før. Streaks chunkes *separat* og legges til
@@ -521,13 +527,14 @@ export const WIDGETS_PER_PAGE = 6;
 export function buildWidgetPages<T>(
 	widgetEntries: T[],
 	streakEntries: T[],
-	size: number = WIDGETS_PER_PAGE
+	size: number = WIDGETS_PER_PAGE,
+	streakSize: number = STREAKS_PER_PAGE
 ): T[][] {
 	const pages = chunkWidgets(widgetEntries, size);
 	if (streakEntries.length === 0) return pages;
 	// chunkWidgets gir [[]] for tom input — dropp den tomme siden når vi har streaks.
 	const base = pages.length === 1 && pages[0].length === 0 ? [] : pages;
-	return [...base, ...chunkWidgets(streakEntries, size)];
+	return [...base, ...chunkWidgets(streakEntries, streakSize)];
 }
 
 /** Streaks til hjemmeskjermen. Lastes lazy — sidene ligger bak et sveip. */
