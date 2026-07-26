@@ -484,8 +484,11 @@
 			if (!map) return;
 			await fitWholeRoute(false);
 			preparing = false;
-			// Start avspillingen automatisk (respekterer reduce-motion inne i play()).
-			play();
+			// Vis hele ruta som forhåndsvisning — brukeren starter selv fly-through med «Spill av».
+			setRouteData(coords);
+			setHeadData(coords[coords.length - 1]);
+			setPhotosRevealed(1);
+			if (reduceMotion) play();
 		});
 	}
 
@@ -589,7 +592,7 @@
 		position: absolute;
 		top: max(16px, env(safe-area-inset-top));
 		left: 16px;
-		right: 16px;
+		right: 140px; /* gi plass til kartlag-velgeren øverst til høyre */
 		z-index: 3;
 		display: flex;
 		flex-direction: column;
@@ -683,8 +686,8 @@
 	}
 	.wpb-basemap {
 		position: absolute;
-		bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px));
-		left: 16px;
+		top: max(16px, env(safe-area-inset-top));
+		right: 16px;
 		z-index: 4;
 		display: flex;
 		gap: 2px;
@@ -707,6 +710,16 @@
 	.wpb-basemap button.active {
 		background: #7c8ef5;
 		color: #0b0f1a;
+	}
+	/* Minimer krediteringen: liten, diskret ⓘ nede til høyre. */
+	:global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib) {
+		font-size: 9px;
+		opacity: 0.45;
+		background: transparent;
+	}
+	:global(.maplibregl-ctrl-attrib-button) {
+		opacity: 0.45;
+		transform: scale(0.85);
 	}
 	.wpb-lightbox {
 		position: fixed;
