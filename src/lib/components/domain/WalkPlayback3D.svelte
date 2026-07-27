@@ -43,7 +43,8 @@
 		'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 	type Basemap = 'topo' | 'sat';
-	let basemap = $state<Basemap>('topo');
+	// Satellitt som standard (global dekning); topo (Kartverket) er togglebar.
+	let basemap = $state<Basemap>('sat');
 
 	function buildStyle(initial: Basemap): StyleSpecification {
 		return {
@@ -97,7 +98,30 @@
 	let playing = $state(false);
 	let preparing = $state(true);
 	let finished = $state(false);
-	let lightbox = $state<WalkImagePin | null>(null);
+	let lightboxIndex = $state<number | null>(null);
+	const lightbox = $derived(lightboxIndex != null ? (imagePins[lightboxIndex] ?? null) : null);
+	let touchStartX = 0;
+
+	function closeLightbox() {
+		lightboxIndex = null;
+	}
+	function stepLightbox(n: number) {
+		if (lightboxIndex == null || imagePins.length === 0) return;
+		lightboxIndex = (lightboxIndex + n + imagePins.length) % imagePins.length;
+	}
+	function onLightboxKey(e: KeyboardEvent) {
+		if (lightboxIndex == null) return;
+		if (e.key === 'Escape') closeLightbox();
+		else if (e.key === 'ArrowLeft') stepLightbox(-1);
+		else if (e.key === 'ArrowRight') stepLightbox(1);
+	}
+	function onLightboxTouchStart(e: TouchEvent) {
+		touchStartX = e.changedTouches[0]?.clientX ?? 0;
+	}
+	function onLightboxTouchEnd(e: TouchEvent) {
+		const dx = (e.changedTouches[0]?.clientX ?? 0) - touchStartX;
+		if (Math.abs(dx) > 40) stepLightbox(dx < 0 ? 1 : -1);
+	}
 	let raf: number | null = null;
 	let smoothedBearing = 0;
 
@@ -265,7 +289,7 @@
 		});
 		map.on('click', 'walk-photos', (e) => {
 			const id = e.features?.[0]?.properties?.pin as string | undefined;
-			if (id != null && pinsById[id]) lightbox = pinsById[id];
+			if (id != null && pinsById[id]) lightboxIndex = Number(id);
 		});
 		map.on('mouseenter', 'walk-photos', () => {
 			if (map) map.getCanvas().style.cursor = 'pointer';
@@ -519,24 +543,22 @@
 		</div>
 	</header>
 
-	<div class="wpb-basemap" role="group" aria-label="Kartlag">
+	{#if mapReady && !preparing}
 		<button
 			type="button"
-			class:active={basemap === 'topo'}
-			onclick={() => (basemap = 'topo')}
-			data-track="tur-avspilling:kart-topo"
+			class="wpb-basemap-btn"
+			onclick={() => (basemap = basemap === 'sat' ? 'topo' : 'sat')}
+			aria-label={basemap === 'sat' ? 'Bytt til topografisk kart' : 'Bytt til satellittkart'}
+			title={basemap === 'sat' ? 'Topografisk kart' : 'Satellittkart'}
+			data-track="tur-avspilling:kartlag"
 		>
-			Topo
+			<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+				<path d="M12 2 2 7l10 5 10-5-10-5Z" />
+				<path d="m2 17 10 5 10-5" />
+				<path d="m2 12 10 5 10-5" />
+			</svg>
 		</button>
-		<button
-			type="button"
-			class:active={basemap === 'sat'}
-			onclick={() => (basemap = 'sat')}
-			data-track="tur-avspilling:kart-satellitt"
-		>
-			Satellitt
-		</button>
-	</div>
+	{/if}
 
 	{#if preparing}
 		<div class="wpb-loading" aria-live="polite">
@@ -552,20 +574,57 @@
 	{/if}
 
 	{#if lightbox}
-		<button
-			type="button"
-			class="wpb-lightbox"
-			aria-label="Lukk bilde"
-			onclick={() => (lightbox = null)}
-			data-track="tur-avspilling:lukk-bilde"
-		>
+		<div class="wpb-lightbox" role="dialog" aria-modal="true" aria-label="Bilde fra turen">
+			<!-- Bakteppe som knapp: klikk lukker, sveip bytter bilde. Bildet over er
+			     pointer-transparent så sveip treffer bakteppet uansett hvor man drar. -->
+			<button
+				type="button"
+				class="wpb-lb-backdrop"
+				aria-label="Lukk bilde"
+				onclick={closeLightbox}
+				ontouchstart={onLightboxTouchStart}
+				ontouchend={onLightboxTouchEnd}
+				data-track="tur-avspilling:lukk-bilde"
+			></button>
+
+			<button
+				type="button"
+				class="wpb-lb-btn wpb-lb-close"
+				aria-label="Lukk bilde"
+				onclick={closeLightbox}
+			>
+				✕
+			</button>
+			{#if imagePins.length > 1}
+				<button
+					type="button"
+					class="wpb-lb-btn wpb-lb-prev"
+					aria-label="Forrige bilde"
+					onclick={() => stepLightbox(-1)}
+				>
+					‹
+				</button>
+				<button
+					type="button"
+					class="wpb-lb-btn wpb-lb-next"
+					aria-label="Neste bilde"
+					onclick={() => stepLightbox(1)}
+				>
+					›
+				</button>
+			{/if}
 			<figure>
 				<img src={lightbox.url} alt={lightbox.caption ?? ''} />
 				{#if lightbox.caption}<figcaption>{lightbox.caption}</figcaption>{/if}
 			</figure>
-		</button>
+			{#if imagePins.length > 1}
+				<div class="wpb-lb-count">{(lightboxIndex ?? 0) + 1} / {imagePins.length}</div>
+			{/if}
+		</div>
 	{/if}
 </div>
+
+<svelte:window onkeydown={onLightboxKey} />
 
 <style>
 	.wpb-root {
@@ -592,7 +651,7 @@
 		position: absolute;
 		top: max(16px, env(safe-area-inset-top));
 		left: 16px;
-		right: 140px; /* gi plass til kartlag-velgeren øverst til høyre */
+		right: 16px;
 		z-index: 3;
 		display: flex;
 		flex-direction: column;
@@ -684,32 +743,27 @@
 			animation-duration: 2s;
 		}
 	}
-	.wpb-basemap {
+	/* Rund kartlag-knapp, venstrejustert på samme linje som «Spill av». */
+	.wpb-basemap-btn {
 		position: absolute;
-		top: max(16px, env(safe-area-inset-top));
-		right: 16px;
+		bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px));
+		left: 16px;
 		z-index: 4;
+		width: 48px;
+		height: 48px;
 		display: flex;
-		gap: 2px;
-		padding: 3px;
-		border-radius: 999px;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.22);
 		background: rgba(10, 14, 26, 0.62);
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		backdrop-filter: blur(8px);
-	}
-	.wpb-basemap button {
-		padding: 6px 14px;
-		border: none;
-		border-radius: 999px;
-		background: transparent;
-		color: rgba(255, 255, 255, 0.7);
-		font-size: 0.82rem;
-		font-weight: 600;
+		color: #fff;
 		cursor: pointer;
+		backdrop-filter: blur(8px);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 	}
-	.wpb-basemap button.active {
-		background: #7c8ef5;
-		color: #0b0f1a;
+	.wpb-basemap-btn:hover {
+		background: rgba(24, 30, 48, 0.8);
 	}
 	/* Minimer krediteringen: liten, diskret ⓘ nede til høyre. */
 	:global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib) {
@@ -733,6 +787,15 @@
 		background: rgba(0, 0, 0, 0.88);
 		cursor: zoom-out;
 	}
+	.wpb-lb-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		border: none;
+		padding: 0;
+		background: transparent;
+		cursor: zoom-out;
+	}
 	.wpb-lightbox figure {
 		margin: 0;
 		display: flex;
@@ -741,6 +804,8 @@
 		align-items: center;
 		max-width: 100%;
 		max-height: 100%;
+		z-index: 2;
+		pointer-events: none; /* slipp sveip gjennom til bakteppe-knappen */
 	}
 	.wpb-lightbox img {
 		max-width: 100%;
@@ -753,6 +818,57 @@
 		color: rgba(255, 255, 255, 0.85);
 		font-size: 0.95rem;
 		text-align: center;
+	}
+	.wpb-lb-btn {
+		position: absolute;
+		z-index: 21;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.14);
+		color: #fff;
+		cursor: pointer;
+		backdrop-filter: blur(4px);
+	}
+	.wpb-lb-btn:hover {
+		background: rgba(255, 255, 255, 0.26);
+	}
+	.wpb-lb-close {
+		top: max(16px, env(safe-area-inset-top));
+		right: 16px;
+		width: 40px;
+		height: 40px;
+		font-size: 1.1rem;
+	}
+	.wpb-lb-prev,
+	.wpb-lb-next {
+		top: 50%;
+		transform: translateY(-50%);
+		width: 48px;
+		height: 48px;
+		font-size: 1.8rem;
+		line-height: 1;
+	}
+	.wpb-lb-prev {
+		left: 12px;
+	}
+	.wpb-lb-next {
+		right: 12px;
+	}
+	.wpb-lb-count {
+		position: absolute;
+		bottom: max(20px, env(safe-area-inset-bottom));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 21;
+		padding: 4px 12px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.5);
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	/* Markører (globalt — MapLibre rendrer utenfor scope). */
