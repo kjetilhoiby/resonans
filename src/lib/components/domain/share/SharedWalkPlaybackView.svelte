@@ -14,6 +14,7 @@
 		imageCount: number;
 		playback: WalkPlayback;
 		ownerName?: string | null;
+		basemap?: string | null;
 	}
 
 	let { resource }: { resource: WalkResource } = $props();
@@ -25,4 +26,5 @@
 	sportType={resource.sportType}
 	startedAt={resource.startedAt}
 	ownerName={resource.ownerName ?? null}
+	defaultBasemap={resource.basemap ?? null}
 />

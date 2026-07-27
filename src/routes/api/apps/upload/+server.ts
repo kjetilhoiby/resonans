@@ -136,6 +136,10 @@ async function handleWorkoutUpload(
 	const skipStrava = ctx.formData.get('skipStrava') === 'true';
 	// Rute-attribusjon: Ekko tagger økta med rutens id → balanse-rotasjon slår opp navnet.
 	const ekkoRouteId = (ctx.formData.get('routeId') as string | null)?.trim() || null;
+	// Foretrukket kartlag ved deling ('topo' | 'sat'): valgt i Ekko når turen deles,
+	// brukt som standard i web-avspillingen. Valgfritt.
+	const basemapRaw = (ctx.formData.get('basemap') as string | null)?.trim() || null;
+	const preferredBasemap = basemapRaw === 'topo' || basemapRaw === 'sat' ? basemapRaw : null;
 	const gpxContent = await file.text();
 	const parsed = parseWorkoutFile(file.name || 'track.gpx', gpxContent);
 
@@ -169,7 +173,8 @@ async function handleWorkoutUpload(
 					parsed.distance > 0
 						? parsed.duration / (parsed.distance / 1000)
 						: undefined,
-				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS)
+				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS),
+				...(preferredBasemap ? { preferredBasemap } : {})
 			},
 			metadata: {
 				sourceApp: ctx.app.id,
