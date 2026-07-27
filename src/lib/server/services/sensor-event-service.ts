@@ -2,9 +2,34 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { enqueueWorkoutProjectionRefresh, projectionWindowFromWorkoutTimestamp } from '$lib/server/workout-projection-refresh-queue';
+import { runInBackground } from '$lib/server/run-in-background';
 
 function eventKey(sensorId: string | null, dataType: string | null, timestamp: Date): string {
 	return `${sensorId ?? 'null'}::${dataType ?? 'null'}::${timestamp.toISOString()}`;
+}
+
+/**
+ * Kjør projeksjonsjobben med en gang i stedet for å vente på cron.
+ *
+ * Uten dette oppdateres `canonical_workouts` først når /api/cron/background-jobs
+ * fyrer — opptil ~5 minutter etter at et løp er skrevet. Alt som leser den
+ * projeksjonen (streaks, målprogresjon, effort) hang tilsvarende etter.
+ *
+ * `waitUntil` holder funksjonen i live til jobben er ferdig, så responsen til
+ * Ekko blir ikke tregere. Klarer ikke jobben å claimes (cron kom først), gir
+ * processBackgroundJobById `not_claimable` og vi lar den ligge — den kjøres da
+ * av den andre kjøringen.
+ *
+ * background-jobs importeres dynamisk: den modulen drar inn alle jobb-handlerne,
+ * og sensor-skriving er en varm sti som ikke skal betale for det ved kaldstart.
+ */
+function runWorkoutProjectionInline(jobId: string | null, label: string): void {
+	if (!jobId) return;
+	runInBackground(
+		import('$lib/server/background-jobs').then(({ processBackgroundJobById }) =>
+			processBackgroundJobById(jobId, `workout-projection-inline-${label}`)
+		)
+	);
 }
 
 export type WriteSensorEventInput = {
@@ -94,14 +119,16 @@ export class SensorEventService {
 		const upsertedCount = inserted && existedBefore ? 1 : 0;
 		const ignoredCount = conflictMode === 'ignore' && !inserted ? 1 : 0;
 
-		const enqueuedProjectionRefresh =
-			inserted && input.dataType === 'workout'
-				? await enqueueWorkoutProjectionRefresh({
-						userId: input.userId,
-						...projectionWindowFromWorkoutTimestamp(input.timestamp),
-						reason: 'on_write'
-					}).then((r) => r.enqueued)
-				: false;
+		let enqueuedProjectionRefresh = false;
+		if (inserted && input.dataType === 'workout') {
+			const queued = await enqueueWorkoutProjectionRefresh({
+				userId: input.userId,
+				...projectionWindowFromWorkoutTimestamp(input.timestamp),
+				reason: 'on_write'
+			});
+			enqueuedProjectionRefresh = queued.enqueued;
+			runWorkoutProjectionInline(queued.jobId, 'write');
+		}
 
 		console.log(
 			`[sensor-event-service] write source=${input.source} dataType=${input.dataType} mode=${conflictMode} key=${key} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
@@ -219,6 +246,7 @@ export class SensorEventService {
 					reason: 'on_write'
 				});
 				enqueuedProjectionRefresh = enqueuedProjectionRefresh || queued.enqueued;
+				runWorkoutProjectionInline(queued.jobId, 'write_many');
 			}
 		}
 

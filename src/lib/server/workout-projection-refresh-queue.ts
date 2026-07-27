@@ -22,9 +22,15 @@ export function projectionWindowFromWorkoutTimestamp(eventTimestamp: Date): { fr
 	return { fromDate, toDate };
 }
 
+/**
+ * `jobId` er jobben som nå dekker dette vinduet — enten den nyopprettede, eller den
+ * eksisterende som vinduet ble slått sammen inn i. Kallstedet kan bruke den til å
+ * kjøre projeksjonen med en gang (via processBackgroundJobById) i stedet for å
+ * vente på cron.
+ */
 export async function enqueueWorkoutProjectionRefresh(
 	input: EnqueueWorkoutProjectionRefreshInput
-): Promise<{ enqueued: boolean; merged: boolean }> {
+): Promise<{ enqueued: boolean; merged: boolean; jobId: string | null }> {
 	const now = new Date();
 	const debounceMs = input.debounceMs ?? PROJECTION_ENQUEUE_DEBOUNCE_MS;
 
@@ -58,22 +64,25 @@ export async function enqueueWorkoutProjectionRefresh(
 			})
 			.where(eq(backgroundJobs.id, existing.id));
 
-		return { enqueued: true, merged: true };
+		return { enqueued: true, merged: true, jobId: existing.id };
 	}
 
-	await db.insert(backgroundJobs).values({
-		userId: input.userId,
-		type: WORKOUT_PROJECTION_JOB_TYPE,
-		status: 'queued',
-		payload: {
-			fromIso: input.fromDate.toISOString(),
-			toIso: input.toDate.toISOString(),
-			reason: input.reason
-		},
-		runAt: new Date(),
-		priority: input.priority ?? 5,
-		maxAttempts: input.maxAttempts ?? 3
-	});
+	const [created] = await db
+		.insert(backgroundJobs)
+		.values({
+			userId: input.userId,
+			type: WORKOUT_PROJECTION_JOB_TYPE,
+			status: 'queued',
+			payload: {
+				fromIso: input.fromDate.toISOString(),
+				toIso: input.toDate.toISOString(),
+				reason: input.reason
+			},
+			runAt: new Date(),
+			priority: input.priority ?? 5,
+			maxAttempts: input.maxAttempts ?? 3
+		})
+		.returning({ id: backgroundJobs.id });
 
-	return { enqueued: true, merged: false };
+	return { enqueued: true, merged: false, jobId: created?.id ?? null };
 }
