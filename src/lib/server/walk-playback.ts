@@ -27,6 +27,8 @@ export interface WalkData {
 	track: WalkTrackPoint[];
 	images: WalkImage[];
 	storedStats: Partial<WalkStats>;
+	/** Foretrukket kartlag valgt ved deling ('topo' | 'sat'), ellers null. */
+	preferredBasemap: string | null;
 }
 
 export interface WalkPlaybackResult {
@@ -36,6 +38,8 @@ export interface WalkPlaybackResult {
 	startedAt: string;
 	imageCount: number;
 	playback: WalkPlayback;
+	/** Foretrukket kartlag valgt ved deling ('topo' | 'sat'), ellers null. */
+	basemap: string | null;
 }
 
 function toNum(v: unknown): number | null {
@@ -112,6 +116,10 @@ export async function fetchWalkData(userId: string, walkEventId: string): Promis
 	if (toNum(data.elevation) !== null) storedStats.ascentMeters = Math.round(data.elevation as number);
 
 	const sportType = typeof data.sportType === 'string' ? data.sportType : null;
+	const preferredBasemap =
+		data.preferredBasemap === 'topo' || data.preferredBasemap === 'sat'
+			? (data.preferredBasemap as string)
+			: null;
 
 	return {
 		eventId: event.id,
@@ -120,7 +128,8 @@ export async function fetchWalkData(userId: string, walkEventId: string): Promis
 		startedAt: event.timestamp,
 		track,
 		images,
-		storedStats
+		storedStats,
+		preferredBasemap
 	};
 }
 
@@ -134,6 +143,7 @@ export async function loadWalkPlayback(userId: string, walkEventId: string): Pro
 		sportType: walk.sportType,
 		startedAt: walk.startedAt.toISOString(),
 		imageCount: walk.images.length,
-		playback: buildWalkPlayback(walk.track, walk.images, walk.storedStats)
+		playback: buildWalkPlayback(walk.track, walk.images, walk.storedStats),
+		basemap: walk.preferredBasemap
 	};
 }

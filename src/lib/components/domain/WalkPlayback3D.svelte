@@ -23,9 +23,18 @@
 		sportType?: string | null;
 		startedAt?: string | null;
 		ownerName?: string | null;
+		/** Foretrukket kartlag valgt ved deling ('topo' | 'sat'); ellers satellitt. */
+		defaultBasemap?: string | null;
 	}
 
-	let { playback, title, sportType = null, startedAt = null, ownerName = null }: Props = $props();
+	let {
+		playback,
+		title,
+		sportType = null,
+		startedAt = null,
+		ownerName = null,
+		defaultBasemap = null
+	}: Props = $props();
 
 	const coords = $derived(playback.coords);
 	const imagePins = $derived(playback.imagePins);
@@ -43,8 +52,9 @@
 		'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 	type Basemap = 'topo' | 'sat';
-	// Satellitt som standard (global dekning); topo (Kartverket) er togglebar.
-	let basemap = $state<Basemap>('sat');
+	// Standard kartlag følger valget fra deling (Ekko) om satt; ellers satellitt
+	// (global dekning). Topo (Kartverket) er alltid togglebar.
+	let basemap = $state<Basemap>(defaultBasemap === 'topo' ? 'topo' : 'sat');
 
 	function buildStyle(initial: Basemap): StyleSpecification {
 		return {
@@ -460,7 +470,11 @@
 
 			map.addSource('walk-route', {
 				type: 'geojson',
-				data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } }
+				data: {
+					type: 'Feature' as const,
+					properties: {},
+					geometry: { type: 'LineString' as const, coordinates: [] as [number, number][] }
+				}
 			});
 			map.addLayer({
 				id: 'walk-route-shadow',
