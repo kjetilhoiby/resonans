@@ -108,6 +108,13 @@
 	let playing = $state(false);
 	let preparing = $state(true);
 	let finished = $state(false);
+	// Rute-andelen (0..1) som vises nå. Driver tidslinja: avspilling øker den over tid,
+	// og å dra i tidslinja setter den direkte (scrubbing). > 0 betyr «avspilling er i gang
+	// eller satt på pause» → transporten viser tidslinje + pauseknapp i stedet for «Spill av».
+	let progress = $state(0);
+	// Transporten har startet (spiller, står på pause midtveis, eller er ferdig) → vis
+	// tidslinje-baren. Før første avspilling vises bare den høyrejusterte «Spill av»-knappen.
+	const transportActive = $derived(playing || finished || progress > 0);
 	let lightboxIndex = $state<number | null>(null);
 	const lightbox = $derived(lightboxIndex != null ? (imagePins[lightboxIndex] ?? null) : null);
 	let touchStartX = 0;
@@ -161,6 +168,22 @@
 		const min = Math.round((s % 3600) / 60);
 		return h > 0 ? `${h} t ${min} min` : `${min} min`;
 	}
+	/** Kompakt klokke (m:ss / t:mm:ss) for tidslinja. */
+	function fmtClock(s: number): string {
+		const sec = Math.max(0, Math.round(s));
+		const h = Math.floor(sec / 3600);
+		const m = Math.floor((sec % 3600) / 60);
+		const ss = sec % 60;
+		return h > 0
+			? `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+			: `${m}:${String(ss).padStart(2, '0')}`;
+	}
+	// Forløpt/total tid langs tidslinja. Uten lagret varighet vises prosent i stedet.
+	const progressLabel = $derived.by(() => {
+		const total = playback.stats.durationSeconds;
+		if (total == null || total <= 0) return `${Math.round(progress * 100)} %`;
+		return `${fmtClock(progress * total)} / ${fmtClock(total)}`;
+	});
 	function fmtStart(iso: string | null): string {
 		if (!iso) return '';
 		try {
@@ -369,6 +392,37 @@
 		raf = null;
 	}
 
+	/**
+	 * Tegner ett bilde av fly-through-en ved rute-andel `f` (0..1): vokser linja, avdekker
+	 * bilder, flytter «hodet» og retter kamera i reiseretning. `smooth` lerp-er bearing (jevn
+	 * avspilling); uten den settes bearing direkte (scrubbing skal treffe umiddelbart).
+	 */
+	function renderFrame(f: number, smooth: boolean) {
+		if (!map) return;
+		const eased = Math.max(0, Math.min(1, f));
+		const part = partialPath(coords, eased);
+		setRouteData(part);
+		setPhotosRevealed(eased);
+
+		const lead = part[part.length - 1] ?? coords[0];
+		// Sikt mot et punkt et stykke fram på hele ruta (ikke bare siste segment): kameraet
+		// begynner å svinge før en skarp sving, og hårnåler/zig-zag «stabiliseres» fordi
+		// sikte-punktet ligger lenger opp ruta enn selve svingen.
+		const ahead = partialPath(coords, Math.min(1, eased + lookaheadFraction));
+		const aim = ahead[ahead.length - 1] ?? lead;
+		const targetBearing =
+			aim[0] === lead[0] && aim[1] === lead[1] ? smoothedBearing : bearingBetween(lead, aim);
+		smoothedBearing = smooth ? lerpAngle(smoothedBearing, targetBearing, BEARING_LERP) : targetBearing;
+		setHeadData(lead);
+		map.jumpTo({ center: lead, zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
+		progress = eased;
+	}
+
+	// Tid-andel t → rute-andel (rask start, mjuk landing). Invers brukes for å gjenoppta
+	// avspilling fra en vilkårlig posisjon (etter pause/scrubbing).
+	const easeProgress = (t: number) => 1 - Math.pow(1 - t, 2);
+	const invEaseProgress = (p: number) => 1 - Math.sqrt(Math.max(0, 1 - p));
+
 	function play() {
 		if (!map || !mapReady || coords.length < 2) return;
 		stopLoop();
@@ -376,41 +430,27 @@
 		playing = true;
 
 		if (reduceMotion) {
-			setRouteData(coords);
-			setHeadData(coords[coords.length - 1]);
-			setPhotosRevealed(1);
-			fitWholeRoute(false);
+			renderFrame(1, false);
+			progress = 1;
 			playing = false;
 			finished = true;
 			return;
 		}
 
-		const startAhead = partialPath(coords, Math.min(1, lookaheadFraction));
-		const startAim = startAhead[startAhead.length - 1] ?? coords[1] ?? coords[0];
-		smoothedBearing = coords.length >= 2 ? bearingBetween(coords[0], startAim) : 0;
-		map.jumpTo({ center: coords[0], zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
+		// Gjenoppta fra der vi står; er turen ferdig (eller ikke startet) begynner vi på nytt.
+		const startProgress = progress >= 1 ? 0 : progress;
+		if (startProgress === 0) {
+			const startAhead = partialPath(coords, Math.min(1, lookaheadFraction));
+			const startAim = startAhead[startAhead.length - 1] ?? coords[1] ?? coords[0];
+			smoothedBearing = coords.length >= 2 ? bearingBetween(coords[0], startAim) : 0;
+			map.jumpTo({ center: coords[0], zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
+		}
 
-		const t0 = performance.now();
+		const t0 = performance.now() - invEaseProgress(startProgress) * playDurationMs;
 		const step = (now: number) => {
 			if (!map) return;
 			const t = Math.min(1, (now - t0) / playDurationMs);
-			const eased = 1 - Math.pow(1 - t, 2);
-			const part = partialPath(coords, eased);
-			setRouteData(part);
-			setPhotosRevealed(eased);
-
-			const lead = part[part.length - 1] ?? coords[0];
-			// Sikt mot et punkt et stykke fram på hele ruta (ikke bare siste segment): kameraet
-			// begynner å svinge før en skarp sving, og hårnåler/zig-zag «stabiliseres» fordi
-			// sikte-punktet ligger lenger opp ruta enn selve svingen.
-			const ahead = partialPath(coords, Math.min(1, eased + lookaheadFraction));
-			const aim = ahead[ahead.length - 1] ?? lead;
-			const targetBearing =
-				aim[0] === lead[0] && aim[1] === lead[1] ? smoothedBearing : bearingBetween(lead, aim);
-			smoothedBearing = lerpAngle(smoothedBearing, targetBearing, BEARING_LERP);
-			setHeadData(lead);
-			map.jumpTo({ center: lead, zoom: FOLLOW_ZOOM, pitch: FOLLOW_PITCH, bearing: smoothedBearing });
-
+			renderFrame(easeProgress(t), true);
 			if (t < 1) {
 				raf = requestAnimationFrame(step);
 			} else {
@@ -420,6 +460,27 @@
 			}
 		};
 		raf = requestAnimationFrame(step);
+	}
+
+	/** Setter avspillingen på pause og beholder posisjonen (tidslinja står stille). */
+	function pause() {
+		stopLoop();
+		playing = false;
+	}
+
+	/** Scrubbing: hopp til en rute-andel fra tidslinja og stopp der (bruker styrer selv). */
+	function scrubTo(f: number) {
+		if (!map || coords.length < 2) return;
+		stopLoop();
+		playing = false;
+		finished = f >= 1;
+		renderFrame(f, false);
+	}
+
+	/** Play/pause-veksling for transport-knappen. */
+	function togglePlay() {
+		if (playing) pause();
+		else play();
 	}
 
 	async function initMap() {
@@ -581,10 +642,39 @@
 		</div>
 	{/if}
 
-	{#if mapReady && !playing && !preparing}
-		<button type="button" class="wpb-play" onclick={play} data-track="tur-avspilling:spill-av">
-			{finished ? '↺ Spill av igjen' : '▶ Spill av'}
-		</button>
+	{#if mapReady && !preparing}
+		<div class="wpb-transport" class:wpb-transport-active={transportActive}>
+			{#if !transportActive}
+				<button type="button" class="wpb-play" onclick={play} data-track="tur-avspilling:spill-av">
+					▶ Spill av
+				</button>
+			{:else}
+				<div class="wpb-bar">
+					<button
+						type="button"
+						class="wpb-toggle"
+						onclick={togglePlay}
+						aria-label={playing ? 'Pause' : finished ? 'Spill av igjen' : 'Fortsett avspilling'}
+						data-track="tur-avspilling:play-pause"
+					>
+						{playing ? '⏸' : finished ? '↺' : '▶'}
+					</button>
+					<input
+						type="range"
+						class="wpb-timeline"
+						min="0"
+						max="1"
+						step="0.001"
+						value={progress}
+						oninput={(e) => scrubTo(+e.currentTarget.value)}
+						style={`--wpb-fill:${progress * 100}%`}
+						aria-label="Tidslinje"
+						data-track="tur-avspilling:tidslinje"
+					/>
+					<span class="wpb-time">{progressLabel}</span>
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	{#if lightbox}
@@ -706,12 +796,23 @@
 		font-weight: 600;
 		color: rgba(255, 255, 255, 0.9);
 	}
-	.wpb-play {
+	/* Transport: bunn-linje som holder «Spill av»-knappen (høyrejustert) og morfer til
+	   tidslinje + pauseknapp under avspilling. Venstre kant klarer kartlag-knappen (left:16, 48px). */
+	.wpb-transport {
 		position: absolute;
 		bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px));
-		left: 50%;
-		transform: translateX(-50%);
+		left: 76px;
+		right: 16px;
 		z-index: 4;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		pointer-events: none;
+	}
+	.wpb-transport > * {
+		pointer-events: auto;
+	}
+	.wpb-play {
 		padding: 12px 28px;
 		border-radius: 999px;
 		border: 1px solid rgba(255, 255, 255, 0.25);
@@ -721,9 +822,87 @@
 		font-size: 1rem;
 		cursor: pointer;
 		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+		transition: background 0.15s ease;
 	}
 	.wpb-play:hover {
 		background: #93a2f7;
+	}
+	/* Morfet transport-linje: pauseknapp + tidslinje + tid, i én pille. */
+	.wpb-bar {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: min(520px, 100%);
+		padding: 8px 16px 8px 8px;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		background: rgba(10, 14, 26, 0.62);
+		backdrop-filter: blur(8px);
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+	}
+	.wpb-toggle {
+		flex: 0 0 auto;
+		width: 40px;
+		height: 40px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		border: none;
+		background: #7c8ef5;
+		color: #0b0f1a;
+		font-size: 1.05rem;
+		line-height: 1;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+	.wpb-toggle:hover {
+		background: #93a2f7;
+	}
+	.wpb-timeline {
+		flex: 1 1 auto;
+		min-width: 0;
+		height: 6px;
+		-webkit-appearance: none;
+		appearance: none;
+		border-radius: 999px;
+		/* Fylt del (avspilt) i aksentfarge, resten dempet. --wpb-fill settes inline. */
+		background: linear-gradient(
+			to right,
+			#7c8ef5 0%,
+			#7c8ef5 var(--wpb-fill, 0%),
+			rgba(255, 255, 255, 0.22) var(--wpb-fill, 0%),
+			rgba(255, 255, 255, 0.22) 100%
+		);
+		cursor: pointer;
+	}
+	.wpb-timeline::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #fff;
+		border: 2px solid #7c8ef5;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+		cursor: pointer;
+	}
+	.wpb-timeline::-moz-range-thumb {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #fff;
+		border: 2px solid #7c8ef5;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+		cursor: pointer;
+	}
+	.wpb-time {
+		flex: 0 0 auto;
+		font-size: 0.75rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: rgba(255, 255, 255, 0.85);
+		white-space: nowrap;
 	}
 	.wpb-loading {
 		position: absolute;
