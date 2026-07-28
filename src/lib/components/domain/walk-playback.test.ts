@@ -6,6 +6,7 @@ import {
 	placeImagesOnTrack,
 	coordsBounds,
 	buildWalkPlayback,
+	buildElevationProfile,
 	type WalkTrackPoint,
 	type WalkImage
 } from './walk-playback';
@@ -122,6 +123,43 @@ describe('coordsBounds', () => {
 	});
 });
 
+describe('buildElevationProfile', () => {
+	it('bygger profil med andel (0–1) og min/max høyde', () => {
+		const prof = buildElevationProfile(track);
+		expect(prof.hasData).toBe(true);
+		expect(prof.samples).toHaveLength(4);
+		expect(prof.minEle).toBe(10);
+		expect(prof.maxEle).toBe(40);
+		// Første punkt på 0, siste på 1 (jevnt fordelte punkter langs en rett linje).
+		expect(prof.samples[0].x).toBe(0);
+		expect(prof.samples[prof.samples.length - 1].x).toBeCloseTo(1, 6);
+		// x er monotont stigende.
+		for (let i = 1; i < prof.samples.length; i++) {
+			expect(prof.samples[i].x).toBeGreaterThanOrEqual(prof.samples[i - 1].x);
+		}
+	});
+
+	it('hopper over punkter uten høyde', () => {
+		const prof = buildElevationProfile([
+			{ lat: 59.9, lon: 10.7, ele: 10 },
+			{ lat: 59.9, lon: 10.71 },
+			{ lat: 59.9, lon: 10.72, ele: 30 }
+		] as WalkTrackPoint[]);
+		expect(prof.samples).toHaveLength(2);
+		expect(prof.minEle).toBe(10);
+		expect(prof.maxEle).toBe(30);
+	});
+
+	it('gir hasData=false med færre enn to høyder', () => {
+		const prof = buildElevationProfile([
+			{ lat: 59.9, lon: 10.7, ele: 10 },
+			{ lat: 59.9, lon: 10.71 }
+		] as WalkTrackPoint[]);
+		expect(prof.hasData).toBe(false);
+		expect(prof.samples).toEqual([]);
+	});
+});
+
 describe('buildWalkPlayback', () => {
 	it('setter sammen rute, bilder og nøkkeltall', () => {
 		const playback = buildWalkPlayback(track, [{ url: 'a.jpg', capturedAt: '2026-07-20T08:20:00.000Z' }]);
@@ -129,6 +167,7 @@ describe('buildWalkPlayback', () => {
 		expect(playback.imagePins).toHaveLength(1);
 		expect(playback.stats.ascentMeters).toBe(35);
 		expect(playback.center[1]).toBeCloseTo(59.9, 5);
+		expect(playback.elevation.hasData).toBe(true);
 	});
 
 	it('lar lagrede nøkkeltall vinne over avledede', () => {
