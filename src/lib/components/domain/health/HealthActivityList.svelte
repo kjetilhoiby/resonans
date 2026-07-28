@@ -8,6 +8,7 @@
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
 	import { invalidateAll } from '$app/navigation';
+	import { invalidateDashboardKind } from '$lib/client/dashboard-cache';
 	import BottomSheet from '../../ui/BottomSheet.svelte';
 	import {
 		isWheeledSport,
@@ -68,6 +69,20 @@
 		sheetEv = null;
 	}
 
+	/**
+	 * Etter en mutasjon på en økt: tøm helse-dashboardets klient-cache i tillegg til
+	 * å invalidere load-funksjonene.
+	 *
+	 * `invalidateAll()` treffer bare SvelteKit-`load`. Denne lista mates av
+	 * helse-dashboard-payloaden, som hentes klient-side og persisteres i
+	 * localStorage av dashboard-cache (uten TTL) — så uten dette dukker den skjulte
+	 * økta / det gamle kildevalget opp igjen ved neste maling.
+	 */
+	async function refreshAfterMutation() {
+		invalidateDashboardKind('health');
+		await invalidateAll();
+	}
+
 	async function applyRole(role: 'gps' | 'hr' | 'main' | 'none') {
 		if (!sheetEv || !sheetActivity || sheetBusy) return;
 		sheetBusy = true;
@@ -79,7 +94,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ role, siblings })
 			});
-			await invalidateAll();
+			await refreshAfterMutation();
 			closeSourceSheet();
 		} finally {
 			sheetBusy = false;
@@ -91,7 +106,7 @@
 		sheetBusy = true;
 		try {
 			await fetch(`/api/workouts/${sheetEv.eventId}/dismiss?scope=source`, { method: 'POST' });
-			await invalidateAll();
+			await refreshAfterMutation();
 			closeSourceSheet();
 		} finally {
 			sheetBusy = false;

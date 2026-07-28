@@ -158,6 +158,17 @@ Google OAuth via `@auth/sveltekit`. Allowlist-gated (`allowed_emails`). API-rute
 
 Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 
+### Ekstern API-flate (Ekko)
+
+iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
+`/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
+`/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
+`/api/apps/assistant`, `/api/apps/day` og `/api/apps/strava/*`.
+
+Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
+konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
+*innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.
+
 ### Transaksjons-kategorisering
 
 Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.
