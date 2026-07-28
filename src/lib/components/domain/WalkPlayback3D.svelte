@@ -115,6 +115,40 @@
 	// Transporten har startet (spiller, står på pause midtveis, eller er ferdig) → vis
 	// tidslinje-baren. Før første avspilling vises bare den høyrejusterte «Spill av»-knappen.
 	const transportActive = $derived(playing || finished || progress > 0);
+
+	// Høydekurve-overlay (av som standard; slås på via høydemeter-tallet i headeren).
+	let showElevation = $state(false);
+	const elevation = $derived(playback.elevation);
+
+	// SVG-geometri for høydekurven i et 0–100 × 0–100 viewBox (y invertert). preserveAspectRatio
+	// none strekker den til panelet; `y()` gjenbrukes til markørens høyde.
+	const elevationGeom = $derived.by(() => {
+		const s = elevation.samples;
+		if (s.length < 2) return null;
+		const range = elevation.maxEle - elevation.minEle;
+		const y = (ele: number) => (range > 0 ? 100 - ((ele - elevation.minEle) / range) * 100 : 50);
+		const pts = s.map((p) => `${(p.x * 100).toFixed(2)},${y(p.ele).toFixed(2)}`);
+		return { line: `M ${pts.join(' L ')}`, area: `M 0,100 L ${pts.join(' L ')} L 100,100 Z`, y };
+	});
+
+	// Markøren på kurven ved gjeldende `progress` — høyden interpoleres mellom nærmeste punkter.
+	const elevationMarker = $derived.by(() => {
+		const g = elevationGeom;
+		if (!g) return null;
+		const s = elevation.samples;
+		const x = Math.max(0, Math.min(1, progress));
+		let ele = s[0].ele;
+		for (let i = 1; i < s.length; i++) {
+			if (x <= s[i].x) {
+				const span = s[i].x - s[i - 1].x;
+				const f = span > 0 ? (x - s[i - 1].x) / span : 0;
+				ele = s[i - 1].ele + (s[i].ele - s[i - 1].ele) * f;
+				break;
+			}
+			ele = s[i].ele;
+		}
+		return { cx: x * 100, cy: g.y(ele), ele: Math.round(ele) };
+	});
 	let lightboxIndex = $state<number | null>(null);
 	const lightbox = $derived(lightboxIndex != null ? (imagePins[lightboxIndex] ?? null) : null);
 	let touchStartX = 0;
@@ -613,7 +647,21 @@
 		<div class="wpb-stats">
 			<span>{fmtDistance(playback.stats.distanceMeters)}</span>
 			{#if playback.stats.durationSeconds != null}<span>· {fmtDuration(playback.stats.durationSeconds)}</span>{/if}
-			{#if playback.stats.ascentMeters > 0}<span>· ↑ {playback.stats.ascentMeters} m</span>{/if}
+			{#if playback.stats.ascentMeters > 0}
+				{#if elevation.hasData}
+					<button
+						type="button"
+						class="wpb-stat-btn"
+						class:wpb-stat-active={showElevation}
+						onclick={() => (showElevation = !showElevation)}
+						aria-pressed={showElevation}
+						aria-label={showElevation ? 'Skjul høydekurve' : 'Vis høydekurve'}
+						data-track="tur-avspilling:hoydekurve"
+					>· ↑ {playback.stats.ascentMeters} m</button>
+				{:else}
+					<span>· ↑ {playback.stats.ascentMeters} m</span>
+				{/if}
+			{/if}
 			{#if imagePins.length}<span>· 📷 {imagePins.length}</span>{/if}
 		</div>
 	</header>
@@ -639,6 +687,34 @@
 		<div class="wpb-loading" aria-live="polite">
 			<div class="wpb-spinner" aria-hidden="true"></div>
 			<span>Forbereder 3D-terreng …</span>
+		</div>
+	{/if}
+
+	{#if mapReady && !preparing && showElevation && elevationGeom}
+		<div class="wpb-elev" aria-label="Høydekurve">
+			<svg class="wpb-elev-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+				<path class="wpb-elev-area" d={elevationGeom.area} />
+				<path class="wpb-elev-line" d={elevationGeom.line} vector-effect="non-scaling-stroke" />
+				{#if elevationMarker}
+					<line
+						class="wpb-elev-cursor"
+						x1={elevationMarker.cx}
+						y1="0"
+						x2={elevationMarker.cx}
+						y2="100"
+						vector-effect="non-scaling-stroke"
+					/>
+				{/if}
+			</svg>
+			{#if elevationMarker}
+				<div
+					class="wpb-elev-dot"
+					style={`left:${elevationMarker.cx}%; top:${elevationMarker.cy}%`}
+				></div>
+				<div class="wpb-elev-read">{elevationMarker.ele} m</div>
+			{/if}
+			<span class="wpb-elev-tick wpb-elev-tick-max">{Math.round(elevation.maxEle)} m</span>
+			<span class="wpb-elev-tick wpb-elev-tick-min">{Math.round(elevation.minEle)} m</span>
 		</div>
 	{/if}
 
@@ -790,11 +866,105 @@
 	.wpb-stats {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
 		gap: 6px;
 		margin-top: 4px;
 		font-size: 0.9rem;
 		font-weight: 600;
 		color: rgba(255, 255, 255, 0.9);
+	}
+	/* Høydemeter-tallet er bryteren for høydekurve-overlayet — ser ut som teksten rundt,
+	   men med prikket understrek som hint om at det er klikkbart. */
+	.wpb-stat-btn {
+		padding: 0;
+		border: none;
+		background: none;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+		text-decoration: underline dotted rgba(255, 255, 255, 0.5);
+		text-underline-offset: 3px;
+	}
+	.wpb-stat-btn:hover {
+		color: #fff;
+		text-decoration-color: rgba(255, 255, 255, 0.9);
+	}
+	.wpb-stat-active {
+		color: #93a2f7;
+		text-decoration-color: #93a2f7;
+	}
+	/* Høydekurve-overlay: diskret panel over transporten. */
+	.wpb-elev {
+		position: absolute;
+		left: 16px;
+		right: 16px;
+		bottom: max(88px, calc(env(safe-area-inset-bottom) + 80px));
+		z-index: 4;
+		height: 96px;
+		padding: 8px 10px;
+		border-radius: 14px;
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		background: rgba(10, 14, 26, 0.6);
+		backdrop-filter: blur(8px);
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+	}
+	.wpb-elev-svg {
+		width: 100%;
+		height: 100%;
+		display: block;
+		overflow: visible;
+	}
+	.wpb-elev-area {
+		fill: rgba(124, 142, 245, 0.22);
+		stroke: none;
+	}
+	.wpb-elev-line {
+		fill: none;
+		stroke: #93a2f7;
+		stroke-width: 2;
+		stroke-linejoin: round;
+		stroke-linecap: round;
+	}
+	.wpb-elev-cursor {
+		stroke: rgba(255, 255, 255, 0.7);
+		stroke-width: 1;
+	}
+	.wpb-elev-dot {
+		position: absolute;
+		width: 11px;
+		height: 11px;
+		border-radius: 50%;
+		background: #fff;
+		border: 2px solid #7c8ef5;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+	.wpb-elev-read {
+		position: absolute;
+		top: 6px;
+		left: 10px;
+		font-size: 0.78rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		color: #fff;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+		pointer-events: none;
+	}
+	.wpb-elev-tick {
+		position: absolute;
+		right: 10px;
+		font-size: 0.66rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: rgba(255, 255, 255, 0.6);
+		pointer-events: none;
+	}
+	.wpb-elev-tick-max {
+		top: 6px;
+	}
+	.wpb-elev-tick-min {
+		bottom: 6px;
 	}
 	/* Transport: bunn-linje som holder «Spill av»-knappen (høyrejustert) og morfer til
 	   tidslinje + pauseknapp under avspilling. Venstre kant klarer kartlag-knappen (left:16, 48px). */

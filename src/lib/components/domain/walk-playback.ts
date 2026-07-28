@@ -47,6 +47,22 @@ export interface WalkStats {
 	pointCount: number;
 }
 
+/** Ett punkt i høydeprofilen: andel (0–1) av rutelengden + høyde i meter. */
+export interface WalkElevationSample {
+	/** Samme andels-modell som avspillingens `progress` (kumulativ rutelengde). */
+	x: number;
+	ele: number;
+}
+
+/** Høydeprofil for turen — til det valgfrie høydekurve-overlayet. */
+export interface WalkElevationProfile {
+	/** Minst to punkter med høyde → kurven kan tegnes. */
+	hasData: boolean;
+	minEle: number;
+	maxEle: number;
+	samples: WalkElevationSample[];
+}
+
 export interface WalkPlayback {
 	/** Tett koordinatliste for rutelinja, [lon, lat] (MapLibre-rekkefølge). */
 	coords: Array<[number, number]>;
@@ -56,6 +72,8 @@ export interface WalkPlayback {
 	center: [number, number];
 	/** [[minLon, minLat], [maxLon, maxLat]] — for fitBounds. */
 	bounds: [[number, number], [number, number]];
+	/** Høydeprofil langs ruta (til høydekurve-overlayet). */
+	elevation: WalkElevationProfile;
 }
 
 /** Filtrer sporet til gyldige punkter og gjør om til [lon, lat]-rekkefølge. */
@@ -211,6 +229,42 @@ export function coordsBounds(
 }
 
 /**
+ * Bygger høydeprofilen langs ruta. `x` bruker samme kumulative rutelengde-andel
+ * (`cumulativeFractions`) som avspillingens `progress`, så en markør på kurven
+ * kan følge fly-through-en/scrubbingen direkte. Punkter uten høyde hoppes over;
+ * finnes færre enn to, er `hasData` false og overlayet vises ikke.
+ */
+export function buildElevationProfile(track: WalkTrackPoint[]): WalkElevationProfile {
+	const valid = track.filter(
+		(p) =>
+			typeof p?.lat === 'number' &&
+			typeof p?.lon === 'number' &&
+			Number.isFinite(p.lat) &&
+			Number.isFinite(p.lon)
+	);
+	const coords = valid.map((p) => [p.lon, p.lat] as [number, number]);
+	const fractions = cumulativeFractions(coords);
+	const samples: WalkElevationSample[] = [];
+	let minEle = Infinity;
+	let maxEle = -Infinity;
+	valid.forEach((p, i) => {
+		const ele = p.ele;
+		if (typeof ele === 'number' && Number.isFinite(ele)) {
+			samples.push({ x: fractions[i] ?? 0, ele });
+			if (ele < minEle) minEle = ele;
+			if (ele > maxEle) maxEle = ele;
+		}
+	});
+	const hasData = samples.length >= 2;
+	return {
+		hasData,
+		minEle: hasData ? minEle : 0,
+		maxEle: hasData ? maxEle : 0,
+		samples: hasData ? samples : []
+	};
+}
+
+/**
  * Setter sammen alt en 3D-avspilling trenger: rutelinje, plasserte bilder,
  * nøkkeltall og kart-utstrekning. `storedStats` (fra det opplastede
  * workout-eventet) vinner over avledede tall når de finnes.
@@ -233,6 +287,7 @@ export function buildWalkPlayback(
 			pointCount: derived.pointCount
 		},
 		center,
-		bounds
+		bounds,
+		elevation: buildElevationProfile(track)
 	};
 }
