@@ -38,6 +38,17 @@ export interface StreakConfig {
 	intervalDays?: number;
 	/** max_interval: hvor mange dager før forfall den skal varsles som «snart». */
 	dueSoonDays?: number;
+	/**
+	 * consecutive_days / count_per_window: hvor lang én pause kan være uten å bryte
+	 * streaken, målt i enheter (dager, eller perioder for count_per_window).
+	 * Default 0 = ingen toleranse.
+	 */
+	maxGapDays?: number;
+	/**
+	 * Hvor mange pauser som tolereres i hele den aktive rekka. Default 1 når
+	 * `maxGapDays` er satt. Bevisst per rekke, ikke per tidsvindu.
+	 */
+	maxGaps?: number;
 }
 
 export interface StreakDefinitionLike {
@@ -76,6 +87,10 @@ export interface StreakState {
 	nextDueDay: string | null;
 	/** max_interval: dager til forfall. Negativt = passert. */
 	daysUntilDue: number | null;
+	/** Antall tolererte pauser inni den aktive streaken. 0 = ubrutt. */
+	gapCount: number;
+	/** Totalt antall enheter hoppet over i pausene (dager, eller perioder). */
+	gapUnits: number;
 }
 
 const DOT_COUNT = 7;
@@ -115,15 +130,96 @@ function longestRun(present: Set<number>): number {
 	return best;
 }
 
-/** Tell sammenhengende medlemskap bakover fra `start`. */
-function countBack(present: Set<number>, start: number): number {
-	let count = 0;
-	let cursor = start;
-	while (present.has(cursor)) {
-		count++;
-		cursor--;
+interface Run {
+	/** Antall enheter (dager/perioder) i den aktive rekka. */
+	count: number;
+	/** Antall pauser inni rekka. */
+	gapCount: number;
+	/** Totalt antall enheter hoppet over i pausene. */
+	gapUnits: number;
+}
+
+const NO_RUN: Run = { count: 0, gapCount: 0, gapUnits: 0 };
+
+/**
+ * Finn den aktive rekka bakover fra inneværende enhet, med toleranse for korte
+ * pauser.
+ *
+ * `current` er dagen/perioden som er i arbeid — mangler den, teller den ikke som
+ * en pause (du har fortsatt tid igjen). Rekka starter derfor på nyeste
+ * tilstedeværende enhet, og avstanden derfra til `current` behandles som en
+ * allerede forbigått pause.
+ *
+ * Med `maxGapUnits: 0` (standard) er dette identisk med streng telling: første
+ * hull avslutter rekka.
+ *
+ * `maxGaps` teller pauser i hele den aktive rekka, ikke per tidsvindu — bevisst
+ * enkelt og forutsigbart framfor «én pause per 30 dager».
+ */
+function findRun(
+	present: Set<number>,
+	current: number,
+	maxGapUnits: number,
+	maxGaps: number
+): Run {
+	const currentDone = present.has(current);
+
+	// Nyeste tilstedeværende enhet til og med inneværende.
+	let last = -Infinity;
+	if (currentDone) {
+		last = current;
+	} else {
+		for (const unit of present) {
+			if (unit < current && unit > last) last = unit;
+		}
 	}
-	return count;
+	if (!Number.isFinite(last)) return NO_RUN;
+
+	let gapCount = 0;
+	let gapUnits = 0;
+	let budget = maxGaps;
+
+	// Enhetene mellom siste registrering og inneværende er ferdig forbigått.
+	const missedBefore = currentDone ? 0 : current - 1 - last;
+	if (missedBefore > 0) {
+		if (missedBefore > maxGapUnits || budget < 1) return NO_RUN;
+		gapCount = 1;
+		gapUnits = missedBefore;
+		budget -= 1;
+	}
+
+	let count = 0;
+	let cursor = last;
+	while (true) {
+		if (present.has(cursor)) {
+			count++;
+			cursor--;
+			continue;
+		}
+		if (budget < 1 || maxGapUnits < 1) break;
+		// Hvor langt er hullet? Sonder bakover innenfor det tolererte.
+		let gap = 0;
+		let probe = cursor;
+		while (gap < maxGapUnits && !present.has(probe)) {
+			gap++;
+			probe--;
+		}
+		if (!present.has(probe)) break; // hullet er for langt — rekka slutter her
+		gapCount++;
+		gapUnits += gap;
+		budget -= 1;
+		cursor = probe;
+	}
+
+	return { count, gapCount, gapUnits };
+}
+
+/** Toleranse-parametre for en regel, med standardverdier. */
+function graceFrom(config: StreakConfig): { maxGapUnits: number; maxGaps: number } {
+	const maxGapUnits = Math.max(0, config.maxGapDays ?? 0);
+	// Én pause er standard når toleranse først er slått på.
+	const maxGaps = maxGapUnits > 0 ? Math.max(1, config.maxGaps ?? 1) : 0;
+	return { maxGapUnits, maxGaps };
 }
 
 /** Prikker for de siste `DOT_COUNT` indeksene som ender på `end`, eldste først. */
@@ -144,7 +240,9 @@ function emptyState(unit: StreakUnit): StreakState {
 		windowCount: null,
 		windowTarget: null,
 		nextDueDay: null,
-		daysUntilDue: null
+		daysUntilDue: null,
+		gapCount: 0,
+		gapUnits: 0
 	};
 }
 
@@ -162,7 +260,7 @@ export function computeStreak(
 ): StreakState {
 	switch (def.rule) {
 		case 'consecutive_days':
-			return computeConsecutiveDays(eventDayKeys, todayKey);
+			return computeConsecutiveDays(def.config, eventDayKeys, todayKey);
 		case 'count_per_window':
 			return computeCountPerWindow(def.config, eventDayKeys, todayKey);
 		case 'max_interval':
@@ -170,30 +268,35 @@ export function computeStreak(
 	}
 }
 
-function computeConsecutiveDays(eventDayKeys: string[], todayKey: string): StreakState {
+function computeConsecutiveDays(
+	config: StreakConfig,
+	eventDayKeys: string[],
+	todayKey: string
+): StreakState {
 	if (eventDayKeys.length === 0) return emptyState('day');
 
 	const today = dayNumber(todayKey);
 	const days = new Set(eventDayKeys.map(dayNumber));
+	const { maxGapUnits, maxGaps } = graceFrom(config);
 
-	// Dagen er ikke over: mangler dagens hendelse, teller vi fra i går slik at
-	// streaken ikke ser brutt ut midt på dagen.
+	// Dagen er ikke over: mangler dagens hendelse, regnes den ikke som en pause.
 	const doneToday = days.has(today);
-	const count = doneToday ? countBack(days, today) : countBack(days, today - 1);
-
-	const lastEventDay = dayKeyFromNumber(Math.max(...days));
+	const run = findRun(days, today, maxGapUnits, maxGaps);
 
 	return {
-		count,
+		count: run.count,
 		unit: 'day',
-		bestCount: Math.max(longestRun(days), count),
-		lastEventDay,
+		// bestCount er strengt sammenhengende — aldri lavere enn dagens tolererte rekke.
+		bestCount: Math.max(longestRun(days), run.count),
+		lastEventDay: dayKeyFromNumber(Math.max(...days)),
 		dots: dotsEndingAt(days, today),
-		status: count === 0 ? 'idle' : doneToday ? 'ok' : 'due_soon',
+		status: run.count === 0 ? 'idle' : doneToday ? 'ok' : 'due_soon',
 		windowCount: null,
 		windowTarget: null,
 		nextDueDay: null,
-		daysUntilDue: null
+		daysUntilDue: null,
+		gapCount: run.gapCount,
+		gapUnits: run.gapUnits
 	};
 }
 
@@ -227,22 +330,24 @@ function computeCountPerWindow(
 	const met = new Set([...perWindow.entries()].filter(([, n]) => n >= threshold).map(([i]) => i));
 	const windowCount = perWindow.get(currentWindow) ?? 0;
 	const currentMet = windowCount >= threshold;
+	const { maxGapUnits, maxGaps } = graceFrom(config);
 
-	// Perioden er ikke over: er terskelen ikke nådd ennå, teller vi fra forrige
-	// periode så en uke i arbeid ikke framstår som et brudd.
-	const count = currentMet ? countBack(met, currentWindow) : countBack(met, currentWindow - 1);
+	// Perioden er ikke over: er terskelen ikke nådd ennå, regnes den ikke som pause.
+	const run = findRun(met, currentWindow, maxGapUnits, maxGaps);
 
 	return {
-		count,
+		count: run.count,
 		unit,
-		bestCount: Math.max(longestRun(met), count),
+		bestCount: Math.max(longestRun(met), run.count),
 		lastEventDay: dayKeyFromNumber(latestDay),
 		dots: dotsEndingAt(met, currentWindow),
-		status: count === 0 && !currentMet ? 'idle' : currentMet ? 'ok' : 'due_soon',
+		status: run.count === 0 && !currentMet ? 'idle' : currentMet ? 'ok' : 'due_soon',
 		windowCount,
 		windowTarget: threshold,
 		nextDueDay: null,
-		daysUntilDue: null
+		daysUntilDue: null,
+		gapCount: run.gapCount,
+		gapUnits: run.gapUnits
 	};
 }
 
@@ -304,7 +409,10 @@ function computeMaxInterval(
 		windowCount: null,
 		windowTarget: null,
 		nextDueDay: dayKeyFromNumber(nextDue),
-		daysUntilDue
+		daysUntilDue,
+		// Intervallet ER toleransen her, så pauser er ikke et eget begrep.
+		gapCount: 0,
+		gapUnits: 0
 	};
 }
 
@@ -314,11 +422,28 @@ const UNIT_LABEL: Record<StreakUnit, [singular: string, plural: string]> = {
 	round: ['runde', 'runder']
 };
 
-/** «6 dager på rad», «3 uker på rad», «5 runder på rad» — tom streng når streaken er brutt. */
-export function streakLabel(state: Pick<StreakState, 'count' | 'unit'>): string {
+/**
+ * «6 dager på rad», «3 uker på rad», «5 runder på rad» — tom streng når streaken
+ * er brutt.
+ *
+ * Er rekka holdt gjennom tolererte pauser, sies det rett ut:
+ * «14 dager på rad (1 pause, 2 dager)». Pausen skjules ikke — «på rad» blir litt
+ * mindre bokstavelig, og da skal teksten være ærlig om hvorfor.
+ */
+export function streakLabel(
+	state: Pick<StreakState, 'count' | 'unit'> & Partial<Pick<StreakState, 'gapCount' | 'gapUnits'>>
+): string {
 	if (state.count <= 0) return '';
 	const [singular, plural] = UNIT_LABEL[state.unit];
-	return `${state.count} ${state.count === 1 ? singular : plural} på rad`;
+	const base = `${state.count} ${state.count === 1 ? singular : plural} på rad`;
+
+	const gapCount = state.gapCount ?? 0;
+	if (gapCount === 0) return base;
+
+	const gapUnits = state.gapUnits ?? 0;
+	const pauses = `${gapCount} ${gapCount === 1 ? 'pause' : 'pauser'}`;
+	const skipped = `${gapUnits} ${gapUnits === 1 ? singular : plural}`;
+	return `${base} (${pauses}, ${skipped})`;
 }
 
 /**

@@ -1141,7 +1141,7 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'manage_streak',
-					description: 'Administrer brukerens streaks — «hvor mange runder på rad har jeg holdt?». rule=consecutive_days for dager på rad (yoga, lett styrke). rule=count_per_window for perioder over en terskel (config.windowDays 7 + config.threshold 2 = «uker på rad med minst to løpeturer»). rule=max_interval for periodisk vedlikehold innen et intervall (config.intervalDays 5 = «hårklipp innen fem dager», 14 = «badevask innen to uker»). Vedlikehold løftes automatisk fram på ukeplanen når det nærmer seg forfall — ikke lag egne nedtellingsoppgaver for det. source: {kind:"workout",sportFamily} for treningsøkter, {kind:"sensor_event",dataType,textMatch} for sensorhendelser, {kind:"manual"} når brukeren registrerer selv. action=list/create/update/delete/log (log registrerer en gjennomført runde).',
+					description: 'Administrer brukerens streaks — «hvor mange runder på rad har jeg holdt?». rule=consecutive_days for dager på rad (yoga, lett styrke). rule=count_per_window for perioder over en terskel (config.windowDays 7 + config.threshold 2 = «uker på rad med minst to løpeturer»). rule=max_interval for periodisk vedlikehold innen et intervall (config.intervalDays 5 = «hårklipp innen fem dager», 14 = «badevask innen to uker»). Vedlikehold løftes automatisk fram på ukeplanen når det nærmer seg forfall — ikke lag egne nedtellingsoppgaver for det. source: {kind:"workout",sportFamily} for treningsøkter, {kind:"sensor_event",dataType,textMatch} for sensorhendelser, {kind:"manual"} når brukeren registrerer selv. action=list/create/update/delete/log (log registrerer en gjennomført runde). Pause-toleranse: config.maxGapDays + config.maxGaps lar en rekke overleve korte pauser (ferie/sykdom) — og gjenoppretter en brutt rekke retroaktivt, siden streaks beregnes fra hendelser og ikke har lagret teller. Pausen vises i teksten, den skjules ikke.',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -1166,7 +1166,9 @@ const tools = [
 									windowDays: { type: 'integer', description: '7 = kalenderuke' },
 									threshold: { type: 'integer', description: 'Hendelser som kreves per periode' },
 									intervalDays: { type: 'integer', description: 'Maks dager mellom to runder' },
-									dueSoonDays: { type: 'integer', description: 'Varsle så mange dager før forfall' }
+									dueSoonDays: { type: 'integer', description: 'Varsle så mange dager før forfall' },
+									maxGapDays: { type: 'integer', description: 'Hvor lang én pause kan være uten å bryte rekka (0 = ingen toleranse). Kun consecutive_days/count_per_window' },
+									maxGaps: { type: 'integer', description: 'Hvor mange pauser som tolereres i rekka. Default 1 når maxGapDays er satt' }
 								}
 							},
 							active: { type: 'boolean' },
