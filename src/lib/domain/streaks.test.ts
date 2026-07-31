@@ -69,6 +69,109 @@ describe('consecutive_days — dager på rad', () => {
 	});
 });
 
+describe('consecutive_days — toleranse for korte pauser', () => {
+	const tolerant = {
+		rule: 'consecutive_days' as const,
+		config: { maxGapDays: 2, maxGaps: 1 }
+	};
+
+	it('holder rekka gjennom to feriedager når økta er tatt opp igjen', () => {
+		// Løp 20.–22., to tunge dager på ferie (23.–24.), i gang igjen 25.
+		const state = computeStreak(
+			tolerant,
+			['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-25'],
+			LORDAG
+		);
+		expect(state.count).toBe(4);
+		expect(state.gapCount).toBe(1);
+		expect(state.gapUnits).toBe(2);
+		expect(state.status).toBe('ok');
+	});
+
+	it('gjenoppretter en rekke som var brutt, uten at noe må gjøres', () => {
+		// Samme pause, men dagens økt er ikke tatt ennå. Uten toleranse ville dette
+		// vært 0 — med toleranse lever rekka videre, retroaktivt.
+		const events = ['2026-07-20', '2026-07-21', '2026-07-22'];
+		expect(computeStreak({ rule: 'consecutive_days', config: {} }, events, LORDAG).count).toBe(0);
+
+		const state = computeStreak(tolerant, events, LORDAG);
+		expect(state.count).toBe(3);
+		expect(state.gapCount).toBe(1);
+		expect(state.gapUnits).toBe(2);
+		expect(state.status).toBe('due_soon');
+	});
+
+	it('bryter når pausen er lengre enn tolerert', () => {
+		// Tre dager uten økt (22.–24.) med toleranse for to.
+		const state = computeStreak(tolerant, ['2026-07-20', '2026-07-21', '2026-07-25'], LORDAG);
+		expect(state.count).toBe(1);
+		expect(state.gapCount).toBe(0);
+	});
+
+	it('tolererer bare så mange pauser som budsjettet tillater', () => {
+		const events = ['2026-07-21', '2026-07-23', '2026-07-25'];
+		const one = computeStreak(
+			{ rule: 'consecutive_days', config: { maxGapDays: 1, maxGaps: 1 } },
+			events,
+			LORDAG
+		);
+		expect(one.count).toBe(2);
+		expect(one.gapCount).toBe(1);
+
+		const two = computeStreak(
+			{ rule: 'consecutive_days', config: { maxGapDays: 1, maxGaps: 2 } },
+			events,
+			LORDAG
+		);
+		expect(two.count).toBe(3);
+		expect(two.gapCount).toBe(2);
+		expect(two.gapUnits).toBe(2);
+	});
+
+	it('gir én pause som standard når maxGapDays er satt alene', () => {
+		const state = computeStreak(
+			{ rule: 'consecutive_days', config: { maxGapDays: 1 } },
+			['2026-07-21', '2026-07-23', '2026-07-25'],
+			LORDAG
+		);
+		expect(state.gapCount).toBe(1);
+		expect(state.count).toBe(2);
+	});
+
+	it('teller ingen pause når rekka er ubrutt', () => {
+		const state = computeStreak(tolerant, ['2026-07-24', '2026-07-25'], LORDAG);
+		expect(state.count).toBe(2);
+		expect(state.gapCount).toBe(0);
+		expect(state.gapUnits).toBe(0);
+	});
+
+	it('er uendret fra streng telling uten toleranse', () => {
+		const events = ['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-25'];
+		const strict = computeStreak({ rule: 'consecutive_days', config: {} }, events, LORDAG);
+		expect(strict.count).toBe(1);
+		expect(strict.gapCount).toBe(0);
+	});
+});
+
+describe('count_per_window — toleranse for en periode under terskel', () => {
+	it('hopper over én uke under terskel og teller videre', () => {
+		// Uke 20.–26.: to turer. Uke 13.–19.: bare én (under terskel).
+		// Uke 6.–12.: to turer.
+		const state = computeStreak(
+			{
+				rule: 'count_per_window',
+				config: { windowDays: 7, threshold: 2, maxGapDays: 1, maxGaps: 1 }
+			},
+			['2026-07-07', '2026-07-09', '2026-07-14', '2026-07-21', '2026-07-23'],
+			LORDAG
+		);
+		expect(state.count).toBe(2);
+		expect(state.gapCount).toBe(1);
+		expect(state.gapUnits).toBe(1);
+		expect(streakLabel(state)).toBe('2 uker på rad (1 pause, 1 uke)');
+	});
+});
+
 describe('count_per_window — perioder på rad over en terskel', () => {
 	const def = { rule: 'count_per_window' as const, config: { windowDays: 7, threshold: 2 } };
 
@@ -221,6 +324,24 @@ describe('streakLabel', () => {
 
 	it('er tom når streaken er brutt', () => {
 		expect(streakLabel({ count: 0, unit: 'day' })).toBe('');
+	});
+
+	it('sier rett ut at rekka er holdt gjennom en pause', () => {
+		expect(streakLabel({ count: 14, unit: 'day', gapCount: 1, gapUnits: 2 })).toBe(
+			'14 dager på rad (1 pause, 2 dager)'
+		);
+		expect(streakLabel({ count: 9, unit: 'day', gapCount: 2, gapUnits: 3 })).toBe(
+			'9 dager på rad (2 pauser, 3 dager)'
+		);
+		expect(streakLabel({ count: 5, unit: 'day', gapCount: 1, gapUnits: 1 })).toBe(
+			'5 dager på rad (1 pause, 1 dag)'
+		);
+	});
+
+	it('nevner ingen pause når det ikke er noen', () => {
+		expect(streakLabel({ count: 6, unit: 'day', gapCount: 0, gapUnits: 0 })).toBe(
+			'6 dager på rad'
+		);
 	});
 });
 

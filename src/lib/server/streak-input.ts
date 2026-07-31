@@ -84,6 +84,23 @@ export function parseStreakInput(body: unknown, id?: string): ParseResult {
 		}
 	}
 
+	// Pause-toleranse gjelder de to «på rad»-reglene. For max_interval ER intervallet
+	// toleransen, så pauser er ikke et eget begrep der.
+	if (rule === 'consecutive_days' || rule === 'count_per_window') {
+		if (rawConfig.maxGapDays !== undefined) {
+			const maxGapDays = Number(rawConfig.maxGapDays);
+			if (!Number.isInteger(maxGapDays) || maxGapDays < 0) {
+				return { ok: false, error: 'config.maxGapDays må være et heltall >= 0' };
+			}
+			config.maxGapDays = maxGapDays;
+		}
+		if (rawConfig.maxGaps !== undefined) {
+			const maxGaps = positiveInt(rawConfig.maxGaps);
+			if (maxGaps === null) return { ok: false, error: 'config.maxGaps må være et positivt heltall' };
+			config.maxGaps = maxGaps;
+		}
+	}
+
 	return {
 		ok: true,
 		input: {

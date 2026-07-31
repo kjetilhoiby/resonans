@@ -88,6 +88,63 @@ describe('parseStreakInput', () => {
 		expect(input.source).toEqual({ kind: 'sensor_event', dataType: 'chore_done' });
 	});
 
+	it('godtar pause-toleranse på «på rad»-regler', () => {
+		const daily = ok({
+			title: 'Yoga',
+			rule: 'consecutive_days',
+			source: { kind: 'workout', sportFamily: 'yoga' },
+			config: { maxGapDays: 2, maxGaps: 1 }
+		});
+		expect(daily.config).toEqual({ maxGapDays: 2, maxGaps: 1 });
+
+		const weekly = ok({
+			title: 'Løping',
+			rule: 'count_per_window',
+			source: { kind: 'workout', sportFamily: 'running' },
+			config: { threshold: 2, maxGapDays: 1 }
+		});
+		expect(weekly.config).toEqual({ windowDays: 7, threshold: 2, maxGapDays: 1 });
+	});
+
+	it('godtar maxGapDays: 0 som «ingen toleranse»', () => {
+		const input = ok({
+			title: 'Yoga',
+			rule: 'consecutive_days',
+			source: { kind: 'manual' },
+			config: { maxGapDays: 0 }
+		});
+		expect(input.config).toEqual({ maxGapDays: 0 });
+	});
+
+	it('utelater pause-toleranse for max_interval', () => {
+		const input = ok({
+			title: 'Hårklipp',
+			rule: 'max_interval',
+			source: { kind: 'manual' },
+			config: { intervalDays: 5, maxGapDays: 3 }
+		});
+		expect(input.config).toEqual({ intervalDays: 5 });
+	});
+
+	it('avviser ugyldig pause-toleranse', () => {
+		expect(
+			err({
+				title: 'X',
+				rule: 'consecutive_days',
+				source: { kind: 'manual' },
+				config: { maxGapDays: -1 }
+			})
+		).toMatch(/maxGapDays/);
+		expect(
+			err({
+				title: 'X',
+				rule: 'consecutive_days',
+				source: { kind: 'manual' },
+				config: { maxGaps: 0 }
+			})
+		).toMatch(/maxGaps/);
+	});
+
 	it('krever tittel', () => {
 		expect(err({ rule: 'consecutive_days', source: { kind: 'manual' } })).toMatch(/title/);
 	});

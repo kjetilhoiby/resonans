@@ -21,7 +21,9 @@ const configSchema = z.object({
 	windowDays: z.number().int().positive().optional(),
 	threshold: z.number().int().positive().optional(),
 	intervalDays: z.number().int().positive().optional(),
-	dueSoonDays: z.number().int().positive().optional()
+	dueSoonDays: z.number().int().positive().optional(),
+	maxGapDays: z.number().int().min(0).optional(),
+	maxGaps: z.number().int().positive().optional()
 });
 
 export const manageStreakTool = {
@@ -39,6 +41,16 @@ rule=max_interval — runder på rad innen et intervall. config.intervalDays på
 Periodisk vedlikehold (max_interval) løftes automatisk fram på ukeplanen når det
 nærmer seg forfall, så brukeren kan plukke det ned på en dag. Ikke lag nedtellings-
 oppgaver for dette manuelt — streaken håndterer det.
+
+Pause-toleranse (kun consecutive_days og count_per_window):
+  config.maxGapDays — hvor lang én pause kan være uten å bryte rekka. 0 = ingen toleranse (standard)
+  config.maxGaps    — hvor mange pauser som tolereres i hele rekka. Default 1 når maxGapDays er satt
+
+Bruk dette når brukeren vil «gjenoppta» eller «beholde» en brutt streak, eller ber om
+slingringsmonn for ferie/sykdom. Streaks har ingen lagret teller — de beregnes fra
+hendelser — så å skru på toleranse gjenoppretter en brutt rekke retroaktivt, uten at
+brukeren må gjøre noe. Pausen skjules ikke: den vises som «14 dager på rad (1 pause,
+2 dager)». Det finnes ingen egen «reparer»-handling, og den trengs ikke.
 
 source velger hvor hendelsene kommer fra:
 - { kind: 'workout', sportFamily } — treningsøkter. sportFamily: 'running', 'yoga', 'strength', 'cycling', 'walking', 'swimming'
@@ -76,6 +88,8 @@ action=log: registrer en gjennomført runde nå (kun manuelle streaks). Krever i
 			threshold?: number;
 			intervalDays?: number;
 			dueSoonDays?: number;
+			maxGapDays?: number;
+			maxGaps?: number;
 		};
 		active?: boolean;
 		date?: string;
@@ -97,6 +111,9 @@ action=log: registrer en gjennomført runde nå (kun manuelle streaks). Krever i
 					...(state.daysUntilDue != null ? { due: dueLabel(state) } : {}),
 					...(state.windowTarget != null
 						? { thisPeriod: `${state.windowCount ?? 0}/${state.windowTarget}` }
+						: {}),
+					...(state.gapCount > 0
+						? { gaps: `${state.gapCount} pause(r), ${state.gapUnits} enhet(er) hoppet over` }
 						: {}),
 					lastEventDay: state.lastEventDay
 				}))
