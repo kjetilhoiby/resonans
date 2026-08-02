@@ -154,7 +154,8 @@ Etter opprettelse, si til brukeren:
 	themes: `**TEMA (THEMES):**
 ALLTID foreslå tema når bruker nevner mål som passer i en kategori!
 
-Hovedkategorier: Samliv, Helse, Foreldreliv, Karriere, Økonomi, Personlig utvikling
+Hovedkategorier: Helse, Hjem, Familie, Samliv, Foreldreliv, Karriere, Økonomi, Personlig utvikling
+Helse er et mortema: Trening, Ernæring, Egenfrekvens, Søvn og Skjermtid er undertemaer av det.
 
 Flyt:
 1. Bruker nevner mål → FORESLÅ TEMA med manage_theme (suggest_create)

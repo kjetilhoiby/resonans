@@ -1,10 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { sensorEvents, goals, themes, tasks } from '$lib/db/schema';
+import { sensorEvents, goals, tasks } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
+import { findHealthThemeId, getHealthThemeIds } from '$lib/server/themes';
 
 async function generateWorkoutAssessment(
 	workout: NonNullable<Awaited<ReturnType<typeof getWorkoutContextForUser>>>,
@@ -68,15 +69,17 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	const trackPoints = Array.isArray(rawEvent?.data?.trackPoints) ? rawEvent.data.trackPoints : [];
 
-	// Hent helsemål
-	const healthTheme = await db.query.themes.findFirst({
-		where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
-	});
-	const healthGoals = healthTheme
+	// Hent helsemål fra hele helse-familien: et treningsmål kan like gjerne ligge
+	// på Trening-undertemaet som på mortemaet.
+	const [healthThemeId, healthThemeIds] = await Promise.all([
+		findHealthThemeId(userId),
+		getHealthThemeIds(userId)
+	]);
+	const healthGoals = healthThemeIds.length
 		? await db.query.goals.findMany({
 				where: and(
 					eq(goals.userId, userId),
-					eq(goals.themeId, healthTheme.id),
+					inArray(goals.themeId, healthThemeIds),
 					inArray(goals.status, ['active', 'paused'])
 				),
 				columns: { title: true, description: true, metadata: true }
@@ -90,7 +93,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		workout,
 		trackPoints,
 		assessment,
-		healthThemeId: healthTheme?.id ?? null,
+		healthThemeId,
 		healthGoals
 	};
 };

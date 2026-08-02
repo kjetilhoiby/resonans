@@ -4,6 +4,7 @@ import { themes, goals, conversations } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
+import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
 
 const UUID_REGEX =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -52,7 +53,7 @@ Be conversational and explain why a theme makes sense.`,
 		conversationId: z.string().optional().describe('Existing conversation to bind to the theme when relevant'),
 		name: z.string().optional().describe('Theme name (e.g., "Vennskap", "Løping")'),
 		emoji: z.string().optional().describe('Emoji representing the theme (e.g., "🤝", "🏃‍♂️")'),
-		parentTheme: z.string().optional().describe('Parent category (e.g., "Samliv", "Helse", "Foreldreliv", "Karriere")'),
+		parentTheme: z.string().optional().describe(`Parent category. Themes that own subthemes today: ${PARENT_THEME_SUGGESTIONS.join(', ')}. Other categories are allowed.`),
 		description: z.string().optional().describe('Brief description of what this theme covers'),
 		reason: z.string().optional().describe('Explanation for why this theme is suggested (for user-facing messages)'),
 		themeId: z.string().optional().describe('Theme ID or exact theme name (required for archive action)'),

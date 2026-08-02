@@ -1,10 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
-import { themes } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
 import { createGoal } from '$lib/server/goals';
 import { createMemory } from '$lib/server/memories';
+import { findHealthThemeId } from '$lib/server/themes';
 
 function parseNum(value: unknown): number | null {
 	if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -33,15 +31,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const startWeight = parseNum(body.startWeight);
 		const targetChange = parseNum(body.targetChange);
 
-		const healthTheme = await db.query.themes.findFirst({
-			where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
-		});
+		const healthThemeId = await findHealthThemeId(userId);
 
 		let createdMemoryId: string | null = null;
 		if (historyText.length >= 8) {
 			const memory = await createMemory({
 				userId,
-				themeId: healthTheme?.id ?? null,
+				themeId: healthThemeId,
 				category: 'fitness',
 				importance: 'high',
 				content: `Vekt-onboarding: ${historyText}`,
@@ -59,7 +55,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const goal = await createGoal({
 				userId,
 				categoryName: 'Helse',
-				themeId: healthTheme?.id,
+				themeId: healthThemeId ?? undefined,
 				title,
 				description: 'Opprettet fra vekt-onboarding med historikk og periode',
 				targetDate: endDate,

@@ -440,8 +440,48 @@ export interface VehicleDashboardData {
 	generatedAt: string;
 }
 
+// Helse-undertemaene. Formen settes av lasterne i $lib/server (fase 2); her
+// står bare feltene klienten faktisk leser. `unknown` framfor `any` slik at
+// konsumentene må smalne typen bevisst.
+export interface TrainingDashboardData {
+	plan: unknown;
+	states: unknown;
+	milestones: unknown[];
+	snapshot: unknown;
+	activityLayer?: { workouts: WorkoutActivity[] };
+	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
+	metricSettings?: Record<string, unknown>;
+}
+
+export interface SleepDashboardData {
+	weekly: unknown[];
+	monthly: unknown[];
+	daily: unknown[];
+	naps: unknown[];
+	metricSettings?: Record<string, unknown>;
+}
+
+export interface ScreenTimeDashboardData {
+	weeks: unknown[];
+	days: unknown[];
+	goals: unknown[];
+	connected: boolean;
+}
+
+export interface NutritionDashboardData {
+	themeName: string;
+	themeEmoji: string | null;
+	/** Ernæring har ingen egen kilde ennå — mat-temaet er nærmeste nabo. */
+	foodThemeId: string | null;
+	weight: unknown[];
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
+	training: TrainingDashboardData;
+	sleep: SleepDashboardData;
+	screentime: ScreenTimeDashboardData;
+	nutrition: NutritionDashboardData;
 	economics: EconomicsDashboardData;
 	food: FoodDashboardData;
 	travel: TravelDashboardData;

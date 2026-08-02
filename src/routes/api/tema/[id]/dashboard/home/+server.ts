@@ -13,6 +13,7 @@ import {
 	type VacuumState
 } from '$lib/server/services/appliance-cycle';
 import { getChoreStats, listPendingChores } from '$lib/server/services/chore-service';
+import { getChildThemes } from '$lib/server/themes';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -54,11 +55,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	]);
 
 	// Prosjekt-undertemaer (parentTheme='Hjem') med oppgave-progresjon fra checklist_items.
-	const projectThemes = await db
-		.select()
-		.from(themes)
-		.where(and(eq(themes.userId, userId), eq(themes.parentTheme, 'Hjem'), eq(themes.archived, false)))
-		.orderBy(desc(themes.createdAt));
+	const projectThemes = await getChildThemes(userId, 'Hjem');
 
 	const projectIds = projectThemes.map((t) => t.id);
 	const projectItems = projectIds.length

@@ -47,3 +47,76 @@ describe('resolveThemeDashboardKind — film', () => {
 		expect(resolveThemeDashboardKind('Filantropi')).toBeNull();
 	});
 });
+
+describe('resolveThemeDashboardKind — helse-mortemaet og undertemaene', () => {
+	it('gir mortemaet health', () => {
+		expect(resolveThemeDashboardKind('Helse')).toBe('health');
+	});
+
+	it('gir hvert undertema sin egen dashboardtype', () => {
+		expect(resolveThemeDashboardKind('Trening')).toBe('training');
+		expect(resolveThemeDashboardKind('Søvn')).toBe('sleep');
+		expect(resolveThemeDashboardKind('Skjermtid')).toBe('screentime');
+		expect(resolveThemeDashboardKind('Ernæring')).toBe('nutrition');
+		expect(resolveThemeDashboardKind('Egenfrekvens')).toBe('egenfrekvens');
+	});
+
+	it('gir definisjon med label og ikon for de nye typene', () => {
+		expect(getThemeDashboardDefinition('Trening')).toEqual({ kind: 'training', label: 'Trening', icon: '🏃' });
+		expect(getThemeDashboardDefinition('Søvn')).toEqual({ kind: 'sleep', label: 'Søvn', icon: '😴' });
+		expect(getThemeDashboardDefinition('Skjermtid')).toEqual({ kind: 'screentime', label: 'Skjermtid', icon: '📱' });
+		expect(getThemeDashboardDefinition('Ernæring')).toEqual({ kind: 'nutrition', label: 'Ernæring', icon: '🥗' });
+	});
+
+	it('matcher norske tegn som ikke dekomponeres (ø og æ)', () => {
+		// «ø» og «æ» har ingen kanonisk dekomponering, så en ASCII-skrevet term
+		// ville aldri truffet disse navnene. Begge skrivemåter skal virke.
+		expect(resolveThemeDashboardKind('Søvn')).toBe('sleep');
+		expect(resolveThemeDashboardKind('Sovn')).toBe('sleep');
+		expect(resolveThemeDashboardKind('Ernæring')).toBe('nutrition');
+		expect(resolveThemeDashboardKind('Ernaring')).toBe('nutrition');
+		expect(resolveThemeDashboardKind('Løping')).toBe('training');
+		expect(resolveThemeDashboardKind('Loping')).toBe('training');
+	});
+
+	it('lar sammensatte helsenavn beholde mordashboardet', () => {
+		// health står før training/sleep i matcher-lista nettopp for dette.
+		expect(resolveThemeDashboardKind('Helse og trening')).toBe('health');
+		expect(resolveThemeDashboardKind('Helse og søvn')).toBe('health');
+	});
+
+	it('ruter psykisk/mental helse til egenfrekvens, ikke health', () => {
+		// Regresjonsvern: «helse» er 5 tegn og matcher som delstreng, så
+		// egenfrekvens må stå først i lista for at disse skal treffe riktig.
+		expect(resolveThemeDashboardKind('Psykisk helse')).toBe('egenfrekvens');
+		expect(resolveThemeDashboardKind('Mental helse')).toBe('egenfrekvens');
+		expect(resolveThemeDashboardKind('Mental trening')).toBe('egenfrekvens');
+	});
+
+	it('lar ernæring ikke stjele mat-temaer', () => {
+		expect(resolveThemeDashboardKind('Mat')).toBe('food');
+		expect(resolveThemeDashboardKind('Mat og ernæring')).toBe('food');
+		expect(resolveThemeDashboardKind('Kosthold og mat')).toBe('food');
+		expect(resolveThemeDashboardKind('Kosthold')).toBe('nutrition');
+	});
+
+	it('lar aktivitets-temaer være i fred for treningsdashboardet', () => {
+		// «aktivitet» blir bevisst liggende på health: flyttet til training
+		// ville disse fått treningsprogram og baseline-skjema.
+		expect(resolveThemeDashboardKind('Barnas aktiviteter')).toBe('health');
+		expect(resolveThemeDashboardKind('Fritidsaktiviteter')).toBe('health');
+		expect(resolveThemeDashboardKind('Fysisk aktivitet')).toBe('health');
+	});
+
+	it('holder vekt og kropp på mortemaet', () => {
+		// Vekt er utfallsmålet undertemaene driver, ikke et eget undertema.
+		expect(resolveThemeDashboardKind('Vekt')).toBe('health');
+		expect(resolveThemeDashboardKind('Kropp')).toBe('health');
+	});
+
+	it('lar korte termer ikke matche inni lengre ord', () => {
+		// «løp»/«run» er ≤ 4 tegn og matcher kun som helt ord.
+		expect(resolveThemeDashboardKind('Løp')).toBe('training');
+		expect(resolveThemeDashboardKind('Litteratur')).toBe('books');
+	});
+});

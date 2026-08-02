@@ -62,6 +62,7 @@ import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
+import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
@@ -538,8 +539,10 @@ const tools = [
 					},
 					parentTheme: {
 						type: 'string',
-						description: 'Overordnet kategori (f.eks: "Samliv", "Helse", "Foreldreliv", "Karriere", "Økonomi")',
-						enum: ['Samliv', 'Helse', 'Foreldreliv', 'Karriere', 'Økonomi', 'Personlig utvikling']
+						// NB: ingen enum. Den utelot «Hjem» og «Familie» — de to
+						// mortemaene som faktisk finnes i koden — og blokkerte
+						// dermed AI-en fra å opprette hus-prosjekter og ferier.
+						description: `Overordnet kategori. Mortemaer som eier undertemaer i dag: "${PARENT_THEME_SUGGESTIONS.join('", "')}". Andre kategorier er lov.`
 					},
 					description: {
 						type: 'string',

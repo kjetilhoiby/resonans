@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { themes, sensorEvents, goals } from '$lib/db/schema';
 import { eq, and, gte, desc, or, ilike } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
+import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 
 async function buildWeightContext(userId: string): Promise<string | null> {
 	const threeMonthsAgo = new Date();
@@ -30,8 +31,9 @@ async function buildWeightContext(userId: string): Promise<string | null> {
 				)
 			)
 		}),
+		// Tersklene bor på mortemaet, ikke på undertemaene — én kilde.
 		db.query.themes.findFirst({
-			where: and(eq(themes.userId, userId), eq(themes.name, 'Helse')),
+			where: and(eq(themes.userId, userId), eq(themes.name, HEALTH_PARENT_THEME_NAME)),
 			columns: { metricSettings: true }
 		})
 	]);

@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { openai } from '$lib/server/openai';
 import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
+import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 
 interface EnsureThemeInput {
 	userId: string;
@@ -19,6 +20,56 @@ export interface ThemeDetectionResult {
 	conversationId: string | null;
 	confidence: 'high' | 'medium' | 'low' | 'none';
 	reasoning?: string;
+}
+
+/**
+ * Barna til et mortema. Hierarkiet er navnebasert (`themes.parentTheme` er
+ * fritekst, ikke en FK), så `parentName` er forelderens NAVN.
+ *
+ * Returnerer fulle rader og sorterer nyeste først — begge deler fordi
+ * hjem-dashboardet leser `projectProfile` og forventer den rekkefølgen.
+ */
+export async function getChildThemes(
+	userId: string,
+	parentName: string,
+	opts: { includeArchived?: boolean } = {}
+) {
+	const conditions = [eq(themes.userId, userId), eq(themes.parentTheme, parentName)];
+	if (!opts.includeArchived) conditions.push(eq(themes.archived, false));
+
+	return db.query.themes.findMany({
+		where: and(...conditions),
+		orderBy: (t, { desc }) => [desc(t.createdAt)]
+	});
+}
+
+export async function findThemeByName(userId: string, name: string) {
+	return (
+		(await db.query.themes.findFirst({
+			where: and(eq(themes.userId, userId), eq(themes.name, name))
+		})) ?? null
+	);
+}
+
+/** Id-en til brukerens Helse-tema, eller null om det ikke finnes ennå. */
+export async function findHealthThemeId(userId: string): Promise<string | null> {
+	const theme = await findThemeByName(userId, HEALTH_PARENT_THEME_NAME);
+	return theme?.id ?? null;
+}
+
+/**
+ * Mortemaet + alle undertemaene, for spørringer som skal se hele helse-familien
+ * (f.eks. mål, som kan ligge på et hvilket som helst av dem). Tom liste når
+ * brukeren ikke har noe helse-tema.
+ */
+export async function getHealthThemeIds(userId: string): Promise<string[]> {
+	const [parent, children] = await Promise.all([
+		findThemeByName(userId, HEALTH_PARENT_THEME_NAME),
+		getChildThemes(userId, HEALTH_PARENT_THEME_NAME)
+	]);
+	const ids = children.map((c) => c.id);
+	if (parent) ids.unshift(parent.id);
+	return ids;
 }
 
 export async function ensureThemeForUser({

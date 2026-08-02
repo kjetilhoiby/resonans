@@ -10,6 +10,7 @@ import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { getThemeFindsByName } from '$lib/server/services/finds-service';
 import { listThemeResearch } from '$lib/server/services/theme-research-service';
+import { findThemeByName } from '$lib/server/themes';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -66,6 +67,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// Prosjekt-undertema av Hjem → har oppgave-fane (checklist_items knyttet til temaet).
 	const isHomeProject = theme.parentTheme === 'Hjem';
+	// Forelderens id, slik at et undertema kan navigere tilbake til mortemaet.
+	// parentTheme er fritekst mot forelderens navn, så forelderen finnes ikke
+	// nødvendigvis som rad (f.eks. 'Hjem' uten et Hjem-tema).
+	const parentThemeId = theme.parentTheme
+		? (await findThemeByName(locals.userId, theme.parentTheme))?.id ?? null
+		: null;
 	// Kontakter lastes kun for prosjekttyper som har kontakter-fane (kommunikasjon/arrangement).
 	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 
@@ -140,8 +147,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: theme.id,
 			name: theme.name,
 			emoji: theme.emoji,
-			description: theme.description
+			description: theme.description,
+			// ThemePage bruker parentTheme til flyt-oppslag (getFlowsByTheme).
+			// Manglet i payloaden, så parent-baserte flyter matchet aldri.
+			parentTheme: theme.parentTheme
 		},
+		parentThemeId,
 		metricSettings: theme.metricSettings ?? {},
 		themeConversations: themeConversations.map((c) => ({
 			...c,

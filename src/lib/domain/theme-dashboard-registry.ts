@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
+export type DashboardKind = 'health' | 'training' | 'sleep' | 'screentime' | 'nutrition' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -6,26 +6,86 @@ export interface ThemeDashboardDefinition {
 	icon: string;
 }
 
+// NB: normalizeThemeName dekomponerer bare tegn som HAR en kanonisk
+// dekomponering — «å» blir «a», men «ø» og «æ» står igjen. Termer må derfor
+// skrives med norske tegn, gjerne i begge varianter («kjøkken»/«kjokken»).
 const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> = [
 	{
+		// NB: må stå FØRST i helse-familien. «psykisk helse» og «mental helse»
+		// inneholder ordet «helse», så health-matcheren ville ellers fanget dem
+		// og gitt et helsedashboard til et tema som handler om indre tilstand.
+		kind: 'egenfrekvens',
+		terms: [
+			'egenfrekvens',
+			'psykisk helse',
+			'mental helse',
+			'mental trening',
+			'innsjekk',
+			'sjekkin',
+			'stemning',
+			'mood',
+			'wellbeing',
+			'velvære',
+			'velvare'
+		]
+	},
+	{
+		// NB: må stå før training/sleep/screentime. Termene deres er fjernet
+		// herfra, så «Trening» treffer bare training — men et sammensatt navn
+		// som «Helse og trening» skal fortsatt beholde mordashboardet.
 		kind: 'health',
 		terms: [
 			'helse',
 			'health',
+			'vekt',
+			'weight',
+			'kropp',
+			'skritt',
+			'steps',
+			// NB: «aktivitet» er 9 tegn og matcher som delstreng. Den blir
+			// bevisst liggende på health — flyttet til training ville den
+			// fanget «Barnas aktiviteter» og «Fritidsaktiviteter».
+			'aktivitet',
+			'vitalitet'
+		]
+	},
+	{
+		kind: 'training',
+		terms: [
 			'trening',
 			'fitness',
 			'workout',
-			'søvn',
-			'sleep',
-			'vekt',
-			'weight',
-			'skritt',
-			'steps',
+			'fysisk aktivitet',
+			'løping',
+			'loping',
+			'løpetur',
+			'lopetur',
 			'løp',
+			'lop',
 			'run',
 			'running',
-			'aktivitet'
+			'styrke',
+			'utholdenhet',
+			'intervall'
 		]
+	},
+	{
+		kind: 'sleep',
+		terms: [
+			'søvn',
+			'sovn',
+			'sleep',
+			'søvnkvalitet',
+			'sovnkvalitet',
+			'døgnrytme',
+			'dognrytme',
+			'restitusjon',
+			'hvile'
+		]
+	},
+	{
+		kind: 'screentime',
+		terms: ['skjermtid', 'screentime', 'screen time', 'scrolling', 'mobilbruk']
 	},
 	{
 		kind: 'economics',
@@ -65,6 +125,22 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'recipe',
 			'meal',
 			'pantry'
+		]
+	},
+	{
+		// NB: må stå ETTER food. «Mat og ernæring» og «Kosthold og mat» skal
+		// beholde matdashboardet med ukemeny, oppskrifter og lager — nutrition
+		// eier energibalansen, ikke matlogistikken.
+		kind: 'nutrition',
+		terms: [
+			'ernæring',
+			'ernaring',
+			'kosthold',
+			'nutrition',
+			'energibalanse',
+			'kalorier',
+			'protein',
+			'makro'
 		]
 	},
 	{
@@ -145,20 +221,6 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		terms: ['film', 'filmer', 'kino', 'kinofilm', 'movie', 'movies', 'regissør', 'regissor']
 	},
 	{
-		kind: 'egenfrekvens',
-		terms: [
-			'egenfrekvens',
-			'psykisk helse',
-			'mental helse',
-			'innsjekk',
-			'sjekkin',
-			'stemning',
-			'mood',
-			'wellbeing',
-			'velvære'
-		]
-	},
-	{
 		kind: 'vehicle',
 		terms: ['bil', 'kjøretøy', 'kjoretoy', 'tesla', 'elbil', 'bilen', 'kjøring', 'kjoring']
 	},
@@ -186,6 +248,26 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'health',
 		label: 'Helse',
 		icon: '💪'
+	},
+	training: {
+		kind: 'training',
+		label: 'Trening',
+		icon: '🏃'
+	},
+	sleep: {
+		kind: 'sleep',
+		label: 'Søvn',
+		icon: '😴'
+	},
+	screentime: {
+		kind: 'screentime',
+		label: 'Skjermtid',
+		icon: '📱'
+	},
+	nutrition: {
+		kind: 'nutrition',
+		label: 'Ernæring',
+		icon: '🥗'
 	},
 	economics: {
 		kind: 'economics',
