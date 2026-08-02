@@ -137,6 +137,35 @@ rekkefølgen justeres i langpress-lista.
   ordgrense for termer under fire tegn.
 - **Cache-prefikset bumpet til v4** med opprydding av v3-nøkler.
 
+## Etterspill: mor-dashboardet var brukket i prod
+
+Rett etter merge feilet Oversikt-fanen på `/tema/helse` med «Kunne ikke laste
+dashboarddata.» for alle brukere. Årsak: `signal-reader.ts` itererte resultatet fra
+`db.execute(sql\`…\`)` direkte. Neon HTTP-driveren returnerer et resultat-*objekt*, ikke
+en array, så `for…of` kastet «is not iterable» og endepunktet svarte 500.
+
+Repoet hadde allerede `rowsOf()` i `$lib/db` for nøyaktig dette, med en docstring som
+advarer ordrett mot feilen. Alle andre rå-SQL-lesere bruker den. Konvensjonen sto bare i
+docstringen — ikke i CLAUDE.md — og det var nok til at den ble oversett. Nå står den i
+CLAUDE.md under «Database-konvensjoner», og `rowsOf` har egne tester.
+
+Tre ting ble rettet i samme runde:
+
+1. `signal-reader.ts` bruker `rowsOf()`. Rad-mappingen er trukket ut til `mapSignalRow`
+   og testet, siden numeric kommer som streng og timestamp som Date eller streng
+   avhengig av driver.
+2. `loadHealthOverview` er pakket i `catch` som degraderer til
+   `{ subthemes: [], signals: [] }`. Undertema-stripen og signalene er en berikelse av
+   flaten — en feil der skal koste en seksjon, ikke hele fanen.
+3. `ensureHealthSubthemes` fikk tidlig retur. Den kjørte fem `ensureThemeForUser` ved
+   hver lasting av mor-dashboardet, og `ensureThemeForUser` gjør en ubetinget `UPDATE`
+   når temaet finnes — altså ti sekvensielle rundturer og fem row-writes per
+   sidevisning. Nå: to spørringer, ingen skriving, når alt er på plass.
+
+**Lærdommen:** enhetssuiten kan strukturelt ikke se driver-formfeil, fordi vi bevisst
+ikke mocker databasen. For endringer som rører rå SQL er et faktisk kall mot en database
+den eneste verifiseringen som teller.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.

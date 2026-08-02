@@ -263,13 +263,28 @@ Svar BARE med valid JSON (ingen markdown):
  * det ingenting å henge undertemaene på, og vi lager ikke seks tomme temaer.
  */
 export async function ensureHealthSubthemes(userId: string) {
-	const parent = await findThemeByName(userId, HEALTH_PARENT_THEME_NAME);
+	const [parent, children] = await Promise.all([
+		findThemeByName(userId, HEALTH_PARENT_THEME_NAME),
+		getChildThemes(userId, HEALTH_PARENT_THEME_NAME)
+	]);
 	if (!parent) return { created: 0, themeIdsByName: {} as Record<string, string> };
 
-	let created = 0;
 	const themeIdsByName: Record<string, string> = {};
+	for (const child of children) themeIdsByName[child.name] = child.id;
 
-	for (const subtheme of HEALTH_SUBTHEMES) {
+	// Tidlig retur når alt er på plass. Uten den kjørte funksjonen fem
+	// ensureThemeForUser ved HVER lasting av mor-dashboardet, og
+	// ensureThemeForUser gjør en ubetinget UPDATE når temaet finnes — altså ti
+	// sekvensielle rundturer og fem row-writes per sidevisning.
+	//
+	// NB: et eksisterende toppnivå-«Trening» har parentTheme = null og er derfor
+	// ikke med i `children`. Det regnes som manglende og adopteres nedenfor med
+	// forceParentTheme, som er meningen.
+	const missing = HEALTH_SUBTHEMES.filter((subtheme) => !themeIdsByName[subtheme.name]);
+	if (missing.length === 0) return { created: 0, themeIdsByName };
+
+	let created = 0;
+	for (const subtheme of missing) {
 		const result = await ensureThemeForUser({
 			userId,
 			name: subtheme.name,

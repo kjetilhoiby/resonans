@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -21,7 +21,7 @@ export interface LatestSignal {
 	context: Record<string, unknown>;
 }
 
-interface LatestSignalRow extends Record<string, unknown> {
+export interface LatestSignalRow extends Record<string, unknown> {
 	signal_type: string;
 	owner_domain: string;
 	value_number: string | number | null;
@@ -38,6 +38,25 @@ function toIso(value: string | Date): string {
 }
 
 /**
+ * Én rå SQL-rad → LatestSignal. Eksportert og ren, slik at kolonne-mappingen kan
+ * testes uten database (numeric kommer som streng, timestamp som Date eller
+ * streng avhengig av driver).
+ */
+export function mapSignalRow(row: LatestSignalRow): LatestSignal {
+	return {
+		signalType: row.signal_type,
+		ownerDomain: row.owner_domain,
+		valueNumber: row.value_number === null ? null : Number(row.value_number),
+		valueText: row.value_text,
+		valueBool: row.value_bool,
+		severity: row.severity,
+		confidence: String(row.confidence),
+		observedAt: toIso(row.observed_at),
+		context: (row.context ?? {}) as Record<string, unknown>
+	};
+}
+
+/**
  * Siste måling per signaltype for brukeren, som kart fra signalType.
  * `ownerDomain` filtrerer når bare ett domene er interessant (f.eks. 'health').
  */
@@ -45,7 +64,7 @@ export async function getLatestSignalsByType(
 	userId: string,
 	opts: { ownerDomain?: string } = {}
 ): Promise<Map<string, LatestSignal>> {
-	const rows = await db.execute<LatestSignalRow>(sql`
+	const result = await db.execute(sql`
 		SELECT DISTINCT ON (signal_type)
 			signal_type, owner_domain, value_number, value_text, value_bool,
 			severity, confidence, observed_at, context
@@ -55,19 +74,12 @@ export async function getLatestSignalsByType(
 		ORDER BY signal_type, observed_at DESC
 	`);
 
+	// NB: MÅ gå gjennom rowsOf. Neon HTTP-driveren returnerer et resultat-objekt,
+	// ikke en array — `for…of` rett på resultatet kaster «is not iterable» i prod.
+	// Se docstringen på rowsOf i $lib/db.
 	const out = new Map<string, LatestSignal>();
-	for (const row of rows as unknown as LatestSignalRow[]) {
-		out.set(row.signal_type, {
-			signalType: row.signal_type,
-			ownerDomain: row.owner_domain,
-			valueNumber: row.value_number === null ? null : Number(row.value_number),
-			valueText: row.value_text,
-			valueBool: row.value_bool,
-			severity: row.severity,
-			confidence: String(row.confidence),
-			observedAt: toIso(row.observed_at),
-			context: (row.context ?? {}) as Record<string, unknown>
-		});
+	for (const row of rowsOf<LatestSignalRow>(result)) {
+		out.set(row.signal_type, mapSignalRow(row));
 	}
 	return out;
 }

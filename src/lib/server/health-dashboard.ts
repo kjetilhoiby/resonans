@@ -55,7 +55,13 @@ export async function loadHealthDashboardData(userId: string) {
 	const weekly = weeklyData.reverse();
 	const monthly = monthlyData.reverse();
 
-	const overview = await loadHealthOverview(userId, weekly, monthly);
+	// Undertema-stripen og signalene er en berikelse av flaten, ikke fundamentet.
+	// Uten denne guarden tar en feil i oversiktslaget med seg widgets, metrikkgrid
+	// og kilder også — slik det skjedde da signal-leseren kastet «not iterable».
+	const overview = await loadHealthOverview(userId, weekly, monthly).catch((err) => {
+		console.error('[health-dashboard] oversikt feilet, degraderer', err);
+		return { subthemes: [], signals: [] };
+	});
 
 	console.log(
 		`[perf][health-dashboard] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} signals=${overview.signals.length}`

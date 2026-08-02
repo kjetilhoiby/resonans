@@ -210,6 +210,12 @@ Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbas
 - Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
 - Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
 - Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+- **Rå `db.execute(sql\`…\`)` som leser rader MÅ gå gjennom `rowsOf()`** fra `$lib/db`.
+  Neon HTTP-driveren returnerer et resultat-*objekt* (`{ rowCount, rows, … }`), mens
+  postgres-js returnerer en bar *array*. `for…of`/`.map()` rett på resultatet kaster
+  «is not iterable» i prod — enhetstestene fanger det ikke, siden vi ikke mocker DB.
+  Feilen har truffet minst to ganger. Foretrekk query-builderen når du kan; den
+  returnerer alltid en array.
 
 ---
 
