@@ -8,9 +8,13 @@
 	import { StreakCard } from '$lib/components/ui';
 	import HealthSubthemeStrip from '$lib/components/domain/health/HealthSubthemeStrip.svelte';
 	import HealthSignalSection from '$lib/components/domain/health/HealthSignalSection.svelte';
+	import NutritionDayCard from '$lib/components/domain/nutrition/NutritionDayCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
+		nutritionToday,
+		nutritionTargets,
+		nutritionAverage,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -150,6 +154,19 @@
 		<div class="demo-card"><MetricCard metricId="running_distance" size="L" data={metricRunning} animateOnMount={false} /></div>
 		<div class="demo-card"><MetricCard metricId="weight_change" size="L" data={metricWeight} animateOnMount={false} /></div>
 	</div>
+	<h3 class="subsection">NutritionDayCard — dagens inntak</h3>
+	<p class="section-desc">
+		Summer, andel av dagsmålet og de loggede måltidene. Sikkerheten står på hvert
+		måltid, fordi tallene er estimater fra en modell — ikke målinger.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<NutritionDayCard day={nutritionToday} targets={nutritionTargets} average={nutritionAverage} />
+	</div>
+
+	<!-- NutritionLogger er bevisst ikke demonstrert her: /design er en public
+	     path, og loggeren kaller /api/helse/ernaering/* som krever innlogging.
+	     En demo ville bare vist 401-feil. -->
+
 </section>
 
 <style>

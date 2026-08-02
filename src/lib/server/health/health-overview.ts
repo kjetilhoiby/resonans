@@ -19,6 +19,7 @@ interface AggregateMetrics {
 	sleep?: { avg?: number };
 	weeklyEffort?: { total?: number; baseline?: { p4wAvg?: number; delta?: number } };
 	screenTime?: { avgPerDayMinutes?: number };
+	nutrition?: { kcalPerDay?: number; proteinPerDay?: number; loggedDays?: number };
 }
 
 interface AggregateRow {
@@ -73,7 +74,10 @@ function readTileMetrics(weekly: AggregateRow[], monthly: AggregateRow[]) {
 		weeklyEffort: latestWeek?.weeklyEffort ?? null,
 		weightChange30d: latestMonth?.weight?.change ?? null,
 		sleepAvgHours: latestWeek?.sleep?.avg ?? null,
-		screenTimeAvgPerDayMinutes: latestWeek?.screenTime?.avgPerDayMinutes ?? null
+		screenTimeAvgPerDayMinutes: latestWeek?.screenTime?.avgPerDayMinutes ?? null,
+		// Ernæringsflisen viser loggede makroer når de finnes, ellers faller den
+		// tilbake på vektendringen over — det eneste tallet den hadde før loggen.
+		nutrition: latestWeek?.nutrition ?? null
 	};
 }
 

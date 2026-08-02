@@ -39,6 +39,7 @@ import { findRecipesTool } from '$lib/ai/tools/find-recipes';
 import { manageFoodSettingsTool } from '$lib/ai/tools/manage-food-settings';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
+import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
 import {
 	createUserWidget,
 	findSimilarWidget,
@@ -1375,6 +1376,14 @@ const tools = [
 						},
 						required: ['imageUrl']
 					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: logNutritionTool.name,
+					description: logNutritionTool.description,
+					parameters: logNutritionTool.parameters
 				}
 			},
 			{
@@ -2831,6 +2840,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🍽️ Analyze meal image');
 					const result = await analyzeMealImageTool.execute(args);
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_nutrition') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🥗 Log nutrition:', args.description);
+					const result = await logNutritionTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_family') {
 					const args = JSON.parse(toolCall.function.arguments);

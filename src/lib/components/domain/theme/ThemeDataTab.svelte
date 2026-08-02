@@ -623,7 +623,11 @@
 	{/if}
 
 	{#if nutritionData}
-		<NutritionDashboard data={nutritionData} onOpenChat={onSwitchToChat} />
+		<NutritionDashboard
+			data={nutritionData}
+			onOpenChat={onSwitchToChat}
+			onRefresh={() => void ensureDashboardLoaded(true)}
+		/>
 	{/if}
 
 	{#if projects.length > 0}

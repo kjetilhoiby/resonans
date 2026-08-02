@@ -163,6 +163,22 @@ const DEFINITIONS: Record<string, Definition> = {
 		}
 	},
 
+	nutrition_protein_vs_load: {
+		title: 'Protein mot belastning',
+		crossLinks: ['Ernæring', 'Trening'],
+		sentence: (latest) => {
+			// Setningen er ferdig norsk prosa fra evaluateProteinVsLoad — den
+			// kjenner både gram, mål og antall loggede dager.
+			const message = latest.context.message;
+			if (typeof message === 'string' && message.length > 0) return message;
+			const deficit = latest.valueNumber;
+			if (deficit === null) return null;
+			return deficit > 0
+				? `Du mangler ${Math.round(deficit)} g protein per dag for treningsmengden din.`
+				: 'Proteininntaket dekker treningsbelastningen.';
+		}
+	},
+
 	egenfrekvens_trend_7d: {
 		title: 'Egenfrekvens',
 		crossLinks: ['Egenfrekvens', 'Søvn'],

@@ -7,6 +7,7 @@ import type { WeekPeriod, MonthPeriod, YearPeriod, DayPeriod } from './time-peri
 import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/effort-service';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { isNapSleepEvent } from '$lib/domain/sleep-goals';
+import { computeNutritionMetrics } from '$lib/domain/nutrition/aggregate-metrics';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
@@ -337,6 +338,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates), values: heartRates };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		// Inntak. NB: `metrics.calories` over er FORBRENTE kalorier fra Withings —
+		// spist ligger under `nutrition` for å holde de to fra hverandre.
+		const nutrition = computeNutritionMetrics(events);
+		if (nutrition) metrics.nutrition = nutrition;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
@@ -435,6 +440,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		// Inntak. NB: `metrics.calories` over er FORBRENTE kalorier fra Withings —
+		// spist ligger under `nutrition` for å holde de to fra hverandre.
+		const nutrition = computeNutritionMetrics(events);
+		if (nutrition) metrics.nutrition = nutrition;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
@@ -519,6 +528,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		// Inntak. NB: `metrics.calories` over er FORBRENTE kalorier fra Withings —
+		// spist ligger under `nutrition` for å holde de to fra hverandre.
+		const nutrition = computeNutritionMetrics(events);
+		if (nutrition) metrics.nutrition = nutrition;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });

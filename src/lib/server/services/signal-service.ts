@@ -6,6 +6,7 @@ import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
 import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
+import { evaluateProteinVsLoad } from '$lib/domain/nutrition/protein-vs-load';
 import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
 import {
@@ -852,6 +853,77 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 }
 
 /**
+ * Protein mot treningsbelastning: spiser du nok til det du gjør?
+ *
+ * Kryss-domene-signalet mellom Ernæring og Trening. Hverken flate kan se det
+ * alene — Trening kjenner belastningen, Ernæring inntaket, og spørsmålet ligger
+ * mellom dem. Det er nettopp den typen sammenheng mortemaet finnes for.
+ *
+ * Leser ukesaggregatet framfor loggen direkte, fordi `metrics.nutrition` og
+ * `metrics.weeklyEffort` da kommer fra samme periode og samme rad.
+ *
+ * Returnerer null når grunnlaget er for tynt — se `evaluateProteinVsLoad`.
+ */
+async function produceProteinVsLoad(userId: string, now: Date) {
+	const weekRows = await db.execute(sql`
+		SELECT metrics
+		FROM sensor_aggregates
+		WHERE user_id = ${userId} AND period = 'week'
+		ORDER BY start_date DESC
+		LIMIT 1
+	`);
+
+	// NB: MÅ gå gjennom rowsOf — neon-http gir et resultatobjekt, ikke en array.
+	const metrics = rowsOf<{ metrics: Record<string, any> | null }>(weekRows)[0]?.metrics ?? null;
+	if (!metrics) return null;
+
+	const evaluation = evaluateProteinVsLoad({
+		proteinPerDay: toNumber(metrics.nutrition?.proteinPerDay),
+		loggedDays: toNumber(metrics.nutrition?.loggedDays) ?? 0,
+		weeklyEffort: toNumber(metrics.weeklyEffort?.total),
+		// Ukesvekten først; månedssnittet er ikke på denne raden, og en uke uten
+		// veiing skal ikke gi et signal basert på fjorårets vekt.
+		bodyWeightKg: toNumber(metrics.weight?.latest) ?? toNumber(metrics.weight?.avg)
+	});
+	if (!evaluation) return null;
+
+	await ensureSignalContract({
+		signalType: 'nutrition_protein_vs_load',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health'],
+		description:
+			'Loggført protein per dag mot behovet treningsbelastningen tilsier (1,2–1,7 g/kg etter ukens effort). valueNumber = gram som mangler per dag (negativt = over målet), valueText = mål i g/kg. context har mål, faktisk inntak, andel og antall loggede dager.'
+	});
+
+	await upsertDomainSignal({
+		signalType: 'nutrition_protein_vs_load',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: evaluation.deficit,
+		valueText: `${evaluation.gPerKg} g/kg`,
+		severity: evaluation.severity,
+		// Konfidensen speiler at inntaket er et estimat, ikke en måling, og at
+		// den bygger på så mange dager som brukeren faktisk logget.
+		confidence: Math.min(0.7, 0.35 + evaluation.loggedDays * 0.05),
+		windowStart: daysAgo(now, 7),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			targetPerDay: evaluation.targetPerDay,
+			actualPerDay: evaluation.actualPerDay,
+			deficit: evaluation.deficit,
+			share: evaluation.share,
+			gPerKg: evaluation.gPerKg,
+			loggedDays: evaluation.loggedDays,
+			weeklyEffort: evaluation.weeklyEffort,
+			message: evaluation.message
+		}
+	});
+
+	return evaluation;
+}
+
+/**
  * Treningsbalanse-signalet: disiplin-miks, styrke-dekning og intensitetsspredning
  * siste ~4 uker + én nudge mot det underbrukte hodet. Cache for hjem-widget og
  * AI-coach; /trening beregner samme tilstand live. Balanse påvirker forslag,
@@ -1677,6 +1749,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		eveningScreenWork7d: 0,
 		healthEffortVsThreshold: 0,
 		trainingBalance: 0,
+		nutritionProteinVsLoad: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -1800,6 +1873,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (trainingBalance !== null) {
 				produced += 1;
 				producerBreakdown.trainingBalance += 1;
+			}
+
+			const proteinVsLoad = await produceProteinVsLoad(user.id, now);
+			if (proteinVsLoad !== null) {
+				produced += 1;
+				producerBreakdown.nutritionProteinVsLoad += 1;
 			}
 
 			if (user.partnerUserId) {

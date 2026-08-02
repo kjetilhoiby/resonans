@@ -1996,6 +1996,31 @@ export const sensorEvents = pgTable('sensor_events', {
 		powerWatts?: number;
 		state?: 'on' | 'off' | 'running';
 		runDuration?: number;
+		// Ernæring — selvrapportert inntak (dataType 'nutrition', provider 'manual').
+		// Estimatet ligger i sin helhet på hendelsen, inkludert varelista, slik at
+		// et logget måltid kan rettes og forklares i ettertid. Se
+		// $lib/domain/nutrition/estimate og $lib/server/nutrition/intake-log.
+		kcal?: number;
+		proteinG?: number;
+		carbsG?: number;
+		fatG?: number;
+		/** Måltidets tittel. Heter ikke `label` fordi det navnet alt er i bruk
+		 *  for programetiketter i samme jsonb. */
+		mealLabel?: string;
+		items?: Array<{
+			name: string;
+			quantity: number | null;
+			unit: string | null;
+			macros: { kcal: number; proteinG: number; carbsG: number; fatG: number };
+			referenceKey: string | null;
+		}>;
+		confidence?: number;
+		imageUrl?: string;
+		estimateSource?: 'text' | 'vision' | 'vision+text' | 'manual';
+		/** Brukerens egne beskrivelser, i rekkefølge. Første er den opprinnelige. */
+		descriptions?: string[];
+		/** Sann når brukeren har rettet tallene selv — da skal de ikke overskrives. */
+		userAdjusted?: boolean;
 		// Generic
 		[key: string]: any;
 	}>(),

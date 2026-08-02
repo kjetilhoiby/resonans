@@ -206,6 +206,21 @@ der. To feller:
   fram til 2026-08 og kostet tre bugs. Nye helse-endepunkter hører uansett under
   `/api/helse/` eller `/api/tema/`.
 
+### Ernæringslogg
+
+Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sensor
+`manual`/`nutrition_log`), ikke en egen tabell — se
+`docs/changelog/2026-08-02-ernaeringslogger.md`.
+
+- Estimatene grunnes i `src/lib/domain/nutrition/food-reference.ts`. **Nye varer skal inn
+  der**, med makroer per *naturlig enhet* (skive, stykk, dl), ikke per 100 g. En ren
+  LLM-gjetning på «knekkebrød» spriker fra 25 til 90 kcal.
+- `metrics.nutrition` i aggregatene er **spist**; `metrics.calories` er **forbrent** fra
+  Withings. Ikke bland dem.
+- Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
+  `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
+- Endepunktene ligger under `/api/helse/ernaering/`.
+
 ### Transaksjons-kategorisering
 
 Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.

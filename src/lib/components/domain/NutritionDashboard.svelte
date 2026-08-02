@@ -1,24 +1,27 @@
 <!--
   NutritionDashboard — Ernæring-undertemaet av Helse.
 
-  NB: dette er bevisst en tynn flate. Ingenting i Resonans logger inntak,
-  makroer eller kalorier ennå, så det finnes ingen ernæringsdata å vise.
-  Undertemaet eksisterer for å ha ett sted for kostholdssamtalen, målene og
-  filene — og for at strukturen er på plass den dagen en kilde kommer.
+  Flaten var en skalflate fram til august 2026, fordi ingenting logget inntak.
+  Nå eier den inntaksloggen: fritekst eller bilde inn, makroer ut, estimert mot
+  en norsk referansetabell. Logging øverst, dagens tall under, vekt til slutt.
 
-  Vekten tas med som eneste faktiske tall: den er utfallet kostholdet påvirker.
-  Selve effort→vekt-modellen bor på Trening (effort → effekt).
+  Vekten blir liggende fordi den er utfallet kostholdet påvirker. Selve
+  effort→vekt-modellen bor på Trening (effort → effekt).
 -->
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
+	import NutritionLogger from './nutrition/NutritionLogger.svelte';
+	import NutritionDayCard from './nutrition/NutritionDayCard.svelte';
 	import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 
 	interface Props {
 		data: NutritionDashboardPayload;
 		onOpenChat?: (draft?: string) => void;
+		/** Ber flaten hente dashboardet på nytt etter en logging eller sletting. */
+		onRefresh?: () => void;
 	}
 
-	let { data, onOpenChat }: Props = $props();
+	let { data, onOpenChat, onRefresh }: Props = $props();
 
 	const recent = $derived(data.weight.slice(-12));
 	const latest = $derived(recent.at(-1) ?? null);
@@ -38,12 +41,16 @@
 </script>
 
 <div class="nutrition-dashboard">
+	<NutritionLogger onLogged={() => onRefresh?.()} />
+
+	<NutritionDayCard
+		day={data.today}
+		targets={data.targets}
+		average={data.average}
+		onChanged={() => onRefresh?.()}
+	/>
+
 	<section class="nutrition-source">
-		<SectionLabel tag="h2">Kilde</SectionLabel>
-		<p class="source-copy">
-			Ingen ernæringskilde er koblet ennå — inntak, makroer og kalorier logges ikke noe sted.
-			Fram til det finnes, er dette stedet for samtalen om kosthold, målene og notatene dine.
-		</p>
 		<div class="source-actions">
 			{#if data.foodThemeId}
 				<a class="source-link" href={`/tema/${data.foodThemeId}`} data-track="ernaering:apne-mat">
@@ -119,13 +126,6 @@
 		padding: 16px;
 		background: var(--card-bg-subtle, #141414);
 		border-radius: var(--card-radius, 16px);
-	}
-
-	.source-copy {
-		margin: 0;
-		font-size: 0.86rem;
-		line-height: 1.5;
-		color: #999;
 	}
 
 	.source-actions {

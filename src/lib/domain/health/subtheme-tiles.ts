@@ -31,6 +31,8 @@ export interface SubthemeTileInput {
 	themeIdsByName: Record<string, string>;
 	weeklyEffort?: { total?: number; baseline?: { p4wAvg?: number; delta?: number } } | null;
 	weightChange30d?: number | null;
+	/** Loggede makroer, snitt per logget dag i siste uke. */
+	nutrition?: { kcalPerDay?: number; proteinPerDay?: number; loggedDays?: number } | null;
 	egenfrekvens?: { recentAvg?: number | null; direction?: string | null } | null;
 	sleepAvgHours?: number | null;
 	screenTimeAvgPerDayMinutes?: number | null;
@@ -72,7 +74,32 @@ function buildTraining(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | '
 	};
 }
 
+/**
+ * Loggede kalorier når brukeren fører inntak, ellers vektendringen.
+ *
+ * Rekkefølgen er poenget: inntak er det Ernæring faktisk eier, og vekten er et
+ * utfall den deler med Trening. Før inntaksloggen fantes (august 2026) var vekt
+ * det eneste tallet flisen hadde.
+ */
 function buildNutrition(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | 'unit' | 'delta' | 'tone' | 'empty'> {
+	const kcal = input.nutrition?.kcalPerDay;
+	const loggedDays = input.nutrition?.loggedDays ?? 0;
+	if (typeof kcal === 'number' && kcal > 0 && loggedDays > 0) {
+		const protein = input.nutrition?.proteinPerDay;
+		return {
+			value: Math.round(kcal).toLocaleString('nb-NO'),
+			unit: 'kcal/dag',
+			delta:
+				typeof protein === 'number' && protein > 0
+					? `${Math.round(protein)} g protein · ${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'}`
+					: `${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'} logget`,
+			// Ingen tone på inntak: vi kjenner ikke brukerens mål, og et grønt
+			// eller gult kort ville dømt et tall vi ikke har terskel for.
+			tone: 'nøytral',
+			empty: false
+		};
+	}
+
 	const change = input.weightChange30d;
 	if (typeof change !== 'number') {
 		return { value: null, unit: null, delta: null, tone: 'nøytral', empty: true };

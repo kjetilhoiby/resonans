@@ -706,6 +706,7 @@ export const bookChatMessagesMock = [
 // ── Reise (trip/ferie) ───────────────────────────────────────────────────────
 import type { TripApi, DayForecast } from '$lib/components/domain/trip-api';
 import type { FerieBook } from '$lib/ferie/ferie-reading';
+import { averagePerLoggedDay, summarizeDay, type LoggedEntry } from '$lib/domain/nutrition/day-summary';
 
 /** Lesing i ferien: slider-snapshots over demo-perioden 1.–4. juni. */
 export const ferieBooksMock: FerieBook[] = [
@@ -1530,7 +1531,8 @@ export const foodShoppingListItemsMock = [
 // Faste verdier og observedAt — /design er i visuell regresjon.
 export const healthSubthemeTiles: SubthemeTile[] = [
 	{ name: 'Trening', emoji: '🏃', kind: 'training' as const, themeId: 'demo-trening', value: '412', unit: 'effort', delta: '+37 mot snittet', tone: 'positiv' as const, empty: false },
-	{ name: 'Ernæring', emoji: '🥗', kind: 'nutrition' as const, themeId: 'demo-ernaering', value: '−1,4', unit: 'kg', delta: 'siste 30 dager', tone: 'positiv' as const, empty: false },
+	// Ernæringsflisen viser loggede makroer når loggen har data, ellers vektendringen.
+	{ name: 'Ernæring', emoji: '🥗', kind: 'nutrition' as const, themeId: 'demo-ernaering', value: '2 140', unit: 'kcal/dag', delta: '96 g protein · 5 dager', tone: 'nøytral' as const, empty: false },
 	{ name: 'Egenfrekvens', emoji: '🧘', kind: 'egenfrekvens' as const, themeId: 'demo-egenfrekvens', value: '2,8', unit: 'av 5', delta: 'nedgang', tone: 'varsel' as const, empty: false },
 	{ name: 'Søvn', emoji: '😴', kind: 'sleep' as const, themeId: 'demo-sovn', value: '6,4', unit: 'timer/natt', delta: 'siste uke', tone: 'varsel' as const, empty: false },
 	{ name: 'Skjermtid', emoji: '📱', kind: 'screentime' as const, themeId: null, value: null, unit: null, delta: null, tone: 'nøytral' as const, empty: true }
@@ -1565,3 +1567,37 @@ export const healthSignals: PresentedSignal[] = [
 		observedAt: '2026-07-31T06:00:00.000Z'
 	}
 ];
+
+
+/* ── Ernæring: dagens inntak ────────────────────────────── */
+
+const nutritionEntries: LoggedEntry[] = [
+	{
+		id: 'n1',
+		timestamp: '2026-08-02T05:40:00.000Z',
+		label: 'To knekkebrød med egg',
+		macros: { kcal: 158, proteinG: 8.9, carbsG: 13.6, fatG: 6.5 },
+		confidence: 0.85,
+		imageUrl: null
+	},
+	{
+		id: 'n2',
+		timestamp: '2026-08-02T10:15:00.000Z',
+		label: 'Skyr med havregryn og banan',
+		macros: { kcal: 415, proteinG: 24, carbsG: 62, fatG: 6 },
+		confidence: 0.6,
+		imageUrl: null
+	},
+	{
+		id: 'n3',
+		timestamp: '2026-08-02T16:30:00.000Z',
+		label: 'Laks med poteter og brokkoli',
+		macros: { kcal: 620, proteinG: 42, carbsG: 45, fatG: 28 },
+		confidence: 0.45,
+		imageUrl: null
+	}
+];
+
+export const nutritionTargets = { kcal: 2400, proteinG: 140 };
+export const nutritionToday = summarizeDay('2026-08-02', nutritionEntries, nutritionTargets);
+export const nutritionAverage = averagePerLoggedDay(nutritionEntries);
