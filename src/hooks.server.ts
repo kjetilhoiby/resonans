@@ -1,5 +1,5 @@
 import { sequence } from '@sveltejs/kit/hooks';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
@@ -9,6 +9,7 @@ import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 import { isPublicPath } from '$lib/server/public-paths';
+import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
 
 // Start scheduler when server starts
 if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
@@ -72,3 +73,34 @@ const requestUserHandle: Handle = async ({ event, resolve }) => {
 };
 
 export const handle: Handle = sequence(authenticationHandle, authorizationHandle, requestUserHandle);
+
+/**
+ * Uventede serverfeil: logg rute + stack, og gi klienten noe å vise.
+ *
+ * Uten denne hooken svarer SvelteKit `{"message":"Internal Error"}` — ingen
+ * rute, ingen stack, ingenting å søke etter i Vercel-loggen. Det gjorde
+ * feilsøkingen av mor-dashboardet i august til ren gjetting, og det er grunnen
+ * til at hooken finnes.
+ *
+ * Kalles ikke for `error(...)`-kast fra koden vår (de er forventede) og ikke for
+ * 404. Bare for det vi ikke har tenkt på.
+ */
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	const errorId = crypto.randomUUID().slice(0, 8);
+
+	console.error(
+		formatErrorLog({
+			errorId,
+			routeId: event.route.id,
+			method: event.request.method,
+			path: event.url.pathname,
+			status,
+			error
+		})
+	);
+
+	return {
+		message: clientErrorMessage(error) || message,
+		errorId
+	};
+};

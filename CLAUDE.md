@@ -111,6 +111,19 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
 - Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
 - `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
 
+**Uventede serverfeil** (`handleError` i `hooks.server.ts`, se
+`docs/changelog/2026-08-02-serverfeil-synlighet.md`):
+
+Alle uhåndterte feil i `load`/`+server.ts` logges som én søkbar linje —
+`[500] id=<errorId> status=… METHOD /path route=… Navn: melding` — med stacken under.
+Samme `errorId` returneres til klienten, så en skjermdump kan kobles til loggraden.
+Søk etter `[500]` i Vercel-loggen.
+
+- Fanger ikke `error(...)`-kast fra vår egen kode (forventede feil) og ikke 404.
+- Nye `fetch`-kallsteder mot egne API-ruter: bruk `extractApiErrorMessage` fra
+  `$lib/client/api-error` og **vis** meldingen. `catch {}` med en generisk tekst
+  gjør en prod-feil uløselig — det kostet en full kodegjennomgang i august.
+
 **Brukslogging** (`usage_events`-tabellen, se `docs/changelog/2026-06-09-brukslogging.md`):
 
 Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$lib/client/usage-logger`) — ingen instrumentering trengs per side. Klikk på interaktive elementer får label etter denne prioriteringen: `data-track` > `aria-label` > input-type/navn > knappetekst.

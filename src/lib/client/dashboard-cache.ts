@@ -1,4 +1,5 @@
 import { dashboardEndpointForTheme, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { extractApiErrorMessage } from '$lib/client/api-error';
 import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
 import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
 import type { TrainingDashboardPayload } from '$lib/server/training-dashboard';
@@ -565,7 +566,9 @@ export async function fetchDashboard<K extends DashboardKind>(themeId: string, k
 	const request = (async () => {
 		const response = await fetch(dashboardEndpointForTheme(themeId, kind));
 		if (!response.ok) {
-			throw new Error(await response.text());
+			// Ikke rå kroppen: den kan være en hel HTML-feilside. Kallstedet viser
+			// meldingen, så den må være lesbar.
+			throw new Error(extractApiErrorMessage(response.status, await response.text()));
 		}
 
 		const data = (await response.json()) as DashboardPayloadMap[K];

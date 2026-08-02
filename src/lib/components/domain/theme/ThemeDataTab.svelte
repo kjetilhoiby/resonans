@@ -146,6 +146,8 @@
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
+	/** Teknisk detalj fra serveren — vises under feilteksten, se ensureDashboardLoaded. */
+	let dashboardErrorDetail = $state('');
 	let dashboardRequestId = 0;
 	let dashboardCachedAt = $state<string | null>(null);
 
@@ -397,6 +399,7 @@
 
 		dashboardLoading = true;
 		dashboardError = '';
+		dashboardErrorDetail = '';
 		const requestId = ++dashboardRequestId;
 
 		try {
@@ -407,9 +410,14 @@
 
 				dashboardData[kind] = result.data;
 			dashboardLoaded = true;
-		} catch {
+		} catch (err) {
 			if (requestId !== dashboardRequestId) return;
 			dashboardError = 'Kunne ikke laste dashboarddata.';
+			// Behold serverens melding. Uten den er «Kunne ikke laste dashboarddata.»
+			// alt vi vet — og det var nøyaktig situasjonen da mor-dashboardet
+			// feilet i prod i august.
+			dashboardErrorDetail = err instanceof Error ? err.message : String(err);
+			console.error(`[tema-dashboard] ${kind} feilet:`, err);
 			dashboardLoaded = true; // Prevent retry spam
 		} finally {
 			if (requestId === dashboardRequestId) {
@@ -521,6 +529,9 @@
 	{#if hasThemeDashboard && dashboardError}
 		<div class="data-empty data-empty-tight">
 			<p>{dashboardError}</p>
+			{#if dashboardErrorDetail}
+				<p class="dashboard-error-detail">{dashboardErrorDetail}</p>
+			{/if}
 			<button class="data-new-btn" onclick={() => void ensureDashboardLoaded(true)}>
 				Prøv igjen
 			</button>
@@ -800,6 +811,17 @@
 
 	.data-empty-tight {
 		padding-top: 8px;
+	}
+
+	/* Teknisk detalj: skal være lesbar og kopierbar, men ikke rope. */
+	.dashboard-error-detail {
+		margin: 4px 0 0;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 0.68rem;
+		line-height: 1.4;
+		color: #777;
+		overflow-wrap: anywhere;
+		user-select: all;
 	}
 
 	.data-new-btn {

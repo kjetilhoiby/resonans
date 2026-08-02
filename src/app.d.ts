@@ -5,7 +5,14 @@ import type { ApiSecretAuthContext } from '$lib/server/api-secrets';
 
 declare global {
 	namespace App {
-		// interface Error {}
+		interface Error {
+			message: string;
+			/**
+			 * Kort id som også står i serverloggen (`[500] id=…`), slik at en
+			 * skjermdump kan kobles til loggraden. Se `hooks.server.ts`.
+			 */
+			errorId?: string;
+		}
 		interface Locals {
 			userId: string;
 			apiSecretAuth?: ApiSecretAuthContext;
