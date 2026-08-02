@@ -1,7 +1,7 @@
 <script lang="ts">
 	import WeeklyEffortCard from '../../composed/WeeklyEffortCard.svelte';
 	import FormCard from '../../composed/FormCard.svelte';
-	import BalanceCard from '../../composed/BalanceCard.svelte';
+	import LoadBalanceCard from '../../composed/LoadBalanceCard.svelte';
 	import type { TrainingLoadPoint } from '$lib/util/training-load';
 
 	type EffortFamily =
@@ -82,7 +82,7 @@
 {#if trainingLoadSeries.length >= 14}
 	<div class="hd-training-load">
 		<FormCard series={trainingLoadSeries} />
-		<BalanceCard series={trainingLoadSeries} />
+		<LoadBalanceCard series={trainingLoadSeries} />
 	</div>
 {/if}
 

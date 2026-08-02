@@ -5,7 +5,7 @@
 	import MilestoneList from '$lib/components/domain/training/MilestoneList.svelte';
 	import TrackHistory from '$lib/components/domain/training/TrackHistory.svelte';
 	import EffortBudgetCard from '$lib/components/domain/training/EffortBudgetCard.svelte';
-	import BalanceCard from '$lib/components/domain/training/BalanceCard.svelte';
+	import TrainingMixCard from '$lib/components/domain/training/TrainingMixCard.svelte';
 	import RouteLibrary from '$lib/components/domain/training/RouteLibrary.svelte';
 	import type { PageData } from './$types';
 
@@ -167,7 +167,7 @@
 			{/if}
 
 			{#if data.states?.balance}
-				<BalanceCard balance={data.states.balance} />
+				<TrainingMixCard balance={data.states.balance} />
 			{/if}
 
 			{#if strength}

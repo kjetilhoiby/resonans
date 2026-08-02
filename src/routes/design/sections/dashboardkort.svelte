@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
-	import BalanceCard from '$lib/components/composed/BalanceCard.svelte';
+	import LoadBalanceCard from '$lib/components/composed/LoadBalanceCard.svelte';
 	import FormCard from '$lib/components/composed/FormCard.svelte';
 	import WeeklyEffortCard from '$lib/components/composed/WeeklyEffortCard.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
@@ -79,10 +79,10 @@
 		/>
 	</div>
 
-	<h3 class="subsection">BalanceCard + FormCard — treningsbelastning</h3>
+	<h3 class="subsection">LoadBalanceCard + FormCard — treningsbelastning</h3>
 	<p class="section-desc">Begge leser samme <code>TrainingLoadPoint[]</code>-serie (CTL/ATL/TSB).</p>
 	<div class="demo-row">
-		<div class="demo-card"><BalanceCard series={loadSeries} /></div>
+		<div class="demo-card"><LoadBalanceCard series={loadSeries} /></div>
 		<div class="demo-card"><FormCard series={loadSeries} windowDays={120} /></div>
 	</div>
 

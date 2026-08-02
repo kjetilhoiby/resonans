@@ -22,8 +22,8 @@
 	import ProjectCard from '../../composed/ProjectCard.svelte';
 	import ThemeMetricSettingsSheet from '../ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from '../ThemeMetricSettingsSheet.svelte';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData, type VehicleDashboardData } from '$lib/client/dashboard-cache';
-	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData, type VehicleDashboardData } from '$lib/client/dashboard-cache';
+	import { getThemeDashboardDefinition, resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
 
@@ -124,14 +124,17 @@
 	});
 
 	/* ── Dashboard state ───────────────────────────────── */
-	let healthDashboard = $state<HealthDashboardData | null>(null);
-	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
-	let travelDashboard = $state<TravelDashboardData | null>(null);
-	let foodDashboard = $state<FoodDashboardData | null>(null);
-	let familyDashboard = $state<FamilyDashboardData | null>(null);
-	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
-	let homeDashboard = $state<HomeDashboardData | null>(null);
-	let vehicleDashboard = $state<VehicleDashboardData | null>(null);
+	// Én payload per dashboardtype. Nye kinds trenger ingen ny state-variabel —
+	// lagring, cache-gjenbruk og props-utledning slår alle opp i dette kartet.
+	let dashboardData = $state<Partial<Record<DashboardKind, unknown>>>({});
+
+	/** Payloaden for `kind`, men bare når temaet faktisk er av den typen. */
+	function payloadFor<T>(kind: DashboardKind): T | null {
+		if (activeDashboardKind !== kind) return null;
+		return (dashboardData[kind] as T | undefined) ?? null;
+	}
+
+	const healthDashboard = $derived(payloadFor<HealthDashboardData>('health'));
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -156,7 +159,7 @@
 
 	/* ── Dashboard props (derived) ─────────────────────── */
 	const healthDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'health' || !healthDashboard) return null;
+		if (!healthDashboard) return null;
 		return {
 			weekly: healthDashboard.weekly as any,
 			monthly: healthDashboard.monthly as any,
@@ -170,7 +173,8 @@
 	});
 
 	const economicsDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'economics' || !economicsDashboard) return null;
+		const economicsDashboard = payloadFor<EconomicsDashboardData>('economics');
+		if (!economicsDashboard) return null;
 		return {
 			accounts: economicsDashboard.accounts,
 			totalBalance: economicsDashboard.totalBalance,
@@ -186,7 +190,8 @@
 	});
 
 	const foodDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'food' || !foodDashboard) return null;
+		const foodDashboard = payloadFor<FoodDashboardData>('food');
+		if (!foodDashboard) return null;
 		return {
 			weekContext: foodDashboard.weekContext,
 			mealPlans: foodDashboard.mealPlans,
@@ -200,22 +205,26 @@
 	});
 
 	const familyDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'family' || !familyDashboard) return null;
+		const familyDashboard = payloadFor<FamilyDashboardData>('family');
+		if (!familyDashboard) return null;
 		return { data: familyDashboard };
 	});
 
 	const egenfrekvensDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'egenfrekvens' || !egenfrekvensDashboard) return null;
+		const egenfrekvensDashboard = payloadFor<EgenfrekvensDashboardData>('egenfrekvens');
+		if (!egenfrekvensDashboard) return null;
 		return { data: egenfrekvensDashboard };
 	});
 
 	const homeDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'home' || !homeDashboard) return null;
+		const homeDashboard = payloadFor<HomeDashboardData>('home');
+		if (!homeDashboard) return null;
 		return homeDashboard;
 	});
 
 	const vehicleDashboardProps = $derived.by(() => {
-		if (activeDashboardKind !== 'vehicle' || !vehicleDashboard) return null;
+		const vehicleDashboard = payloadFor<VehicleDashboardData>('vehicle');
+		if (!vehicleDashboard) return null;
 		return {
 			connected: vehicleDashboard.connected,
 			hourly: vehicleDashboard.hourly,
@@ -352,23 +361,7 @@
 
 		dashboardCachedAt = cached.cachedAt;
 		dashboardLoaded = true;
-		if (kind === 'health') {
-			healthDashboard = cached.data as HealthDashboardData;
-		} else if (kind === 'economics') {
-			economicsDashboard = cached.data as EconomicsDashboardData;
-		} else if (kind === 'travel') {
-			travelDashboard = cached.data as TravelDashboardData;
-		} else if (kind === 'food') {
-			foodDashboard = cached.data as FoodDashboardData;
-		} else if (kind === 'family') {
-			familyDashboard = cached.data as FamilyDashboardData;
-		} else if (kind === 'egenfrekvens') {
-			egenfrekvensDashboard = cached.data as EgenfrekvensDashboardData;
-		} else if (kind === 'home') {
-			homeDashboard = cached.data as HomeDashboardData;
-		} else if (kind === 'vehicle') {
-			vehicleDashboard = cached.data as VehicleDashboardData;
-		}
+		dashboardData[kind] = cached.data;
 
 		return cached;
 	}
@@ -396,23 +389,7 @@
 
 			dashboardCachedAt = result.cachedAt;
 
-			if (kind === 'health') {
-				healthDashboard = result.data as HealthDashboardData;
-			} else if (kind === 'economics') {
-				economicsDashboard = result.data as EconomicsDashboardData;
-			} else if (kind === 'travel') {
-				travelDashboard = result.data as TravelDashboardData;
-			} else if (kind === 'food') {
-				foodDashboard = result.data as FoodDashboardData;
-			} else if (kind === 'family') {
-				familyDashboard = result.data as FamilyDashboardData;
-			} else if (kind === 'egenfrekvens') {
-				egenfrekvensDashboard = result.data as EgenfrekvensDashboardData;
-			} else if (kind === 'home') {
-				homeDashboard = result.data as HomeDashboardData;
-			} else if (kind === 'vehicle') {
-				vehicleDashboard = result.data as VehicleDashboardData;
-			}
+				dashboardData[kind] = result.data;
 			dashboardLoaded = true;
 		} catch {
 			if (requestId !== dashboardRequestId) return;
@@ -542,11 +519,7 @@
 				type="button"
 				title="Konfigurer terskelverdier"
 			>⚙</button>
-			<HealthDashboard
-				{...healthDashboardProps}
-				embedded={true}
-				metricSettings={currentMetricSettings}
-			/>
+			<HealthDashboard {...healthDashboardProps} />
 		</div>
 	{/if}
 

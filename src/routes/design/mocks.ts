@@ -122,7 +122,7 @@ export const demoDomains: DomainStatus[] = [
 	{ id: 'food',      label: 'Mat',     color: '#d4829a', monthPct: 0.40, trend: 'down' }
 ];
 
-// ── Treningsbelastning (BalanceCard / FormCard) ──────────────────────────────
+// ── Treningsbelastning (LoadBalanceCard / FormCard) ──────────────────────────
 export const loadSeries: TrainingLoadPoint[] = (() => {
 	const pts: TrainingLoadPoint[] = [];
 	const ctlAlpha = 1 - Math.exp(-1 / 42);

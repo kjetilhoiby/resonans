@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
+import { sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
@@ -12,10 +12,8 @@ export async function loadHealthDashboardData(userId: string) {
 
 	const [
 		sensorChainResult,
-		goalsChainResult,
 		[weeklyData, monthlyData, yearlyData, dailyData],
-		unifiedActivities,
-		[weightEventCountRow, weightAggregateCountRow]
+		unifiedActivities
 	] = await Promise.all([
 		// Chain A: sensors → recentHealthEvents
 		(async () => {
@@ -47,21 +45,7 @@ export async function loadHealthDashboardData(userId: string) {
 				: [];
 			return { healthSensors, recentHealthEvents };
 		})(),
-		// Chain B: theme → goals
-		(async () => {
-			const healthTheme = await db.query.themes.findFirst({
-				where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
-			});
-			const healthGoals = healthTheme ? await db.query.goals.findMany({
-				where: and(
-					eq(goalsTable.userId, userId),
-					eq(goalsTable.themeId, healthTheme.id),
-					inArray(goalsTable.status, ['active', 'paused'])
-				)
-			}) : [];
-			return { healthGoals };
-		})(),
-		// Group C: aggregates
+		// Group B: aggregates
 		Promise.all([
 			db.query.sensorAggregates.findMany({
 				where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
@@ -81,31 +65,17 @@ export async function loadHealthDashboardData(userId: string) {
 				limit: 400
 			})
 		]),
-		// Group D: workout activities (the slowest query — runs in parallel now)
+		// Group C: workout activities (the slowest query — runs in parallel now)
 		buildUnifiedWorkoutActivities(userId, {
 			since: new Date(Date.now() - 1000 * 60 * 60 * 24 * HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS),
 			limit: 2000
-		}),
-		// Group E: weight counts
-		Promise.all([
-			db
-				.select({ count: sql<number>`count(*)` })
-				.from(sensorEvents)
-				.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight'))),
-			db
-				.select({ count: sql<number>`count(*)` })
-				.from(sensorAggregates)
-				.where(and(eq(sensorAggregates.userId, userId), sql`metrics ? 'weight'`))
-		])
+		})
 	]);
 
 	const { healthSensors, recentHealthEvents } = sensorChainResult;
-	const { healthGoals } = goalsChainResult;
-	const weightEventCount = weightEventCountRow[0]?.count ?? 0;
-	const weightAggregateCount = weightAggregateCountRow[0]?.count ?? 0;
 
 	console.log(
-		`[perf][health-dashboard] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} workouts=${unifiedActivities.length} recentEvents=${recentHealthEvents.length} goals=${healthGoals.length}`
+		`[perf][health-dashboard] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} workouts=${unifiedActivities.length} recentEvents=${recentHealthEvents.length}`
 	);
 
 	const dailyEffortSeries = dailyData
@@ -137,23 +107,6 @@ export async function loadHealthDashboardData(userId: string) {
 		activityLayer: {
 			version: 1,
 			workouts: unifiedActivities
-		},
-		tooling: {
-			querySensorDataTool: true,
-			tables: {
-				sensorEvents: 'sensor_events',
-				sensorAggregates: 'sensor_aggregates'
-			},
-			weightEventCount,
-			weightAggregateCount,
-			healthSensorsCount: healthSensors.length
-		},
-		goals: healthGoals.map((goal) => ({
-			id: goal.id,
-			title: goal.title,
-			description: goal.description,
-			status: goal.status,
-			metadata: (goal.metadata ?? {}) as Record<string, unknown>
-		}))
+		}
 	};
 }

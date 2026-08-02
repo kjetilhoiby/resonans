@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
-	import SectionLabel from '../ui/SectionLabel.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import HealthActivityList from './health/HealthActivityList.svelte';
@@ -10,13 +9,10 @@
 	import HealthMetricGrid from './health/HealthMetricGrid.svelte';
 	import HealthScreenTime from './health/HealthScreenTime.svelte';
 	import HealthProgramCard from './health/HealthProgramCard.svelte';
-	import HealthGoalsSection from './health/HealthGoalsSection.svelte';
 	import {
 		type WindowMode,
 		type AggregatePeriod,
-		type Goal,
 		type WorkoutActivity,
-		type MetricSettingsMap,
 		type ThemeWidget,
 		type ProgramSummary,
 		type TodaySession,
@@ -25,26 +21,9 @@
 		buildQuarterData,
 		computeEffortPeriodRange,
 		aggregateEffortForPeriod,
-		buildRunningTrackSet,
-		buildWeightTrackSet,
-		toWidgetWindow,
-		computeSleepHoursAvg,
-		computeAvgStepsPerDay,
-		computeAvgActiveMinutesPerDay,
-		computeWeightDelta,
-		evaluateWeightProgress,
-		buildMetricCards,
 		formatEvent,
 		formatDate,
-		describeWindow,
-		windowStart,
-		daysInWindow,
-		runningColorFromRatio,
-		selectGoalTrackForWidget,
-		evaluateProgress,
-		projectTrackTargetForWindow,
-		computeTrainingLoad,
-		type GoalTrack,
+		computeTrainingLoad
 	} from './health/health-data';
 
 	interface Props {
@@ -54,17 +33,7 @@
 		dailyEffort?: Array<{ date: string; effort: number }>;
 		sources?: SourceItem[];
 		recentEvents?: RecentEvent[];
-		tooling?: {
-			querySensorDataTool: boolean;
-			tables: { sensorEvents: string; sensorAggregates: string };
-			weightEventCount: number;
-			weightAggregateCount: number;
-			healthSensorsCount: number;
-		};
-		embedded?: boolean;
-		goals?: Goal[];
 		activities?: WorkoutActivity[];
-		metricSettings?: MetricSettingsMap;
 		themeId?: string;
 	}
 
@@ -75,11 +44,7 @@
 		dailyEffort = [],
 		sources = [],
 		recentEvents = [],
-		tooling,
-		embedded = false,
-		goals = [],
 		activities = [],
-		metricSettings = {},
 		themeId
 	}: Props = $props();
 
@@ -124,11 +89,6 @@
 
 	// ── Period selection ───────────────────────────────────
 	let selectedWindow = $state<WindowMode>('30d');
-	let runningGoalWeekInput = $state('20');
-	let runningGoalQuarterInput = $state('150');
-	let runningGoalYearInput = $state('1000');
-	let weightGoalShortInput = $state('-3');
-	let weightGoalLongInput = $state('-20');
 	let showEventDetails = $state(false);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
@@ -153,9 +113,6 @@
 		selectedWindow === 'quarter' ? quarterData :
 		aggregatePeriod === 'week' ? weekly : aggregatePeriod === 'month' ? monthly : yearly
 	);
-	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
-	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
-
 	const trainingLoadSeries = $derived(computeTrainingLoad(dailyEffort));
 
 	const latestWeekWithEffort = $derived(
@@ -180,101 +137,6 @@
 		effortPeriodRange ? aggregateEffortForPeriod(weekly, effortPeriodRange) : null
 	);
 
-	// ── Window-filtered events & metrics ──────────────────
-	const windowStartDate = $derived(windowStart(selectedWindow));
-	const filteredEvents = $derived(
-		recentEvents.filter((event) => new Date(event.timestamp) >= windowStartDate)
-	);
-	const selectedDays = $derived(daysInWindow(selectedWindow));
-	const windowCopy = $derived(describeWindow(selectedWindow));
-
-	// ── Running metrics ───────────────────────────────────
-	// Bruk det deduplikerte kanoniske aktivitetslaget (activities), ikke rå
-	// sensor_events. Rå events double-teller samme tur på tvers av kilder
-	// (Strava + Withings + manuell logg) og gir kunstig høye «løpt»-tall.
-	// activities ekskluderer også skjulte (dismissed) økter.
-	const runningKm = $derived(
-		activities
-			.filter((a) => new Date(a.startTime) >= windowStartDate)
-			.filter((a) => (a.sportType ?? '').toLowerCase().includes('run'))
-			.reduce((sum, a) => sum + ((a.distanceMeters ?? 0) / 1000), 0)
-	);
-	const runningTrackSet = $derived(buildRunningTrackSet(runningGoalWeekInput, runningGoalQuarterInput, runningGoalYearInput));
-	const runningWidgetWindow = $derived(toWidgetWindow(selectedWindow));
-	const runningTrackMatch = $derived(selectGoalTrackForWidget(runningTrackSet, 'running_distance', runningWidgetWindow));
-	const runningProgress = $derived(
-		runningTrackMatch
-			? evaluateProgress(runningKm, runningTrackMatch.track, runningWidgetWindow)
-			: { ratio: 0, pct: 0, projectedTarget: 0 }
-	);
-	const runningTargetForWindow = $derived(runningProgress.projectedTarget);
-	const runningPct = $derived(runningProgress.pct);
-	const runningRingColor = $derived(runningColorFromRatio(runningProgress.ratio));
-
-	// ── Weight metrics ────────────────────────────────────
-	const weightTrackSet = $derived(buildWeightTrackSet(weightGoalShortInput, weightGoalLongInput));
-	const weightTrackMatch = $derived(selectGoalTrackForWidget(weightTrackSet, 'weight_change', runningWidgetWindow));
-	const weightProjectedTarget = $derived(
-		weightTrackMatch ? projectTrackTargetForWindow(weightTrackMatch.track, runningWidgetWindow) : 0
-	);
-	const weightDelta = $derived(computeWeightDelta(selectedWindow, filteredEvents, lastMetrics));
-	const weightProgressRatio = $derived(evaluateWeightProgress(weightDelta, weightProjectedTarget));
-	const weightProgressPct = $derived(Math.max(0, Math.min(100, Math.round(weightProgressRatio * 100))));
-	const weightProgressColor = $derived(
-		weightProgressRatio >= 1 ? '#82c882' : weightProgressRatio >= 0.7 ? '#f0b429' : '#e07070'
-	);
-
-	// ── Sleep / steps / active minutes ────────────────────
-	const sleepHoursAvg = $derived(computeSleepHoursAvg(selectedWindow, filteredEvents, lastMetrics));
-	const sleepLagComposite = $derived((() => {
-		const lag = typeof lastMetrics?.sleepLag === 'number' ? lastMetrics.sleepLag : null;
-		const early = typeof lastMetrics?.earlyWake === 'number' ? lastMetrics.earlyWake : null;
-		if (lag != null && early != null) return lag + early;
-		if (lag != null) return lag;
-		if (early != null) return early;
-		return undefined;
-	})());
-	const avgStepsPerDay = $derived(computeAvgStepsPerDay(selectedWindow, filteredEvents, lastMetrics, selectedDays));
-
-	const stepsComparisonPoints = $derived.by(() => {
-		const points = periodData
-			.map((period, index) => {
-				const current = period.metrics?.steps?.avg;
-				if (typeof current !== 'number') return null;
-				const label = period.periodKey || String(index + 1);
-				return { label, current };
-			})
-			.filter((point): point is { label: string; current: number } => point != null)
-			.slice(-8);
-		if (points.length === 0) return [];
-		const reference = points.reduce((sum, point) => sum + point.current, 0) / points.length;
-		return points.map((point) => ({ label: point.label, current: point.current, reference }));
-	});
-	const stepsReferenceAvg = $derived.by(() => {
-		if (stepsComparisonPoints.length === 0) return undefined;
-		return stepsComparisonPoints.reduce((sum, point) => sum + point.reference, 0) / stepsComparisonPoints.length;
-	});
-
-	const avgActiveMinutesPerDay = $derived(
-		computeAvgActiveMinutesPerDay(selectedWindow, filteredEvents, lastMetrics, selectedDays)
-	);
-
-	// ── Metric settings ───────────────────────────────────
-	const sleepGoal = $derived(metricSettings.sleep?.goal ?? 7.5);
-	const sleepLagMax = $derived(metricSettings.sleepLag?.goal ?? 8);
-	const stepsGoal = $derived(metricSettings.steps?.goal ?? 8000);
-	const activeMinutesGoal = $derived(metricSettings.activeMinutes?.goal ?? 30);
-
-	// ── Metric cards ──────────────────────────────────────
-	const metricCards = $derived(buildMetricCards({
-		runningKm, runningTrackMatch, runningTargetForWindow, runningPct, runningRingColor,
-		sleepHoursAvg, sleepGoal, sleepLagComposite, sleepLagMax,
-		avgStepsPerDay, stepsGoal, stepsReferenceAvg, stepsComparisonPoints,
-		avgActiveMinutesPerDay, activeMinutesGoal,
-		weightDelta, weightTrackMatch, weightProgressColor, weightProgressPct, weightProjectedTarget,
-		windowCopy
-	}));
-
 	// ── Source / event items for CompactRecordList ─────────
 	const sourceItems = $derived(
 		sources.map((source) => ({
@@ -290,7 +152,6 @@
 
 	// ── Data loading ──────────────────────────────────────
 	onMount(() => {
-		void loadGoalTracks();
 		void loadThemeWidgets();
 	});
 
@@ -311,42 +172,9 @@
 		} catch { themeWidgets = previous; }
 	}
 
-	async function loadGoalTracks() {
-		try {
-			const [runningRes, weightRes] = await Promise.all([
-				fetch('/api/goal-tracks/running_distance'),
-				fetch('/api/goal-tracks/weight_change')
-			]);
-			if (runningRes.ok) {
-				const json = (await runningRes.json()) as { tracks?: GoalTrack[] };
-				const tracks = json.tracks ?? [];
-				const wk = tracks.find((t) => t.id === 'run-week');
-				const qt = tracks.find((t) => t.id === 'run-quarter');
-				const yr = tracks.find((t) => t.id === 'run-year');
-				if (wk?.targetValue) runningGoalWeekInput = String(wk.targetValue);
-				if (qt?.targetValue) runningGoalQuarterInput = String(qt.targetValue);
-				if (yr?.targetValue) runningGoalYearInput = String(yr.targetValue);
-			}
-			if (weightRes.ok) {
-				const json = (await weightRes.json()) as { tracks?: GoalTrack[] };
-				const tracks = json.tracks ?? [];
-				const sh = tracks.find((t) => t.id === 'weight-short');
-				const lo = tracks.find((t) => t.id === 'weight-long');
-				if (sh?.targetValue) weightGoalShortInput = String(sh.targetValue);
-				if (lo?.targetValue) weightGoalLongInput = String(lo.targetValue);
-			}
-		} catch { /* stille feil, defaults brukes */ }
-	}
 </script>
 
-<div class:hd-embedded={embedded} class="health-dashboard">
-	{#if !embedded}
-		<div class="hd-header">
-			<h1 class="hd-title">Helse</h1>
-			<p class="hd-copy">Vekt, løp, aktive minutter og søvn samlet i ett bilde.</p>
-		</div>
-	{/if}
-
+<div class="health-dashboard hd-embedded">
 	<HealthProgramCard {activeProgram} {todaySession} loading={programWidgetLoading} />
 
 	<HealthScreenTime {thisWeekScreen} {prevWeekScreen} />
@@ -377,17 +205,6 @@
 	/>
 
 	<EffortWeightCard />
-
-	{#if tooling}
-		<div class="hd-tooling-card">
-			<div class="hd-table-head">
-				<SectionLabel tag="h2">Datatilgang og tool-sjekk</SectionLabel>
-				<p class="hd-table-copy">
-					query_sensor_data: {tooling.querySensorDataTool ? 'aktiv' : 'mangler'} · {tooling.tables.sensorEvents}: {tooling.weightEventCount} vektmålinger · {tooling.tables.sensorAggregates}: {tooling.weightAggregateCount} perioder med vekt
-				</p>
-			</div>
-		</div>
-	{/if}
 
 	{#if themeId}
 		<div class="hd-widget-card">
@@ -421,8 +238,6 @@
 	{:else}
 		<HealthMetricGrid {periodData} {weekly} />
 
-		<HealthGoalsSection {goals} {recentEvents} />
-
 		{#if activities.length > 0}
 			<HealthActivityList {activities} />
 		{/if}
@@ -454,22 +269,6 @@
 		padding-top: 4px;
 	}
 
-	.hd-header {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.hd-title {
-		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 700;
-		letter-spacing: -0.03em;
-		color: #eee;
-	}
-
-	.hd-copy,
-	.hd-table-copy,
 	.hd-empty-sub {
 		margin: 0;
 		font-size: 0.82rem;
@@ -482,18 +281,13 @@
 	}
 
 	.hd-empty,
-	.hd-widget-card,
-	.hd-tooling-card {
+	.hd-widget-card {
 		background: var(--card-bg-subtle, #141414);
 		border-radius: var(--card-radius, 16px);
 	}
 
 	.hd-widget-card {
 		padding: 16px 12px;
-	}
-
-	.hd-tooling-card {
-		padding: 14px 16px;
 	}
 
 	.hd-empty {
@@ -524,19 +318,7 @@
 		100% { background-position: -200% 0; }
 	}
 
-	.hd-table-head {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
 	@media (max-width: 640px) {
-		.hd-title {
-			font-size: 1.32rem;
-		}
-
-		.hd-copy,
-		.hd-table-copy,
 		.hd-empty-sub {
 			font-size: 0.84rem;
 		}
