@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import CompactRecordList from '../ui/CompactRecordList.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
-	import HealthActivityList from './health/HealthActivityList.svelte';
 	import HealthEffortSection from './health/HealthEffortSection.svelte';
-	import EffortWeightCard from './health/EffortWeightCard.svelte';
 	import HealthMetricGrid from './health/HealthMetricGrid.svelte';
-	import HealthScreenTime from './health/HealthScreenTime.svelte';
 	import HealthProgramCard from './health/HealthProgramCard.svelte';
+	import HealthSubthemeStrip from './health/HealthSubthemeStrip.svelte';
+	import HealthSignalSection from './health/HealthSignalSection.svelte';
+	import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
+	import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
 	import {
 		type WindowMode,
 		type AggregatePeriod,
@@ -16,12 +16,10 @@
 		type ThemeWidget,
 		type ProgramSummary,
 		type TodaySession,
-		type RecentEvent,
 		type SourceItem,
 		buildQuarterData,
 		computeEffortPeriodRange,
 		aggregateEffortForPeriod,
-		formatEvent,
 		formatDate,
 		computeTrainingLoad
 	} from './health/health-data';
@@ -32,9 +30,11 @@
 		yearly: AggregatePeriod[];
 		dailyEffort?: Array<{ date: string; effort: number }>;
 		sources?: SourceItem[];
-		recentEvents?: RecentEvent[];
 		activities?: WorkoutActivity[];
 		themeId?: string;
+		/** Undertema-stripen. Kan mangle i en cachet payload fra før splitten. */
+		subthemes?: SubthemeTile[];
+		signals?: PresentedSignal[];
 	}
 
 	let {
@@ -43,19 +43,37 @@
 		yearly,
 		dailyEffort = [],
 		sources = [],
-		recentEvents = [],
 		activities = [],
-		themeId
+		themeId,
+		subthemes = [],
+		signals = []
 	}: Props = $props();
 
-	// ── Screen time ────────────────────────────────────────
-	const screenWeeks = $derived(
-		[...weekly]
-			.filter((w) => w.metrics?.screenTime)
-			.sort((a, b) => (a.periodKey < b.periodKey ? 1 : -1))
+	// Kryss-lenkene i signalkortene trenger id-ene undertema-stripen allerede har.
+	const themeIdsByName = $derived(
+		Object.fromEntries(
+			subthemes.filter((t) => t.themeId).map((t) => [t.name, t.themeId as string])
+		)
 	);
-	const thisWeekScreen = $derived(screenWeeks[0]?.metrics?.screenTime ?? null);
-	const prevWeekScreen = $derived(screenWeeks[1]?.metrics?.screenTime ?? null);
+
+	let activatingSubtheme = $state<string | null>(null);
+
+	async function activateSubtheme(name: string) {
+		activatingSubtheme = name;
+		try {
+			const res = await fetch('/api/helse/undertema/ensure', { method: 'POST' });
+			if (res.ok) {
+				const { invalidateDashboardKind } = await import('$lib/client/dashboard-cache');
+				invalidateDashboardKind('health');
+				const { invalidateAll } = await import('$app/navigation');
+				await invalidateAll();
+			}
+		} catch {
+			/* stille feil — flisen blir stående som «Aktiver» */
+		} finally {
+			activatingSubtheme = null;
+		}
+	}
 
 	// ── Theme widgets ──────────────────────────────────────
 	let themeWidgets = $state<ThemeWidget[]>([]);
@@ -89,7 +107,6 @@
 
 	// ── Period selection ───────────────────────────────────
 	let selectedWindow = $state<WindowMode>('30d');
-	let showEventDetails = $state(false);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
 		selectedWindow === '30d' || selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' :
@@ -137,18 +154,19 @@
 		effortPeriodRange ? aggregateEffortForPeriod(weekly, effortPeriodRange) : null
 	);
 
-	// ── Source / event items for CompactRecordList ─────────
-	const sourceItems = $derived(
-		sources.map((source) => ({
-			id: source.id,
-			title: source.name,
-			subtitle: source.provider,
-			meta: source.lastSync ? `Synket ${formatDate(source.lastSync)}` : 'Aldri synket',
-			amount: source.isActive ? 'Aktiv' : 'Inaktiv',
-			amountTone: source.isActive ? ('positive' as const) : ('neutral' as const)
-		}))
-	);
-	const eventItems = $derived(recentEvents.slice(0, 24).map((item) => formatEvent(item)));
+	// Kildehelse hører på mor (den gjelder alle undertemaene), men en full liste
+	// er ikke oversikt — én linje, med lenke videre til Kilder.
+	const sourceSummary = $derived.by(() => {
+		if (sources.length === 0) return 'Ingen helsekilder koblet.';
+		const active = sources.filter((s) => s.isActive).length;
+		const latest = sources
+			.map((s) => s.lastSync)
+			.filter((v): v is string => Boolean(v))
+			.sort()
+			.at(-1);
+		const count = `${active} av ${sources.length} ${sources.length === 1 ? 'kilde' : 'kilder'} aktiv`;
+		return latest ? `${count} · sist synket ${formatDate(latest)}` : count;
+	});
 
 	// ── Data loading ──────────────────────────────────────
 	onMount(() => {
@@ -175,9 +193,18 @@
 </script>
 
 <div class="health-dashboard hd-embedded">
+	{#if subthemes.length > 0}
+		<HealthSubthemeStrip
+			tiles={subthemes}
+			activating={activatingSubtheme}
+			onActivate={(name) => void activateSubtheme(name)}
+		/>
+	{/if}
+
+	<HealthSignalSection {signals} {themeIdsByName} parentThemeId={themeId ?? null} />
+
 	<HealthProgramCard {activeProgram} {todaySession} loading={programWidgetLoading} />
 
-	<HealthScreenTime {thisWeekScreen} {prevWeekScreen} />
 
 	<div class="hd-pills" role="tablist" aria-label="Helseperioder">
 		<PeriodPills
@@ -197,14 +224,13 @@
 	</div>
 
 	<HealthEffortSection
+		variant="readiness"
 		{effortPeriodMode}
 		{latestWeeklyEffort}
 		{latestWeekLabel}
 		{periodEffortAggregate}
 		{trainingLoadSeries}
 	/>
-
-	<EffortWeightCard />
 
 	{#if themeId}
 		<div class="hd-widget-card">
@@ -236,25 +262,21 @@
 			<p class="hd-empty-sub">Koble til eller synkroniser Withings for å fylle Helse-dashbordet.</p>
 		</div>
 	{:else}
-		<HealthMetricGrid {periodData} {weekly} />
-
-		{#if activities.length > 0}
-			<HealthActivityList {activities} />
-		{/if}
-
-		<div class="hd-sources-section">
-			<CompactRecordList title="Kilder" items={sourceItems} emptyText="Ingen aktive helsekilder ennå." />
-		</div>
-
-		<details class="hd-events-details" bind:open={showEventDetails}>
-			<summary class="hd-events-summary">
-				<span class="hd-events-title">Hendelsesdetaljer</span>
-				<span class="hd-events-count">({eventItems.length} hendelser)</span>
+		<details class="hd-periods-details">
+			<summary class="hd-periods-summary">
+				<span class="hd-periods-title">Perioder — alle metrikker</span>
+				<span class="hd-periods-hint">vekt · løp · effort · søvn · puls</span>
 			</summary>
-			<div class="hd-events-content">
-				<CompactRecordList title="" items={eventItems} emptyText="Ingen hendelser registrert ennå." />
+			<div class="hd-periods-content">
+				<HealthMetricGrid {periodData} {weekly} />
 			</div>
 		</details>
+
+		<p class="hd-sources-line">
+			{sourceSummary}
+			<a href="/settings/sources" data-track="helse:apne-kilder">Kilder →</a>
+		</p>
+
 	{/if}
 </div>
 
@@ -328,47 +350,55 @@
 		margin-top: 12px;
 	}
 
-	.hd-events-details {
+	.hd-periods-details {
 		background: #141414;
 		border-radius: 18px;
 		margin-top: 12px;
 		padding: 0;
 	}
 
-	.hd-events-summary {
+	.hd-periods-summary {
 		cursor: pointer;
 		padding: 16px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 12px;
 		list-style: none;
 		user-select: none;
 	}
 
-	.hd-events-summary::-webkit-details-marker {
+	.hd-periods-summary::-webkit-details-marker,
+	.hd-periods-summary::marker {
 		display: none;
 	}
 
-	.hd-events-summary::marker {
-		display: none;
-	}
-
-	.hd-events-title {
+	.hd-periods-title {
 		font-size: 0.88rem;
 		font-weight: 700;
 		color: #e7e7e7;
 	}
 
-	.hd-events-count {
-		font-size: 0.74rem;
+	.hd-periods-hint {
+		font-size: 0.72rem;
 		color: #777;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		padding: 3px 10px;
 	}
 
-	.hd-events-content {
+	.hd-periods-content {
 		padding: 0 16px 16px 16px;
+	}
+
+	.hd-sources-line {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: 12px 0 0;
+		font-size: 0.78rem;
+		color: #777;
+	}
+
+	.hd-sources-line a {
+		color: #9aa7f0;
+		text-decoration: none;
 	}
 </style>

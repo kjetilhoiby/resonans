@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { openai } from '$lib/server/openai';
 import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
-import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
+import { HEALTH_PARENT_THEME_NAME, HEALTH_SUBTHEMES } from '$lib/domain/health-subthemes';
 
 interface EnsureThemeInput {
 	userId: string;
@@ -12,6 +12,12 @@ interface EnsureThemeInput {
 	emoji?: string;
 	description?: string;
 	parentTheme?: string | null;
+	/**
+	 * Sett forelderen også når temaet allerede har en annen. Standard er å la
+	 * en eksisterende forelder stå — ellers ville et hvilket som helst
+	 * ensure-kall kunne flytte et tema brukeren har plassert bevisst.
+	 */
+	forceParentTheme?: boolean;
 }
 
 export interface ThemeDetectionResult {
@@ -77,7 +83,8 @@ export async function ensureThemeForUser({
 	name,
 	emoji = '📁',
 	description,
-	parentTheme = null
+	parentTheme = null,
+	forceParentTheme = false
 }: EnsureThemeInput) {
 	await ensureConversationThemeIdColumn();
 
@@ -102,7 +109,7 @@ export async function ensureThemeForUser({
 			.set({
 				emoji: existingTheme.emoji || emoji,
 				description: existingTheme.description || description,
-				parentTheme: existingTheme.parentTheme || parentTheme,
+				parentTheme: forceParentTheme ? parentTheme : existingTheme.parentTheme || parentTheme,
 				conversationId,
 				archived: false,
 				updatedAt: new Date()
@@ -242,4 +249,38 @@ Svar BARE med valid JSON (ingen markdown):
 			confidence: 'none'
 		};
 	}
+}
+
+/**
+ * Sørger for at Helse-mortemaet har alle fem undertemaene.
+ *
+ * Idempotent: `ensureThemeForUser` gjenbruker eksisterende tema på navn.
+ * `forceParentTheme` trengs fordi Egenfrekvens-temaet kan ha `parentTheme`
+ * satt til 'Egenfrekvens' fra før — konvensjonen fra egenfrekvens-flytene —
+ * og da ville standardoppførselen latt den gamle forelderen bli stående.
+ *
+ * Oppretter ikke mortemaet. Har brukeren ikke koblet en helsekilde ennå, er
+ * det ingenting å henge undertemaene på, og vi lager ikke seks tomme temaer.
+ */
+export async function ensureHealthSubthemes(userId: string) {
+	const parent = await findThemeByName(userId, HEALTH_PARENT_THEME_NAME);
+	if (!parent) return { created: 0, themeIdsByName: {} as Record<string, string> };
+
+	let created = 0;
+	const themeIdsByName: Record<string, string> = {};
+
+	for (const subtheme of HEALTH_SUBTHEMES) {
+		const result = await ensureThemeForUser({
+			userId,
+			name: subtheme.name,
+			emoji: subtheme.emoji,
+			description: subtheme.description,
+			parentTheme: HEALTH_PARENT_THEME_NAME,
+			forceParentTheme: true
+		});
+		if (result.created) created += 1;
+		themeIdsByName[subtheme.name] = result.theme.id;
+	}
+
+	return { created, themeIdsByName };
 }

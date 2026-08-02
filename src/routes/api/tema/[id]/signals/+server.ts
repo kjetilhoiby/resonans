@@ -1,8 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { domainSignals, signalContracts, themeSignalLinks, themes } from '$lib/db/schema';
-import { and, desc, eq } from 'drizzle-orm';
+import { signalContracts, themeSignalLinks, themes } from '$lib/db/schema';
+import { getLatestSignalsByType } from '$lib/server/services/signal-reader';
+import { and, eq } from 'drizzle-orm';
 
 type DomainSignalContractView = {
 	signalType: string;
@@ -39,32 +40,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		})
 	]);
 
-	const latestByType = new Map<string, {
-		valueNumber: number | null;
-		valueText: string | null;
-		valueBool: boolean | null;
-		severity: string;
-		confidence: string;
-		observedAt: string;
-		context: Record<string, unknown>;
-	}>();
-
-	for (const contract of contracts) {
-		const latest = await db.query.domainSignals.findFirst({
-			where: and(eq(domainSignals.userId, locals.userId), eq(domainSignals.signalType, contract.signalType)),
-			orderBy: [desc(domainSignals.observedAt)]
-		});
-		if (!latest) continue;
-		latestByType.set(contract.signalType, {
-			valueNumber: latest.valueNumber !== null ? Number(latest.valueNumber) : null,
-			valueText: latest.valueText,
-			valueBool: latest.valueBool,
-			severity: latest.severity,
-			confidence: String(latest.confidence),
-			observedAt: latest.observedAt.toISOString(),
-			context: (latest.context ?? {}) as Record<string, unknown>
-		});
-	}
+	// Én spørring for alle typene. Var tidligere én findFirst per kontrakt,
+	// altså ~20 sekvensielle rundturer hver gang panelet åpnet.
+	const latestByType = await getLatestSignalsByType(locals.userId);
 
 	const linksByType = new Map(links.map((link) => [link.signalType, link]));
 	const items: DomainSignalContractView[] = contracts.map((contract) => {

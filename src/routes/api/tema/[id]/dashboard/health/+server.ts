@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
 import { loadHealthDashboardData } from '$lib/server/health-dashboard';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { ensureHealthSubthemes } from '$lib/server/themes';
 import { and, eq } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -18,6 +19,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (resolveThemeDashboardKind(theme.name) !== 'health') {
 		return json({ error: 'Temaet har ikke helsedashboard.' }, { status: 400 });
 	}
+
+	// Selvhelbredende: undertemaene skal finnes når mordashboardet åpnes, også
+	// for brukere som koblet Withings før mortema-strukturen fantes. Idempotent.
+	await ensureHealthSubthemes(locals.userId);
 
 	const dashboard = await loadHealthDashboardData(locals.userId);
 	return json(dashboard);

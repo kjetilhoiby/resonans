@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
-import { sensorAggregates } from '$lib/db/schema';
+import { sensorAggregates, themes } from '$lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
+import { findHealthThemeId } from '$lib/server/themes';
 import {
 	listSleepGoals,
 	listRecentNaps,
@@ -21,7 +22,7 @@ const SLEEP_LOOKBACK_DAYS = 30;
  * testede primitivene i $lib/domain/sleep-goals.
  */
 export async function loadSleepDashboardData(userId: string) {
-	const [weekly, monthly, nights, naps, goalRecords] = await Promise.all([
+	const [weekly, monthly, nights, naps, goalRecords, metricSettings] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -34,7 +35,10 @@ export async function loadSleepDashboardData(userId: string) {
 		}),
 		readSleepNights(userId, SLEEP_LOOKBACK_DAYS),
 		listRecentNaps(userId, SLEEP_LOOKBACK_DAYS),
-		listSleepGoals(userId)
+		listSleepGoals(userId),
+		// Tersklene bor på mortemaet — én kilde. Undertemaet har sin egen
+		// (tomme) metric_settings-kolonne som bevisst ikke brukes.
+		readParentMetricSettings(userId)
 	]);
 
 	const latestWeek = weekly[0] ?? null;
@@ -46,6 +50,7 @@ export async function loadSleepDashboardData(userId: string) {
 	} | null;
 
 	return {
+		metricSettings,
 		// Eldste først, som resten av dashboardene bruker for tidsserier.
 		weekly: weekly.slice().reverse(),
 		monthly: monthly.slice().reverse(),
@@ -70,6 +75,17 @@ export async function loadSleepDashboardData(userId: string) {
 			sleepHeartRate: latestMetrics?.sleepHeartRate?.avg ?? null
 		}
 	};
+}
+
+/** Helse-mortemaets metric_settings, eller tomt objekt. */
+async function readParentMetricSettings(userId: string): Promise<Record<string, unknown>> {
+	const healthThemeId = await findHealthThemeId(userId);
+	if (!healthThemeId) return {};
+	const parent = await db.query.themes.findFirst({
+		where: eq(themes.id, healthThemeId),
+		columns: { metricSettings: true }
+	});
+	return (parent?.metricSettings ?? {}) as Record<string, unknown>;
 }
 
 export type SleepDashboardPayload = Awaited<ReturnType<typeof loadSleepDashboardData>>;

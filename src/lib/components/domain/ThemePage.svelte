@@ -160,26 +160,28 @@
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
 	const requestedTab = get(page).url.searchParams.get('tab');
+	// Fanesett per dashboardtype. Var en nøstet ternær over ti typer; med fem
+	// helse-undertemaer i tillegg ble et oppslagskart eneste lesbare form.
+	const TABS_BY_KIND: Partial<Record<NonNullable<typeof activeDashboardKind>, Tab[]>> = {
+		health: ['chat', 'data', 'mål', 'flyter', 'filer'],
+		training: ['chat', 'data', 'mål', 'flyter', 'filer'],
+		sleep: ['chat', 'data', 'mål', 'flyter', 'filer'],
+		screentime: ['chat', 'data', 'mål', 'filer'],
+		nutrition: ['chat', 'data', 'mål', 'filer'],
+		economics: ['chat', 'data', 'mål', 'flyter', 'filer'],
+		travel: ['chat', 'data', 'lister', 'filer'],
+		ferie: ['chat', 'data', 'lister', 'filer'],
+		books: ['chat', 'data', 'filer'],
+		film: ['chat', 'data', 'filer'],
+		egenfrekvens: ['chat', 'data', 'mål', 'flyter', 'filer'],
+		food: ['chat', 'data', 'oppskrifter', 'mål', 'filer']
+	};
+	const DEFAULT_TABS: Tab[] = ['chat', 'data', 'mål', 'filer'];
+
 	const availableTabs = $derived<Tab[]>(
 		isHomeProject
 			? (projectTabsForKind(projectProfile) as Tab[])
-			: activeDashboardKind === 'health'
-			? ['chat', 'data', 'mål', 'flyter', 'filer']
-			: activeDashboardKind === 'economics'
-				? ['chat', 'data', 'mål', 'flyter', 'filer']
-				: activeDashboardKind === 'travel'
-					? ['chat', 'data', 'lister', 'filer']
-					: activeDashboardKind === 'ferie'
-					? ['chat', 'data', 'lister', 'filer']
-					: activeDashboardKind === 'books'
-						? ['chat', 'data', 'filer']
-						: activeDashboardKind === 'film'
-						? ['chat', 'data', 'filer']
-						: activeDashboardKind === 'egenfrekvens'
-							? ['chat', 'data', 'mål', 'flyter', 'filer']
-							: activeDashboardKind === 'food'
-								? ['chat', 'data', 'oppskrifter', 'mål', 'filer']
-								: ['chat', 'data', 'mål', 'filer']
+			: (activeDashboardKind && TABS_BY_KIND[activeDashboardKind]) || DEFAULT_TABS
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));

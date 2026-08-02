@@ -55,7 +55,10 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 		domain: 'health',
 		trigger: 'manual',
 		estimatedMinutes: 5,
-		parentTheme: 'Helse',
+		// NB: `theme`, ikke `parentTheme`. Med parentTheme ville flyten dukket
+		// opp på alle fem undertemaene av Helse samtidig. Vekt er utfallsmålet
+		// mortemaet eier.
+		theme: 'Helse',
 		badge: 'Populær',
 		steps: [
 			{
@@ -117,7 +120,7 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 		domain: 'health',
 		trigger: 'manual',
 		estimatedMinutes: 5,
-		parentTheme: 'Helse',
+		theme: 'Søvn',
 		steps: [
 			{
 				id: 'current_pattern',
@@ -173,7 +176,7 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 		domain: 'health',
 		trigger: 'manual',
 		estimatedMinutes: 5,
-		parentTheme: 'Helse',
+		theme: 'Trening',
 		steps: [
 			{
 				id: 'current_level',

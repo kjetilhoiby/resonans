@@ -41,6 +41,12 @@
 		latestWeekLabel: string | undefined;
 		periodEffortAggregate: PeriodEffortAggregate | null;
 		trainingLoadSeries: TrainingLoadPoint[];
+		/**
+		 * 'readiness' viser bare form og balanse — kroppens tilstand, som er det
+		 * mortemaet trenger. 'full' tar med ukesbudsjettet, som er
+		 * treningsvolum-detalj og hører til Trening-undertemaet.
+		 */
+		variant?: 'full' | 'readiness';
 	}
 
 	let {
@@ -48,11 +54,12 @@
 		latestWeeklyEffort,
 		latestWeekLabel,
 		periodEffortAggregate,
-		trainingLoadSeries
+		trainingLoadSeries,
+		variant = 'full'
 	}: Props = $props();
 </script>
 
-{#if effortPeriodMode === 'daily' && latestWeeklyEffort}
+{#if variant === 'full' && effortPeriodMode === 'daily' && latestWeeklyEffort}
 	<div class="hd-effort">
 		<WeeklyEffortCard
 			total={latestWeeklyEffort.total}
@@ -64,7 +71,7 @@
 			weekLabel={latestWeekLabel}
 		/>
 	</div>
-{:else if effortPeriodMode === 'weekly' && periodEffortAggregate}
+{:else if variant === 'full' && effortPeriodMode === 'weekly' && periodEffortAggregate}
 	<div class="hd-effort">
 		<WeeklyEffortCard
 			title="Relativ effort (snitt/uke)"

@@ -15,8 +15,11 @@ export const EGENFREKVENS_METRICS: Record<
 export const EGENFREKVENS_TRIGGERS =
   /egenfrekvens|psykisk\s*helse|mental\s*helse|stress|følelser?|tanker|humør|innsjekk|sjekkin|overskudd|underskudd|reflek/i;
 
+// NB: «egenfrekvens» må stå her. Temaet med det navnet ble tidligere bare
+// gjenkjent via parentTheme === 'Egenfrekvens', så da det ble undertema av
+// Helse sluttet sjekkin-aktiveringen å trigge.
 export const EGENFREKVENS_THEME_NAME_TRIGGERS =
-  /psykisk\s*helse|mental\s*helse|stress|følelser?|humør|stemning/i;
+  /egenfrekvens|psykisk\s*helse|mental\s*helse|stress|følelser?|humør|stemning/i;
 
 export const EGENFREKVENS_PARENT_THEME_NAME = 'Egenfrekvens';
 

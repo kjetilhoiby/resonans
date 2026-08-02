@@ -14,6 +14,68 @@ import {
 	summarizeWeekSessions
 } from '$lib/server/tracks/effort-budget';
 import { getRoutesWithEffort } from '$lib/server/tracks/routes-repository';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { db } from '$lib/db';
+import { sensorEvents, sensors } from '$lib/db/schema';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+
+// Dekker 365d-vinduet i aktivitetslista.
+const WORKOUT_LOOKBACK_DAYS = 400;
+
+/**
+ * Aktivitetslaget og rå treningshendelser. Bodde på helse-dashboardet fram til
+ * mortema-splitten; de er per-økt-detaljer og hører til Trening.
+ */
+interface MilestoneView {
+	id: string;
+	trackId: string;
+	name: string;
+	achievedAt: string | null;
+	manual: boolean;
+}
+
+type ActivityDetail = Awaited<ReturnType<typeof loadActivityDetail>>;
+
+async function loadActivityDetail(userId: string) {
+	const [workouts, healthSensors] = await Promise.all([
+		buildUnifiedWorkoutActivities(userId, {
+			since: new Date(Date.now() - 1000 * 60 * 60 * 24 * WORKOUT_LOOKBACK_DAYS),
+			limit: 2000
+		}),
+		db.query.sensors.findMany({
+			columns: { id: true },
+			where: and(
+				eq(sensors.userId, userId),
+				or(eq(sensors.type, 'health_tracker'), eq(sensors.type, 'workout_files'))
+			)
+		})
+	]);
+
+	const sensorIds = healthSensors.map((s) => s.id);
+	const events = sensorIds.length
+		? await db
+				.select({
+					id: sensorEvents.id,
+					timestamp: sensorEvents.timestamp,
+					dataType: sensorEvents.dataType,
+					data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints' - 'rawResponse' - 'laps' - 'samples'`
+				})
+				.from(sensorEvents)
+				.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
+				.orderBy(desc(sensorEvents.timestamp))
+				.limit(100)
+		: [];
+
+	return {
+		activities: workouts,
+		recentEvents: events.map((event) => ({
+			id: event.id,
+			timestamp: event.timestamp.toISOString(),
+			dataType: event.dataType ?? 'ukjent',
+			data: event.data ?? {}
+		}))
+	};
+}
 
 /**
  * Trenings-dashboardet: aktivt treningsløp, ukesbudsjett, balanse, ruter og
@@ -31,7 +93,14 @@ export async function loadTrainingDashboardData(
 	if (!plan) {
 		// Oppsett-modus: prefyll baseline fra det vi vet om utøveren
 		const snapshot = await buildAthleteSnapshot(userId).catch(() => null);
-		return { plan: null, states: null, milestones: [], snapshot };
+		return {
+			plan: null,
+			states: null,
+			milestones: [] as MilestoneView[],
+			snapshot,
+			activities: [] as ActivityDetail['activities'],
+			recentEvents: [] as ActivityDetail['recentEvents']
+		};
 	}
 
 	const states = await computeTrackStates(userId, plan);
@@ -47,10 +116,11 @@ export async function loadTrainingDashboardData(
 	// Referanse-pace for rute-effort: faktisk snitt siste 14 dager, ellers kurve
 	const easyPace =
 		states.enduranceState?.sistePaceSekPerKm ?? states.enduranceState?.forventetPaceSekPerKm ?? null;
-	const [milestones, weightThreshold, routes] = await Promise.all([
+	const [milestones, weightThreshold, routes, activityDetail] = await Promise.all([
 		getMilestonesForTracks(trackIds),
 		getLatestWeightThreshold(userId).catch(() => null),
-		getRoutesWithEffort(userId, easyPace).catch(() => [])
+		getRoutesWithEffort(userId, easyPace).catch(() => []),
+		loadActivityDetail(userId)
 	]);
 
 	const today = new Date().toISOString().slice(0, 10);
@@ -138,8 +208,10 @@ export async function loadTrainingDashboardData(
 			achievedAt: m.achievedAt?.toISOString() ?? null,
 			manual: m.criteria.manual ?? false
 		})),
-		snapshot: null
+		snapshot: null,
+		activities: activityDetail.activities,
+		recentEvents: activityDetail.recentEvents
 	};
-};
+}
 
 export type TrainingDashboardPayload = Awaited<ReturnType<typeof loadTrainingDashboardData>>;

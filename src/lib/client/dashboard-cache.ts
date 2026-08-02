@@ -1,4 +1,10 @@
 import { dashboardEndpointForTheme, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
+import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
+import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
+import type { TrainingDashboardPayload } from '$lib/server/training-dashboard';
+import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
+import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
+import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 
 export interface WorkoutActivity {
 	activityId: string;
@@ -26,6 +32,9 @@ export interface HealthDashboardData {
 	weekly: unknown[];
 	monthly: unknown[];
 	yearly: unknown[];
+	/** Undertema-stripen. Valgfri: en cachet payload fra før splitten mangler den. */
+	subthemes?: SubthemeTile[];
+	signals?: PresentedSignal[];
 	dailyEffort?: Array<{ date: string; effort: number }>;
 	sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
@@ -440,48 +449,15 @@ export interface VehicleDashboardData {
 	generatedAt: string;
 }
 
-// Helse-undertemaene. Formen settes av lasterne i $lib/server (fase 2); her
-// står bare feltene klienten faktisk leser. `unknown` framfor `any` slik at
-// konsumentene må smalne typen bevisst.
-export interface TrainingDashboardData {
-	plan: unknown;
-	states: unknown;
-	milestones: unknown[];
-	snapshot: unknown;
-	activityLayer?: { workouts: WorkoutActivity[] };
-	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
-	metricSettings?: Record<string, unknown>;
-}
-
-export interface SleepDashboardData {
-	weekly: unknown[];
-	monthly: unknown[];
-	daily: unknown[];
-	naps: unknown[];
-	metricSettings?: Record<string, unknown>;
-}
-
-export interface ScreenTimeDashboardData {
-	weeks: unknown[];
-	days: unknown[];
-	goals: unknown[];
-	connected: boolean;
-}
-
-export interface NutritionDashboardData {
-	themeName: string;
-	themeEmoji: string | null;
-	/** Ernæring har ingen egen kilde ennå — mat-temaet er nærmeste nabo. */
-	foodThemeId: string | null;
-	weight: unknown[];
-}
-
+// Helse-undertemaene. Formen kommer fra lasterne i $lib/server — `import type`
+// er erasert av verbatimModuleSyntax, så dette drar ikke serverkode til klienten
+// (samme mønster som ProjectProgress i HomeDashboard).
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
-	training: TrainingDashboardData;
-	sleep: SleepDashboardData;
-	screentime: ScreenTimeDashboardData;
-	nutrition: NutritionDashboardData;
+	training: TrainingDashboardPayload;
+	sleep: SleepDashboardPayload;
+	screentime: ScreenTimeDashboardPayload;
+	nutrition: NutritionDashboardPayload;
 	economics: EconomicsDashboardData;
 	food: FoodDashboardData;
 	travel: TravelDashboardData;
@@ -501,9 +477,32 @@ export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {
 	cachedAt: string;
 }
 
-const CACHE_PREFIX = 'resonans:dashboard:v3:';
+// v4: helse-payloaden fikk undertema-stripe og signaler, og mistet felter da
+// detaljene flyttet til undertemaene. getCachedDashboard returnerer lagret
+// innhold uansett alder og maler det før refetch, så en gammel payload måtte
+// ut — ellers ville første maling vist forrige versjon av flaten.
+const CACHE_PREFIX = 'resonans:dashboard:v4:';
+const STALE_CACHE_PREFIXES = ['resonans:dashboard:v3:'];
 const memoryCache = new Map<string, DashboardCacheEntry>();
 const inflightRequests = new Map<string, Promise<DashboardCacheEntry>>();
+
+/** Rydder nøkler fra tidligere cache-versjoner. En bump alene frigjør ikke
+ *  plassen, og helse-payloaden var stor (inntil 2000 økter + 500 hendelser). */
+function purgeStaleCacheVersions(): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		for (let i = localStorage.length - 1; i >= 0; i--) {
+			const key = localStorage.key(i);
+			if (key && STALE_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+				localStorage.removeItem(key);
+			}
+		}
+	} catch {
+		/* private mode / full kvote — ikke verdt å feile på */
+	}
+}
+
+purgeStaleCacheVersions();
 
 function getCacheKey(themeId: string, kind: DashboardKind): string {
 	return `${themeId}:${kind}`;

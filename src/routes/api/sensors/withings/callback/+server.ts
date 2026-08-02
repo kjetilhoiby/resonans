@@ -2,7 +2,8 @@ import { isRedirect, redirect } from '@sveltejs/kit';
 import { getAccessToken } from '$lib/server/integrations/withings';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
-import { ensureThemeForUser } from '$lib/server/themes';
+import { ensureHealthSubthemes, ensureThemeForUser } from '$lib/server/themes';
+import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -95,10 +96,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 		const { theme: healthTheme, created } = await ensureThemeForUser({
 			userId,
-			name: 'Helse',
+			name: HEALTH_PARENT_THEME_NAME,
 			emoji: '💪',
-			description: 'Withings-data, helseutvikling og mål knyttet til kropp, søvn og aktivitet.'
+			description: 'Helse-mortemaet: sammenhengene på tvers av trening, ernæring, egenfrekvens, søvn og skjermtid.'
 		});
+
+		// Helse er et mortema — undertemaene skal finnes fra første tilkobling.
+		await ensureHealthSubthemes(userId);
 
 		const handoffParam = created ? '&handoff=1' : '';
 		throw redirect(302, `/tema/${healthTheme.id}?tab=data&connected=withings${handoffParam}`);

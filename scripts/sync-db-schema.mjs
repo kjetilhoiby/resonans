@@ -197,7 +197,35 @@ const DATA_MIGRATIONS = [
 	   AND jsonb_typeof(data->'duration') = 'number'
 	   AND (data->>'distance')::numeric >= 500
 	   AND (data->>'duration')::numeric > 0
-	   AND (data->>'distance')::numeric / (data->>'duration')::numeric < 1.95`
+	   AND (data->>'distance')::numeric / (data->>'duration')::numeric < 1.95`,
+	// 2026-08: Helse er blitt et mortema. Eksisterende toppnivå-temaer med et
+	// undertema-navn re-foreldres — men bare når brukeren faktisk har et
+	// Helse-tema, og bare når de ikke allerede ligger under noe annet
+	// (parent_theme IS NULL). Vi stjeler ikke et tema brukeren har plassert
+	// bevisst. Idempotent: etter første kjøring matcher ingen rader.
+	`UPDATE themes t
+	 SET parent_theme = 'Helse', updated_at = NOW()
+	 WHERE t.name IN ('Trening', 'Ernæring', 'Egenfrekvens', 'Søvn', 'Skjermtid')
+	   AND t.parent_theme IS NULL
+	   AND EXISTS (
+	     SELECT 1 FROM themes p
+	     WHERE p.user_id = t.user_id AND p.name = 'Helse' AND p.archived = false
+	   )`,
+	// 2026-08: Helse-widgetene ble seedet på mortemaet. Flytt dem til
+	// undertemaet som nå viser metrikken, ellers blir søvn-widgeten liggende på
+	// mor mens søvnvisningen er på barnet. Kun widgets som fortsatt peker på
+	// Helse flyttes — idempotent.
+	`UPDATE user_widgets w
+	 SET theme_id = child.id, updated_at = NOW()
+	 FROM themes parent, themes child
+	 WHERE w.theme_id = parent.id
+	   AND parent.user_id = w.user_id AND parent.name = 'Helse'
+	   AND child.user_id = w.user_id AND child.parent_theme = 'Helse'
+	   AND child.name = CASE
+	     WHEN w.metric_type IN ('sleepDuration', 'sleepHeartRate') THEN 'Søvn'
+	     WHEN w.metric_type IN ('distance', 'activeMinutes', 'steps') THEN 'Trening'
+	     WHEN w.metric_type = 'screenTime' THEN 'Skjermtid'
+	   END`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

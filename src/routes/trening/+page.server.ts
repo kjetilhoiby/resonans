@@ -8,12 +8,7 @@ import { loadTrainingDashboardData } from '$lib/server/training-dashboard';
 // `nyrute`) ligger nå under /api/tracks/*. Grunnen er at denne ruten skal bli
 // en redirect til undertemaet, og en redirect kan ikke ta imot POST.
 export const load: PageServerLoad = async ({ locals }) => {
-	const userId = locals.userId;
-	if (!userId) {
-		return { plan: null, states: null, milestones: [], snapshot: null };
-	}
-
 	// Milepæl-evalueringen skriver, og bes om eksplisitt her. Dashboard-
 	// endepunktet for undertemaet kaller uten flagget.
-	return loadTrainingDashboardData(userId, { evaluateMilestones: true });
+	return loadTrainingDashboardData(locals.userId, { evaluateMilestones: true });
 };

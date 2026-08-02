@@ -18,11 +18,19 @@
 	import type { LivskompassScores } from '$lib/domains/livskompass/dimensions';
 	import HomeDashboard from '../HomeDashboard.svelte';
 	import VehicleDashboard from '../VehicleDashboard.svelte';
+	import TrainingDashboard from '../TrainingDashboard.svelte';
+	import SleepDashboard from '../SleepDashboard.svelte';
+	import ScreenTimeDashboard from '../ScreenTimeDashboard.svelte';
+	import NutritionDashboard from '../NutritionDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
 	import ThemeMetricSettingsSheet from '../ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from '../ThemeMetricSettingsSheet.svelte';
 	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData, type VehicleDashboardData } from '$lib/client/dashboard-cache';
+	import type { TrainingDashboardPayload } from '$lib/server/training-dashboard';
+	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
+	import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
+	import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
@@ -168,6 +176,8 @@
 			sources: healthDashboard.sources ?? [],
 			recentEvents: healthDashboard.recentEvents ?? [],
 			activities: (healthDashboard.activityLayer?.workouts ?? []) as any,
+			subthemes: healthDashboard.subthemes ?? [],
+			signals: healthDashboard.signals ?? [],
 			themeId: theme.id
 		};
 	});
@@ -232,6 +242,12 @@
 			positions: vehicleDashboard.positions ?? []
 		};
 	});
+
+	/* ── Helse-undertemaene ─────────────────────────────── */
+	const trainingData = $derived(payloadFor<TrainingDashboardPayload>('training'));
+	const sleepData = $derived(payloadFor<SleepDashboardPayload>('sleep'));
+	const screenTimeData = $derived(payloadFor<ScreenTimeDashboardPayload>('screentime'));
+	const nutritionData = $derived(payloadFor<NutritionDashboardPayload>('nutrition'));
 
 	/* ── Goal helpers (for non-dashboard themes) ───────── */
 	const GOAL_COLORS: Record<string, string> = {
@@ -584,6 +600,22 @@
 
 	{#if vehicleDashboardProps}
 		<VehicleDashboard {...vehicleDashboardProps} />
+	{/if}
+
+	{#if trainingData}
+		<TrainingDashboard data={trainingData} />
+	{/if}
+
+	{#if sleepData}
+		<SleepDashboard data={sleepData} />
+	{/if}
+
+	{#if screenTimeData}
+		<ScreenTimeDashboard data={screenTimeData} />
+	{/if}
+
+	{#if nutritionData}
+		<NutritionDashboard data={nutritionData} onOpenChat={onSwitchToChat} />
 	{/if}
 
 	{#if projects.length > 0}
