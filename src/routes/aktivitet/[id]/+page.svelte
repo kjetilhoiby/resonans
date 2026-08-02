@@ -18,7 +18,7 @@
 	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, assessment, healthThemeId } = data;
+	const { workout, trackPoints, assessment, activityListThemeId } = data;
 	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
@@ -48,8 +48,8 @@
 			const res = await fetch(`/api/workouts/${workout.id}/dismiss`, { method: 'POST' });
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			// Naviger til en fersk oversikt slik at den skjulte økten ikke vises fra cache
-			if (healthThemeId) {
-				await goto(`/tema/${healthThemeId}`, { invalidateAll: true });
+			if (activityListThemeId) {
+				await goto(`/tema/${activityListThemeId}`, { invalidateAll: true });
 			} else {
 				history.back();
 			}

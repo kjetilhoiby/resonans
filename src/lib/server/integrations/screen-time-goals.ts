@@ -71,7 +71,7 @@ export function screenTimeMetricFromAggregate(
 
 /**
  * Nyeste uke med skjermtidsdata + uka før — grunnlaget for målevaluering
- * utenfor /skjermtid-siden (f.eks. Mål-fanen).
+ * utenfor Skjermtid-undertemaet (f.eks. Mål-fanen).
  */
 export async function getLatestScreenTimeWeekMetrics(
 	userId: string

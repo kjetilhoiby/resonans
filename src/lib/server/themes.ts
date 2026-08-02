@@ -284,3 +284,35 @@ export async function ensureHealthSubthemes(userId: string) {
 
 	return { created, themeIdsByName };
 }
+
+/**
+ * Navnet på undertemaet med gitt dashboardtype, hvis brukeren har det.
+ *
+ * Brukes av /trening- og /skjermtid-redirectene. Returnerer NAVN og ikke id,
+ * fordi /tema/[id] slår opp på navn også — og fordi usage-summary
+ * normaliserer UUID-segmenter til «[id]». En redirect til uuid ville slått
+ * alle helse-temaene sammen til én bøtte i bruksstatistikken.
+ *
+ * Oppretter ingenting: har brukeren ikke et Helse-tema, er det ingenting å
+ * henge undertemaet på, og en tilfeldig navigasjon skal ikke materialisere
+ * seks temaer.
+ */
+export async function resolveHealthSubthemeName(
+	userId: string,
+	subthemeName: string
+): Promise<{ name: string } | { parentId: string } | null> {
+	const existing = await findThemeByName(userId, subthemeName);
+	if (existing && !existing.archived) return { name: existing.name };
+
+	const parent = await findThemeByName(userId, HEALTH_PARENT_THEME_NAME);
+	if (!parent) return null;
+
+	// Har brukeren mortemaet, men ikke undertemaet, opprettes det nå.
+	// Merk at vi IKKE gjør dette for et arkivert undertema — ensureThemeForUser
+	// setter archived: false og ville gjenopplivet noe brukeren gjemte bevisst.
+	if (existing?.archived) return { parentId: parent.id };
+
+	await ensureHealthSubthemes(userId);
+	const created = await findThemeByName(userId, subthemeName);
+	return created ? { name: created.name } : { parentId: parent.id };
+}

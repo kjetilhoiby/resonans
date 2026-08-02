@@ -48,6 +48,27 @@ test.describe('Økonomi-tema', () => {
 	});
 });
 
+// Helse-undertemaene. /tema/[id] slår opp på navn når segmentet ikke er en
+// UUID, og kapitaliserer første bokstav — så små bokstaver i URL-en virker.
+// Forutsetter at `npm run db:sync` har provisjonert temaene for testbrukeren.
+test.describe('Helse-undertemaene', () => {
+	const subthemes = [
+		{ url: '/tema/trening', file: 'tema-trening.png' },
+		{ url: '/tema/ernæring', file: 'tema-ernaring.png' },
+		{ url: '/tema/egenfrekvens', file: 'tema-egenfrekvens.png' },
+		{ url: '/tema/søvn', file: 'tema-sovn.png' },
+		{ url: '/tema/skjermtid', file: 'tema-skjermtid.png' }
+	];
+
+	for (const { url, file } of subthemes) {
+		test(`${url} rendres`, async ({ page }) => {
+			await page.goto(url);
+			await page.waitForLoadState('networkidle');
+			await expect(page).toHaveScreenshot(file, { fullPage: true });
+		});
+	}
+});
+
 // Per-seksjon-screenshots: lokaliserte diffs + ingen terskel-maskering på lang side.
 // Holdes i synk med sections-listene i src/routes/design/+page.svelte (komponenter)
 // og src/routes/design/flater/+page.svelte (komposisjoner). Filnavnet er design-<id>

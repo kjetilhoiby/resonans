@@ -41,6 +41,7 @@
 		metricSettings={data.metricSettings}
 		projects={data.projects}
 		isHomeProject={data.isHomeProject}
+		parentThemeId={data.parentThemeId}
 		projectProfile={data.projectProfile}
 		tasks={data.tasks}
 		cutLists={data.cutLists}

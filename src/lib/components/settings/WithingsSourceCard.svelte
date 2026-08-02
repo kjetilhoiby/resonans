@@ -285,8 +285,9 @@
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ fromDate: sleepBackfillFromDate })
 				});
-				const { invalidateDashboardKind } = await import('$lib/client/dashboard-cache');
-				invalidateDashboardKind('health');
+				// Søvn-backfill endrer både søvnflaten og mortemaets stripe.
+				const { invalidateHealthFamily } = await import('$lib/client/dashboard-cache');
+				invalidateHealthFamily();
 				sleepBackfillReaggregating = false;
 			}
 		} finally {

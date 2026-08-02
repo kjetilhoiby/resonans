@@ -62,6 +62,8 @@ function mapWidgetMetricToSensorMetric(metric: HealthMetric): 'weight' | 'steps'
 // System prompt hints for health domain
 export const HEALTH_DOMAIN_PROMPT = `
 **HEALTH DOMAIN FOCUS:**
+- Helse er et mortema med fem undertemaer: Trening, Ernæring, Egenfrekvens, Søvn og Skjermtid.
+  Mortemaet eier sammenhengene på tvers; detaljene bor på undertemaet.
 - Bruker spør om helse-metrikker (vekt, søvn, steg, treningsøkter, etc.)
 - Hent ALLTID live sensor-data med query_sensor_data før du svarer
 - Fokuser på trender, ikke isolerte målinger
@@ -74,7 +76,7 @@ export const HEALTH_DOMAIN_PROMPT = `
   for å hente tall (total, scrolling=sosiale medier, fordeling per time på døgnet).
 - «Scrolling» = kategorien sosiale medier. Snakk om både total skjermtid og scrolling.
 - Brukeren kan ha ukesmål for total skjermtid, scrolling og tidsvinduer (f.eks. 16–20). Følg opp
-  uke-for-uke og pek på endring fra forrige uke. Egen side: /skjermtid.
+  uke-for-uke og pek på endring fra forrige uke. Skjermtid er et eget undertema av Helse.
 `;
 
 // Validation rules

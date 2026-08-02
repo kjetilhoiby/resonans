@@ -6,7 +6,11 @@
 	import WeeklyEffortCard from '$lib/components/composed/WeeklyEffortCard.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { StreakCard } from '$lib/components/ui';
+	import HealthSubthemeStrip from '$lib/components/domain/health/HealthSubthemeStrip.svelte';
+	import HealthSignalSection from '$lib/components/domain/health/HealthSignalSection.svelte';
 	import {
+		healthSubthemeTiles,
+		healthSignals,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -86,9 +90,30 @@
 		<div class="demo-card"><FormCard series={loadSeries} windowDays={120} /></div>
 	</div>
 
+	<h3 class="subsection">HealthSubthemeStrip — undertemaene av Helse</h3>
+	<p class="section-desc">
+		Ett tall per gren. Siste flis viser tomtilstanden for et undertema som ikke er
+		opprettet ennå — den er dempet, men fortsatt klikkbar.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<HealthSubthemeStrip tiles={healthSubthemeTiles} />
+	</div>
+
+	<h3 class="subsection">SignalCard — kryss-domene-signal</h3>
+	<p class="section-desc">
+		Tone fra <code>severity</code>, og kryss-lenker til de to temaene signalet
+		forbinder. Generisk over domener, ikke bare helse.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<HealthSignalSection
+			signals={healthSignals}
+			themeIdsByName={{ Trening: 'demo-trening', Søvn: 'demo-sovn', Ernæring: 'demo-ernaering' }}
+		/>
+	</div>
+
 	<h3 class="subsection">ScreenTimeCard — skjermtid</h3>
 	<p class="section-desc">
-		Full variant med ukesmål, dagsfordeling, akkumulert ukegraf og kategorisplitt — som på <code>/skjermtid</code>.
+		Full variant med ukesmål, dagsfordeling, akkumulert ukegraf og kategorisplitt — som på Skjermtid-undertemaet.
 	</p>
 	<div class="demo-card demo-card--wide">
 		<ScreenTimeCard

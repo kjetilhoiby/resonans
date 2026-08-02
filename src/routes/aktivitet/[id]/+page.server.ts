@@ -5,7 +5,7 @@ import { sensorEvents, goals, tasks } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
-import { findHealthThemeId, getHealthThemeIds } from '$lib/server/themes';
+import { findHealthThemeId, findThemeByName, getHealthThemeIds } from '$lib/server/themes';
 
 async function generateWorkoutAssessment(
 	workout: NonNullable<Awaited<ReturnType<typeof getWorkoutContextForUser>>>,
@@ -71,9 +71,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	// Hent helsemål fra hele helse-familien: et treningsmål kan like gjerne ligge
 	// på Trening-undertemaet som på mortemaet.
-	const [healthThemeId, healthThemeIds] = await Promise.all([
+	const [healthThemeId, healthThemeIds, trainingTheme] = await Promise.all([
 		findHealthThemeId(userId),
-		getHealthThemeIds(userId)
+		getHealthThemeIds(userId),
+		// Aktivitetslista bor på Trening etter mortema-splitten — dit skal man
+		// tilbake når en økt skjules.
+		findThemeByName(userId, 'Trening')
 	]);
 	const healthGoals = healthThemeIds.length
 		? await db.query.goals.findMany({
@@ -94,6 +97,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		trackPoints,
 		assessment,
 		healthThemeId,
+		activityListThemeId: trainingTheme?.id ?? healthThemeId,
 		healthGoals
 	};
 };

@@ -146,13 +146,15 @@
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
 		isHomeProject?: boolean;
+		parentThemeId?: string | null;
 		projectProfile?: Record<string, unknown> | null;
 		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
 		cutLists?: Array<{ id: string; title: string; kerfMm: number; transportEnabled: boolean; transportMaxLengthMm: number; transportMaxWidthMm: number; guillotine: boolean; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
 		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, parentThemeId = null,
+		projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
@@ -343,7 +345,14 @@
 		selectedFlow = null;
 	}
 
-	function goHome() {
+	// docs/DESIGN.md: tittelen ER tilbakeknappen. Fra et undertema går den til
+	// mortemaet, ellers til forsiden.
+	function goBack() {
+		if (parentThemeId) {
+			startNavMetric('tema', 'tema');
+			void goto(`/tema/${parentThemeId}`);
+			return;
+		}
 		startNavMetric('tema', 'home');
 		void goto('/');
 	}
@@ -380,8 +389,8 @@
 				title={theme.name}
 				subtitle={theme.description ?? ''}
 				emoji={theme.emoji ?? '🎯'}
-				onTitleClick={goHome}
-				titleLabel="Gå til forsiden"
+				onTitleClick={goBack}
+				titleLabel={parentThemeId ? `Tilbake til ${theme.parentTheme}` : 'Gå til forsiden'}
 			/>
 		</header>
 

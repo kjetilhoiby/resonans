@@ -2,7 +2,8 @@ import { db } from '$lib/db';
 import { users, sensorEvents } from '$lib/db/schema';
 import { eq, and, gte } from 'drizzle-orm';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
-import { ensureThemeForUser } from '$lib/server/themes';
+import { ensureThemeForUser, findThemeByName } from '$lib/server/themes';
+import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 
 export async function notifyWithingsSyncResults(args: {
 	userId: string;
@@ -22,13 +23,20 @@ export async function notifyWithingsSyncResults(args: {
 
 	const { theme: healthTheme } = await ensureThemeForUser({
 		userId,
-		name: 'Helse',
+		name: HEALTH_PARENT_THEME_NAME,
 		emoji: '💪',
-		description: 'Helse, trening, søvn og restitusjon samlet i ett tema.'
+		description: 'Helse-mortemaet: sammenhengene på tvers av trening, ernæring, egenfrekvens, søvn og skjermtid.'
 	});
 
+	// Vekt hører til mortemaet (utfallsmålet), økter til Trening-undertemaet.
+	// NB: ingen ensureHealthSubthemes her — denne kjører i cron-kontekst og skal
+	// ikke ha sideeffekter utover varslingen.
 	const healthDataUrl = new URL(`/tema/${healthTheme.id}`, appUrl);
 	healthDataUrl.searchParams.set('tab', 'data');
+
+	const trainingTheme = await findThemeByName(userId, 'Trening');
+	const workoutUrl = new URL(`/tema/${trainingTheme?.id ?? healthTheme.id}`, appUrl);
+	workoutUrl.searchParams.set('tab', 'data');
 
 	let sent = 0;
 
@@ -54,7 +62,7 @@ export async function notifyWithingsSyncResults(args: {
 				payload: {
 					title: 'Yoga registrert',
 					body,
-					url: healthDataUrl.toString(),
+					url: workoutUrl.toString(),
 					tag: `yoga-${workout.id}`
 				},
 				onGone: 'disable'

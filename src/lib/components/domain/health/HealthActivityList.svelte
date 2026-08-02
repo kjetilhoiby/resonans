@@ -8,7 +8,7 @@
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
 	import { invalidateAll } from '$app/navigation';
-	import { invalidateDashboardKind } from '$lib/client/dashboard-cache';
+	import { invalidateHealthFamily } from '$lib/client/dashboard-cache';
 	import BottomSheet from '../../ui/BottomSheet.svelte';
 	import {
 		isWheeledSport,
@@ -70,8 +70,9 @@
 	}
 
 	/**
-	 * Etter en mutasjon på en økt: tøm helse-dashboardets klient-cache i tillegg til
-	 * å invalidere load-funksjonene.
+	 * Etter en mutasjon på en økt: tøm klient-cachen for hele helse-familien i
+	 * tillegg til å invalidere load-funksjonene. Lista bor på Trening, men en
+	 * skjult økt endrer også effort-tallet i undertema-stripen på mortemaet.
 	 *
 	 * `invalidateAll()` treffer bare SvelteKit-`load`. Denne lista mates av
 	 * helse-dashboard-payloaden, som hentes klient-side og persisteres i
@@ -79,7 +80,7 @@
 	 * økta / det gamle kildevalget opp igjen ved neste maling.
 	 */
 	async function refreshAfterMutation() {
-		invalidateDashboardKind('health');
+		invalidateHealthFamily();
 		await invalidateAll();
 	}
 

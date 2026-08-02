@@ -32,6 +32,8 @@ Kjernedomener (helse, økonomi, hjem, familie) er forhåndsdefinerte med egne da
 
 Hvert tema har en kanonisk samtale, mål, sjekklister, filer og et valgfritt dashboard. Temaer er brukerens organiserende prinsipp — ikke mapper, men levende prosjekter.
 
+**Mortema.** Et tema kan eie andre temaer: «Hjem» eier hus-prosjekter, «Familie» eier ferier, og «Helse» eier Trening, Ernæring, Egenfrekvens, Søvn og Skjermtid. Arbeidsdelingen er fast — mortemaet viser *sammenhengene* (signaler på tvers, én statusflis per gren), undertemaet eier *detaljene* og sin egen smale chat-kontekst. Det er den samme innsikten som gjør bok-chatten god: en flate som vet mye om akkurat dette emnet slår en som vet litt om alt.
+
 ### Chat fungerer med smal, rik kontekst
 
 Generell "snakk med AI"-chat konkurrerer med ChatGPT og taper. Resonans-chatten vinner når den har *smal, rik kontekst* — bok-chat med kuratert kontekst (boken, klipp, leselogg, forfatter) har vært den beste opplevelsen. Mønsteret: hvert domene bør ha sin "bok-chat-opplevelse" der AI-en vet mye om akkurat dette emnet, ikke litt om alt.

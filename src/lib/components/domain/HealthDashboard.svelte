@@ -63,8 +63,8 @@
 		try {
 			const res = await fetch('/api/helse/undertema/ensure', { method: 'POST' });
 			if (res.ok) {
-				const { invalidateDashboardKind } = await import('$lib/client/dashboard-cache');
-				invalidateDashboardKind('health');
+				const { invalidateHealthFamily } = await import('$lib/client/dashboard-cache');
+				invalidateHealthFamily();
 				const { invalidateAll } = await import('$app/navigation');
 				await invalidateAll();
 			}

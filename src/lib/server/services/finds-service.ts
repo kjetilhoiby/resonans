@@ -20,6 +20,13 @@ export type FindRow = typeof finds.$inferSelect;
 // film/vehicle) mangler bevisst her → faller tilbake til nøkkelord-matching.
 const KIND_TO_DOMAIN: Record<string, FindDomain> = {
 	health: 'health',
+	// Helse-undertemaene. Uten disse ville «Ernæring» falt til
+	// resolveDomainFromInput, som ikke har ordet i noen regex — funn-seksjonen
+	// hadde forsvunnet stille på det temaet.
+	training: 'health',
+	sleep: 'health',
+	screentime: 'health',
+	nutrition: 'food',
 	economics: 'economics',
 	food: 'food',
 	family: 'family',

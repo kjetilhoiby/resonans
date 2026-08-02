@@ -44,6 +44,8 @@ import type { GeoCandidate } from '$lib/utils/geocode';
 import type { WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 import type { FilterPreview, LoadFilterPreview } from '$lib/components/ui/widget-config-api';
 import type { TrainingLoadPoint } from '$lib/util/training-load';
+import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
+import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
 
 // ── ChecklistWidget ──────────────────────────────────────────────────────────
 export function mkChecklist(id: string, title: string, emoji: string, itemTexts: string[], doneCount: number): Checklist {
@@ -1522,4 +1524,44 @@ export const foodShoppingListItemsMock = [
 	{ id: 'sl-3', name: 'Fløte', normalizedName: 'fløte', quantity: 0.5, unit: 'l', sources: ['Fiskegrateng'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=fl%C3%B8te' },
 	{ id: 'sl-4', name: 'Cashewnøtter', normalizedName: 'cashewnøtter', quantity: null, unit: null, sources: ['fast vare'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=cashewn%C3%B8tter' },
 	{ id: 'sl-5', name: 'Tannkrem barn', normalizedName: 'tannkrem barn', quantity: null, unit: null, sources: ['manuell'], checked: false, manual: true, odaUrl: 'https://oda.com/no/search/?q=tannkrem%20barn' }
+];
+
+// ── Helse-mortemaet: undertema-stripe og signaler ────────────────────────────
+// Faste verdier og observedAt — /design er i visuell regresjon.
+export const healthSubthemeTiles: SubthemeTile[] = [
+	{ name: 'Trening', emoji: '🏃', kind: 'training' as const, themeId: 'demo-trening', value: '412', unit: 'effort', delta: '+37 mot snittet', tone: 'positiv' as const, empty: false },
+	{ name: 'Ernæring', emoji: '🥗', kind: 'nutrition' as const, themeId: 'demo-ernaering', value: '−1,4', unit: 'kg', delta: 'siste 30 dager', tone: 'positiv' as const, empty: false },
+	{ name: 'Egenfrekvens', emoji: '🧘', kind: 'egenfrekvens' as const, themeId: 'demo-egenfrekvens', value: '2,8', unit: 'av 5', delta: 'nedgang', tone: 'varsel' as const, empty: false },
+	{ name: 'Søvn', emoji: '😴', kind: 'sleep' as const, themeId: 'demo-sovn', value: '6,4', unit: 'timer/natt', delta: 'siste uke', tone: 'varsel' as const, empty: false },
+	{ name: 'Skjermtid', emoji: '📱', kind: 'screentime' as const, themeId: null, value: null, unit: null, delta: null, tone: 'nøytral' as const, empty: true }
+];
+
+export const healthSignals: PresentedSignal[] = [
+	{
+		signalType: 'evening_screen_work_7d',
+		title: 'Skjerm om kvelden',
+		sentence: '4 kvelder med skjermarbeid etter 17, 5,2 timer til sammen.',
+		tone: 'varsel' as const,
+		severity: 'medium' as const,
+		crossLinks: ['Skjermtid', 'Søvn'] as const,
+		observedAt: '2026-08-01T06:00:00.000Z'
+	},
+	{
+		signalType: 'health_effort_vs_threshold',
+		title: 'Trening mot vektterskel',
+		sentence: 'Du trener over terskelen vekten din reagerer på.',
+		tone: 'positiv' as const,
+		severity: 'info' as const,
+		crossLinks: ['Trening', 'Ernæring'] as const,
+		observedAt: '2026-08-01T06:00:00.000Z'
+	},
+	{
+		signalType: 'resting_hr_elevated_7d',
+		title: 'Hvilepuls',
+		sentence: 'Sovepulsen er 3,2 slag over vanlig (55 mot 52).',
+		tone: 'varsel' as const,
+		severity: 'medium' as const,
+		crossLinks: ['Søvn', 'Trening'] as const,
+		observedAt: '2026-07-31T06:00:00.000Z'
+	}
 ];

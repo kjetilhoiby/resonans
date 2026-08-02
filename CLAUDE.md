@@ -21,7 +21,7 @@ npm run db:sync         # Full deploy-pipeline (SQL + drizzle push)
 npm run db:studio       # Drizzle Studio
 
 # Testing
-npm test                      # Enhetstester (Vitest, ~320 tester, <1s)
+npm test                      # Enhetstester (Vitest, ~1900 tester, <20s)
 npm run test:watch            # Enhetstester i watch-modus
 npm run test:visual           # Piksel-diff visuell regresjon (Playwright, ~14s)
 npm run test:visual:update    # Oppdater baselines for piksel-diff
@@ -56,7 +56,7 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
 
 ### 3. Bruk og vedlikehold enhetstester
 
-~320 enhetstester (Vitest) dekker forretningslogikk. Kjøres med `npm test`.
+~1900 enhetstester (Vitest) i ~150 filer dekker forretningslogikk. Kjøres med `npm test`.
 
 **Regler:**
 - Etter endring i en modul med eksisterende tester: kjør `npm test` og fiks eventuelle brudd.
@@ -69,7 +69,7 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
 
 ### 4. Bruk og vedlikehold visuelle tester
 
-Playwright-basert visuell regresjon fanger UI-endringer på 5 sider (hjem, ukeplan, tema/helse, tema/økonomi, design).
+Playwright-basert visuell regresjon fanger UI-endringer på sidene i `tests/visual/pages.spec.ts` (hjem, ukeplan, tema-sidene inkl. helse-undertemaene, og per-seksjon-screenshots av /design).
 
 **To moduser:**
 
@@ -168,6 +168,28 @@ iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
 *innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.
+
+### Mortema (tema som eier tema)
+
+`themes.parentTheme` er **fritekst mot forelderens navn**, ikke en fremmednøkkel. Tre
+mortemaer finnes: «Hjem» (hus-prosjekter), «Familie» (ferier) og «Helse» (Trening,
+Ernæring, Egenfrekvens, Søvn, Skjermtid).
+
+- Barn hentes med `getChildThemes(userId, parentName)` i `src/lib/server/themes.ts`.
+- Helse-settet er lukket og defineres i `src/lib/domain/health-subthemes.ts` — eneste
+  sted navnene skrives. Undertemaene provisjoneres av `ensureHealthSubthemes` (idempotent).
+- Arbeidsdelingen: **mortemaet viser sammenhenger, undertemaet eier detaljene.**
+- Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra.
+
+**Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
+hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
+`THEME_DASHBOARD_MATCHERS` — termer ≥5 tegn matcher som delstreng. Se `// NB:`-kommentarene
+der. To feller:
+
+- **«ø» og «æ» dekomponeres ikke** av `normalize('NFD')` (bare «å» → «a»). Skriv termer med
+  norske tegn, gjerne i begge varianter (`søvn`/`sovn`).
+- `/api/health` er prefiksmatch i `PUBLIC_API_PREFIXES`, så alt under `/api/health/` får
+  aldri `locals.userId`. Legg nye helse-endepunkter under `/api/helse/` eller `/api/tema/`.
 
 ### Transaksjons-kategorisering
 

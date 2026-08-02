@@ -600,6 +600,20 @@ export function invalidateDashboardKind(kind: DashboardKind): void {
 	}
 }
 
+/**
+ * Tøm cachen for hele helse-familien.
+ *
+ * Etter mortema-splitten ligger data som én mutasjon påvirker spredt: en økt
+ * endrer både aktivitetslista på Trening og undertema-stripen på mor. Å
+ * invalidere bare 'health' ville latt Trening vise den skjulte økta videre —
+ * nøyaktig regresjonen invalidateDashboardKind ble innført for å fikse.
+ */
+export function invalidateHealthFamily(): void {
+	for (const kind of ['health', 'training', 'sleep', 'screentime', 'nutrition', 'egenfrekvens'] as const) {
+		invalidateDashboardKind(kind);
+	}
+}
+
 export function prefetchDashboard<K extends DashboardKind>(themeId: string, kind: K): Promise<DashboardCacheEntry<K>> {
 	const cached = getCachedDashboard(themeId, kind);
 	if (cached) {
