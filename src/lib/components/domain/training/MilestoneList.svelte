@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { setMilestone } from '$lib/client/tracks-api';
 
 	interface Milestone {
 		id: string;
@@ -22,18 +22,15 @@
 		{#each milestones as m (m.id)}
 			<li class:achieved={m.achievedAt != null}>
 				{#if m.manual}
-					<form method="POST" action="?/milepael" use:enhance>
-						<input type="hidden" name="milestoneId" value={m.id} />
-						<input type="hidden" name="achieved" value={m.achievedAt == null ? 'true' : 'false'} />
-						<button
-							type="submit"
-							class="check"
-							data-track="trening:milepael-toggle"
-							aria-label={m.achievedAt == null ? `Merk «${m.name}» som nådd` : `Fjern merking av «${m.name}»`}
-						>
-							{m.achievedAt != null ? '✓' : ''}
-						</button>
-					</form>
+					<button
+						type="button"
+						class="check"
+						data-track="trening:milepael-toggle"
+						onclick={() => void setMilestone(m.id, m.achievedAt == null)}
+						aria-label={m.achievedAt == null ? `Merk «${m.name}» som nådd` : `Fjern merking av «${m.name}»`}
+					>
+						{m.achievedAt != null ? '✓' : ''}
+					</button>
 				{:else}
 					<span class="check auto" aria-hidden="true">{m.achievedAt != null ? '✓' : ''}</span>
 				{/if}

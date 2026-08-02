@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { createTrainingPlan, formFields } from '$lib/client/tracks-api';
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import TrackCard from '$lib/components/domain/training/TrackCard.svelte';
 	import MilestoneList from '$lib/components/domain/training/MilestoneList.svelte';
@@ -8,6 +8,9 @@
 	import TrainingMixCard from '$lib/components/domain/training/TrainingMixCard.svelte';
 	import RouteLibrary from '$lib/components/domain/training/RouteLibrary.svelte';
 	import type { PageData } from './$types';
+
+	let setupSubmitting = $state(false);
+	let setupError = $state<string | null>(null);
 
 	let { data }: { data: PageData } = $props();
 
@@ -114,7 +117,23 @@
 					utholdenhet (mot 22 km/uke i 5:30-pace, der sykkel teller med). Progresjonen følger det du
 					faktisk registrerer i Ekko.
 				</p>
-				<form method="POST" action="?/opprett" use:enhance>
+				<form
+					method="POST"
+					onsubmit={async (event) => {
+						event.preventDefault();
+						const form = event.currentTarget as HTMLFormElement;
+						const fields = formFields(form);
+						setupSubmitting = true;
+						setupError = await createTrainingPlan({
+							armhevinger: Number(fields.armhevinger),
+							planke: Number(fields.planke),
+							pullupNegativ: Number(fields.pullupNegativ),
+							ukesKm: Number(fields.ukesKm),
+							paceSek: Number(fields.paceSek)
+						});
+						setupSubmitting = false;
+					}}
+				>
 					<div class="field-grid">
 						<label>
 							Armhevinger per økt nå
@@ -137,7 +156,12 @@
 							<input type="number" name="paceSek" value="400" min="180" data-track="trening:oppsett-pace" />
 						</label>
 					</div>
-					<button type="submit" class="primary">Start løpene</button>
+					{#if setupError}
+						<p class="form-error" role="alert">{setupError}</p>
+					{/if}
+					<button type="submit" class="primary" disabled={setupSubmitting}>
+						{setupSubmitting ? 'Starter …' : 'Start løpene'}
+					</button>
 				</form>
 			</section>
 		{:else}

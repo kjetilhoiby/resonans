@@ -3,6 +3,8 @@ import {
 	defaultRouteSeeds,
 	defaultVariantsForKind,
 	inferPaceFactors,
+	parsePaceText,
+	parseRouteForm,
 	routeEffortRange,
 	variantEffort,
 	type RouteInput,
@@ -248,5 +250,83 @@ describe('defaultRouteSeeds', () => {
 		const seeds = defaultRouteSeeds(null);
 		const pendler = seeds.find((s) => s.name === 'Pendlerunde')!;
 		expect(pendler.variants.find((v) => v.label === 'Rolig')!.paceSecPerKm).toBe(400);
+	});
+});
+
+describe('parsePaceText', () => {
+	it('tolker mm:ss som sekunder per km', () => {
+		expect(parsePaceText('5:30')).toBe(330);
+		expect(parsePaceText('04:00')).toBe(240);
+	});
+
+	it('avviser alt som ikke er mm:ss', () => {
+		expect(parsePaceText('5.30')).toBeUndefined();
+		expect(parsePaceText('530')).toBeUndefined();
+		expect(parsePaceText('')).toBeUndefined();
+		expect(parsePaceText(undefined)).toBeUndefined();
+		expect(parsePaceText('0:00')).toBeUndefined();
+	});
+});
+
+describe('parseRouteForm', () => {
+	function form(fields: Record<string, string>) {
+		return (key: string) => fields[key];
+	}
+
+	it('krever navn', () => {
+		const result = parseRouteForm(form({ kind: 'run' }));
+		expect(result).toEqual({ ok: false, error: 'Mangler navn' });
+	});
+
+	it('bygger fartsvarianter for løperuter', () => {
+		const result = parseRouteForm(
+			form({ name: 'Sognsvann', kind: 'run', pace_Rolig: '5:30', pace_Terskel: '4:10' })
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.value.variants).toEqual([
+			{ label: 'Rolig', paceSecPerKm: 330 },
+			{ label: 'Terskel', paceSecPerKm: 250 }
+		]);
+	});
+
+	it('gir én «Jevnt»-variant når ingen fart er oppgitt', () => {
+		const result = parseRouteForm(form({ name: 'Rundt vannet', kind: 'run' }));
+		expect(result.ok && result.value.variants).toEqual([{ label: 'Jevnt' }]);
+	});
+
+	it('gir sykkelruter to faste varianter', () => {
+		const result = parseRouteForm(form({ name: 'Maridalen', kind: 'bike' }));
+		expect(result.ok && result.value.variants).toEqual([
+			{ label: 'Sykkel', family: 'cycling' },
+			{ label: 'El-sykkel', family: 'ebike' }
+		]);
+	});
+
+	it('bygger dragserie for bakkeruter, med standardverdier', () => {
+		const withDefaults = parseRouteForm(form({ name: 'Bakken', kind: 'hill' }));
+		expect(withDefaults.ok && withDefaults.value.variants[0].label).toBe('10 × 200 m');
+
+		const explicit = parseRouteForm(
+			form({ name: 'Bakken', kind: 'hill', reps: '6', repDistanceMeters: '400' })
+		);
+		expect(explicit.ok && explicit.value.variants[0]).toEqual({
+			label: '6 × 400 m',
+			reps: 6,
+			repDistanceMeters: 400,
+			paceSecPerKm: 300
+		});
+	});
+
+	it('regner km om til meter og lar tomme felt bli null', () => {
+		const result = parseRouteForm(form({ name: 'Tur', kind: 'run', distanceKm: '5.5' }));
+		expect(result.ok && result.value.distanceMeters).toBe(5500);
+		expect(result.ok && result.value.elevationMeters).toBeNull();
+		expect(result.ok && result.value.terrain).toBeNull();
+	});
+
+	it('faller tilbake til «run» for ukjent rutetype', () => {
+		const result = parseRouteForm(form({ name: 'Tur', kind: 'rakett' }));
+		expect(result.ok && result.value.kind).toBe('run');
 	});
 });

@@ -252,7 +252,9 @@
 			const targetChange = startWeight && targetWeight ? targetWeight - startWeight : undefined;
 
 			try {
-				const response = await fetch('/api/health/weight-onboarding', {
+				// NB: ikke under /api/health/ — det prefikset er public i
+				// hooks.server.ts, så locals.userId settes aldri og kallet 401-et.
+				const response = await fetch('/api/helse/vekt-onboarding', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({

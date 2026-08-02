@@ -93,7 +93,7 @@ export function buildCumulativeWeekSeries(
 	return points;
 }
 
-function toISODate(d: Date): string {
+export function toISODate(d: Date): string {
 	const y = d.getFullYear();
 	const m = String(d.getMonth() + 1).padStart(2, '0');
 	const day = String(d.getDate()).padStart(2, '0');
@@ -118,4 +118,15 @@ export function previousWeekMondayISO(ref: Date = new Date()): string {
 	const d = new Date(y, mo - 1, da, 12);
 	d.setDate(d.getDate() - 7);
 	return toISODate(d);
+}
+
+const MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'des'];
+
+/** Kort norsk ukelabel fra mandagen, f.eks. «8.–14. jun» eller «29. jun–5. jul». */
+export function weekLabel(start: Date): string {
+	const end = new Date(start);
+	end.setDate(end.getDate() + 6);
+	const sameMonth = start.getMonth() === end.getMonth();
+	const startStr = sameMonth ? `${start.getDate()}.` : `${start.getDate()}. ${MONTHS_SHORT[start.getMonth()]}`;
+	return `${startStr}–${end.getDate()}. ${MONTHS_SHORT[end.getMonth()]}`;
 }

@@ -1,0 +1,87 @@
+/**
+ * Ren logikk for Søvn-undertemaets dashboard.
+ *
+ * Primitivene (nap-inferens, medianer, målevaluering) bor i
+ * `$lib/domain/sleep-goals.ts` og er testet der. Denne modulen former dem til
+ * det dashboardet faktisk viser: en nattserie og en rytme-oppsummering.
+ */
+
+import {
+	medianBedtimeMinutes,
+	medianWakeMinutes,
+	noonAxisToHHMM,
+	type SleepNight
+} from '$lib/domain/sleep-goals';
+
+export interface SleepNightPoint {
+	/** Datoen natten regnes til (morgenen man våkner). */
+	date: string;
+	hours: number;
+	isNap: boolean;
+}
+
+export interface SleepRhythm {
+	/** Median leggetid som HH:MM, eller null uten nok netter. */
+	bedtime: string | null;
+	wake: string | null;
+	/** Snitt timer per natt (naps holdt utenfor). */
+	avgHours: number | null;
+	nightCount: number;
+}
+
+function toDateKey(d: Date): string {
+	return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Netter → punktserie, eldste først. Naps merkes, men beholdes i serien slik at
+ * dashboardet kan vise dem uten et eget oppslag.
+ */
+export function buildSleepNightSeries(nights: SleepNight[]): SleepNightPoint[] {
+	return nights
+		.map((night) => ({
+			date: toDateKey(night.end ?? night.start),
+			hours: Math.round(night.durationH * 100) / 100,
+			isNap: night.isNap
+		}))
+		.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Rytme-oppsummering over de faktiske nattesøvnene. Naps er ekskludert — de
+ * ville dratt både medianene og snittet feil vei.
+ */
+export function summarizeSleepRhythm(nights: SleepNight[]): SleepRhythm {
+	const realNights = nights.filter((n) => !n.isNap);
+	if (realNights.length === 0) {
+		return { bedtime: null, wake: null, avgHours: null, nightCount: 0 };
+	}
+
+	const bedtimeMinutes = medianBedtimeMinutes(realNights);
+	const wakeMinutes = medianWakeMinutes(realNights);
+	const totalHours = realNights.reduce((sum, n) => sum + n.durationH, 0);
+
+	return {
+		bedtime: bedtimeMinutes === null ? null : noonAxisToHHMM(bedtimeMinutes),
+		wake: wakeMinutes === null ? null : noonAxisToHHMM(wakeMinutes),
+		avgHours: Math.round((totalHours / realNights.length) * 100) / 100,
+		nightCount: realNights.length
+	};
+}
+
+/**
+ * Sammensatt forsinkelse: sleepLag (forskyvning fra leggetid 22–00 / våknetid
+ * 06–08) pluss earlyWake. Speiler regnestykket helse-dashboardet brukte, slik
+ * at tallet ikke endrer betydning når det flytter til Søvn.
+ */
+export function compositeSleepLag(metrics: {
+	sleepLag?: number;
+	earlyWake?: number;
+} | null | undefined): number | null {
+	const lag = typeof metrics?.sleepLag === 'number' ? metrics.sleepLag : null;
+	const early = typeof metrics?.earlyWake === 'number' ? metrics.earlyWake : null;
+	if (lag !== null && early !== null) return lag + early;
+	if (lag !== null) return lag;
+	if (early !== null) return early;
+	return null;
+}

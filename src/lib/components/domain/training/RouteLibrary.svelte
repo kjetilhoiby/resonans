@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { createTrainingRoute, formFields } from '$lib/client/tracks-api';
 
 	interface VariantEffort {
 		label: string;
@@ -26,6 +26,7 @@
 
 	let { routes }: Props = $props();
 	let showForm = $state(false);
+	let routeError = $state<string | null>(null);
 	let kind = $state<'run' | 'bike' | 'hill' | 'trail' | 'mixed'>('run');
 
 	const kindLabels: Record<string, string> = {
@@ -89,7 +90,16 @@
 	</ul>
 
 	{#if showForm}
-		<form method="POST" action="?/nyrute" class="route-form" use:enhance={() => async ({ update }) => { await update(); showForm = false; }}>
+		<form
+			method="POST"
+			class="route-form"
+			onsubmit={async (event) => {
+				event.preventDefault();
+				const form = event.currentTarget as HTMLFormElement;
+				routeError = await createTrainingRoute(formFields(form));
+				if (!routeError) showForm = false;
+			}}
+		>
 			<label>
 				Navn
 				<input name="name" required placeholder="F.eks. Vannrunden" data-track="trening:rute-navn" />
@@ -128,6 +138,9 @@
 				Terreng (valgfritt)
 				<input name="terrain" placeholder="vei / sti / variert" data-track="trening:rute-terreng" />
 			</label>
+			{#if routeError}
+				<p class="route-error" role="alert">{routeError}</p>
+			{/if}
 			<button type="submit" class="primary">Lagre rute</button>
 		</form>
 	{/if}
@@ -238,6 +251,12 @@
 		font-style: italic;
 		color: var(--text-tertiary, #777);
 		line-height: 1.4;
+	}
+
+	.route-error {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #e07070;
 	}
 
 	.route-form {

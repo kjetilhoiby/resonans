@@ -294,3 +294,77 @@ export function defaultRouteSeeds(easyPaceSecPerKm: number | null): Array<{
 		}
 	];
 }
+
+/* ── Skjema-parsing ──────────────────────────────────────────────────────── */
+
+export interface ParsedRouteForm {
+	name: string;
+	kind: RouteKind;
+	distanceMeters: number | null;
+	elevationMeters: number | null;
+	terrain: string | null;
+	variants: RouteVariant[];
+}
+
+const ROUTE_KINDS: readonly RouteKind[] = ['run', 'bike', 'hill', 'trail', 'mixed'];
+
+/** «mm:ss» → sekunder per km. Returnerer undefined for alt annet. */
+export function parsePaceText(value: string | undefined | null): number | undefined {
+	const m = (value ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
+	if (!m) return undefined;
+	const seconds = Number(m[1]) * 60 + Number(m[2]);
+	return seconds > 0 ? seconds : undefined;
+}
+
+/**
+ * Ruteskjema → RouteInput. Trukket ut av /trening sin form-action slik at både
+ * skjemaet og API-endepunktet deler tolkningen — og at den kan testes.
+ *
+ * Returnerer en feilmelding i stedet for å kaste, siden begge kallstedene
+ * svarer brukeren med den.
+ */
+export function parseRouteForm(
+	get: (key: string) => string | undefined
+): { ok: true; value: ParsedRouteForm } | { ok: false; error: string } {
+	const name = (get('name') ?? '').trim();
+	if (!name) return { ok: false, error: 'Mangler navn' };
+
+	const rawKind = (get('kind') ?? 'run').trim();
+	const kind = (ROUTE_KINDS as readonly string[]).includes(rawKind)
+		? (rawKind as RouteKind)
+		: 'run';
+
+	const num = (key: string): number | undefined => {
+		const v = Number(get(key));
+		return Number.isFinite(v) && v > 0 ? v : undefined;
+	};
+
+	// Enkel variant-modell fra skjema: opptil tre navngitte fartsvarianter.
+	const variants: RouteVariant[] = [];
+	if (kind === 'bike') {
+		variants.push({ label: 'Sykkel', family: 'cycling' }, { label: 'El-sykkel', family: 'ebike' });
+	} else if (kind === 'hill') {
+		const reps = num('reps') ?? 10;
+		const repDist = num('repDistanceMeters') ?? 200;
+		variants.push({ label: `${reps} × ${repDist} m`, reps, repDistanceMeters: repDist, paceSecPerKm: 300 });
+	} else {
+		for (const label of ['Rolig', 'Moderat', 'Terskel']) {
+			const pace = parsePaceText(get(`pace_${label}`));
+			if (pace) variants.push({ label, paceSecPerKm: pace });
+		}
+		if (variants.length === 0) variants.push({ label: 'Jevnt' });
+	}
+
+	const distanceKm = num('distanceKm');
+	return {
+		ok: true,
+		value: {
+			name,
+			kind,
+			distanceMeters: distanceKm ? Math.round(distanceKm * 1000) : null,
+			elevationMeters: num('elevationMeters') ?? null,
+			terrain: (get('terrain') ?? '').trim() || null,
+			variants
+		}
+	};
+}
