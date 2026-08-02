@@ -188,8 +188,10 @@ der. To feller:
 
 - **«ø» og «æ» dekomponeres ikke** av `normalize('NFD')` (bare «å» → «a»). Skriv termer med
   norske tegn, gjerne i begge varianter (`søvn`/`sovn`).
-- `/api/health` er prefiksmatch i `PUBLIC_API_PREFIXES`, så alt under `/api/health/` får
-  aldri `locals.userId`. Legg nye helse-endepunkter under `/api/helse/` eller `/api/tema/`.
+- `/api/health` er **eksakt match** i `PUBLIC_API_EXACT` (`src/lib/server/public-paths.ts`),
+  ikke prefiks — så nye endepunkter under `/api/health/` får normal auth. Det var motsatt
+  fram til 2026-08 og kostet tre bugs. Nye helse-endepunkter hører uansett under
+  `/api/helse/` eller `/api/tema/`.
 
 ### Transaksjons-kategorisering
 

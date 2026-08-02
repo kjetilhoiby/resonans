@@ -123,8 +123,8 @@ rekkefølgen justeres i langpress-lista.
 - **`/api/health/weight-onboarding` svarte alltid 401.** `/api/health` er prefiksmatch i
   `PUBLIC_API_PREFIXES`, og `requestUserHandle` hopper over public stier, så
   `locals.userId` ble aldri satt. Vekt-onboarding-flyten feilet stille. Flyttet til
-  `/api/helse/vekt-onboarding`. **NB: `/api/health/weight-series` har samme feil, men
-  null kallsteder — latt ligge som egen opprydding.**
+  `/api/helse/vekt-onboarding`. `/api/health/weight-series` hadde samme rotårsak og ble
+  ryddet i `2026-08-02-api-health-eksakt-match.md`, som også lukket selve fella.
 - **`manage_theme` hadde en hard enum** for `parentTheme` som utelot «Hjem» og «Familie»
   — de to mortemaene som faktisk fantes — og blokkerte AI-en fra å opprette
   hus-prosjekter og ferier.

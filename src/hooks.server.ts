@@ -8,29 +8,11 @@ import { resolveRequestUserId } from '$lib/server/request-user';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
+import { isPublicPath } from '$lib/server/public-paths';
 
 // Start scheduler when server starts
 if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
 	startScheduler();
-}
-
-const PUBLIC_PATH_PREFIXES = ['/auth', '/_app', '/design', '/partner-invite', '/share', '/live'];
-const PUBLIC_API_PREFIXES = ['/api/cron', '/api/scheduler/trigger', '/api/workouts/email-inbound', '/api/email-inbound', '/api/email/inbound', '/api/apps/authorize', '/api/apps/callback', '/api/apps/strava/connect', '/api/apps/strava/callback', '/api/apps/live-session/messages', '/api/share-link', '/api/live', '/api/health'];
-
-function isPublicPath(pathname: string) {
-	if (pathname === '/robots.txt' || pathname === '/favicon.ico') {
-		return true;
-	}
-
-	if (PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-		return true;
-	}
-
-	if (PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-		return true;
-	}
-
-	return false;
 }
 
 const authorizationHandle: Handle = async ({ event, resolve }) => {
