@@ -15,12 +15,33 @@ import {
 } from '$lib/server/tracks/effort-budget';
 import { getRoutesWithEffort } from '$lib/server/tracks/routes-repository';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { mapDailyEffortSeries } from '$lib/domain/health/daily-effort';
 import { db } from '$lib/db';
-import { sensorEvents, sensors } from '$lib/db/schema';
+import { sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 // Dekker 365d-vinduet i aktivitetslista.
 const WORKOUT_LOOKBACK_DAYS = 400;
+
+// Form-kortet viser 120 dagers vindu; CTL trenger innsvingning før det.
+const DAILY_EFFORT_DAYS = 400;
+
+/**
+ * Daglig effort, som mater form- og belastningskortene (CTL/ATL/TSB).
+ *
+ * Bodde på helse-mortemaet fram til august 2026. Flyttet hit sammen med
+ * kortene: treningsbelastning er trening. Mortemaet viser sammenhengen
+ * gjennom signalene i stedet, og sparer samtidig denne spørringen.
+ */
+async function loadDailyEffort(userId: string) {
+	const rows = await db.query.sensorAggregates.findMany({
+		columns: { periodKey: true, metrics: true },
+		where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'day')),
+		orderBy: [desc(sensorAggregates.startDate)],
+		limit: DAILY_EFFORT_DAYS
+	});
+	return mapDailyEffortSeries(rows);
+}
 
 /**
  * Aktivitetslaget og rå treningshendelser. Bodde på helse-dashboardet fram til
@@ -89,7 +110,10 @@ export async function loadTrainingDashboardData(
 	userId: string,
 	opts: { evaluateMilestones?: boolean } = {}
 ) {
-	const plan = await getActivePlan(userId);
+	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
+	// balanse er verdt å se også i oppsett-modus.
+	const [plan, dailyEffort] = await Promise.all([getActivePlan(userId), loadDailyEffort(userId)]);
+
 	if (!plan) {
 		// Oppsett-modus: prefyll baseline fra det vi vet om utøveren
 		const snapshot = await buildAthleteSnapshot(userId).catch(() => null);
@@ -98,6 +122,7 @@ export async function loadTrainingDashboardData(
 			states: null,
 			milestones: [] as MilestoneView[],
 			snapshot,
+			dailyEffort,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -209,6 +234,7 @@ export async function loadTrainingDashboardData(
 			manual: m.criteria.manual ?? false
 		})),
 		snapshot: null,
+		dailyEffort,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

@@ -7,28 +7,6 @@ import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
 import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 
-export interface WorkoutActivity {
-	activityId: string;
-	startTime: string;
-	sportType: string;
-	distanceMeters: number | null;
-	durationSeconds: number | null;
-	paceSecondsPerKm: number | null;
-	elevationMeters: number | null;
-	avgHeartRate: number | null;
-	maxHeartRate: number | null;
-	sources: string[];
-	evidence: Array<{
-		eventId: string;
-		hasTrackPoints: boolean;
-		provider: string;
-		sensorType: string;
-		distanceMeters: number | null;
-		durationSeconds: number | null;
-		avgHeartRate: number | null;
-	}>;
-}
-
 export interface HealthDashboardData {
 	weekly: unknown[];
 	monthly: unknown[];
@@ -36,10 +14,12 @@ export interface HealthDashboardData {
 	/** Undertema-stripen. Valgfri: en cachet payload fra før splitten mangler den. */
 	subthemes?: SubthemeTile[];
 	signals?: PresentedSignal[];
-	dailyEffort?: Array<{ date: string; effort: number }>;
 	sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
+	/**
+	 * Vekt- og øktshendelser for målberegningene i Mål-fanen. IKKE en
+	 * hendelsesdump til visning — den bor på Trening. Se `loadGoalEvents`.
+	 */
 	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
-	activityLayer?: { workouts: WorkoutActivity[] };
 }
 
 export interface EconomicsDashboardData {

@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
-	import HealthEffortSection from './health/HealthEffortSection.svelte';
 	import HealthMetricGrid from './health/HealthMetricGrid.svelte';
 	import HealthProgramCard from './health/HealthProgramCard.svelte';
 	import HealthSubthemeStrip from './health/HealthSubthemeStrip.svelte';
@@ -12,25 +11,19 @@
 	import {
 		type WindowMode,
 		type AggregatePeriod,
-		type WorkoutActivity,
 		type ThemeWidget,
 		type ProgramSummary,
 		type TodaySession,
 		type SourceItem,
 		buildQuarterData,
-		computeEffortPeriodRange,
-		aggregateEffortForPeriod,
-		formatDate,
-		computeTrainingLoad
+		formatDate
 	} from './health/health-data';
 
 	interface Props {
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
 		yearly: AggregatePeriod[];
-		dailyEffort?: Array<{ date: string; effort: number }>;
 		sources?: SourceItem[];
-		activities?: WorkoutActivity[];
 		themeId?: string;
 		/** Undertema-stripen. Kan mangle i en cachet payload fra før splitten. */
 		subthemes?: SubthemeTile[];
@@ -41,9 +34,7 @@
 		weekly,
 		monthly,
 		yearly,
-		dailyEffort = [],
 		sources = [],
-		activities = [],
 		themeId,
 		subthemes = [],
 		signals = []
@@ -130,30 +121,6 @@
 		selectedWindow === 'quarter' ? quarterData :
 		aggregatePeriod === 'week' ? weekly : aggregatePeriod === 'month' ? monthly : yearly
 	);
-	const trainingLoadSeries = $derived(computeTrainingLoad(dailyEffort));
-
-	const latestWeekWithEffort = $derived(
-		[...weekly].reverse().find((w) => w.metrics?.weeklyEffort) ?? null
-	);
-	const latestWeeklyEffort = $derived(latestWeekWithEffort?.metrics?.weeklyEffort ?? null);
-	const latestWeekLabel = $derived.by(() => {
-		if (!latestWeekWithEffort) return undefined;
-		const start = latestWeekWithEffort.startDate ? new Date(latestWeekWithEffort.startDate) : null;
-		const end = latestWeekWithEffort.endDate ? new Date(latestWeekWithEffort.endDate) : null;
-		if (!start || !end) return latestWeekWithEffort.periodKey;
-		const fmt = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
-		return `${fmt.format(start)}–${fmt.format(end)}`;
-	});
-
-	const effortPeriodMode = $derived<'daily' | 'weekly'>(
-		selectedWindow === '7d' || selectedWindow === 'week' ? 'daily' : 'weekly'
-	);
-
-	const effortPeriodRange = $derived(computeEffortPeriodRange(selectedWindow));
-	const periodEffortAggregate = $derived(
-		effortPeriodRange ? aggregateEffortForPeriod(weekly, effortPeriodRange) : null
-	);
-
 	// Kildehelse hører på mor (den gjelder alle undertemaene), men en full liste
 	// er ikke oversikt — én linje, med lenke videre til Kilder.
 	const sourceSummary = $derived.by(() => {
@@ -223,14 +190,14 @@
 		/>
 	</div>
 
-	<HealthEffortSection
-		variant="readiness"
-		{effortPeriodMode}
-		{latestWeeklyEffort}
-		{latestWeekLabel}
-		{periodEffortAggregate}
-		{trainingLoadSeries}
-	/>
+	<!-- Perioder er mortemaets hovedinnhold: det er her vekt, løp, effort, søvn
+	     og puls står side om side i samme periode, og sammenhengene blir lesbare.
+	     Lå kollapset i en <details> fram til august 2026 — form- og
+	     belastningskortene tok plassen, og de bor nå på Trening. -->
+	<!-- HealthMetricGrid setter sin egen SectionLabel, så ingen her. -->
+	{#if periodData.length > 0}
+		<HealthMetricGrid {periodData} {weekly} />
+	{/if}
 
 	{#if themeId}
 		<div class="hd-widget-card">
@@ -262,16 +229,6 @@
 			<p class="hd-empty-sub">Koble til eller synkroniser Withings for å fylle Helse-dashbordet.</p>
 		</div>
 	{:else}
-		<details class="hd-periods-details">
-			<summary class="hd-periods-summary">
-				<span class="hd-periods-title">Perioder — alle metrikker</span>
-				<span class="hd-periods-hint">vekt · løp · effort · søvn · puls</span>
-			</summary>
-			<div class="hd-periods-content">
-				<HealthMetricGrid {periodData} {weekly} />
-			</div>
-		</details>
-
 		<p class="hd-sources-line">
 			{sourceSummary}
 			<a href="/settings/sources" data-track="helse:apne-kilder">Kilder →</a>
@@ -348,44 +305,6 @@
 
 	.hd-sources-section {
 		margin-top: 12px;
-	}
-
-	.hd-periods-details {
-		background: #141414;
-		border-radius: 18px;
-		margin-top: 12px;
-		padding: 0;
-	}
-
-	.hd-periods-summary {
-		cursor: pointer;
-		padding: 16px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		list-style: none;
-		user-select: none;
-	}
-
-	.hd-periods-summary::-webkit-details-marker,
-	.hd-periods-summary::marker {
-		display: none;
-	}
-
-	.hd-periods-title {
-		font-size: 0.88rem;
-		font-weight: 700;
-		color: #e7e7e7;
-	}
-
-	.hd-periods-hint {
-		font-size: 0.72rem;
-		color: #777;
-	}
-
-	.hd-periods-content {
-		padding: 0 16px 16px 16px;
 	}
 
 	.hd-sources-line {

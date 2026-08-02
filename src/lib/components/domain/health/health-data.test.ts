@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildQuarterData,
-	computeEffortPeriodRange,
-	aggregateEffortForPeriod,
 	formatEvent,
 	formatDate,
 	formatMetric,
@@ -70,130 +68,6 @@ describe('buildQuarterData', () => {
 
 	it('returnerer tom liste for tomt grunnlag', () => {
 		expect(buildQuarterData([])).toEqual([]);
-	});
-});
-
-describe('computeEffortPeriodRange', () => {
-	it('returnerer null for dagsvinduene (de rendres per dag, ikke aggregert)', () => {
-		expect(computeEffortPeriodRange('7d')).toBeNull();
-		expect(computeEffortPeriodRange('week')).toBeNull();
-	});
-
-	it('gir rullerende vindu for 30d og 365d', () => {
-		const r30 = computeEffortPeriodRange('30d');
-		expect(r30?.label).toBe('Siste 30 dager');
-		const days = (r30!.end.getTime() - r30!.start.getTime()) / 86_400_000;
-		expect(Math.round(days)).toBe(30);
-
-		expect(computeEffortPeriodRange('365d')?.label).toBe('Siste 365 dager');
-	});
-
-	it('gir kalenderkvartal med Q-merket label', () => {
-		const r = computeEffortPeriodRange('quarter');
-		expect(r?.label).toMatch(/^Q[1-4] \d{4}$/);
-		expect(r!.start.getMonth() % 3).toBe(0);
-	});
-
-	it('gir kalenderår som starter 1. januar', () => {
-		const r = computeEffortPeriodRange('year');
-		expect(r!.start.getMonth()).toBe(0);
-		expect(r!.start.getDate()).toBe(1);
-		expect(r?.label).toMatch(/^\d{4}$/);
-	});
-});
-
-describe('aggregateEffortForPeriod', () => {
-	const range = {
-		start: new Date('2026-01-01T00:00:00Z'),
-		end: new Date('2026-01-31T23:59:59Z'),
-		label: 'januar 2026'
-	};
-
-	function week(periodKey: string, start: string, end: string, effort: Record<string, unknown> | null) {
-		return {
-			period: 'week',
-			periodKey,
-			eventCount: 1,
-			startDate: start,
-			endDate: end,
-			metrics: effort ? { weeklyEffort: effort } : {}
-		} as AggregatePeriod;
-	}
-
-	it('summerer effort og økter, og bygger én søyle per uke', () => {
-		const result = aggregateEffortForPeriod(
-			[
-				week('2026W02', '2026-01-05T00:00:00Z', '2026-01-11T00:00:00Z', {
-					total: 100,
-					workoutCount: 3,
-					hrCoveragePct: 100,
-					byFamily: { running: 60, strength: 40 }
-				}),
-				week('2026W03', '2026-01-12T00:00:00Z', '2026-01-18T00:00:00Z', {
-					total: 50,
-					workoutCount: 2,
-					hrCoveragePct: 100,
-					byFamily: { running: 50 }
-				})
-			],
-			range
-		);
-
-		expect(result?.total).toBe(150);
-		expect(result?.workoutCount).toBe(5);
-		expect(result?.byFamily).toEqual({ running: 110, strength: 40 });
-		expect(result?.bars).toEqual([
-			{ label: 'U2', value: 100 },
-			{ label: 'U3', value: 50 }
-		]);
-		expect(result?.rangeLabel).toBe('januar 2026');
-	});
-
-	it('setter taket til 110 % av forrige uke, og null for den første', () => {
-		const result = aggregateEffortForPeriod(
-			[
-				week('2026W02', '2026-01-05T00:00:00Z', '2026-01-11T00:00:00Z', { total: 100 }),
-				week('2026W03', '2026-01-12T00:00:00Z', '2026-01-18T00:00:00Z', { total: 80 })
-			],
-			range
-		);
-		expect(result?.ceilings[0]).toBeNull();
-		expect(result?.ceilings[1]).toBeCloseTo(110);
-	});
-
-	it('vekter pulsdekning etter effort, ikke etter antall uker', () => {
-		const result = aggregateEffortForPeriod(
-			[
-				week('2026W02', '2026-01-05T00:00:00Z', '2026-01-11T00:00:00Z', { total: 300, hrCoveragePct: 100 }),
-				week('2026W03', '2026-01-12T00:00:00Z', '2026-01-18T00:00:00Z', { total: 100, hrCoveragePct: 0 })
-			],
-			range
-		);
-		// Uvektet snitt ville gitt 50; effort-vektet gir 75.
-		expect(result?.hrCoveragePct).toBe(75);
-	});
-
-	it('utelater uker uten effort og uker utenfor vinduet', () => {
-		const result = aggregateEffortForPeriod(
-			[
-				week('2026W02', '2026-01-05T00:00:00Z', '2026-01-11T00:00:00Z', { total: 100 }),
-				week('2026W10', '2026-03-02T00:00:00Z', '2026-03-08T00:00:00Z', { total: 999 }),
-				week('2026W04', '2026-01-19T00:00:00Z', '2026-01-25T00:00:00Z', null)
-			],
-			range
-		);
-		expect(result?.total).toBe(100);
-		expect(result?.bars).toHaveLength(1);
-	});
-
-	it('returnerer null når ingen uker i vinduet har effort', () => {
-		expect(aggregateEffortForPeriod([], range)).toBeNull();
-		expect(
-			aggregateEffortForPeriod(
-				[week('2026W04', '2026-01-19T00:00:00Z', '2026-01-25T00:00:00Z', null)],
-				range
-			)
-		).toBeNull();
 	});
 });
 

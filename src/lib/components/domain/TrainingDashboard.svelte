@@ -14,10 +14,12 @@
 	import EffortBudgetCard from '$lib/components/domain/training/EffortBudgetCard.svelte';
 	import TrainingMixCard from '$lib/components/domain/training/TrainingMixCard.svelte';
 	import RouteLibrary from '$lib/components/domain/training/RouteLibrary.svelte';
+	import TrainingLoadSection from '$lib/components/domain/training/TrainingLoadSection.svelte';
 	import EffortWeightCard from '$lib/components/domain/health/EffortWeightCard.svelte';
 	import HealthActivityList from '$lib/components/domain/health/HealthActivityList.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import { formatEvent } from '$lib/components/domain/health/health-data';
+	import { computeTrainingLoad } from '$lib/util/training-load';
 	import type { TrainingDashboardPayload } from '$lib/server/training-dashboard';
 
 	let setupSubmitting = $state(false);
@@ -32,6 +34,9 @@
 	// Flyttet fra helse-mortemaet i mortema-splitten: effort→vekt er effort→effekt,
 	// og aktivitetslista er per-økt-detalj.
 	const eventItems = $derived((data.recentEvents ?? []).slice(0, 24).map((item) => formatEvent(item)));
+
+	// Form og belastningsbalanse — samme lesning, flyttet hit i andre runde.
+	const trainingLoadSeries = $derived(computeTrainingLoad(data.dailyEffort ?? []));
 
 	function fmtPace(secPerKm: number | null | undefined): string {
 		if (secPerKm == null) return '–';
@@ -276,6 +281,10 @@
 
 			<RouteLibrary routes={data.states?.routes ?? []} />
 		{/if}
+
+		<!-- Trening → effekt, samlet: form/balanse og effort→vekt. Utenfor
+		     plan-grenen, fordi belastning er verdt å se også i oppsett-modus. -->
+		<TrainingLoadSection series={trainingLoadSeries} />
 
 		<EffortWeightCard />
 

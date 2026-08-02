@@ -166,6 +166,51 @@ Tre ting ble rettet i samme runde:
 ikke mocker databasen. For endringer som rører rå SQL er et faktisk kall mot en database
 den eneste verifiseringen som teller.
 
+## Andre runde: perioder fram, treningsbelastning ned
+
+Etter at flaten var i bruk kom to justeringer fra bruker: **Helse skal ha større
+fokus på perioder-modulen**, og **trening → vekt-effekt hører til Trening**.
+
+- **Perioder er ikke lenger kollapset.** Periodetabellen lå i en `<details>` bak
+  «Perioder — alle metrikker». Den er nå flatens hovedinnhold, rett under
+  periode-pillene som styrer den. Det er der vekt, løp, effort, søvn og puls står
+  side om side i samme periode — altså der sammenhengene faktisk er lesbare, som
+  var hele poenget med mortemaet.
+- **Form (CTL/ATL/TSB) og belastningsbalanse flyttet til Trening.**
+  `HealthEffortSection` het så og bodde på mor; den er nå
+  `training/TrainingLoadSection` og står sammen med `EffortWeightCard` og
+  `EffortBudgetCard`s vektterskel-linje. All trening → effekt-lesning på ett sted.
+  Mortemaet beholder signalet «Trening mot vektterskel» — signalet *er*
+  sammenhengen, og sammenhenger er mors jobb.
+- **`dailyEffort` flyttet med kortene.** Den daglige effort-serien (400 rader) var
+  bare der for form/balanse, så spørringen ligger nå i `training-dashboard`.
+  Mappingen er trukket ut til `$lib/domain/health/daily-effort` og testet, fordi
+  rekkefølgen er lett å ta feil av: spørringen sorterer nyeste først, men
+  `computeTrainingLoad` krever kronologisk.
+
+Ryddet i samme runde: `variant`-propen på belastningsseksjonen tok med
+`WeeklyEffortCard` i 'full'-grenen, men hadde ikke hatt et kallsted siden fase 3 —
+Helse sendte alltid `readiness`. Grenen er borte, og med den også
+`computeEffortPeriodRange` og `aggregateEffortForPeriod`, som etterpå bare ble
+holdt i live av sine egne tester. Kortet er fortsatt demonstrert i `/design`.
+`activities`-propen på `HealthDashboard` var død på samme måte.
+
+### Regresjon funnet og rettet: målberegningene
+
+Splitten fjernet `recentEvents` (500 rå hendelser) fra helse-payloaden og la dumpen
+på Trening. Men Mål-fanen leser enkelthendelser: `ThemeDataTab.goalDelta` regner
+delta for `weight_change` og `running_distance`, og `HealthGoalCreation`
+forhåndsutfyller siste veiing. Begge brukte `healthDashboard?.recentEvents`, feltet
+var valgfritt i typen — så de falt **stille til null** i stedet for å feile. Vektmål
+har vist tomt startfelt og målkort har manglet delta siden merget.
+
+Rettet ved å hente hendelsene tilbake, men smalt: bare `weight` og `workout`, 400
+rader, og med en docstring som sier hva de er til for. Hendelsesdumpen til visning
+blir liggende på Trening.
+
+Samme feilklasse som `/api/health/weight-onboarding`: et valgfritt felt som aldri
+kommer, og optional chaining som gjør stillheten total.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
