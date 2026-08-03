@@ -226,6 +226,25 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
 
+### Puls-baseline (HRR)
+
+Se `docs/changelog/2026-08-03-hrr-baseline.md`. Utvelgelsen bor i
+`$lib/domain/health/heart-rate-baseline.ts`, `getEffortBaseline` gjør bare
+datainnhentingen.
+
+- **`hr_min` betyr ulike ting per kilde.** Fra en `workout` er det lavest puls UNDER
+  trening (90–120), ikke hvilepuls. Hvilepuls **prioriteres**, aldri pooles:
+  `sleep_min` → `scale_spot` (punktpuls fra vekta) → `daily_min` → `sleep_avg`.
+  Medianen tas innenfor den valgte kilden.
+- Punktpuls måles **stående** og ligger 5–15 slag over ekte hvilepuls — derfor under
+  søvn i prioriteten, men over dagsminimum fordi den er daglig.
+- **Makspuls er den store feilkilden**: 10 slag feil flytter VDOT 3,6 poeng mot 1,6
+  for hvilepuls. Brukerens egen verdi i `themes.metricSettings.maxHr.goal` vinner;
+  ellers ~90-persentil av observerte topper, ikke `Math.max` (én spike satte den for
+  30 dager).
+- `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
+  tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
+
 ### Withings-felter
 
 Se `docs/changelog/2026-08-03-withings-flere-felt.md`.

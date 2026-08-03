@@ -15,6 +15,15 @@ export type EffortFamily =
 
 export type EffortMethod = 'trimp' | 'met' | 'met_pace' | 'met_trail';
 
+import {
+	buildHeartRateBaseline,
+	resolveMaxHr,
+	resolveRestingHr,
+	type MaxHrSource,
+	type RestingHrCandidate,
+	type RestingHrSource
+} from '$lib/domain/health/heart-rate-baseline';
+
 export interface EffortBaseline {
 	/** Hvileplus i bpm. */
 	restHr: number;
@@ -22,6 +31,10 @@ export interface EffortBaseline {
 	maxHr: number;
 	/** Hvor sikre vi er på baseline (true = utledet fra brukerens data, false = default-fallback). */
 	derived: boolean;
+	/** Hvilken kilde hvilepulsen kom fra — se heart-rate-baseline. */
+	restHrSource?: RestingHrSource;
+	/** 'manual' når brukeren har satt makspulsen selv. */
+	maxHrSource?: MaxHrSource;
 	/** Brukerens typiske (median) løpe-pace siste 60 dager — referanse for intensitet. */
 	easyPaceSecPerKm?: number | null;
 }
@@ -49,10 +62,6 @@ export interface WorkoutEffortResult {
 
 /** Minste varighet for at en økt teller (sekunder). */
 const MIN_DURATION_SECONDS = 5 * 60;
-
-/** Default fallback-baseline når brukeren ikke har Withings-data. */
-const DEFAULT_REST_HR = 60;
-const DEFAULT_MAX_HR = 190;
 
 /** Kalibreringskonstant som bringer MET-skår inn i samme størrelsesorden som TRIMP. */
 const MET_CALIBRATION = 2.5;
@@ -214,61 +223,109 @@ export function estimatePlannedRunEffort(
 }
 
 /**
- * Hent en baseline (restHr, maxHr) for en bruker. Bruker enkle heuristikker:
- *  - restHr: median av Withings 'hr_min' siste 30 dager, ellers default
- *  - maxHr: høyeste observerte avgHr × 1.05 fra sleep+activity-events, ellers default
+ * Hent en baseline (restHr, maxHr) for en bruker.
  *
- * Holder seg unna eksplisitte brukerinnstillinger i v1 — kan utvides senere
- * uten å bryte API-et.
+ * Selve utvelgelsen bor i `$lib/domain/health/heart-rate-baseline` og er testet
+ * der. Denne funksjonen gjør datainnhentingen og — det viktige — merker hver
+ * pulsverdi med *hvor den kommer fra*.
+ *
+ * Tidligere ble all `hr_min` lagt i én bøtte og medianen tatt. Men `hr_min` fra
+ * en treningsøkt er lavest puls UNDER trening (typisk 90–120), ikke hvilepuls, og
+ * medianen over den blandede bøtta var ingen av delene. Da søvn-`hr_min` ble
+ * hentet inn i august 2026, flyttet sammensetningen seg — og dermed
+ * effort-skåringen — uten at noe sa fra.
+ *
+ * Makspuls leses fra `themes.metricSettings.maxHr.goal` på Helse-mortemaet når
+ * brukeren har satt den. Det er den store feilkilden: 10 slag feil makspuls
+ * flytter VDOT 3,6 poeng, mot 1,6 for 10 slag feil hvilepuls.
  */
 export async function getEffortBaseline(userId: string): Promise<EffortBaseline> {
 	const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-	const events = await db.query.sensorEvents.findMany({
-		where: and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, since)),
-		columns: { dataType: true, data: true }
-	});
+	const [events, manualMaxHr] = await Promise.all([
+		db.query.sensorEvents.findMany({
+			where: and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, since)),
+			columns: { dataType: true, data: true }
+		}),
+		readManualMaxHr(userId)
+	]);
 
-	const hrMins: number[] = [];
-	const hrMaxes: number[] = [];
+	const restingCandidates: RestingHrCandidate[] = [];
+	const observedMaxes: number[] = [];
+	const workoutAverages: number[] = [];
 
 	for (const event of events) {
 		const data = (event.data ?? {}) as Record<string, unknown>;
-		const hrMin = typeof data.hr_min === 'number' ? data.hr_min : null;
-		const hrMax = typeof data.hr_max === 'number' ? data.hr_max : null;
-		const hrAvg = typeof data.hr_average === 'number' ? data.hr_average : null;
-		const wAvg = typeof data.avgHeartRate === 'number' ? data.avgHeartRate : null;
-		const wMax = typeof data.maxHeartRate === 'number' ? data.maxHeartRate : null;
+		const num = (key: string): number | null =>
+			typeof data[key] === 'number' && Number.isFinite(data[key]) ? (data[key] as number) : null;
 
-		if (hrMin && hrMin > 30 && hrMin < 120) hrMins.push(hrMin);
-		if (hrMax && hrMax > 100 && hrMax < 230) hrMaxes.push(hrMax);
-		if (wMax && wMax > 100 && wMax < 230) hrMaxes.push(wMax);
-		// Bruk avg-puls fra økter som en konservativ proxy hvis maks mangler
-		if (wAvg && wAvg > 100 && wAvg < 220) hrMaxes.push(wAvg * 1.05);
-		if (hrAvg && hrAvg > 30 && hrAvg < 80) hrMins.push(hrAvg);
+		const hrMin = num('hr_min');
+		const hrMax = num('hr_max');
+		const hrAvg = num('hr_average');
+		const wAvg = num('avgHeartRate');
+		const wMax = num('maxHeartRate');
+		const spot = num('restingHeartRate');
+
+		// Hvilepuls: kilden avgjør hva verdien betyr.
+		switch (event.dataType) {
+			case 'sleep':
+				if (hrMin !== null) restingCandidates.push({ value: hrMin, source: 'sleep_min' });
+				if (hrAvg !== null) restingCandidates.push({ value: hrAvg, source: 'sleep_avg' });
+				break;
+			case 'activity':
+				if (hrMin !== null) restingCandidates.push({ value: hrMin, source: 'daily_min' });
+				break;
+			case 'weight':
+				// Punktpuls fra vekta (Withings type 11).
+				if (spot !== null) restingCandidates.push({ value: spot, source: 'scale_spot' });
+				break;
+			// 'workout' med vilje utelatt: hr_min der er lavest puls under trening.
+		}
+
+		// Makspuls: bare fra faktiske topper.
+		if (hrMax !== null) observedMaxes.push(hrMax);
+		if (wMax !== null) observedMaxes.push(wMax);
+		if (wAvg !== null) workoutAverages.push(wAvg);
 	}
 
-	let restHr = DEFAULT_REST_HR;
-	let maxHr = DEFAULT_MAX_HR;
-	let derived = false;
-
-	if (hrMins.length >= 3) {
-		restHr = median(hrMins);
-		derived = true;
-	}
-	if (hrMaxes.length >= 1) {
-		maxHr = Math.min(220, Math.max(...hrMaxes));
-		derived = true;
-	}
-
-	// Sanity-check: hold minst 60 bpm gap så HRR ikke kollapser
-	if (maxHr - restHr < 60) {
-		maxHr = restHr + 60;
-	}
+	const baseline = buildHeartRateBaseline(
+		resolveRestingHr(restingCandidates),
+		resolveMaxHr({ manual: manualMaxHr, observedMaxes, workoutAverages })
+	);
 
 	const easyPaceSecPerKm = await deriveEasyPace(userId);
 
-	return { restHr: Math.round(restHr), maxHr: Math.round(maxHr), derived, easyPaceSecPerKm };
+	return {
+		restHr: baseline.restHr,
+		maxHr: baseline.maxHr,
+		derived: baseline.derived,
+		restHrSource: baseline.restHrSource,
+		maxHrSource: baseline.maxHrSource,
+		easyPaceSecPerKm
+	};
+}
+
+/**
+ * Brukerens egen makspuls fra Helse-mortemaets `metricSettings`.
+ *
+ * Tersklene bor på mortemaet etter samme konvensjon som søvnmålet — én kilde for
+ * hele helse-familien. Null når den ikke er satt, og da utledes den.
+ */
+async function readManualMaxHr(userId: string): Promise<number | null> {
+	try {
+		const { themes } = await import('$lib/db/schema');
+		const { HEALTH_PARENT_THEME_NAME } = await import('$lib/domain/health-subthemes');
+		const parent = await db.query.themes.findFirst({
+			columns: { metricSettings: true },
+			where: and(eq(themes.userId, userId), eq(themes.name, HEALTH_PARENT_THEME_NAME))
+		});
+		const settings = (parent?.metricSettings ?? {}) as Record<string, { goal?: unknown }>;
+		const goal = settings.maxHr?.goal;
+		return typeof goal === 'number' && Number.isFinite(goal) ? goal : null;
+	} catch {
+		// Baseline skal ikke kunne feile på en manglende innstilling.
+		return null;
+	}
 }
 
 /**

@@ -1,5 +1,12 @@
 <script lang="ts">
-	export type MetricKey = 'distance' | 'sleep' | 'sleepLag' | 'steps' | 'activeMinutes' | 'weight';
+	export type MetricKey =
+		| 'distance'
+		| 'sleep'
+		| 'sleepLag'
+		| 'steps'
+		| 'activeMinutes'
+		| 'weight'
+		| 'maxHr';
 
 	export interface MetricThreshold {
 		goal?: number;
@@ -15,6 +22,12 @@
 		unit: string;
 		higherIsBetter: boolean;
 		defaultGoal: number;
+		/**
+		 * Bare ett felt, med egen etikett. Makspuls er en kjent verdi og ikke et
+		 * mål, så «Advar under» og «OK over» er meningsløse for den.
+		 */
+		singleField?: string;
+		hint?: string;
 	}
 
 	const METRICS: MetricDef[] = [
@@ -24,6 +37,15 @@
 		{ key: 'steps', label: 'Skritt per dag', unit: 'steg', higherIsBetter: true, defaultGoal: 8000 },
 		{ key: 'activeMinutes', label: 'Aktive min/dag', unit: 'min', higherIsBetter: true, defaultGoal: 30 },
 		{ key: 'weight', label: 'Vektendring', unit: 'kg', higherIsBetter: false, defaultGoal: 0 },
+		{
+			key: 'maxHr',
+			label: 'Makspuls',
+			unit: 'slag/min',
+			higherIsBetter: true,
+			defaultGoal: 190,
+			singleField: 'Din makspuls',
+			hint: 'Største feilkilden i effort-skåringen. Utledes fra treningsdata når den står tom.'
+		}
 	];
 
 	interface Props {
@@ -38,21 +60,32 @@
 
 	// Local state: one text input per field per metric
 	type FieldState = { goal: string; warn: string; success: string };
-	let fields = $state<Record<MetricKey, FieldState>>({} as Record<MetricKey, FieldState>);
+
+	function buildFields(source: MetricSettingsMap): Record<MetricKey, FieldState> {
+		const fresh: Record<MetricKey, FieldState> = {} as Record<MetricKey, FieldState>;
+		for (const m of METRICS) {
+			const s = source[m.key] ?? {};
+			fresh[m.key] = {
+				goal: s.goal != null ? String(s.goal) : '',
+				warn: s.thresholdWarn != null ? String(s.thresholdWarn) : '',
+				success: s.thresholdSuccess != null ? String(s.thresholdSuccess) : ''
+			};
+		}
+		return fresh;
+	}
+
+	/**
+	 * Initialiseres med en gang, ikke bare i effekten.
+	 *
+	 * Fylte man dette kun i `$effect`, var `fields` tomt under den FØRSTE
+	 * renderen av `{#if open}` — og `bind:value={f.goal}` kastet «Cannot read
+	 * properties of undefined». Arket åpnet seg da aldri; tannhjulet på Helse
+	 * gjorde ingenting. Effekten under er bare oppfriskning ved gjenåpning.
+	 */
+	let fields = $state<Record<MetricKey, FieldState>>(buildFields(settings));
 
 	$effect(() => {
-		if (open) {
-			const fresh: Record<MetricKey, FieldState> = {} as Record<MetricKey, FieldState>;
-			for (const m of METRICS) {
-				const s = settings[m.key] ?? {};
-				fresh[m.key] = {
-					goal: s.goal != null ? String(s.goal) : '',
-					warn: s.thresholdWarn != null ? String(s.thresholdWarn) : '',
-					success: s.thresholdSuccess != null ? String(s.thresholdSuccess) : '',
-				};
-			}
-			fields = fresh;
-		}
+		if (open) fields = buildFields(settings);
 	});
 
 	let saving = $state(false);
@@ -104,7 +137,7 @@
 					</div>
 					<div class="metric-inputs">
 						<label class="field-mini">
-							<span class="field-mini-label">Mål</span>
+							<span class="field-mini-label">{m.singleField ?? 'Mål'}</span>
 							<input
 								class="field-input-mini"
 								type="number"
@@ -113,27 +146,32 @@
 								bind:value={f.goal}
 							/>
 						</label>
-						<label class="field-mini">
-							<span class="field-mini-label">{m.higherIsBetter ? '⚠ Advar under' : '⚠ Advar over'}</span>
-							<input
-								class="field-input-mini"
-								type="number"
-								inputmode="decimal"
-								placeholder="Ingen"
-								bind:value={f.warn}
-							/>
-						</label>
-						<label class="field-mini">
-							<span class="field-mini-label">{m.higherIsBetter ? '✓ OK over' : '✓ OK under'}</span>
-							<input
-								class="field-input-mini"
-								type="number"
-								inputmode="decimal"
-								placeholder="Ingen"
-								bind:value={f.success}
-							/>
-						</label>
+						{#if !m.singleField}
+							<label class="field-mini">
+								<span class="field-mini-label">{m.higherIsBetter ? '⚠ Advar under' : '⚠ Advar over'}</span>
+								<input
+									class="field-input-mini"
+									type="number"
+									inputmode="decimal"
+									placeholder="Ingen"
+									bind:value={f.warn}
+								/>
+							</label>
+							<label class="field-mini">
+								<span class="field-mini-label">{m.higherIsBetter ? '✓ OK over' : '✓ OK under'}</span>
+								<input
+									class="field-input-mini"
+									type="number"
+									inputmode="decimal"
+									placeholder="Ingen"
+									bind:value={f.success}
+								/>
+							</label>
+						{/if}
 					</div>
+					{#if m.hint}
+						<p class="metric-hint">{m.hint}</p>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -217,6 +255,13 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		color: #ccc;
+	}
+
+	.metric-hint {
+		margin: 4px 0 0;
+		font-size: 0.7rem;
+		line-height: 1.4;
+		color: #666;
 	}
 
 	.metric-unit {
