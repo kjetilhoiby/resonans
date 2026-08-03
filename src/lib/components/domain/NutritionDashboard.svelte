@@ -12,6 +12,7 @@
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import NutritionLogger from './nutrition/NutritionLogger.svelte';
 	import NutritionDayCard from './nutrition/NutritionDayCard.svelte';
+	import EnergyBalanceCard from './nutrition/EnergyBalanceCard.svelte';
 	import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 
 	interface Props {
@@ -48,6 +49,13 @@
 		targets={data.targets}
 		average={data.average}
 		onChanged={() => onRefresh?.()}
+	/>
+
+	<EnergyBalanceCard
+		balance={data.energyBalance}
+		composition={data.composition}
+		compositionChange={data.compositionChange}
+		compositionDate={data.compositionDate}
 	/>
 
 	<section class="nutrition-source">

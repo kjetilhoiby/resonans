@@ -109,3 +109,51 @@ describe('compositeSleepLag', () => {
 		expect(compositeSleepLag(undefined)).toBeNull();
 	});
 });
+
+
+describe('buildSleepNightSeries — segmenter samme natt', () => {
+	function night(start: string, durationH: number, isNap = false, end?: string) {
+		return { start: new Date(start), end: end ? new Date(end) : null, durationH, isNap };
+	}
+
+	it('summerer segmenter som ender samme dato', () => {
+		// Withings deler natta når man er ute av senga. 3 t + 4 t er én natt på 7,
+		// ikke to netter — og uten dette fikk SleepDashboard duplikate each-nøkler.
+		const series = buildSleepNightSeries([
+			night('2026-08-02T22:00:00.000Z', 3, false, '2026-08-03T01:00:00.000Z'),
+			night('2026-08-03T02:00:00.000Z', 4, false, '2026-08-03T06:00:00.000Z')
+		]);
+		expect(series).toHaveLength(1);
+		expect(series[0].date).toBe('2026-08-03');
+		expect(series[0].hours).toBe(7);
+	});
+
+	it('holder nap og natt fra hverandre på samme dato', () => {
+		// En flis om dagen og natta er to ulike ting.
+		const series = buildSleepNightSeries([
+			night('2026-08-03T01:00:00.000Z', 7),
+			night('2026-08-03T12:00:00.000Z', 0.5, true)
+		]);
+		expect(series).toHaveLength(2);
+		expect(series.filter((p) => p.isNap)).toHaveLength(1);
+	});
+
+	it('summerer flere naps samme dag', () => {
+		const series = buildSleepNightSeries([
+			night('2026-08-03T12:00:00.000Z', 0.4, true),
+			night('2026-08-03T16:00:00.000Z', 0.3, true)
+		]);
+		expect(series).toHaveLength(1);
+		expect(series[0].hours).toBe(0.7);
+	});
+
+	it('gir unike nøkler for date+isNap i hele serien', () => {
+		const series = buildSleepNightSeries([
+			night('2026-08-02T22:00:00.000Z', 3, false, '2026-08-03T01:00:00.000Z'),
+			night('2026-08-03T02:00:00.000Z', 4, false, '2026-08-03T06:00:00.000Z'),
+			night('2026-08-03T13:00:00.000Z', 0.5, true)
+		]);
+		const keys = series.map((p) => `${p.date}:${p.isNap}`);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+});

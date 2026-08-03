@@ -226,6 +226,24 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
 
+### Withings-felter
+
+Se `docs/changelog/2026-08-03-withings-flere-felt.md`.
+
+- **Måletype 6 er fettPROSENT, 8 er fettmasse i KG.** Historisk ble 6 lagret som
+  `data.fatMass` og lest som kilo — et fettmasse-mål viste 22 der svaret var 18. Nye
+  rader bruker `fatRatio` og `fatMassKg`; les alltid gjennom
+  `normalizeBodyComposition`, som tolker gamle rader riktig.
+- `data.calories` er **aktivitetskalorier**. `data.totalCalories` er hvileforbrenning
+  + aktivitet, altså dagsforbruket. Energibalanse skal bruke sistnevnte.
+- Søvn: `sleepLatency` og `waso` er Withings' egne mål på «fikk ikke sove» og
+  «våknet». `mergeDisturbances` lar manuell logging vinne per natt og fyller bare
+  hullene — enheten måler bevegelse, ikke opplevelsen.
+- Nye `data_fields`/`meastypes` skal ha fallback til det forrige settet, og logge hva
+  som faktisk kom inn. Vi vet ikke sikkert hva enheten leverer.
+- `buildSleepNightSeries` slår sammen segmenter med samme dato: Withings deler natta
+  når man er ute av senga, og to segmenter ga duplikate `{#each}`-nøkler.
+
 ### VO2max
 
 Se `docs/changelog/2026-08-03-vo2max.md`.

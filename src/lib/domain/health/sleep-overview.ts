@@ -36,15 +36,32 @@ function toDateKey(d: Date): string {
 /**
  * Netter → punktserie, eldste først. Naps merkes, men beholdes i serien slik at
  * dashboardet kan vise dem uten et eget oppslag.
+ *
+ * Segmenter med samme dato slås sammen, og timene summeres. Withings deler natta
+ * i flere `sleep`-events når man er ute av senga (`out_of_bed_count > 0`), og da
+ * er 3 t + 4 t én natt på 7 t — ikke to netter. Uten sammenslåingen fikk
+ * SleepDashboard duplikate `{#each}`-nøkler og kastet `each_key_duplicate`, og
+ * søylediagrammet viste to lave netter der det var én normal.
+ *
+ * Naps slås ikke sammen med netter: en flis om dagen og søvnen samme natt er to
+ * ulike ting, og `isNap` er det som skiller dem i visningen.
  */
 export function buildSleepNightSeries(nights: SleepNight[]): SleepNightPoint[] {
-	return nights
-		.map((night) => ({
-			date: toDateKey(night.end ?? night.start),
-			hours: Math.round(night.durationH * 100) / 100,
-			isNap: night.isNap
-		}))
-		.sort((a, b) => a.date.localeCompare(b.date));
+	const byKey = new Map<string, SleepNightPoint>();
+
+	for (const night of nights) {
+		const date = toDateKey(night.end ?? night.start);
+		const hours = Math.round(night.durationH * 100) / 100;
+		const key = `${date}:${night.isNap ? 'nap' : 'natt'}`;
+		const existing = byKey.get(key);
+		if (existing) {
+			existing.hours = Math.round((existing.hours + hours) * 100) / 100;
+		} else {
+			byKey.set(key, { date, hours, isNap: night.isNap });
+		}
+	}
+
+	return [...byKey.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**

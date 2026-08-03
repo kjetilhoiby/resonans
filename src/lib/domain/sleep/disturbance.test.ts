@@ -7,6 +7,10 @@ import {
 	nightKeyForTime,
 	SLEEP_DISTURBANCE_KINDS,
 	SLEEP_DISTURBANCES,
+	deriveDisturbancesFromNight,
+	mergeDisturbances,
+	LATENCY_THRESHOLD_MINUTES,
+	WASO_THRESHOLD_MINUTES,
 	type LoggedDisturbance
 } from './disturbance';
 
@@ -182,5 +186,122 @@ describe('describeDisturbanceWindow', () => {
 
 	it('gir null for ingen netter', () => {
 		expect(describeDisturbanceWindow([], 'siste uke')).toBeNull();
+	});
+});
+
+
+describe('deriveDisturbancesFromNight', () => {
+	it('lager innsovningsforstyrrelse over terskelen', () => {
+		const derived = deriveDisturbancesFromNight({
+			start: '2026-08-03T21:00:00.000Z',
+			sleepLatencySeconds: 45 * 60
+		});
+		expect(derived).toHaveLength(1);
+		expect(derived[0].kind).toBe('innsovning');
+		expect(derived[0].awakeMinutes).toBe(45);
+		expect(derived[0].source).toBe('withings');
+	});
+
+	it('lager oppvåkningsforstyrrelse fra waso', () => {
+		const derived = deriveDisturbancesFromNight({
+			start: '2026-08-03T21:00:00.000Z',
+			wasoSeconds: 50 * 60
+		});
+		expect(derived).toHaveLength(1);
+		expect(derived[0].kind).toBe('oppvaakning');
+		expect(derived[0].awakeMinutes).toBe(50);
+	});
+
+	it('lager begge når natta var urolig i begge ender', () => {
+		const derived = deriveDisturbancesFromNight({
+			start: '2026-08-03T21:00:00.000Z',
+			sleepLatencySeconds: 40 * 60,
+			wasoSeconds: 35 * 60
+		});
+		expect(derived.map((d) => d.kind)).toEqual(['innsovning', 'oppvaakning']);
+	});
+
+	it('lager ingenting for en normal natt', () => {
+		// Alle bruker noen minutter på å sovne. Det er ikke en forstyrrelse.
+		expect(
+			deriveDisturbancesFromNight({
+				start: '2026-08-03T21:00:00.000Z',
+				sleepLatencySeconds: 12 * 60,
+				wasoSeconds: 8 * 60
+			})
+		).toEqual([]);
+	});
+
+	it('treffer tersklene presist', () => {
+		const atThreshold = deriveDisturbancesFromNight({
+			start: '2026-08-03T21:00:00.000Z',
+			sleepLatencySeconds: LATENCY_THRESHOLD_MINUTES * 60,
+			wasoSeconds: WASO_THRESHOLD_MINUTES * 60
+		});
+		expect(atThreshold).toHaveLength(2);
+
+		const justUnder = deriveDisturbancesFromNight({
+			start: '2026-08-03T21:00:00.000Z',
+			sleepLatencySeconds: (LATENCY_THRESHOLD_MINUTES - 1) * 60,
+			wasoSeconds: (WASO_THRESHOLD_MINUTES - 1) * 60
+		});
+		expect(justUnder).toEqual([]);
+	});
+
+	it('tåler manglende og ugyldige felter', () => {
+		expect(deriveDisturbancesFromNight({ start: '2026-08-03T21:00:00.000Z' })).toEqual([]);
+		expect(
+			deriveDisturbancesFromNight({ start: '2026-08-03T21:00:00.000Z', sleepLatencySeconds: -60, wasoSeconds: null })
+		).toEqual([]);
+	});
+
+	it('gir stabile id-er for samme natt', () => {
+		// Ellers ville {#each}-nøklene endret seg på hver render.
+		const night = { start: '2026-08-03T21:00:00.000Z', sleepLatencySeconds: 40 * 60 };
+		expect(deriveDisturbancesFromNight(night)[0].id).toBe(
+			deriveDisturbancesFromNight(night)[0].id
+		);
+	});
+});
+
+describe('mergeDisturbances', () => {
+	it('lar manuell logging vinne for natta den finnes', () => {
+		// Enheten måler bevegelse og puls, ikke opplevelsen — og opplevelsen er
+		// det man handler på.
+		const merged = mergeDisturbances(
+			[entry({ id: 'min', timestamp: '2026-08-03T21:30:00.000Z' })],
+			[{ start: '2026-08-03T21:00:00.000Z', sleepLatencySeconds: 60 * 60 }]
+		);
+		expect(merged).toHaveLength(1);
+		expect(merged[0].id).toBe('min');
+		expect(merged[0].source).toBe('manual');
+	});
+
+	it('fyller nettene du ikke logget', () => {
+		const merged = mergeDisturbances(
+			[entry({ id: 'min', timestamp: '2026-08-03T21:30:00.000Z' })],
+			[
+				{ start: '2026-08-03T21:00:00.000Z', sleepLatencySeconds: 60 * 60 },
+				{ start: '2026-08-06T21:00:00.000Z', sleepLatencySeconds: 45 * 60 }
+			]
+		);
+		expect(merged).toHaveLength(2);
+		expect(merged.filter((m) => m.source === 'withings')).toHaveLength(1);
+	});
+
+	it('merker manuelle innslag som manual når source mangler', () => {
+		const merged = mergeDisturbances([entry({ source: undefined })], []);
+		expect(merged[0].source).toBe('manual');
+	});
+
+	it('klarer seg med bare målte netter', () => {
+		const merged = mergeDisturbances([], [{ start: '2026-08-03T21:00:00.000Z', wasoSeconds: 40 * 60 }]);
+		expect(merged).toHaveLength(1);
+		expect(merged[0].source).toBe('withings');
+	});
+
+	it('gir tom liste når ingen av kildene har noe', () => {
+		expect(mergeDisturbances([], [])).toEqual([]);
+		expect(mergeDisturbances([], [{ start: '2026-08-03T21:00:00.000Z', sleepLatencySeconds: 5 * 60 }])).toEqual([]);
 	});
 });

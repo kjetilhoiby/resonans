@@ -79,7 +79,17 @@
 								<span class="entry-main">
 									<span aria-hidden="true">{disturbanceMeta(entry.kind).emoji}</span>
 									{disturbanceMeta(entry.kind).description}
-									<span class="entry-time">{timeLabel(entry.timestamp)}</span>
+									<!-- Utledede innslag har bare søvnens starttid, og for en
+									     oppvåkning vet vi ikke klokkeslettet. Da vises varigheten,
+									     som er det vi faktisk har. -->
+									{#if entry.source === 'withings'}
+										{#if entry.awakeMinutes !== null}
+											<span class="entry-time">{entry.awakeMinutes} min</span>
+										{/if}
+										<span class="entry-source">målt</span>
+									{:else}
+										<span class="entry-time">{timeLabel(entry.timestamp)}</span>
+									{/if}
 								</span>
 								{#if entry.note}
 									<span class="entry-note">{entry.note}</span>
@@ -179,6 +189,19 @@
 	}
 
 	.entry-time {
+		color: #777;
+		white-space: nowrap;
+	}
+
+	/* «målt» skiller Withings-utledede netter fra dem du registrerte selv.
+	   Uten merket ville lista sett ut som om du hadde logget alt. */
+	.entry-source {
+		padding: 1px 5px;
+		border-radius: 999px;
+		border: 1px solid #2a2a2a;
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
 		color: #777;
 		white-space: nowrap;
 	}

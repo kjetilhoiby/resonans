@@ -79,31 +79,94 @@ export async function getValidAccessToken(sensor: any): Promise<string> {
 /**
  * Parse Withings weight measurements
  */
+/**
+ * Withings' måletyper i en vektgruppe.
+ *
+ * NB på 6 vs 8: **6 er fettPROSENT, 8 er fettmasse i KG.** Parseren leste
+ * historisk type 6 og lagret den som `fatMass`, og `readBodyComposition`
+ * returnerte den som `fatMassKg` — så et fettmasse-mål i /plan/mal viste 22 der
+ * svaret var 18. Tallet ser plausibelt ut, og derfor sto feilen i ro.
+ *
+ * `fatRatio` og `fatMassKg` er nå skilt. Legacy-feltet `fatMass` skrives ikke
+ * lenger; `normalizeBodyComposition` tolker gamle rader riktig ved å regne kilo
+ * fra prosenten og vekta på samme rad.
+ */
+const MEASTYPE = {
+	weight: 1,
+	fatFreeMass: 5,
+	fatRatio: 6,
+	fatMassKg: 8,
+	pulse: 11,
+	muscleMass: 76,
+	hydration: 77,
+	boneMass: 88
+} as const;
+
+/**
+ * Måletypene vi ber om i vekt-kallet.
+ *
+ * En smartvekt poster alt i én gruppe, så disse kommer sannsynligvis inn uansett
+ * — men å be om dem eksplisitt gjør det uavhengig av om Withings filtrerer
+ * innenfor gruppene. `meastypes` (flertall) er kommaseparert.
+ */
+const WITHINGS_BODY_MEASTYPES = [
+	MEASTYPE.weight,
+	MEASTYPE.fatFreeMass,
+	MEASTYPE.fatRatio,
+	MEASTYPE.fatMassKg,
+	MEASTYPE.pulse,
+	MEASTYPE.muscleMass,
+	MEASTYPE.hydration,
+	MEASTYPE.boneMass
+].join(',');
+
+function measureValue(grp: any, type: number): number | undefined {
+	const measure = grp.measures?.find((m: any) => m.type === type);
+	return measure ? measure.value * Math.pow(10, measure.unit) : undefined;
+}
+
 function parseWeightData(measuregrps: any[]): any[] {
 	return measuregrps
-		.filter((grp) => grp.measures.some((m: any) => m.type === 1)) // type 1 = weight
-		.map((grp) => {
-			const weightMeasure = grp.measures.find((m: any) => m.type === 1);
-			const fatMassMeasure = grp.measures.find((m: any) => m.type === 6);
-			const muscleMassMeasure = grp.measures.find((m: any) => m.type === 76);
-
-			return {
-				timestamp: new Date(grp.date * 1000),
-				data: {
-					weight: weightMeasure
-						? weightMeasure.value * Math.pow(10, weightMeasure.unit)
-						: undefined,
-					fatMass: fatMassMeasure
-						? fatMassMeasure.value * Math.pow(10, fatMassMeasure.unit)
-						: undefined,
-					muscleMass: muscleMassMeasure
-						? muscleMassMeasure.value * Math.pow(10, muscleMassMeasure.unit)
-						: undefined
-				},
-				metadata: { grpid: grp.grpid, deviceid: grp.deviceid }
-			};
-		});
+		.filter((grp) => grp.measures?.some((m: any) => m.type === MEASTYPE.weight))
+		.map((grp) => ({
+			timestamp: new Date(grp.date * 1000),
+			data: {
+				weight: measureValue(grp, MEASTYPE.weight),
+				fatRatio: measureValue(grp, MEASTYPE.fatRatio),
+				fatMassKg: measureValue(grp, MEASTYPE.fatMassKg),
+				fatFreeMass: measureValue(grp, MEASTYPE.fatFreeMass),
+				muscleMass: measureValue(grp, MEASTYPE.muscleMass),
+				boneMass: measureValue(grp, MEASTYPE.boneMass),
+				hydration: measureValue(grp, MEASTYPE.hydration),
+				// Punktpuls fra vekta: den beste hvilepulsen vi kan få, langt bedre
+				// enn snittpuls fra søvn som getEffortBaseline bruker i dag.
+				restingHeartRate: measureValue(grp, MEASTYPE.pulse)
+			},
+			metadata: { grpid: grp.grpid, deviceid: grp.deviceid }
+		}));
 }
+
+/**
+ * Dagsfelter fra getactivity.
+ *
+ * `totalcalories` er den viktige: `calories` er BARE aktivitetskalorier, mens
+ * totalcalories er hvileforbrenning + aktivitet — altså den andre siden av
+ * energibalansen ernæringsloggeren måler. Uten den har Ernæring bare inntaket.
+ */
+const WITHINGS_ACTIVITY_DATA_FIELDS = [
+	'steps',
+	'distance',
+	'elevation',
+	'soft',
+	'moderate',
+	'intense',
+	'active',
+	'calories',
+	'totalcalories',
+	'hr_average',
+	'hr_min',
+	'hr_max'
+].join(',');
 
 /**
  * Parse Withings activity data
@@ -118,6 +181,8 @@ function parseActivityData(activities: any[]): any[] {
 			steps: activity.steps,
 			distance: activity.distance,
 			calories: activity.calories,
+			// Hvileforbrenning + aktivitet. `calories` over er bare aktiviteten.
+			totalCalories: activity.totalcalories,
 			elevation: activity.elevation,
 			soft: activity.soft, // Light activity (in seconds, per Withings API)
 			moderate: activity.moderate, // Moderate activity (in seconds, per Withings API)
@@ -149,7 +214,16 @@ function parseSleepData(series: any[]): any[] {
 				wakeupDuration: sleep.data?.wakeupduration,
 				sleepScore: sleep.data?.sleep_score,
 				hr_average: sleep.data?.hr_average,
+				hr_min: sleep.data?.hr_min,
+				hr_max: sleep.data?.hr_max,
 				rr_average: sleep.data?.rr_average,
+				// Innsovningstid og våkentid — de to Withings måler som svarer på
+				// det samme som den manuelle søvnloggeren. Sekunder.
+				sleepLatency: sleep.data?.sleep_latency,
+				wakeupLatency: sleep.data?.wakeup_latency,
+				waso: sleep.data?.waso,
+				outOfBedCount: sleep.data?.out_of_bed_count,
+				sleepEfficiency: sleep.data?.sleep_efficiency,
 				...(sleepLag !== undefined && { sleepLag })
 			},
 			metadata: {
@@ -356,7 +430,7 @@ export async function syncWeightData(
 	console.log(`   Fetching weight data${startdate ? ` from ${new Date(startdate * 1000).toISOString().split('T')[0]}` : ''}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
-		meastype: 1, // Weight
+		meastypes: WITHINGS_BODY_MEASTYPES,
 		category: 1, // Real measurements
 		startdate,
 		enddate
@@ -513,6 +587,7 @@ export async function syncActivityData(
 	console.log(`   Fetching activity data from ${startdateymd}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getactivity',
+		data_fields: WITHINGS_ACTIVITY_DATA_FIELDS,
 		startdateymd,
 		enddateymd
 	});
@@ -553,7 +628,11 @@ export async function syncActivityData(
 // Optional fields like hr_average / sleep_score must be requested explicitly via
 // data_fields, otherwise they arrive as undefined and we end up depending on the
 // withings_sleep_hr backfill to patch them in later.
-const WITHINGS_SLEEP_DATA_FIELDS = [
+/**
+ * Feltene vi historisk har hentet. Beholdes som reserve: skulle Withings avvise
+ * et av de nye feltene, faller synken tilbake hit framfor å miste søvndata helt.
+ */
+const WITHINGS_SLEEP_FIELDS_LEGACY = [
 	'total_sleep_time',
 	'deepsleepduration',
 	'lightsleepduration',
@@ -562,6 +641,28 @@ const WITHINGS_SLEEP_DATA_FIELDS = [
 	'sleep_score',
 	'hr_average',
 	'rr_average'
+];
+
+/**
+ * Feltene vi ber om nå.
+ *
+ * `sleep_latency` (tid brukt på å sovne) og `waso` (wake after sleep onset) er de
+ * to Withings måler som svarer på nøyaktig det den manuelle søvnloggeren spør om
+ * — «fikk ikke sove» og «våknet og fikk ikke sove igjen». De har vært
+ * tilgjengelige hele tiden uten at vi har bedt om dem.
+ *
+ * `hr_min` er dessuten en bedre hvilepuls enn `hr_average`, som
+ * `getEffortBaseline` bruker i dag med et 30–80-filter som proxy.
+ */
+const WITHINGS_SLEEP_DATA_FIELDS = [
+	...WITHINGS_SLEEP_FIELDS_LEGACY,
+	'sleep_latency',
+	'wakeup_latency',
+	'waso',
+	'out_of_bed_count',
+	'sleep_efficiency',
+	'hr_min',
+	'hr_max'
 ].join(',');
 
 /**
@@ -585,33 +686,63 @@ export async function syncSleepData(
 
 	console.log(`   Fetching sleep data${startdateymd ? ` from ${startdateymd}` : ''}...`);
 	// Use fetchWithingsSleep directly since sleep API is different
-	const allData: any[] = [];
-	let offset = 0;
-	let hasMore = true;
-	let page = 0;
+	/**
+	 * Henter alle sider med et gitt feltsett.
+	 *
+	 * Skilt ut for å kunne forsøke det utvidede feltsettet først og falle tilbake
+	 * på det historiske hvis Withings avviser et av de nye feltene. Å miste all
+	 * søvndata fordi vi ba om ett ukjent felt ville vært en dyr måte å lære det på.
+	 */
+	async function fetchAllSleepPages(dataFields: string): Promise<any[]> {
+		const collected: any[] = [];
+		let offset = 0;
+		let hasMore = true;
+		let page = 0;
 
-	while (hasMore && page < 100) {
-		page++;
-		console.log(`   Fetching sleep page ${page}...`);
-		const response = await fetchWithingsSleep(accessToken, {
-			action: 'getsummary',
-			startdateymd,
-			enddateymd,
-			offset,
-			data_fields: WITHINGS_SLEEP_DATA_FIELDS
-		});
+		while (hasMore && page < 100) {
+			page++;
+			const response = await fetchWithingsSleep(accessToken, {
+				action: 'getsummary',
+				startdateymd,
+				enddateymd,
+				offset,
+				data_fields: dataFields
+			});
 
-		if (response.status !== 0) {
-			throw new Error(`Withings sleep API error: ${response.error || 'Unknown error'}`);
+			if (response.status !== 0) {
+				throw new Error(`Withings sleep API error: ${response.error || 'Unknown error'}`);
+			}
+
+			const batch = response.body.series || [];
+			collected.push(...(Array.isArray(batch) ? batch : []));
+			hasMore = response.body.more || false;
+			offset = response.body.offset || 0;
 		}
 
-		const batch = response.body.series || [];
-		allData.push(...(Array.isArray(batch) ? batch : []));
-		console.log(`   Got ${batch.length} sleep sessions (total: ${allData.length})`);
-
-		hasMore = response.body.more || false;
-		offset = response.body.offset || 0;
+		return collected;
 	}
+
+	let allData: any[];
+	try {
+		allData = await fetchAllSleepPages(WITHINGS_SLEEP_DATA_FIELDS);
+		// Logg én gang hva vi faktisk fikk av de nye feltene, slik at spørsmålet
+		// «leverer enheten innsovningstid?» besvares av loggen og ikke av gjetning.
+		const sample = allData.find((s: any) => s?.data);
+		if (sample) {
+			const present = ['sleep_latency', 'waso', 'out_of_bed_count', 'sleep_efficiency', 'hr_min'].filter(
+				(f) => sample.data[f] !== undefined
+			);
+			console.log(
+				`   [søvnfelt] Nye felter til stede: ${present.length ? present.join(', ') : 'ingen — enheten leverer dem ikke'}`
+			);
+		}
+	} catch (err) {
+		console.warn(
+			`[withings-sync] Utvidet søvn-feltsett avvist, faller tilbake til det historiske: ${err instanceof Error ? err.message : String(err)}`
+		);
+		allData = await fetchAllSleepPages(WITHINGS_SLEEP_FIELDS_LEGACY.join(','));
+	}
+	console.log(`   Got ${allData.length} sleep sessions`);
 
 	console.log(`   Parsing ${allData.length} sleep sessions...`);
 	const parsed = parseSleepData(allData);

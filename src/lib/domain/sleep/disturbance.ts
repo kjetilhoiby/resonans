@@ -106,6 +106,8 @@ export interface LoggedDisturbance {
 	/** Minutter våken, når brukeren oppgav det. */
 	awakeMinutes: number | null;
 	note: string | null;
+	/** 'manual' = registrert selv, 'withings' = utledet av målt søvn. */
+	source?: 'manual' | 'withings';
 }
 
 export interface DisturbanceNight {
@@ -163,4 +165,102 @@ export function describeDisturbanceWindow(nights: DisturbanceNight[], windowLabe
 	const nightWord = nights.length === 1 ? 'natt' : 'netter';
 	const base = `${nights.length} ${nightWord} med urolig søvn ${windowLabel}`;
 	return minutes > 0 ? `${base}, ${nb(minutes)} min våken.` : `${base}.`;
+}
+
+
+/* ── Forstyrrelser utledet fra Withings-målt søvn ─────────── */
+
+/**
+ * Terskler for når en målt natt regnes som urolig.
+ *
+ * 30 minutter er den vanlige kliniske grensa både for innsovningstid og for
+ * våkentid gjennom natta. Under det er det normal søvn, ikke en forstyrrelse —
+ * alle bruker noen minutter på å sovne.
+ */
+export const LATENCY_THRESHOLD_MINUTES = 30;
+export const WASO_THRESHOLD_MINUTES = 30;
+
+export interface MeasuredNight {
+	/** ISO-tidspunkt for når søvnen startet. */
+	start: string;
+	/** Sekunder brukt på å sovne (`sleep_latency`). */
+	sleepLatencySeconds?: number | null;
+	/** Sekunder våken i løpet av natta (`waso`). */
+	wasoSeconds?: number | null;
+}
+
+function minutesFrom(seconds: number | null | undefined): number | null {
+	if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return null;
+	return Math.round(seconds / 60);
+}
+
+/**
+ * Gjør en målt natt om til forstyrrelser, hvis den var urolig nok.
+ *
+ * Withings måler dette selv når man ikke husker å logge — men det motsatte
+ * gjelder også: enheten kan mene du sov mens du lå våken og tenkte. Derfor
+ * erstatter dette ikke den manuelle loggen, det utfyller den.
+ *
+ * Id-en er avledet av tidspunktet, ikke tilfeldig: den samme natta skal gi den
+ * samme id-en ved hver lasting, ellers ville `{#each}`-nøkler i lista endret seg
+ * på hver render.
+ */
+export function deriveDisturbancesFromNight(night: MeasuredNight): LoggedDisturbance[] {
+	const derived: LoggedDisturbance[] = [];
+	const latency = minutesFrom(night.sleepLatencySeconds);
+	const waso = minutesFrom(night.wasoSeconds);
+
+	if (latency !== null && latency >= LATENCY_THRESHOLD_MINUTES) {
+		derived.push({
+			id: `withings-innsovning-${night.start}`,
+			timestamp: night.start,
+			kind: 'innsovning',
+			awakeMinutes: latency,
+			note: null,
+			source: 'withings'
+		});
+	}
+
+	if (waso !== null && waso >= WASO_THRESHOLD_MINUTES) {
+		derived.push({
+			id: `withings-oppvaakning-${night.start}`,
+			timestamp: night.start,
+			kind: 'oppvaakning',
+			awakeMinutes: waso,
+			note: null,
+			source: 'withings'
+		});
+	}
+
+	return derived;
+}
+
+/**
+ * Slår sammen manuelle registreringer med målte netter.
+ *
+ * **Manuell logging vinner for en natt der den finnes.** Har du sagt at du ikke
+ * fikk sove, er det svaret — også om Sleep Analyzer mener du sov fint. Enheten
+ * måler bevegelse og puls, ikke opplevelsen, og opplevelsen er det man handler på.
+ *
+ * Målte netter fyller derfor bare hullene: netter du ikke logget.
+ */
+export function mergeDisturbances(
+	manual: LoggedDisturbance[],
+	measured: MeasuredNight[]
+): LoggedDisturbance[] {
+	const manualNights = new Set(
+		manual.map((entry) => nightKeyForTime(entry.timestamp)).filter((key): key is string => key !== null)
+	);
+
+	const fromDevice = measured
+		.flatMap(deriveDisturbancesFromNight)
+		.filter((entry) => {
+			const key = nightKeyForTime(entry.timestamp);
+			return key !== null && !manualNights.has(key);
+		});
+
+	return [
+		...manual.map((entry) => ({ ...entry, source: entry.source ?? ('manual' as const) })),
+		...fromDevice
+	];
 }

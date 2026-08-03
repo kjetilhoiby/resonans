@@ -114,6 +114,9 @@ export async function fetchWithingsMeasurements(
 	params: {
 		action: 'getmeas' | 'getactivity' | 'getsummary' | 'getworkouts';
 		meastype?: number; // 1=weight, 11=pulse, 54=spo2, etc.
+		/** Kommaseparert liste av måletyper. Brukes i stedet for `meastype` når vi
+		 *  vil ha flere — f.eks. hele kroppssammensetningen i ett kall. */
+		meastypes?: string;
 		category?: number; // 1=real measurements
 		startdate?: number; // Unix timestamp
 		enddate?: number; // Unix timestamp

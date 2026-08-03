@@ -95,7 +95,7 @@
 		<section class="sleep-chart-card">
 			<SectionLabel tag="h2">Siste to uker</SectionLabel>
 			<div class="night-bars" role="img" aria-label="Søvntimer per natt siste to uker">
-				{#each recentNights as night (night.date)}
+				{#each recentNights as night (`${night.date}:${night.isNap}`)}
 					<div class="night-col">
 						<div class="night-track">
 							<div

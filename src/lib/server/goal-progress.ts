@@ -3,6 +3,7 @@ import { canonicalWorkouts, categorizedEvents, sensorAggregates, sensorEvents } 
 import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
+import { normalizeBodyComposition } from '$lib/domain/health/body-composition';
 
 /**
  * Delt progresjons-lesing for målbare mål. Brukes av både /plan/mal og
@@ -244,11 +245,25 @@ export async function readWeeklyEffort(userId: string): Promise<WeeklyEffortRead
 
 export type BodyComposition = {
 	fatMassKg: number | null;
+	fatRatio: number | null;
 	muscleMassKg: number | null;
+	fatFreeMassKg: number | null;
+	boneMassKg: number | null;
+	hydrationKg: number | null;
+	/** 'derived' betyr regnet fra fettprosent × vekt, ikke målt i kg. */
+	fatMassSource: 'measured' | 'derived' | null;
+	weightKg: number | null;
 	date: string;
 };
 
-/** Siste kroppssammensetning fra Withings-vekta (data.fatMass/muscleMass). */
+/**
+ * Siste kroppssammensetning fra Withings-vekta.
+ *
+ * Leste tidligere `data.fatMass` og returnerte den som `fatMassKg` — men
+ * `fatMass` var Withings type 6, altså fettPROSENT. Et fettmasse-mål i
+ * `/plan/mal` viste derfor 22 der svaret var 18. `normalizeBodyComposition`
+ * tolker både nye og gamle rader riktig, så feilen rettes uten datamigrering.
+ */
 export async function readBodyComposition(userId: string): Promise<BodyComposition | null> {
 	const rows = await db
 		.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
@@ -256,16 +271,24 @@ export async function readBodyComposition(userId: string): Promise<BodyCompositi
 		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight')))
 		.orderBy(desc(sensorEvents.timestamp))
 		.limit(30);
+
 	for (const row of rows) {
-		const data = row.data as { fatMass?: number; muscleMass?: number } | null;
-		const fat = Number(data?.fatMass);
-		const muscle = Number(data?.muscleMass);
-		const hasFat = Number.isFinite(fat) && fat > 0;
-		const hasMuscle = Number.isFinite(muscle) && muscle > 0;
-		if (hasFat || hasMuscle) {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const composition = normalizeBodyComposition({
+			weightKg: typeof data.weight === 'number' ? data.weight : null,
+			fatMassKg: typeof data.fatMassKg === 'number' ? data.fatMassKg : null,
+			fatRatio: typeof data.fatRatio === 'number' ? data.fatRatio : null,
+			legacyFatMass: typeof data.fatMass === 'number' ? data.fatMass : null,
+			muscleMassKg: typeof data.muscleMass === 'number' ? data.muscleMass : null,
+			fatFreeMassKg: typeof data.fatFreeMass === 'number' ? data.fatFreeMass : null,
+			boneMassKg: typeof data.boneMass === 'number' ? data.boneMass : null,
+			hydrationKg: typeof data.hydration === 'number' ? data.hydration : null
+		});
+
+		if (composition.fatMassKg !== null || composition.muscleMassKg !== null) {
 			return {
-				fatMassKg: hasFat ? Math.round(fat * 10) / 10 : null,
-				muscleMassKg: hasMuscle ? Math.round(muscle * 10) / 10 : null,
+				...composition,
+				weightKg: typeof data.weight === 'number' ? Math.round(data.weight * 10) / 10 : null,
 				date: row.timestamp.toISOString().slice(0, 10)
 			};
 		}

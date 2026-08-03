@@ -1621,7 +1621,16 @@ const sleepDisturbanceEntries: LoggedDisturbance[] = [
 		note: 'tankekjør etter sen jobbing'
 	},
 	{ id: 'd2', timestamp: '2026-08-02T01:10:00.000Z', kind: 'oppvaakning', awakeMinutes: 35, note: null },
-	{ id: 'd3', timestamp: '2026-08-03T02:20:00.000Z', kind: 'oppvaakning', awakeMinutes: null, note: null }
+	{ id: 'd3', timestamp: '2026-08-03T02:20:00.000Z', kind: 'oppvaakning', awakeMinutes: null, note: null },
+	// Withings-målt natt: ikke logget selv, utledet av sleep_latency.
+	{
+		id: 'withings-innsovning-2026-08-05T21:10:00.000Z',
+		timestamp: '2026-08-05T21:10:00.000Z',
+		kind: 'innsovning',
+		awakeMinutes: 52,
+		note: null,
+		source: 'withings'
+	}
 ];
 
 export const sleepDisturbanceNights = groupDisturbancesByNight(sleepDisturbanceEntries);

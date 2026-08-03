@@ -1959,11 +1959,28 @@ export const sensorEvents = pgTable('sensor_events', {
 	data: jsonb('data').$type<{
 		// Withings measurements
 		weight?: number;
+		/**
+		 * Fettprosent (Withings type 6). NB: het `fatMass` historisk og ble lest
+		 * som kilo — se $lib/domain/health/body-composition. Nye rader bruker
+		 * `fatRatio` og `fatMassKg`; `fatMass` finnes bare i gamle rader.
+		 */
+		fatRatio?: number;
+		/** Fettmasse i kg (type 8). Det feltet et fettmasse-mål skal lese. */
+		fatMassKg?: number;
+		/** @deprecated Gamle rader: dette er en PROSENT, ikke kilo. */
 		fatMass?: number;
 		muscleMass?: number;
+		fatFreeMass?: number;
+		boneMass?: number;
+		hydration?: number;
+		/** Punktpuls fra vekta (type 11) — beste hvilepuls-kilde vi har. */
+		restingHeartRate?: number;
 		steps?: number;
 		distance?: number;
+		/** Aktivitetskalorier. Se `totalCalories` for hele dagsforbruket. */
 		calories?: number;
+		/** Hvileforbrenning + aktivitet — den andre siden av energibalansen. */
+		totalCalories?: number;
 		// Sleep data
 		sleepDuration?: number;
 		sleepDeep?: number;
@@ -1971,6 +1988,15 @@ export const sensorEvents = pgTable('sensor_events', {
 		sleepRem?: number;
 		wakeupDuration?: number;
 		sleepScore?: number;
+		/** Sekunder brukt på å sovne (Withings `sleep_latency`). */
+		sleepLatency?: number;
+		/** Sekunder fra oppvåkning til man står opp. */
+		wakeupLatency?: number;
+		/** Wake after sleep onset — sekunder våken i løpet av natta. */
+		waso?: number;
+		outOfBedCount?: number;
+		/** Andel av tiden i senga man faktisk sov, 0–1. */
+		sleepEfficiency?: number;
 		// Heart/breathing data (from sleep or measurements)
 		hr_average?: number; // Average heart rate (often from sleep)
 		rr_average?: number; // Average respiratory rate

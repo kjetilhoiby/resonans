@@ -14,7 +14,13 @@ import {
 	compositeSleepLag
 } from '$lib/domain/health/sleep-overview';
 import { listDisturbances } from '$lib/server/sleep/disturbance-log';
-import { groupDisturbancesByNight } from '$lib/domain/sleep/disturbance';
+import {
+	groupDisturbancesByNight,
+	mergeDisturbances,
+	type MeasuredNight
+} from '$lib/domain/sleep/disturbance';
+import { sensorEvents } from '$lib/db/schema';
+import { gte } from 'drizzle-orm';
 
 const SLEEP_LOOKBACK_DAYS = 30;
 
@@ -24,7 +30,8 @@ const SLEEP_LOOKBACK_DAYS = 30;
  * testede primitivene i $lib/domain/sleep-goals.
  */
 export async function loadSleepDashboardData(userId: string) {
-	const [weekly, monthly, nights, naps, goalRecords, metricSettings, disturbances] = await Promise.all([
+	const [weekly, monthly, nights, naps, goalRecords, metricSettings, disturbances, measuredNights] =
+		await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -41,7 +48,8 @@ export async function loadSleepDashboardData(userId: string) {
 		// Tersklene bor på mortemaet — én kilde. Undertemaet har sin egen
 		// (tomme) metric_settings-kolonne som bevisst ikke brukes.
 		readParentMetricSettings(userId),
-		listDisturbances(userId, { sinceDays: SLEEP_LOOKBACK_DAYS })
+		listDisturbances(userId, { sinceDays: SLEEP_LOOKBACK_DAYS }),
+		readMeasuredNights(userId, SLEEP_LOOKBACK_DAYS)
 	]);
 
 	const latestWeek = weekly[0] ?? null;
@@ -67,8 +75,11 @@ export async function loadSleepDashboardData(userId: string) {
 			manual: nap.manual,
 			note: nap.note ?? null
 		})),
-		/** Selvrapporterte forstyrrelser, gruppert per natt (nyeste først). */
-		disturbanceNights: groupDisturbancesByNight(disturbances),
+		/**
+		 * Urolige netter, gruppert per natt (nyeste først). Manuelle registreringer
+		 * pluss Withings-målte netter der du ikke logget selv.
+		 */
+		disturbanceNights: groupDisturbancesByNight(mergeDisturbances(disturbances, measuredNights)),
 		goals: goalRecords.map((record) => ({
 			id: record.id,
 			title: record.title,
@@ -83,6 +94,36 @@ export async function loadSleepDashboardData(userId: string) {
 			awakeMinutes: latestMetrics?.sleepDisturbances?.awakeMinutes ?? null
 		}
 	};
+}
+
+/**
+ * Målte netter fra Withings, til forstyrrelses-utledningen.
+ *
+ * `sleep_latency` og `waso` måler nøyaktig det den manuelle loggeren spør om, og
+ * har vært tilgjengelige fra Withings hele tiden — de ble bare aldri forespurt.
+ * Manuell logging vinner der den finnes; disse fyller nettene man ikke logget.
+ * Se `mergeDisturbances`.
+ */
+async function readMeasuredNights(userId: string, sinceDays: number): Promise<MeasuredNight[]> {
+	const since = new Date(Date.now() - sinceDays * 86_400_000);
+	const rows = await db.query.sensorEvents.findMany({
+		columns: { timestamp: true, data: true },
+		where: and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'sleep'),
+			gte(sensorEvents.timestamp, since)
+		),
+		orderBy: [desc(sensorEvents.timestamp)]
+	});
+
+	return rows.flatMap((row) => {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const latency = typeof data.sleepLatency === 'number' ? data.sleepLatency : null;
+		const waso = typeof data.waso === 'number' ? data.waso : null;
+		// Rader fra før feltene ble forespurt har ingen av dem.
+		if (latency === null && waso === null) return [];
+		return [{ start: row.timestamp.toISOString(), sleepLatencySeconds: latency, wasoSeconds: waso }];
+	});
 }
 
 /** Helse-mortemaets metric_settings, eller tomt objekt. */

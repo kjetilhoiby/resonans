@@ -6,6 +6,10 @@ import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry'
 import { listIntake } from '$lib/server/nutrition/intake-log';
 import { averagePerLoggedDay, osloDateKey, summarizeDay } from '$lib/domain/nutrition/day-summary';
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
+import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
+import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
+import { sensorEvents } from '$lib/db/schema';
+import { gte } from 'drizzle-orm';
 
 /**
  * Ernæring-undertemaet.
@@ -24,7 +28,9 @@ import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 export async function loadNutritionDashboardData(userId: string, theme: { name: string; emoji: string | null }) {
 	const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-	const [weightAggregates, foodTheme, entries, targets] = await Promise.all([
+	const today = osloDateKey(new Date());
+
+	const [weightAggregates, foodTheme, entries, targets, withings] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -34,7 +40,8 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		// duplisere ukemeny og lager inn i Ernæring.
 		findMatchingFoodTheme(userId),
 		listIntake(userId, { since }),
-		loadNutritionTargets(userId)
+		loadNutritionTargets(userId),
+		loadWithingsContext(userId, today)
 	]);
 
 	const weight = weightAggregates
@@ -47,8 +54,8 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 			return [{ periodKey: row.periodKey, avg, change: metrics?.weight?.change ?? null }];
 		});
 
-	const today = osloDateKey(new Date());
 	const todayEntries = entries.filter((entry) => osloDateKey(entry.timestamp) === today);
+	const todaySummary = summarizeDay(today, todayEntries, targets);
 
 	return {
 		themeName: theme.name,
@@ -57,10 +64,99 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		foodThemeName: foodTheme?.name ?? null,
 		weight,
 		targets,
-		today: summarizeDay(today, todayEntries, targets),
+		today: todaySummary,
+		/** Spist mot forbrent. Null når én av sidene mangler — se computeEnergyBalance. */
+		energyBalance: computeEnergyBalance({
+			intakeKcal: todaySummary.totals.kcal,
+			expenditureKcal: withings.expenditureKcal,
+			// Dagen er ikke omme før midnatt Oslo-tid, så begge tallene er delvise.
+			partialDay: true
+		}),
+		composition: withings.composition,
+		compositionDate: withings.compositionDate,
+		compositionChange: withings.compositionChange,
 		/** Siste 14 dager, nyeste først. Mater både historikken og snittet. */
 		recent: entries,
 		average: averagePerLoggedDay(entries)
+	};
+}
+
+/**
+ * Dagens forbruk fra Withings, og kroppssammensetningen.
+ *
+ * `totalcalories` er hvileforbrenning + aktivitet — den andre siden av
+ * energibalansen ernæringsloggen måler. `calories` alene er bare aktiviteten og
+ * ville gitt et voldsomt underskudd hver dag.
+ *
+ * Kroppssammensetningen er grunnen til at det er verdt å hente mer enn vekt:
+ * «ned 1,4 kg» og «ned 1,4 kg hvorav 0,9 er muskel» er to helt ulike beskjeder.
+ */
+async function loadWithingsContext(userId: string, todayKey: string) {
+	const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+	const [activityRows, weightRows] = await Promise.all([
+		db.query.sensorEvents.findMany({
+			columns: { timestamp: true, data: true },
+			where: and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'activity'),
+				gte(sensorEvents.timestamp, since)
+			),
+			orderBy: [desc(sensorEvents.timestamp)],
+			limit: 70
+		}),
+		db.query.sensorEvents.findMany({
+			columns: { timestamp: true, data: true },
+			where: and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'weight'),
+				gte(sensorEvents.timestamp, since)
+			),
+			orderBy: [desc(sensorEvents.timestamp)],
+			limit: 120
+		})
+	]);
+
+	// Aktivitetsraden er datert til UTC-midnatt for brukerens lokale dag, så
+	// dagsnøkkelen sammenlignes direkte.
+	const todayActivity = activityRows.find(
+		(row) => row.timestamp.toISOString().slice(0, 10) === todayKey
+	);
+	const expenditureKcal =
+		typeof (todayActivity?.data as { totalCalories?: unknown })?.totalCalories === 'number'
+			? ((todayActivity!.data as { totalCalories: number }).totalCalories)
+			: null;
+
+	const compositions = weightRows.flatMap((row) => {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const weightKg = typeof data.weight === 'number' ? data.weight : null;
+		if (weightKg === null) return [];
+		return [
+			{
+				at: row.timestamp.toISOString(),
+				weightKg,
+				composition: normalizeBodyComposition({
+					weightKg,
+					fatMassKg: typeof data.fatMassKg === 'number' ? data.fatMassKg : null,
+					fatRatio: typeof data.fatRatio === 'number' ? data.fatRatio : null,
+					legacyFatMass: typeof data.fatMass === 'number' ? data.fatMass : null,
+					muscleMassKg: typeof data.muscleMass === 'number' ? data.muscleMass : null,
+					fatFreeMassKg: typeof data.fatFreeMass === 'number' ? data.fatFreeMass : null,
+					boneMassKg: typeof data.boneMass === 'number' ? data.boneMass : null,
+					hydrationKg: typeof data.hydration === 'number' ? data.hydration : null
+				})
+			}
+		];
+	});
+
+	const latest = compositions[0] ?? null;
+	const oldest = compositions.length > 1 ? compositions[compositions.length - 1] : null;
+
+	return {
+		expenditureKcal,
+		composition: latest?.composition ?? null,
+		compositionDate: latest?.at ?? null,
+		compositionChange: latest && oldest ? describeCompositionChange(oldest, latest) : null
 	};
 }
 
