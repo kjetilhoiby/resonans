@@ -277,6 +277,13 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - Sult-ord (`sulten`, `kalori`, `protein`, `spist`, …) ruter til **både** `health` og
   `food` i `detectPromptFocusModules`. NB: mønsteret må si «sulten», ikke «sult» — den
   substrengen ligger inni «resultat».
+- **Bildeknappene er to.** `capture="environment"` tvinger kameraet, så biblioteket
+  krever et eget felt uten attributtet. Bibliotekknappen står først — den er den diskré
+  veien inn.
+- **Gjenta-forslagene er utledet av loggen** (`repeatableMeals`), ikke lagrede
+  favoritter: en kontorlunsj er ikke en oppskrift man vedlikeholder, og favoritter man
+  har glemt å opprette hjelper ingen. Makroene tas fra siste forekomst, så en rettelse
+  gjelder videre. Trykk går rett i loggen uten bekreftelsessteg.
 - Måltidsslots (frokost/lunsj/middag/kvelds/snacks) i
   `src/lib/domain/nutrition/meal-slots.ts` — et *tredje* slot-vokabular, fordi
   `mealPlans.mealType` og egenfrekvens sine periode-slots mangler «kvelds». Sloten

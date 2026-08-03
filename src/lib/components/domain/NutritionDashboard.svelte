@@ -42,7 +42,7 @@
 </script>
 
 <div class="nutrition-dashboard">
-	<NutritionLogger onLogged={() => onRefresh?.()} />
+	<NutritionLogger onLogged={() => onRefresh?.()} repeatable={data.repeatable ?? []} />
 
 	<NutritionDayCard
 		day={data.today}

@@ -18,13 +18,19 @@
 		type NutritionEstimate
 	} from '$lib/domain/nutrition/estimate';
 	import { MEAL_SLOTS, mealSlotForTime, type MealSlotId } from '$lib/domain/nutrition/meal-slots';
+	import type { RepeatableMeal } from '$lib/domain/nutrition/repeat-meals';
 
 	interface Props {
 		/** Kalles etter lagring, slik at flaten kan hente loggen på nytt. */
 		onLogged?: () => void;
+		/**
+		 * Måltider som gjentas, utledet av loggen. En kontorlunsj skal kunne
+		 * registreres med ett trykk framfor å skrives inn på nytt hver tirsdag.
+		 */
+		repeatable?: RepeatableMeal[];
 	}
 
-	let { onLogged }: Props = $props();
+	let { onLogged, repeatable = [] }: Props = $props();
 
 	let text = $state('');
 	let followUp = $state('');
@@ -61,6 +67,13 @@
 	let error = $state('');
 
 	let fileInput = $state<HTMLInputElement | null>(null);
+	/**
+	 * Eget felt uten `capture`, som åpner bildebiblioteket.
+	 *
+	 * `capture="environment"` tvinger kameraet, og et kamera som spretter opp er
+	 * ikke diskret. Å velge et bilde man alt har tatt er den stille veien inn.
+	 */
+	let libraryInput = $state<HTMLInputElement | null>(null);
 
 	const canEstimate = $derived(text.trim().length > 0 || imageUrl !== null);
 	const totals = $derived(estimate?.totals ?? null);
@@ -155,6 +168,41 @@
 		}
 	}
 
+	/**
+	 * Logger et tidligere måltid på nytt, med nåtid som tidspunkt.
+	 *
+	 * Går rett i loggen uten å innom estimeringsskjermen: poenget er ett trykk. Vi
+	 * gjenskaper et estimat med én vare av de lagrede makroene — varelista fra
+	 * forrige gang er ikke bevart i loggen, og makroene er det som betyr noe.
+	 *
+	 * Sloten utelates når måltidet ikke har en tydelig vane, slik at klokka
+	 * avgjør — samme regel som den vanlige veien inn.
+	 */
+	async function repeatMeal(meal: RepeatableMeal) {
+		if (saving || busy) return;
+		saving = true;
+		error = '';
+		try {
+			await post('/api/helse/ernaering/logg', {
+				estimate: {
+					label: meal.label,
+					items: [{ name: meal.label, quantity: 1, unit: null, macros: meal.macros }],
+					totals: meal.macros,
+					confidence: 0.9,
+					source: 'manual'
+				},
+				imageUrl: meal.imageUrl,
+				descriptions: [meal.label],
+				...(meal.usualSlot ? { mealSlot: meal.usualSlot } : {})
+			});
+			onLogged?.();
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function save() {
 		if (!estimate || saving) return;
 		saving = true;
@@ -222,12 +270,22 @@
 			<button
 				type="button"
 				class="entry-camera"
+				aria-label="Velg bilde fra biblioteket"
+				onclick={() => libraryInput?.click()}
+				disabled={uploading || busy}
+				data-track="ernaering:logg-bilde-bibliotek"
+			>
+				{uploading ? '…' : '🖼'}
+			</button>
+			<button
+				type="button"
+				class="entry-camera"
 				aria-label="Ta bilde av måltidet"
 				onclick={() => fileInput?.click()}
 				disabled={uploading || busy}
 				data-track="ernaering:logg-bilde"
 			>
-				{uploading ? '…' : '📷'}
+				📷
 			</button>
 			<button
 				type="button"
@@ -240,9 +298,30 @@
 			</button>
 		</div>
 		<p class="entry-hint">
-			Skriv hva du spiste, eller ta bilde. Modellen anslår makroene mot en norsk
-			referansetabell — du ser og kan rette tallene før de lagres.
+			Skriv hva du spiste, velg et bilde fra biblioteket, eller ta et nytt. Modellen
+			anslår makroene mot en norsk referansetabell — du ser og kan rette tallene før
+			de lagres.
 		</p>
+
+		{#if repeatable.length > 0}
+			<div class="repeats">
+				<span class="repeats-label">Gjenta</span>
+				<div class="repeats-row">
+					{#each repeatable as meal (meal.label)}
+						<button
+							type="button"
+							class="repeat"
+							onclick={() => void repeatMeal(meal)}
+							disabled={busy || uploading}
+							data-track="ernaering:gjenta-maltid"
+						>
+							<span class="repeat-label">{meal.label}</span>
+							<span class="repeat-kcal">{Math.round(meal.macros.kcal)} kcal</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	{/if}
 
 	<!-- capture="environment" åpner kameraet direkte på mobil. -->
@@ -251,6 +330,16 @@
 		type="file"
 		accept="image/*"
 		capture="environment"
+		class="file-hidden"
+		onchange={handleFile}
+		aria-hidden="true"
+		tabindex="-1"
+	/>
+	<!-- Uten capture: iOS viser bildebiblioteket. Den diskré veien inn. -->
+	<input
+		bind:this={libraryInput}
+		type="file"
+		accept="image/*"
 		class="file-hidden"
 		onchange={handleFile}
 		aria-hidden="true"
@@ -385,6 +474,66 @@
 </section>
 
 <style>
+	.repeats {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 10px;
+	}
+
+	.repeats-label {
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-tertiary, #777);
+	}
+
+	.repeats-row {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 2px;
+		scrollbar-width: none;
+	}
+
+	.repeats-row::-webkit-scrollbar {
+		display: none;
+	}
+
+	.repeat {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+		flex-shrink: 0;
+		max-width: 200px;
+		padding: 7px 11px;
+		border: 1px solid var(--border-color, #2a2a2a);
+		border-radius: 999px;
+		background: var(--bg-elevated, #141414);
+		color: var(--text-primary, #eee);
+		font-size: 0.76rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.repeat:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.repeat-label {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
+	}
+
+	.repeat-kcal {
+		font-size: 0.68rem;
+		color: var(--text-tertiary, #777);
+	}
+
 	.logger {
 		display: flex;
 		flex-direction: column;

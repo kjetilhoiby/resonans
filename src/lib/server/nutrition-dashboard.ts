@@ -13,6 +13,7 @@ import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown
 import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
 import { estimateDailyExpenditure } from '$lib/domain/health/energy-expenditure';
 import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
+import { repeatableMeals } from '$lib/domain/nutrition/repeat-meals';
 import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { ageFromBirthYear, readBodyProfile } from '$lib/server/health/body-profile';
 import { canonicalWorkouts } from '$lib/db/schema';
@@ -166,6 +167,11 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		composition: withings.composition,
 		compositionDate: withings.compositionDate,
 		compositionChange: withings.compositionChange,
+		/**
+		 * Måltider som gjentas, til ett-trykks-logging. Utledet av loggen framfor
+		 * lagret som favoritter — se repeat-meals for hvorfor.
+		 */
+		repeatable: repeatableMeals(entries),
 		/** Siste 14 dager, nyeste først. Mater både historikken og snittet. */
 		recent: entries,
 		average: averagePerLoggedDay(entries)
