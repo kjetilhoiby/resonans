@@ -91,6 +91,12 @@ console.log('[db:sync] Skjema synkronisert.');
 // ────────────────────────────────────────────────────────────────────────
 
 const DATA_MIGRATIONS = [
+	// 2026-08: Bryt selvløkker i temahierarkiet. parentTheme er fritekst mot
+	// forelderens navn, så basen kunne ikke hindre at et tema pekte på seg selv —
+	// og prod hadde Helse med parentTheme='Helse'. Tittelen på temasiden ER
+	// tilbakeknappen, så den pekte til samme side: trykket gjorde ingenting.
+	// Idempotent, og treffer bare rader som faktisk er sirkulære.
+	`UPDATE "themes" SET "parent_theme" = NULL WHERE "parent_theme" = "name"`,
 	// 2026-05: Omdøp domain 'egenfrekvens' → 'self' (paraply-domene)
 	`UPDATE "projects" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`,
 	`UPDATE "procedures" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`,

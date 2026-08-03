@@ -5,6 +5,7 @@ import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema
 import { openai } from '$lib/server/openai';
 import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
 import { HEALTH_PARENT_THEME_NAME, HEALTH_SUBTHEMES } from '$lib/domain/health-subthemes';
+import { isSelfParented } from '$lib/domain/theme-hierarchy';
 
 interface EnsureThemeInput {
 	userId: string;
@@ -43,10 +44,15 @@ export async function getChildThemes(
 	const conditions = [eq(themes.userId, userId), eq(themes.parentTheme, parentName)];
 	if (!opts.includeArchived) conditions.push(eq(themes.archived, false));
 
-	return db.query.themes.findMany({
+	const rows = await db.query.themes.findMany({
 		where: and(...conditions),
 		orderBy: (t, { desc }) => [desc(t.createdAt)]
 	});
+
+	// Et tema som peker på seg selv er ikke sitt eget barn. Prod hadde Helse med
+	// parentTheme='Helse', og uten denne filtreringen dukket mortemaet opp i sin
+	// egen barneliste — blant annet i themeIdsByName fra ensureHealthSubthemes.
+	return rows.filter((row) => !isSelfParented(row));
 }
 
 export async function findThemeByName(userId: string, name: string) {
@@ -83,10 +89,20 @@ export async function ensureThemeForUser({
 	name,
 	emoji = '📁',
 	description,
-	parentTheme = null,
+	parentTheme: requestedParentTheme = null,
 	forceParentTheme = false
 }: EnsureThemeInput) {
 	await ensureConversationThemeIdColumn();
+
+	// Et tema kan ikke være sin egen forelder. PATCH-endepunktet har alltid avvist
+	// det, men denne stien gjorde det ikke — og prod endte med Helse pekende på
+	// Helse, som gjorde tittelklikket til en blindvei. Vi stryker det stille
+	// framfor å kaste: kallerne bruker dette til provisjonering, og en selvløkke
+	// skal ikke kunne velte en synk.
+	const parentTheme = requestedParentTheme === name ? null : requestedParentTheme;
+	if (parentTheme !== requestedParentTheme) {
+		console.warn(`[themes] Ignorerte parentTheme='${name}' på temaet «${name}» — et tema kan ikke være sin egen forelder.`);
+	}
 
 	const existingTheme = await db.query.themes.findFirst({
 		where: and(eq(themes.userId, userId), eq(themes.name, name))

@@ -11,6 +11,7 @@ import { ProjectMetricsService } from '$lib/server/services/project-metrics-serv
 import { getThemeFindsByName } from '$lib/server/services/finds-service';
 import { listThemeResearch } from '$lib/server/services/theme-research-service';
 import { findThemeByName } from '$lib/server/themes';
+import { resolveParentThemeId } from '$lib/domain/theme-hierarchy';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -70,9 +71,15 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// Forelderens id, slik at et undertema kan navigere tilbake til mortemaet.
 	// parentTheme er fritekst mot forelderens navn, så forelderen finnes ikke
 	// nødvendigvis som rad (f.eks. 'Hjem' uten et Hjem-tema).
-	const parentThemeId = theme.parentTheme
-		? (await findThemeByName(locals.userId, theme.parentTheme))?.id ?? null
-		: null;
+	//
+	// NB: et tema kan peke på seg selv. Prod hadde Helse med parentTheme='Helse',
+	// og da ble tittelen — som ER tilbakeknappen — en lenke til samme side: trykket
+	// gjorde tilsynelatende ingenting. `resolveParentThemeId` avviser selvløkka, så
+	// flaten oppfører seg riktig uansett hva som står i kolonnen.
+	const parentThemeId = resolveParentThemeId(
+		theme,
+		theme.parentTheme ? (await findThemeByName(locals.userId, theme.parentTheme)) ?? null : null
+	);
 	// Kontakter lastes kun for prosjekttyper som har kontakter-fane (kommunikasjon/arrangement).
 	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 

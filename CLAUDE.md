@@ -189,6 +189,12 @@ mortemaer finnes: «Hjem» (hus-prosjekter), «Familie» (ferier) og «Helse» (
 Ernæring, Egenfrekvens, Søvn, Skjermtid).
 
 - Barn hentes med `getChildThemes(userId, parentName)` i `src/lib/server/themes.ts`.
+- **Et tema kan peke på seg selv** — kolonnen er fritekst, så basen hindrer det ikke, og
+  prod hadde Helse med `parentTheme='Helse'`. Tittelen ER tilbakeknappen, så den pekte til
+  samme side: trykket gjorde ingenting. Vakter finnes nå på alle tre nivåer —
+  `resolveParentThemeId` (lesing, `$lib/domain/theme-hierarchy.ts`), `getChildThemes`
+  (lister) og `ensureThemeForUser` (skriving). Se
+  `docs/changelog/2026-08-03-selvloekke-i-temahierarkiet.md`.
 - Helse-settet er lukket og defineres i `src/lib/domain/health-subthemes.ts` — eneste
   sted navnene skrives. Undertemaene provisjoneres av `ensureHealthSubthemes` (idempotent).
 - Arbeidsdelingen: **mortemaet viser sammenhenger, undertemaet eier detaljene.**
