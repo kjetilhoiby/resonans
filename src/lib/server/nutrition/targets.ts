@@ -15,6 +15,10 @@ import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 export interface NutritionTargetValues {
 	kcal: number | null;
 	proteinG: number | null;
+	/** Målandeler av energien, 0–100. Se macro-targets. */
+	proteinPct: number | null;
+	carbsPct: number | null;
+	fatPct: number | null;
 }
 
 export async function loadNutritionTargets(userId: string): Promise<NutritionTargetValues> {
@@ -28,6 +32,9 @@ export async function loadNutritionTargets(userId: string): Promise<NutritionTar
 
 	return {
 		kcal: num(nutrition.kcalTarget),
-		proteinG: num(nutrition.proteinTarget)
+		proteinG: num(nutrition.proteinTarget),
+		proteinPct: num(nutrition.proteinPct),
+		carbsPct: num(nutrition.carbsPct),
+		fatPct: num(nutrition.fatPct)
 	};
 }

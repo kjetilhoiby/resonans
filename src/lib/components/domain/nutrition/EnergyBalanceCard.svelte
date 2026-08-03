@@ -26,8 +26,10 @@
 		expenditure?: ExpenditureBreakdown | null;
 		/** Vekta målt mot regnestykket. Null før det er nok å regne på. */
 		realityCheck?: RealityCheck | null;
-		/** Vårt eget estimat, uavhengig av Withings. Null uten kroppsprofil. */
+		/** Vårt eget estimat — hovedkilden når profilen holder. */
 		ownExpenditure?: DailyExpenditureEstimate | null;
+		/** Withings' tall, nå som kryssjekk. */
+		withingsExpenditureKcal?: number | null;
 		/** Hva som mangler for å kunne regne selv. */
 		ownExpenditureMissing?: string[];
 	}
@@ -40,7 +42,8 @@
 		expenditure = null,
 		realityCheck = null,
 		ownExpenditure = null,
-		ownExpenditureMissing = []
+		ownExpenditureMissing = [],
+		withingsExpenditureKcal = null
 	}: Props = $props();
 
 	/**
@@ -51,8 +54,8 @@
 	 * sammenlignet et døgn med en formiddag.
 	 */
 	const gapKcal = $derived(
-		ownExpenditure && balance && expenditure && !expenditure.partialDay
-			? ownExpenditure.totalKcal - balance.expenditureKcal
+		ownExpenditure && withingsExpenditureKcal !== null
+			? ownExpenditure.totalKcal - withingsExpenditureKcal
 			: null
 	);
 
@@ -92,36 +95,28 @@
 					<span class="label">Forbrent</span>
 					<span class="value">{balance.expenditureKcal.toLocaleString('nb-NO')} kcal</span>
 				</div>
-				{#if expenditure && expenditure.activityKcal !== null && expenditure.basalKcal !== null}
-					<p class="breakdown">
-						Hvile ~{expenditure.basalKcal.toLocaleString('nb-NO')} + aktivitet
-						{expenditure.activityKcal.toLocaleString('nb-NO')}
-						{#if expenditure.workoutKcal !== null}
-							· økter {expenditure.workoutKcal.toLocaleString('nb-NO')}
-						{/if}
-					</p>
-				{:else if expenditure?.workoutKcal !== null && expenditure?.workoutKcal !== undefined}
-					<p class="breakdown">
-						Withings' tall, revidert gjennom døgnet. Øktene deres summerer til
-						{expenditure.workoutKcal.toLocaleString('nb-NO')} kcal.
-					</p>
-				{/if}
 
 				{#if ownExpenditure}
 					<p class="breakdown">
-						Vårt eget anslag for hele dagen: {ownExpenditure.totalKcal.toLocaleString('nb-NO')} kcal
-						(hvile {ownExpenditure.basalKcal.toLocaleString('nb-NO')} × kontorhverdag, pluss
+						Vårt anslag for hele dagen: hvile {ownExpenditure.basalKcal.toLocaleString('nb-NO')}
+						× kontorhverdag = {ownExpenditure.baselineKcal.toLocaleString('nb-NO')}, pluss
 						{ownExpenditure.workoutKcal.toLocaleString('nb-NO')} fra
 						{ownExpenditure.workouts.length}
-						{ownExpenditure.workouts.length === 1 ? 'økt' : 'økter'})
-						{#if gapKcal !== null && Math.abs(gapKcal) >= 200}
-							— {Math.abs(gapKcal).toLocaleString('nb-NO')} kcal
-							{gapKcal < 0 ? 'lavere' : 'høyere'} enn Withings
-						{/if}
+						{ownExpenditure.workouts.length === 1 ? 'økt' : 'økter'}
 					</p>
+					{#if withingsExpenditureKcal !== null}
+						<p class="breakdown">
+							Withings sier {withingsExpenditureKcal.toLocaleString('nb-NO')}
+							{#if gapKcal !== null && Math.abs(gapKcal) >= 200}
+								— {Math.abs(gapKcal).toLocaleString('nb-NO')} kcal
+								{gapKcal < 0 ? 'over' : 'under'} vårt, og deres tall revideres gjennom døgnet
+							{/if}
+						</p>
+					{/if}
 				{:else if ownExpenditureMissing.length > 0}
-					<p class="breakdown">
-						Vi kan regne forbruket selv, men mangler {ownExpenditureMissing.join(', ')}.
+					<p class="breakdown breakdown--warn">
+						Tallet er Withings'. Vi kan regne det selv — og mer gjennomsiktig — men mangler
+						{ownExpenditureMissing.join(', ')}.
 					</p>
 				{/if}
 

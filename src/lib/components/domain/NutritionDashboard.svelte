@@ -60,6 +60,7 @@
 		realityCheck={data.realityCheck ?? null}
 		ownExpenditure={data.ownExpenditure ?? null}
 		ownExpenditureMissing={data.ownExpenditureMissing ?? []}
+		withingsExpenditureKcal={data.withingsExpenditureKcal ?? null}
 	/>
 
 	<section class="nutrition-source">

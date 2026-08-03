@@ -24,6 +24,8 @@ import {
 	summarizeDay
 } from '$lib/domain/nutrition/day-summary';
 import { mealSlotForTime, mealSlotMeta } from '$lib/domain/nutrition/meal-slots';
+import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
+import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
 import { loadTodayExpenditure } from '$lib/server/nutrition/expenditure';
 
@@ -37,7 +39,9 @@ queryType:
 - 'today': dagens logg gruppert i frokost/lunsj/middag/kvelds/snacks, summer, mål, hva som er igjen, og spist mot forbrent fra Withings. Inkluderer hvilken måltidsslot klokka er i nå.
 - 'recent': siste N dager (default 7) med kcal og protein per dag, pluss snitt per logget dag.
 
-Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet fra Withings og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.`,
+Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.
+
+macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan handle på. pacing sier hvor langt på dagen inntaket ligger — det er der sultkriser forklares.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
@@ -93,6 +97,19 @@ Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confi
 				fatG: Math.round(summary.totals.fatG)
 			},
 			targets,
+			/** Mot makromålene, i gram — det er gram et forslag kan handle på. */
+			macroTargets: evaluateMacroTargets({ totals: summary.totals, targets }),
+			/**
+			 * Hvor langt på dagen inntaket ligger. Sultkriser kommer av dette:
+			 * 3. august sto loggen på 304 kcal kl. 15, på en dag som endte over 3 000.
+			 */
+			pacing: describeIntakePacing({
+				kcalSoFar: summary.totals.kcal,
+				proteinSoFar: summary.totals.proteinG,
+				targetKcal: targets.kcal,
+				targetProteinG: targets.proteinG,
+				osloHour: osloHourNow()
+			}),
 			remaining: remainingForDay({ totals: summary.totals, targets, expenditureKcal }),
 			energyBalance: computeEnergyBalance({
 				intakeKcal: summary.totals.kcal,

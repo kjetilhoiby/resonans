@@ -259,6 +259,17 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.
+- **Makromål** settes i `metricSettings.nutrition` (`PUT /api/helse/ernaering/mal`): kcal,
+  protein i gram, og målandeler per makro. `evaluateMacroTargets` regner avviket i både
+  andel og **gram** — gram er det et råd kan handle på. Absolutt proteinmål vinner over
+  andelen, siden protein settes per kg kroppsvekt.
+- **Sultkriser er pacing, ikke viljestyrke.** `intake-pacing.ts` måler inntaket mot hvor
+  langt på dagen man er, med en bevisst **ikke-lineær** forventningskurve (folk spiser ikke
+  mens de sover). 3. august: 304 kcal kl. 15 mot forventet 1 170 — og brukeren var
+  «veldig sulten i 15-17-tida». `pacing.behind` er det chatten skal se på i et sultråd.
+- **`energyBalance` bruker vårt eget forbruksanslag** når kroppsprofilen holder, ikke
+  Withings'. Withings vises som kryssjekk. Ikke fordi vårt er sannere, men fordi det kan
+  etterprøves.
 - **Chatten leser loggen med `query_nutrition`** (`$lib/ai/tools/query-nutrition.ts`),
   skriver med `log_nutrition`. `query_food` er noe annet — den dekker oppskrifter, ukemeny
   og lager. Dagsmål og forbruk leses gjennom `server/nutrition/targets.ts` og

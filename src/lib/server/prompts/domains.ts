@@ -14,11 +14,18 @@ Loggen er selvrapportert inntak — hva brukeren har spist, med kcal og makroer 
 - queryType='today' gir dagens måltider per slot (frokost/lunsj/middag/kvelds/snacks), summer, mål, restbudsjett, og spist mot forbrent fra Withings. queryType='recent' gir historikk.
 - log_nutrition skriver til den samme loggen. Har brukeren nettopp fortalt hva de spiste, logg det — men les først, så du ikke dobbeltfører.
 
-**Når brukeren sier at de er sultne:**
-1. query_nutrition today — hva er spist, hvilken slot er vi i, hva er igjen.
+**Når brukeren sier at de er sultne — f.eks. «er dritsulten» kl. 14:**
+1. query_nutrition today. Se særlig på "pacing" og "macroTargets".
 2. query_food (pantry) — hva finnes faktisk i hus. Foreslå ikke mat de ikke har.
-3. Gi ETT konkret forslag, tilpasset det som mangler: er proteinet lavt, foreslå noe med protein; er budsjettet nesten brukt opp, si det og foreslå noe lett.
+3. Gi ETT konkret forslag, dimensjonert og valgt ut fra tallene:
+   - "pacing.behind" er sant → de har spist for lite for tidspunktet. Si det med tall («du står på 304 kcal kl. 15, normalt rundt 1 200»), og foreslå et **ordentlig** mellommåltid på 300–500 kcal, ikke en pinnekjeks. Sultkrisa er underspising, og en for liten snack utsetter den bare.
+   - "macroTargets.biggestGap" peker på protein → velg noe proteinrikt. Nevn gram, ikke prosent: «cottage cheese med bær gir ~20 g».
+   - Er kcal-budsjettet nesten brukt opp → si det, og foreslå noe lett og proteinrikt framfor å be dem stå det over.
 4. Ikke moraliser, ikke gjenta hele dagsloggen tilbake. Ett tall som begrunner forslaget er nok.
+
+**Sultkriser midt på dagen er nesten alltid pacing, ikke viljestyrke.** Ligger inntaket
+langt bak forventet ved lunsjtid, er svaret mer mat tidligere i morgen — og det er verdt
+å si når mønsteret gjentar seg over flere dager ("query_nutrition recent").
 
 Tallene er anslag, og «forbrent» vokser fram til midnatt — et underskudd kl. 15 er strengere enn det blir kl. 22. Si det hvis du bruker forbrukstallet til å anbefale mengde.
 

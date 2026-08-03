@@ -289,7 +289,14 @@ export const themes = pgTable('themes', {
 		/** Brukerens egen makspuls. Vinner over observerte topper — se hr-baseline. */
 		maxHr?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 		/** Dagsmål for ernæring. Skrives av ernæringsflaten, ikke av terskelarket. */
-		nutrition?: { kcalTarget?: number; proteinTarget?: number };
+		nutrition?: {
+			kcalTarget?: number;
+			proteinTarget?: number;
+			/** Målandeler av energien, 0–100. Se $lib/domain/nutrition/macro-targets. */
+			proteinPct?: number;
+			carbsPct?: number;
+			fatPct?: number;
+		};
 		/**
 		 * Kroppsprofil til eget forbruksestimat (Mifflin-St Jeor). Høyde, fødselsår og
 		 * kjønn finnes ikke andre steder i basen; Withings gir bare vekt.

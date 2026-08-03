@@ -12,6 +12,8 @@ import { loadExpenditureContext } from '$lib/server/nutrition/expenditure';
 import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown';
 import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
 import { estimateDailyExpenditure } from '$lib/domain/health/energy-expenditure';
+import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
+import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { ageFromBirthYear, readBodyProfile } from '$lib/server/health/body-profile';
 import { canonicalWorkouts } from '$lib/db/schema';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
@@ -67,6 +69,21 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 	const todayEntries = entries.filter((entry) => osloDateKey(entry.timestamp) === today);
 	const todaySummary = summarizeDay(today, todayEntries, targets);
 
+	/**
+	 * Vårt eget forbruksestimat. Null når kroppsprofilen mangler — vi gjetter ikke
+	 * på høyde eller alder.
+	 */
+	const ownExpenditure = estimateDailyExpenditure({
+		profile: {
+			weightKg: withings.weightPoints[0]?.kg ?? undefined,
+			heightCm: bodyProfile.heightCm ?? undefined,
+			ageYears: ageFromBirthYear(bodyProfile.birthYear) ?? undefined,
+			sex: bodyProfile.sex ?? undefined
+		},
+		workouts: todayWorkouts,
+		deskJobFactor: bodyProfile.deskJobFactor ?? undefined
+	});
+
 	return {
 		themeName: theme.name,
 		themeEmoji: theme.emoji,
@@ -75,6 +92,16 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		weight,
 		targets,
 		today: todaySummary,
+		/** Mot makromålene, i gram. */
+		macroTargets: evaluateMacroTargets({ totals: todaySummary.totals, targets }),
+		/** Hvor langt på dagen inntaket ligger — der sultkriser forklares. */
+		pacing: describeIntakePacing({
+			kcalSoFar: todaySummary.totals.kcal,
+			proteinSoFar: todaySummary.totals.proteinG,
+			targetKcal: targets.kcal,
+			targetProteinG: targets.proteinG,
+			osloHour: osloHourNow()
+		}),
 		/**
 		 * Hva «forbrent» består av. Ett tall kan ikke etterprøves, og 3. august ga
 		 * Withings komponenter som ikke summerte til sin egen total.
@@ -94,16 +121,9 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		 * Vårt eget forbruksestimat, uavhengig av Withings. Null når kroppsprofilen
 		 * mangler — vi gjetter ikke på høyde eller alder.
 		 */
-		ownExpenditure: estimateDailyExpenditure({
-			profile: {
-				weightKg: withings.weightPoints[0]?.kg ?? undefined,
-				heightCm: bodyProfile.heightCm ?? undefined,
-				ageYears: ageFromBirthYear(bodyProfile.birthYear) ?? undefined,
-				sex: bodyProfile.sex ?? undefined
-			},
-			workouts: todayWorkouts,
-			deskJobFactor: bodyProfile.deskJobFactor ?? undefined
-		}),
+		ownExpenditure,
+		/** Withings' tall, nå som kryssjekk framfor hovedkilde. */
+		withingsExpenditureKcal: withings.expenditureKcal,
 		/** Hva som mangler for å kunne regne selv. Tom liste = alt på plass. */
 		ownExpenditureMissing: [
 			withings.weightPoints[0]?.kg ? null : 'vekt',
@@ -132,10 +152,14 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 			}),
 			weights: withings.weightPoints
 		}),
-		/** Spist mot forbrent. Null når én av sidene mangler — se computeEnergyBalance. */
+		/**
+		 * Spist mot forbrent. **Vårt eget anslag er hovedtallet** når profilen holder:
+		 * det er gjennomsiktig, det gjelder hele døgnet, og det lener seg ikke på et
+		 * `calories`-felt som har vist seg upålitelig. Withings blir kryssjekken.
+		 */
 		energyBalance: computeEnergyBalance({
 			intakeKcal: todaySummary.totals.kcal,
-			expenditureKcal: withings.expenditureKcal,
+			expenditureKcal: ownExpenditure?.totalKcal ?? withings.expenditureKcal,
 			// Dagen er ikke omme før midnatt Oslo-tid, så begge tallene er delvise.
 			partialDay: true
 		}),
