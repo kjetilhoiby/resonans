@@ -11,6 +11,7 @@
 	import NutritionDayCard from '$lib/components/domain/nutrition/NutritionDayCard.svelte';
 	import SleepDisturbanceList from '$lib/components/domain/sleep/SleepDisturbanceList.svelte';
 	import Vo2maxCard from '$lib/components/domain/training/Vo2maxCard.svelte';
+	import HrRecoveryCard from '$lib/components/domain/training/HrRecoveryCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -21,6 +22,9 @@
 		vo2maxEstimated,
 		vo2maxShaky,
 		vo2maxMeasured,
+		hrRecoveryGood,
+		hrRecoveryLateAnchor,
+		hrRecoveryWeak,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -194,6 +198,18 @@
 	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxEstimated} /></div>
 	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxShaky} /></div>
 	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxMeasured} /></div>
+
+	<h3 class="subsection">HrRecoveryCard — pulsfall</h3>
+	<p class="section-desc">
+		Fallet det første minuttet etter hard innsats, ankret i pulsserien framfor i
+		stoppknappen — toppulsen ligger typisk 17–105 sekunder før man trykker stopp.
+		Beste økt i vinduet, av samme grunn som VO2max. De to advarslene kortet kan gi:
+		et anker godt under toppen betyr at tallet er et gulv, og et svakt fall kan
+		skyldes at man fortsatte å bevege seg.
+	</p>
+	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryGood} /></div>
+	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryLateAnchor} /></div>
+	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryWeak} /></div>
 
 </section>
 

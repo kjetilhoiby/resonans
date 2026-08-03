@@ -2595,6 +2595,22 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 			bestAt: string;
 			sourceDistance?: '3k' | '5k' | '10k';
 		};
+		/**
+		 * Pulsfall etter innsats. `best` er beste fall i perioden — se
+		 * $lib/domain/health/hr-recovery for hvorfor det ikke er snittet, og hvorfor
+		 * anker og topp lagres med.
+		 */
+		hrRecovery?: {
+			best: number;
+			latest: number;
+			band: 'svak' | 'moderat' | 'god';
+			samples: number;
+			bestAt: string;
+			bestEndBpm: number;
+			bestPeakBpm: number;
+			wellAnchored: boolean;
+			sportFamily?: string;
+		};
 		// Activity metrics
 		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
 		intenseMinutes?: { sum?: number; avg?: number };

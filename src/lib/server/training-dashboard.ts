@@ -17,6 +17,7 @@ import { getRoutesWithEffort } from '$lib/server/tracks/routes-repository';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { mapDailyEffortSeries } from '$lib/domain/health/daily-effort';
 import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
+import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
 import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
@@ -48,6 +49,13 @@ async function loadDailyEffort(userId: string) {
 // Rullende vindu for formgulvet. Åtte uker: langt nok til at en uke uten hard
 // løping ikke ser ut som et formfall, kort nok til at det fortsatt er «nå».
 const VO2MAX_WINDOW_DAYS = 56;
+
+/**
+ * Pulsfall har et kortere vindu enn VO2max: det svinger med restitusjon og
+ * belastning på ukesskala, mens oksygenopptak flytter seg over måneder. Fire uker
+ * er nok til å finne en hard økt uten å vise et tall fra en annen treningsperiode.
+ */
+const HR_RECOVERY_WINDOW_DAYS = 28;
 
 /**
  * VO2max: Withings-måling der den finnes, ellers VDOT fra løpenes best-efforts.
@@ -98,6 +106,44 @@ async function loadVo2max(userId: string) {
 	}
 
 	return pickVo2maxMetric(samples);
+}
+
+/**
+ * Beste pulsfall siste fire uker, lest fra `hr_recovery`-hendelsene.
+ *
+ * Beregningen skjer i Withings-synken, siden den krever intraday-pulsserien —
+ * her er det bare oppsummering. Leses fra kilden framfor fra ukesaggregatet av
+ * samme grunn som VO2max: det skal være ferskt rett etter en økt.
+ */
+async function loadHrRecovery(userId: string) {
+	const since = new Date(Date.now() - HR_RECOVERY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+	const events = await db.query.sensorEvents.findMany({
+		where: and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'hr_recovery'),
+			gte(sensorEvents.timestamp, since)
+		),
+		columns: { timestamp: true, data: true }
+	});
+
+	const samples: HrRecoverySample[] = [];
+	for (const event of events) {
+		const data = (event.data ?? {}) as Record<string, unknown>;
+		if (typeof data.dropBpm !== 'number') continue;
+		samples.push({
+			dropBpm: data.dropBpm,
+			at: event.timestamp.toISOString(),
+			endBpm: typeof data.endBpm === 'number' ? data.endBpm : 0,
+			peakBpm: typeof data.peakBpm === 'number' ? data.peakBpm : 0,
+			anchorOffsetSeconds:
+				typeof data.anchorOffsetSeconds === 'number' ? data.anchorOffsetSeconds : 0,
+			spanSeconds: typeof data.spanSeconds === 'number' ? data.spanSeconds : 60,
+			sportFamily: typeof data.sportFamily === 'string' ? data.sportFamily : undefined
+		});
+	}
+
+	return pickHrRecoveryMetric(samples);
 }
 
 /**
@@ -169,10 +215,11 @@ export async function loadTrainingDashboardData(
 ) {
 	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
 	// balanse er verdt å se også i oppsett-modus.
-	const [plan, dailyEffort, vo2max] = await Promise.all([
+	const [plan, dailyEffort, vo2max, hrRecovery] = await Promise.all([
 		getActivePlan(userId),
 		loadDailyEffort(userId),
-		loadVo2max(userId).catch(() => null)
+		loadVo2max(userId).catch(() => null),
+		loadHrRecovery(userId).catch(() => null)
 	]);
 
 	if (!plan) {
@@ -185,6 +232,7 @@ export async function loadTrainingDashboardData(
 			snapshot,
 			dailyEffort,
 			vo2max,
+			hrRecovery,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -298,6 +346,7 @@ export async function loadTrainingDashboardData(
 		snapshot: null,
 		dailyEffort,
 		vo2max,
+		hrRecovery,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

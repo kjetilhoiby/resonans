@@ -4,8 +4,10 @@ import {
 	classifyRecovery,
 	computeHrRecovery,
 	parseIntradayHeartRate,
+	pickHrRecoveryMetric,
 	sliceWindow,
 	summarizeSampling,
+	type HrRecoverySample,
 	type HrSample
 } from './hr-recovery';
 
@@ -338,6 +340,82 @@ describe('classifyRecovery', () => {
 		expect(classifyRecovery(12)).toBe('moderat');
 		expect(classifyRecovery(20)).toBe('moderat');
 		expect(classifyRecovery(21)).toBe('god');
+	});
+});
+
+describe('pickHrRecoveryMetric', () => {
+	/** Kortform for testdata. */
+	function sample(at: string, dropBpm: number, endBpm = 150, peakBpm = 152): HrRecoverySample {
+		return { at, dropBpm, endBpm, peakBpm, anchorOffsetSeconds: -20, spanSeconds: 60 };
+	}
+
+	it('velger beste fall, ikke snittet', () => {
+		// Tallene er de faktiske fra 25. juli–1. august.
+		const metric = pickHrRecoveryMetric([
+			sample('2026-07-25T15:01:49.000Z', 28),
+			sample('2026-07-26T20:52:48.000Z', 19),
+			sample('2026-07-27T08:24:03.000Z', 30),
+			sample('2026-07-28T19:23:47.000Z', 9),
+			sample('2026-08-01T19:46:41.000Z', 29)
+		]);
+		expect(metric!.best).toBe(30);
+		expect(metric!.band).toBe('god');
+		expect(metric!.samples).toBe(5);
+		expect(metric!.bestAt).toBe('2026-07-27T08:24:03.000Z');
+		// Snittet ville vært 23 — det straffer de rolige turene.
+		expect(metric!.latest).toBe(29);
+	});
+
+	it('lar en rolig uke stå uten å dra tallet ned', () => {
+		// Én hard økt og tre rolige: formen er den harde økta.
+		const metric = pickHrRecoveryMetric([
+			sample('2026-08-01T10:00:00.000Z', 27),
+			sample('2026-08-02T10:00:00.000Z', 6),
+			sample('2026-08-03T10:00:00.000Z', 5)
+		]);
+		expect(metric!.best).toBe(27);
+		expect(metric!.latest).toBe(5);
+	});
+
+	it('flagger en dårlig forankret måling', () => {
+		// Ankeret 40 slag under toppen: fallet startet før vi begynte å måle.
+		const late = pickHrRecoveryMetric([sample('2026-08-01T19:47:41.000Z', 20, 121, 154)]);
+		expect(late!.wellAnchored).toBe(false);
+
+		const onPeak = pickHrRecoveryMetric([sample('2026-08-01T19:46:11.000Z', 22, 154, 154)]);
+		expect(onPeak!.wellAnchored).toBe(true);
+	});
+
+	it('treffer grensen for god forankring', () => {
+		expect(pickHrRecoveryMetric([sample('2026-08-01T10:00:00.000Z', 20, 144, 154)])!.wellAnchored).toBe(true);
+		expect(pickHrRecoveryMetric([sample('2026-08-01T10:00:00.000Z', 20, 143, 154)])!.wellAnchored).toBe(false);
+	});
+
+	it('beholder eldste ved likt fall, så tallet ikke hopper', () => {
+		const metric = pickHrRecoveryMetric([
+			sample('2026-08-01T10:00:00.000Z', 25),
+			sample('2026-08-02T10:00:00.000Z', 25)
+		]);
+		expect(metric!.bestAt).toBe('2026-08-01T10:00:00.000Z');
+	});
+
+	it('tar med idretten, så et fall fra fotball ikke leses som løpsform', () => {
+		const metric = pickHrRecoveryMetric([
+			{ ...sample('2026-08-01T10:00:00.000Z', 25), sportFamily: 'running' }
+		]);
+		expect(metric!.sportFamily).toBe('running');
+	});
+
+	it('gir null for tom eller ugyldig inndata', () => {
+		expect(pickHrRecoveryMetric([])).toBeNull();
+		expect(pickHrRecoveryMetric([sample('tull', 25)])).toBeNull();
+		expect(pickHrRecoveryMetric([sample('2026-08-01T10:00:00.000Z', Number.NaN)])).toBeNull();
+	});
+
+	it('godtar negativt fall uten å skjule det', () => {
+		const metric = pickHrRecoveryMetric([sample('2026-08-01T10:00:00.000Z', -6)]);
+		expect(metric!.best).toBe(-6);
+		expect(metric!.band).toBe('svak');
 	});
 });
 

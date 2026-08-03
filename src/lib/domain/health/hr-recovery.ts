@@ -315,6 +315,75 @@ export function bestRecoveryNearEffortEnd(input: {
 	return best;
 }
 
+/** Én lagret HRR-observasjon, slik den kommer fra en `hr_recovery`-hendelse. */
+export interface HrRecoverySample {
+	dropBpm: number;
+	/** Øktas sluttid — observasjonens tidspunkt. */
+	at: string;
+	endBpm: number;
+	peakBpm: number;
+	anchorOffsetSeconds: number;
+	spanSeconds: number;
+	sportFamily?: string;
+}
+
+export interface HrRecoveryMetric {
+	/** Beste fall i perioden. */
+	best: number;
+	/** Siste observasjon, kronologisk. */
+	latest: number;
+	band: HrRecovery['band'];
+	samples: number;
+	bestAt: string;
+	/** Puls ved ankeret og toppen for den beste målingen. */
+	bestEndBpm: number;
+	bestPeakBpm: number;
+	/**
+	 * Sant når ankeret for beste måling lå nær toppen. Er det langt under, startet
+	 * fallet før vi begynte å måle, og tallet er et gulv — ikke en feil, men verdt
+	 * å si.
+	 */
+	wellAnchored: boolean;
+	sportFamily?: string;
+}
+
+/** Hvor langt under toppen ankeret får ligge før målingen kalles dårlig forankret. */
+export const WELL_ANCHORED_WITHIN_BPM = 10;
+
+/**
+ * Perioden oppsummert av **beste** fall, ikke snittet.
+ *
+ * Samme resonnement som `pickVo2maxMetric`: et pulsfall forutsetter at du faktisk
+ * presset. En rolig joggetur gir et lite fall som bare sier at pulsen aldri var
+ * høy, ikke at restitusjonen er dårlig. Snittet blander de to og straffer rolige
+ * uker.
+ *
+ * Null når perioden ikke har observasjoner.
+ */
+export function pickHrRecoveryMetric(samples: HrRecoverySample[]): HrRecoveryMetric | null {
+	const usable = samples.filter(
+		(s) => Number.isFinite(s.dropBpm) && Number.isFinite(new Date(s.at).getTime())
+	);
+	if (usable.length === 0) return null;
+
+	const chronological = [...usable].sort((a, b) => a.at.localeCompare(b.at));
+	// Ved likt fall vinner den eldste, slik at tallet ikke hopper mellom to like
+	// gode økter når en tredje kommer inn.
+	const best = usable.reduce((a, b) => (b.dropBpm > a.dropBpm ? b : a));
+
+	return {
+		best: best.dropBpm,
+		latest: chronological[chronological.length - 1].dropBpm,
+		band: classifyRecovery(best.dropBpm),
+		samples: usable.length,
+		bestAt: best.at,
+		bestEndBpm: best.endBpm,
+		bestPeakBpm: best.peakBpm,
+		wellAnchored: best.peakBpm - best.endBpm <= WELL_ANCHORED_WITHIN_BPM,
+		sportFamily: best.sportFamily
+	};
+}
+
 /**
  * Withings' intraday-serie → pulspunkter.
  *

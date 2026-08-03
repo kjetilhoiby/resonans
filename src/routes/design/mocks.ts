@@ -1667,3 +1667,44 @@ export const vo2maxMeasured = {
 	samples: 3,
 	bestAt: '2026-08-01T06:20:00.000Z'
 };
+
+/* ── Trening: pulsfall ──────────────────────────────────── */
+
+/** Tallene er de faktiske fra løpeturen 1. august 2026. */
+export const hrRecoveryGood = {
+	best: 29,
+	latest: 29,
+	band: 'god' as const,
+	samples: 5,
+	bestAt: '2026-08-01T19:46:41.000Z',
+	bestEndBpm: 150,
+	bestPeakBpm: 154,
+	wellAnchored: true,
+	sportFamily: 'running'
+};
+
+/** Ankeret 33 slag under toppen → kortet skal si at tallet er et gulv. */
+export const hrRecoveryLateAnchor = {
+	best: 18,
+	latest: 18,
+	band: 'moderat' as const,
+	samples: 2,
+	bestAt: '2026-07-27T08:24:03.000Z',
+	bestEndBpm: 121,
+	bestPeakBpm: 154,
+	wellAnchored: false,
+	sportFamily: 'running'
+};
+
+/** Fortsatte å bevege seg etter økta — svakt fall, men ikke dårlig form. */
+export const hrRecoveryWeak = {
+	best: 9,
+	latest: 6,
+	band: 'svak' as const,
+	samples: 3,
+	bestAt: '2026-07-28T19:23:47.000Z',
+	bestEndBpm: 164,
+	bestPeakBpm: 168,
+	wellAnchored: true,
+	sportFamily: 'cycling'
+};

@@ -8,6 +8,7 @@ import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { autocheckChecklistItemsForDay, autocheckWeekChecklistItems } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
+import { syncHrRecovery } from './withings-hr-recovery';
 
 /**
  * Get active Withings sensor for user
@@ -964,6 +965,24 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 			},
 			priority: 2
 		});
+	}
+
+	// Pulsfall regnes til slutt, og er selvhelende: den ser på de siste ukene og
+	// fyller hullene. Det er nødvendig fordi canonical_workouts bygges av en
+	// projeksjonsjobb *etter* at øktene er skrevet — en beregning som krevde
+	// ferske canonical-rader ville alltid ligge én synk bak. Best-effort: en feil
+	// her skal ikke velte resten.
+	try {
+		const hrr = await syncHrRecovery(userId, accessToken, sensor.id);
+		if (hrr.computed > 0 || hrr.missing > 0) {
+			console.log(
+				`   ✓ Pulsfall: ${hrr.computed} beregnet av ${hrr.missing} manglende (${hrr.fetches} intraday-kall, ${hrr.unmeasurable} uten brukbart fall, ${hrr.deferred} utsatt)`
+			);
+		}
+	} catch (err) {
+		console.warn(
+			`[withings-sync] HRR-beregning feilet (ufarlig) user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+		);
 	}
 
 	// Update last sync timestamp

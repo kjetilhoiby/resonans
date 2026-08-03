@@ -310,6 +310,15 @@ Se `docs/changelog/2026-08-03-hr-recovery-diagnose.md`. Logikken i
 - `GET /api/admin/debug-intraday?date=…&from=…&to=…` er diagnoseverktøyet. Det
   rapporterer `best` mot `atDeclaredEnd` side om side nettopp for å gjøre skjevheten
   synlig.
+- **Beregningen bor i synken, ikke i aggregeringen** (`syncHrRecovery` i
+  `server/integrations/withings-hr-recovery.ts`) — den krever Withings-tokenet. Den er
+  **selvhelende** over 21 dager, fordi `canonical_workouts` bygges av en projeksjonsjobb
+  *etter* at øktene skrives; en beregning som krevde ferske canonical-rader ville alltid
+  ligget én synk bak. Synken kjører hvert 5. minutt, så dager som alt har måling hoppes
+  over før noe nettverk røres, og ett kall dekker alle øktene på én dag.
+- `metrics.hrRecovery.best` er **beste** fall i perioden, ikke snittet — et fall
+  forutsetter at du presset. `wellAnchored` skiller en måling som startet på toppen fra
+  én som startet etter at fallet var i gang; sistnevnte er et gulv, og flaten skal si det.
 - Oslo-veggklokke → UTC for vilkårlig dato: `osloWallClockToUtc` i
   `$lib/domain/oslo-time.ts`. `todayAtLocalTime` i `sleep-goals` dekker bare i dag.
 

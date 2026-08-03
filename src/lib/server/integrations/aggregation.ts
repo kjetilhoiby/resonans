@@ -10,6 +10,7 @@ import { isNapSleepEvent } from '$lib/domain/sleep-goals';
 import { computeNutritionMetrics } from '$lib/domain/nutrition/aggregate-metrics';
 import { computeSleepDisturbanceMetrics } from '$lib/domain/sleep/disturbance-metrics';
 import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
+import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
 import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
@@ -277,6 +278,34 @@ async function collectVo2maxSamples(
 	return samples;
 }
 
+/**
+ * Pulsfall i en periode, fra `hr_recovery`-hendelsene.
+ *
+ * Beregningen selv skjer i synken (`syncHrRecovery`), fordi den krever Withings'
+ * intraday-serie. Her oppsummeres bare det som alt er målt.
+ */
+function computeHrRecoveryMetrics(events: any[]) {
+	const samples: HrRecoverySample[] = [];
+
+	for (const event of events) {
+		if (event.dataType !== 'hr_recovery') continue;
+		const data = event.data ?? {};
+		if (typeof data.dropBpm !== 'number') continue;
+		samples.push({
+			dropBpm: data.dropBpm,
+			at: event.timestamp.toISOString(),
+			endBpm: typeof data.endBpm === 'number' ? data.endBpm : 0,
+			peakBpm: typeof data.peakBpm === 'number' ? data.peakBpm : 0,
+			anchorOffsetSeconds:
+				typeof data.anchorOffsetSeconds === 'number' ? data.anchorOffsetSeconds : 0,
+			spanSeconds: typeof data.spanSeconds === 'number' ? data.spanSeconds : 60,
+			sportFamily: typeof data.sportFamily === 'string' ? data.sportFamily : undefined
+		});
+	}
+
+	return pickHrRecoveryMetric(samples);
+}
+
 async function computeWorkoutSummaryFromCanonical(
 	userId: string,
 	start: Date,
@@ -402,6 +431,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
 		const vo2max = pickVo2maxMetric(vo2maxSamples);
 		if (vo2max) metrics.vo2max = vo2max;
+		// Samme logikk som VO2max: beste fall, ikke snittet. Et lite fall etter en
+		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
+		const hrRecovery = computeHrRecoveryMetrics(events);
+		if (hrRecovery) metrics.hrRecovery = hrRecovery;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
@@ -513,6 +546,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
 		const vo2max = pickVo2maxMetric(vo2maxSamples);
 		if (vo2max) metrics.vo2max = vo2max;
+		// Samme logikk som VO2max: beste fall, ikke snittet. Et lite fall etter en
+		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
+		const hrRecovery = computeHrRecoveryMetrics(events);
+		if (hrRecovery) metrics.hrRecovery = hrRecovery;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
@@ -610,6 +647,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
 		const vo2max = pickVo2maxMetric(vo2maxSamples);
 		if (vo2max) metrics.vo2max = vo2max;
+		// Samme logikk som VO2max: beste fall, ikke snittet. Et lite fall etter en
+		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
+		const hrRecovery = computeHrRecoveryMetrics(events);
+		if (hrRecovery) metrics.hrRecovery = hrRecovery;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });

@@ -1,7 +1,7 @@
 # Pulsfall etter innsats: diagnose før bygging
 
 Dato: 2026-08-03
-Status: pågår (steg 1 ferdig og målt — svaret er ja, steg 2 er verdt å bygge)
+Status: ferdig
 
 ## Kontekst
 
@@ -139,19 +139,56 @@ ikke kunne blokkere en måling, mens 41 slag på åtte sekunder er umulig. Med v
 gir el-sykkelturen 3 slag, altså «ingen restitusjon å måle», som er det ærlige
 svaret for en tur man tråkket til siste slutt.
 
-### Steg 2: metrikken (ikke startet)
+### Steg 2: metrikken
 
-Grunnlaget holder: 6 av 7 økter med pulsdekning fikk et brukbart fall, og spredningen
-(9–30 slag) er fysiologisk troverdig. Gjenstår å skrive HRR60 til `sensor_aggregates`
-per økt og vise et rullende bilde på treningsdashboardet, på samme måte som VO2max.
+Grunnlaget holdt: 6 av 7 økter med pulsdekning fikk et brukbart fall, og spredningen
+(9–30 slag) er fysiologisk troverdig.
 
-To ting steg 2 må ta med:
+**Beregningen: `src/lib/server/integrations/withings-hr-recovery.ts`** *(ny)*
 
-- **Lagre `anchorOffsetSeconds` og `peakBpm`**, ikke bare fallet. Uten dem kan ingen
-  senere se om en måling var godt forankret.
-- **Dekningen er ikke universell.** Fotballøkta 26. juli hadde nøyaktig *ett*
-  pulspunkt i vinduet. Lagidrett og annet uten kontinuerlig puls gir ingen HRR, og
-  flaten må tåle hull framfor å vise null.
+`syncHrRecovery` kjøres til slutt i `syncAllWithingsData`, best-effort som
+VO2max-synken. Den er **selvhelende**: hver kjøring ser på de siste 21 dagene og
+fyller hullene. Det er ikke pynt — `canonical_workouts` bygges av en
+projeksjonsjobb *etter* at øktene er skrevet til `sensor_events`, så en beregning
+som krevde ferske canonical-rader ville alltid ligget én synk bak.
+
+Kostnadstaket måtte tenkes gjennom, siden synken kjører hvert 5. minutt:
+
+- Dager som allerede har målinger hoppes over **før** noe nettverk røres, så steget
+  er gratis når det ikke er noe nytt.
+- Ett Withings-kall per dag med umålte økter, ikke ett per økt —
+  `groupIntoFetchWindows` samler dagens økter i ett vindu.
+- `MAX_FETCHES_PER_RUN = 5` som tak for førstegangs-fylling, nyeste dag først. Hva
+  som ble utsatt logges; et stille tak leses som «alt er dekket».
+- `conflictMode: 'upsert_sensor_datatype_timestamp'`, ikke `'ignore'`: forbedres
+  utvelgelsen, skal eksisterende målinger regnes om framfor å stå med gammelt tall.
+
+Lagres som `sensor_events` med `dataType: 'hr_recovery'`, tidsstemplet på øktas
+slutt. `anchorOffsetSeconds` og `peakBpm` lagres med — uten dem kan ingen senere se
+om målingen var godt forankret, og da er tallet ikke etterprøvbart.
+
+**Oppsummeringen: `pickHrRecoveryMetric`** i `$lib/domain/health/hr-recovery.ts`.
+Beste fall i perioden, ikke snittet, av samme grunn som `pickVo2maxMetric`: et fall
+forutsetter at du presset. En rolig joggetur gir et lite fall som bare sier at
+pulsen aldri var høy. `wellAnchored` er sant når ankeret lå innenfor 10 slag av
+toppen.
+
+**Aggregatene:** `metrics.hrRecovery` for uke, måned og år
+(`computeHrRecoveryMetrics` i `aggregation.ts`). Ingen SQL-migrasjon — `metrics` er
+jsonb, så bare TS-typen i `schema.ts` utvides.
+
+**Flaten:** `HrRecoveryCard` på treningsdashboardet, under `Vo2maxCard`.
+`loadHrRecovery` leser fra `sensor_events` med et **28-dagers** vindu, ikke 56 som
+VO2max: pulsfall svinger med restitusjon på ukesskala, mens oksygenopptak flytter
+seg over måneder. Lest fra kilden framfor fra ukesaggregatet, så tallet er ferskt
+rett etter en økt.
+
+Kortet sier de to tingene koden ikke kan vite: at et anker godt under toppen betyr
+at tallet er et gulv, og at et svakt fall kan skyldes at man fortsatte å bevege seg.
+Tre tilstander demonstrert på `/design` under «Dashboardkort».
+
+**Dekningen er ikke universell.** Fotballøkta 26. juli hadde nøyaktig *ett*
+pulspunkt i vinduet. Kortet rendrer ingenting framfor å vise null.
 
 ## Beslutninger
 
@@ -164,6 +201,15 @@ To ting steg 2 må ta med:
   ligge innenfor toleransen for begge. Ett punkt kan ikke vise et fall.
 - **Negativt fall skjules ikke.** Steg pulsen etter stopp, er `dropBpm` negativ og
   båndet «svak». Det er informasjon, ikke støy.
+
+## Bevisste ikke-mål
+
+- **Ikke lagt til i `query_sensor_data`.** VO2max er det ikke heller; begge nås
+  gjennom aggregatene. Å registrere én av dem som AI-metrikk uten den andre ville
+  gitt en tilfeldig skjevhet i hva modellen ser.
+- **Ikke et `domain_signals`-signal.** Pulsfall alene er ikke handlingsdrivende —
+  et lavt tall kan like gjerne bety at man fortsatte å bevege seg. Krysset mot
+  søvn eller belastning kunne blitt et signal, men det er et eget stykke arbeid.
 
 ## Beslutninger, andre runde
 
@@ -180,7 +226,12 @@ To ting steg 2 må ta med:
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
-- `npm test`: 2211 grønne i 170 filer (fra 2175), 36 nye.
+- `npm test`: 2226 grønne i 171 filer (fra 2175), 51 nye.
+- **Kortet i ekte Chromium**, alle tre tilstandene, ingen konsollfeil. NB for neste
+  agent: `/design` viser sheets og modaler i *åpen* tilstand, og de er
+  `position: fixed` over hele viewporten — et elementskjermbilde av en seksjon
+  lenger ned på siden fanger overlayet, ikke seksjonen. Skjul dem
+  (`.bs-backdrop, .bs-sheet, dialog.sheet …`) før du tar bildet.
 
 **Mot ekte data.** Endepunktet ble kalt i prod for seks treningsdager, og serien for
 hver dag lagret. Begge tabellene over er regnet av den faktiske koden på de faktiske
@@ -190,3 +241,12 @@ el-sykkelturen 28. juli — ligger nå som testdata i `hr-recovery.test.ts`, med
 disse to feilene ikke kan komme tilbake.
 
 Fotballøkta 26. juli er med som null-tilfellet: ett pulspunkt i vinduet, ingen måling.
+
+**Ikke verifisert:** de visuelle baselinene er *ikke* oppdatert. Kjørt i dette
+miljøet avviker **hver** design-seksjon — også `typografi`, `ikoner` og `knapper`,
+som denne endringen ikke rører — med noen piksler i høyde. Det er en annen
+Chromium-build (1194 mot den 1223 `@playwright/test` forventer), ikke en
+UI-regresjon. Å oppdatere baselinene her ville bakt inn denne containerens
+tekstrendering og gjort suiten rød for alle andre. `dashboardkort` må derfor
+regenereres på en maskin med riktig nettleser — det gjelder også baselinene som
+alt sto igjen fra mortema-arbeidet.
