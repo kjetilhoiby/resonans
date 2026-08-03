@@ -239,8 +239,17 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   og `activityFieldSuspect` flagger sprik.
 - **Vekta dømmer over energibalansen** (`checkAgainstWeight`). Et underskudd som ikke gir
   vektnedgang er feil, og feilen kan ligge på begge sider — forbruket for høyt *eller*
-  inntaket underlogget. Krever 14 dagers horisont; korrigerer ingenting, bare rapporterer
-  avviket per dag.
+  inntaket underlogget. Korrigerer ingenting, bare rapporterer avviket per dag.
+  **Dekningskravet er den viktige porten:** de loggede dagene må dekke ≥70 % av vinduet.
+  Første utgave gatet på vektspennet, og fyrte da på én logget dag mot 60 dagers
+  vektendring — «3 245 kcal per dag». Vekt måles dessuten som snitt i hver ende, ikke som
+  to enkeltmålinger.
+- **Vi regner forbruket selv også** (`$lib/domain/health/energy-expenditure.ts`):
+  Mifflin-St Jeor × `DESK_JOB_FACTOR` (1,25 — lav med vilje, siden øktene legges på
+  toppen) pluss øktene fra MET-verdier med **(MET − 1)**, som trekker fra hvilen i de
+  samme minuttene. `e_bike` er 4,5 MET mot syklingens 7; løping skaleres med farten.
+  Krever kroppsprofil i `metricSettings.profile` (`PUT /api/helse/profil`) — uten den
+  returneres null framfor et gjettet tall.
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.

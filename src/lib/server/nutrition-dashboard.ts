@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorAggregates } from '$lib/db/schema';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lte } from 'drizzle-orm';
 import { findThemeByName } from '$lib/server/themes';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { listIntake } from '$lib/server/nutrition/intake-log';
@@ -11,6 +11,9 @@ import { loadNutritionTargets } from '$lib/server/nutrition/targets';
 import { loadExpenditureContext } from '$lib/server/nutrition/expenditure';
 import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown';
 import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
+import { estimateDailyExpenditure } from '$lib/domain/health/energy-expenditure';
+import { ageFromBirthYear, readBodyProfile } from '$lib/server/health/body-profile';
+import { canonicalWorkouts } from '$lib/db/schema';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
 import { sensorEvents } from '$lib/db/schema';
 import { gte } from 'drizzle-orm';
@@ -34,7 +37,8 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 
 	const today = osloDateKey(new Date());
 
-	const [weightAggregates, foodTheme, entries, targets, withings] = await Promise.all([
+	const [weightAggregates, foodTheme, entries, targets, withings, bodyProfile, todayWorkouts] =
+		await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -45,7 +49,9 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		findMatchingFoodTheme(userId),
 		listIntake(userId, { since }),
 		loadNutritionTargets(userId),
-		loadWithingsContext(userId, today)
+		loadWithingsContext(userId, today),
+		readBodyProfile(userId),
+		loadTodayWorkouts(userId, today)
 	]);
 
 	const weight = weightAggregates
@@ -82,6 +88,27 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 						basalKcal: withings.basalKcal,
 						workoutKcal: withings.workoutKcal
 					}),
+		/**
+		 * Vårt eget forbruksestimat, uavhengig av Withings. Null når kroppsprofilen
+		 * mangler — vi gjetter ikke på høyde eller alder.
+		 */
+		ownExpenditure: estimateDailyExpenditure({
+			profile: {
+				weightKg: withings.weightPoints[0]?.kg ?? undefined,
+				heightCm: bodyProfile.heightCm ?? undefined,
+				ageYears: ageFromBirthYear(bodyProfile.birthYear) ?? undefined,
+				sex: bodyProfile.sex ?? undefined
+			},
+			workouts: todayWorkouts,
+			deskJobFactor: bodyProfile.deskJobFactor ?? undefined
+		}),
+		/** Hva som mangler for å kunne regne selv. Tom liste = alt på plass. */
+		ownExpenditureMissing: [
+			withings.weightPoints[0]?.kg ? null : 'vekt',
+			bodyProfile.heightCm ? null : 'høyde',
+			bodyProfile.birthYear ? null : 'fødselsår',
+			bodyProfile.sex ? null : 'kjønn'
+		].filter((item): item is string => item !== null),
 		/**
 		 * Vekta som dommer over regnestykket. Et underskudd som ikke gir vektnedgang
 		 * er feil, uansett hvor pent det er satt opp — og feilen kan ligge på begge
@@ -190,6 +217,34 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 		compositionDate: latest?.at ?? null,
 		compositionChange: latest && oldest ? describeCompositionChange(oldest, latest) : null
 	};
+}
+
+/**
+ * Dagens økter, til vårt eget forbruksestimat.
+ *
+ * Fra `canonical_workouts` og ikke fra Withings' dagsrad: det er sportstypen og
+ * varigheten vi trenger, og den kanoniske raden er dedupliserende. Vinduet er
+ * romslig i UTC og filtreres deretter på Oslo-dato, siden døgnskillet ikke er det
+ * samme.
+ */
+async function loadTodayWorkouts(userId: string, todayKey: string) {
+	const dayStart = new Date(`${todayKey}T00:00:00.000Z`);
+	const rows = await db.query.canonicalWorkouts.findMany({
+		columns: { startTime: true, sportType: true, durationSeconds: true, distanceMeters: true },
+		where: and(
+			eq(canonicalWorkouts.userId, userId),
+			gte(canonicalWorkouts.startTime, new Date(dayStart.getTime() - 12 * 60 * 60 * 1000)),
+			lte(canonicalWorkouts.startTime, new Date(dayStart.getTime() + 36 * 60 * 60 * 1000))
+		)
+	});
+
+	return rows
+		.filter((row) => osloDateKey(row.startTime) === todayKey)
+		.map((row) => ({
+			sportType: row.sportType,
+			durationSeconds: row.durationSeconds ? Number(row.durationSeconds) : null,
+			distanceMeters: row.distanceMeters ? Number(row.distanceMeters) : null
+		}));
 }
 
 /** Brukerens mat-tema, om det finnes. Navnet er ikke gitt, så vi matcher på kind. */

@@ -58,6 +58,8 @@
 		compositionDate={data.compositionDate}
 		expenditure={data.expenditureBreakdown ?? null}
 		realityCheck={data.realityCheck ?? null}
+		ownExpenditure={data.ownExpenditure ?? null}
+		ownExpenditureMissing={data.ownExpenditureMissing ?? []}
 	/>
 
 	<section class="nutrition-source">

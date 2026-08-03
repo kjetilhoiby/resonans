@@ -21,12 +21,35 @@
  * horisont er mest vann og tarminnhold, og et par uker er minimum før trenden
  * betyr noe. Den sier bare hvor stort avviket er, slik at man vet om et
  * «underskudd» er ekte.
+ *
+ * ## Feilen denne modulen gjorde først
+ *
+ * Første utgave gatet på **vektspennet**, ikke på hvor mange dager som faktisk var
+ * logget. Brukeren hadde 60 dager med vektmålinger og *én* logget dag, så porten
+ * åpnet seg og hele periodens vektendring ble tilskrevet den ene dagen: «0,7 kg ned
+ * tilsvarer 3 245 kcal per dag». Meningsløst, og vist med selvtillit.
+ *
+ * To ting måtte til. Dommen krever nå at de loggede dagene **dekker** vinduet de
+ * sammenlignes med, og vektendringen måles som forskjell mellom *snitt* i starten og
+ * slutten framfor mellom to enkeltmålinger. To målinger er nettopp det brukeren
+ * advarte mot: vann, fordøyelse og tid på døgnet.
  */
 
 import { KCAL_PER_KG_FAT } from './energy-balance';
 
 /** Færre dager enn dette, og vektstøy dominerer helt. */
 export const MIN_DAYS_FOR_VERDICT = 14;
+
+/**
+ * Hvor stor andel av vinduet som må ha logget inntak.
+ *
+ * Uten dette kravet kan én logget dag i et 60-dagers vindu «forklare» all
+ * vektendring. Regnestykket gjelder bare de dagene det er gjort på.
+ */
+export const MIN_LOGGED_COVERAGE = 0.7;
+
+/** Dager i hver ende som snittes, så enkeltmålinger ikke styrer dommen. */
+export const TREND_WINDOW_DAYS = 7;
 
 /** Avvik under dette er innenfor det målestøyen kan forklare. */
 export const NOISE_FLOOR_KCAL_PER_DAY = 200;
@@ -44,6 +67,10 @@ export interface WeightPoint {
 
 export interface RealityCheck {
 	days: number;
+	/** Dager i vektvinduet. */
+	spanDays: number;
+	/** Andel av vinduet som har logget inntak, 0–1. */
+	loggedCoverage: number;
 	/** Vektendringen balansen forutsier, i kg. Negativt = nedgang. */
 	predictedKg: number;
 	/** Vektendringen som faktisk skjedde. */
@@ -78,35 +105,59 @@ export function checkAgainstWeight(input: {
 
 	if (balances.length === 0 || weights.length < 2) return null;
 
-	const first = weights[0];
-	const last = weights[weights.length - 1];
-	const spanDays = daysBetween(first.date, last.date);
+	const firstDate = weights[0].date;
+	const lastDate = weights[weights.length - 1].date;
+	const spanDays = daysBetween(firstDate, lastDate);
 	if (spanDays <= 0) return null;
 
 	// Bare balanser innenfor vektvinduet — en logget dag utenfor sier ingenting om
 	// vektendringen vi måler.
-	const inWindow = balances.filter((b) => b.date >= first.date && b.date <= last.date);
+	const inWindow = balances.filter((b) => b.date >= firstDate && b.date <= lastDate);
 	if (inWindow.length === 0) return null;
+
+	// Snitt i hver ende, ikke enkeltmålinger: vekt svinger med vann, fordøyelse og
+	// tid på døgnet, og to punkter kan gi et helt annet svar enn trenden.
+	const startAvg = averageWithin(weights, firstDate, addDays(firstDate, TREND_WINDOW_DAYS));
+	const endAvg = averageWithin(weights, addDays(lastDate, -TREND_WINDOW_DAYS), lastDate);
+	if (startAvg === null || endAvg === null) return null;
 
 	const totalBalance = inWindow.reduce((sum, b) => sum + b.balanceKcal, 0);
 	const predictedKg = totalBalance / KCAL_PER_KG_FAT;
-	const observedKg = last.kg - first.kg;
+	const observedKg = endAvg - startAvg;
 
 	// Avviket fordeles på dagene vi faktisk har balanse for, ikke på hele vinduet:
 	// det er de dagene regnestykket er gjort.
 	const errorKcal = (observedKg - predictedKg) * KCAL_PER_KG_FAT;
 	const impliedDailyErrorKcal = Math.round(errorKcal / inWindow.length);
 
+	// Dekningen er den avgjørende porten. Én logget dag kan ikke forklare 60 dagers
+	// vektendring, uansett hvor lang vektserien er.
+	const loggedCoverage = inWindow.length / (spanDays + 1);
+	const conclusive = spanDays >= MIN_DAYS_FOR_VERDICT && loggedCoverage >= MIN_LOGGED_COVERAGE;
+
 	return {
 		days: inWindow.length,
+		spanDays,
+		loggedCoverage: Math.round(loggedCoverage * 100) / 100,
 		predictedKg: Math.round(predictedKg * 100) / 100,
 		observedKg: Math.round(observedKg * 100) / 100,
 		impliedDailyErrorKcal,
-		conclusive: spanDays >= MIN_DAYS_FOR_VERDICT,
-		balanceIsOff:
-			spanDays >= MIN_DAYS_FOR_VERDICT &&
-			Math.abs(impliedDailyErrorKcal) > NOISE_FLOOR_KCAL_PER_DAY
+		conclusive,
+		balanceIsOff: conclusive && Math.abs(impliedDailyErrorKcal) > NOISE_FLOOR_KCAL_PER_DAY
 	};
+}
+
+/** Snittvekt i et datointervall, eller null når intervallet er tomt. */
+function averageWithin(weights: WeightPoint[], from: string, to: string): number | null {
+	const inRange = weights.filter((w) => w.date >= from && w.date <= to);
+	if (inRange.length === 0) return null;
+	return inRange.reduce((sum, w) => sum + w.kg, 0) / inRange.length;
+}
+
+function addDays(date: string, days: number): string {
+	const ms = Date.parse(`${date}T00:00:00Z`);
+	if (!Number.isFinite(ms)) return date;
+	return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function daysBetween(from: string, to: string): number {

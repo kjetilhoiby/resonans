@@ -286,6 +286,21 @@ export const themes = pgTable('themes', {
 		steps?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 		activeMinutes?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 		weight?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		/** Brukerens egen makspuls. Vinner over observerte topper — se hr-baseline. */
+		maxHr?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		/** Dagsmål for ernæring. Skrives av ernæringsflaten, ikke av terskelarket. */
+		nutrition?: { kcalTarget?: number; proteinTarget?: number };
+		/**
+		 * Kroppsprofil til eget forbruksestimat (Mifflin-St Jeor). Høyde, fødselsår og
+		 * kjønn finnes ikke andre steder i basen; Withings gir bare vekt.
+		 * Skrives av `PUT /api/helse/profil`.
+		 */
+		profile?: {
+			heightCm?: number;
+			birthYear?: number;
+			sex?: 'male' | 'female';
+			deskJobFactor?: number;
+		};
 	}>(),
 	instructions: text('instructions'),
 	// Foretrukne/ekskluderte kilder for websøk (web_search) på dette temaet.

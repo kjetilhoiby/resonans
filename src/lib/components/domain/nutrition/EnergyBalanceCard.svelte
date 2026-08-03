@@ -15,6 +15,7 @@
 	import type { BodyComposition, CompositionChange } from '$lib/domain/health/body-composition';
 	import type { ExpenditureBreakdown } from '$lib/domain/nutrition/expenditure-breakdown';
 	import type { RealityCheck } from '$lib/domain/nutrition/weight-reality-check';
+	import type { DailyExpenditureEstimate } from '$lib/domain/health/energy-expenditure';
 
 	interface Props {
 		balance: EnergyBalance | null;
@@ -25,6 +26,10 @@
 		expenditure?: ExpenditureBreakdown | null;
 		/** Vekta målt mot regnestykket. Null før det er nok å regne på. */
 		realityCheck?: RealityCheck | null;
+		/** Vårt eget estimat, uavhengig av Withings. Null uten kroppsprofil. */
+		ownExpenditure?: DailyExpenditureEstimate | null;
+		/** Hva som mangler for å kunne regne selv. */
+		ownExpenditureMissing?: string[];
 	}
 
 	let {
@@ -33,8 +38,15 @@
 		compositionChange,
 		compositionDate,
 		expenditure = null,
-		realityCheck = null
+		realityCheck = null,
+		ownExpenditure = null,
+		ownExpenditureMissing = []
 	}: Props = $props();
+
+	/** Hvor langt fra hverandre de to estimatene ligger. */
+	const gapKcal = $derived(
+		ownExpenditure && balance ? ownExpenditure.totalKcal - balance.expenditureKcal : null
+	);
 
 	function nb(value: number, decimals = 0): string {
 		return value.toFixed(decimals).replace('.', ',');
@@ -79,6 +91,24 @@
 						{#if expenditure.workoutKcal !== null}
 							· økter {expenditure.workoutKcal.toLocaleString('nb-NO')}
 						{/if}
+					</p>
+				{/if}
+
+				{#if ownExpenditure}
+					<p class="breakdown">
+						Vårt eget anslag: {ownExpenditure.totalKcal.toLocaleString('nb-NO')} kcal
+						(hvile {ownExpenditure.basalKcal.toLocaleString('nb-NO')} × kontorhverdag, pluss
+						{ownExpenditure.workoutKcal.toLocaleString('nb-NO')} fra
+						{ownExpenditure.workouts.length}
+						{ownExpenditure.workouts.length === 1 ? 'økt' : 'økter'})
+						{#if gapKcal !== null && Math.abs(gapKcal) >= 200}
+							— {Math.abs(gapKcal).toLocaleString('nb-NO')} kcal
+							{gapKcal < 0 ? 'lavere' : 'høyere'} enn Withings
+						{/if}
+					</p>
+				{:else if ownExpenditureMissing.length > 0}
+					<p class="breakdown">
+						Vi kan regne forbruket selv, men mangler {ownExpenditureMissing.join(', ')}.
 					</p>
 				{/if}
 
