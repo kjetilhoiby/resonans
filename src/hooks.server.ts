@@ -10,7 +10,11 @@ import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 import { isPublicPath } from '$lib/server/public-paths';
-import { headerAuthDiagnosis, isUserHeaderTrusted } from '$lib/server/user-header-auth';
+import {
+	headerAuthDiagnosis,
+	isUserHeaderTrusted,
+	unsecuredHeaderWarning
+} from '$lib/server/user-header-auth';
 import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
 
 // Start scheduler when server starts
@@ -21,6 +25,20 @@ if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
 /** Miljøet vakta trenger. Lest her, siden modulen selv holdes testbar. */
 function headerAuthContext() {
 	return { isDev: dev, expectedSecret: env.RESONANS_HEADER_SECRET };
+}
+
+/**
+ * Advarsel om ulåst diagnoseheader, én gang per instans.
+ *
+ * Per forespørsel ville den druknet i seg selv — cron treffer hvert 5. minutt.
+ */
+let warnedAboutUnsecuredHeader = false;
+function warnOnceIfUnsecured() {
+	if (warnedAboutUnsecuredHeader) return;
+	const warning = unsecuredHeaderWarning(headerAuthContext());
+	if (!warning) return;
+	warnedAboutUnsecuredHeader = true;
+	console.warn(warning);
 }
 
 const authorizationHandle: Handle = async ({ event, resolve }) => {
@@ -39,6 +57,7 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 	// Headeren for curl og Playwright. Fritt lokalt, men deployet må den følges av
 	// x-resonans-secret — se user-header-auth.ts for hvorfor den ikke kunne stå åpen.
 	if (isUserHeaderTrusted(event.request.headers, headerAuthContext())) {
+		warnOnceIfUnsecured();
 		return resolve(event);
 	}
 	const headerProblem = headerAuthDiagnosis(event.request.headers, headerAuthContext());

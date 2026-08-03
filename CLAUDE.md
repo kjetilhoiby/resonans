@@ -412,10 +412,11 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
 
-**Diagnosetilgang:** `RESONANS_HEADER_SECRET`. `x-resonans-user-id` godtas fritt lokalt,
-men **deployet må den følges av `x-resonans-secret`** som matcher denne. Uten variabelen
-satt avvises headeren i prod (fail closed) — se `$lib/server/user-header-auth.ts`. For
-langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
+**Diagnosetilgang:** `RESONANS_HEADER_SECRET` er **bryteren** for `x-resonans-user-id`.
+Lokalt godtas headeren fritt. Deployet: er variabelen satt, må headeren følges av
+`x-resonans-secret` som matcher; er den ikke satt, godtas headeren som før og loggen sier
+det én gang per instans. Bevisst fail *open* — se `$lib/server/user-header-auth.ts` for
+hvorfor. For langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 

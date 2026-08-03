@@ -19,10 +19,16 @@
  *
  * - **Lokalt (`dev`)**: godtas fritt. Det er der Playwright kjører, og en
  *   dev-server på localhost er ikke en angrepsflate.
- * - **Deployet**: headeren må følges av `x-resonans-secret` som matcher
- *   `RESONANS_HEADER_SECRET`.
- * - **Uten `RESONANS_HEADER_SECRET` satt i prod**: headeren avvises. Fail closed —
- *   en glemt miljøvariabel skal gi tapt tilgang, ikke åpen dør.
+ * - **Deployet, med `RESONANS_HEADER_SECRET` satt**: headeren må følges av
+ *   `x-resonans-secret` som matcher.
+ * - **Deployet, uten variabelen satt**: headeren godtas som før, og at den er ulåst
+ *   logges én gang per instans.
+ *
+ * Miljøvariabelen er altså **bryteren**: sett den, og låsen slår inn uten flere
+ * endringer. Det er bevisst fail *open*, valgt fordi alternativet slo ut
+ * curl-tilgangen i samme øyeblikk koden ble deployet. Prisen er at en glemt variabel
+ * gir åpen dør framfor tapt tilgang — derfor loggadvarselen, som er det eneste
+ * sporet av at låsen ikke står på.
  *
  * `user_api_secrets` (se `api-secrets.ts`) er fortsatt den riktige veien for
  * langvarig maskintilgang. Denne headeren er for diagnostikk.
@@ -68,8 +74,8 @@ export function isUserHeaderTrusted(
 	if (context.isDev) return true;
 
 	const expected = context.expectedSecret;
-	// Fail closed: uten en konfigurert hemmelighet er headeren verdiløs som bevis.
-	if (!expected) return false;
+	// Ingen hemmelighet konfigurert → ingen lås. Se `unsecuredHeaderWarning`.
+	if (!expected) return true;
 
 	const provided = headers.get(USER_SECRET_HEADER);
 	if (!provided) return false;
@@ -78,10 +84,11 @@ export function isUserHeaderTrusted(
 }
 
 /**
- * Én linje til loggen når headeren avvises i prod fordi hemmeligheten mangler.
+ * Én linje til loggen når headeren *avvises*, med grunnen.
  *
- * Uten dette ser en glemt `RESONANS_HEADER_SECRET` ut som «alt er 401» uten spor
- * av hvorfor — og det er nøyaktig den feilen som koster en time å finne.
+ * Uten dette ser en feilstavet hemmelighet ut som «alt er 401» uten spor av hvorfor
+ * — nøyaktig den feilen som koster en time å finne. Null når det ikke er noe å
+ * forklare.
  */
 export function headerAuthDiagnosis(
 	headers: { get(name: string): string | null },
@@ -90,11 +97,25 @@ export function headerAuthDiagnosis(
 	if (!headers.get(USER_ID_HEADER)) return null;
 	if (context.isDev) return null;
 	const expected = context.expectedSecret;
-	if (!expected) {
-		return `[auth] ${USER_ID_HEADER} avvist: RESONANS_HEADER_SECRET er ikke satt i dette miljøet.`;
-	}
+	// Ulåst er ikke en avvisning — det rapporteres av unsecuredHeaderWarning.
+	if (!expected) return null;
 	if (!headers.get(USER_SECRET_HEADER)) {
 		return `[auth] ${USER_ID_HEADER} avvist: mangler ${USER_SECRET_HEADER}.`;
 	}
-	return `[auth] ${USER_ID_HEADER} avvist: ${USER_SECRET_HEADER} stemmer ikke.`;
+	if (!isUserHeaderTrusted(headers, context)) {
+		return `[auth] ${USER_ID_HEADER} avvist: ${USER_SECRET_HEADER} stemmer ikke.`;
+	}
+	return null;
+}
+
+/**
+ * Advarselen om at låsen ikke står på.
+ *
+ * Meningen er å bli lest én gang per instans, ikke per forespørsel — cron treffer
+ * hvert 5. minutt, og en advarsel per kall ville druknet i seg selv. Kallstedet
+ * eier «bare én gang»-logikken.
+ */
+export function unsecuredHeaderWarning(context: HeaderAuthContext): string | null {
+	if (context.isDev || context.expectedSecret) return null;
+	return `[auth] ${USER_ID_HEADER} godtas UTEN hemmelighet i dette miljøet. Sett RESONANS_HEADER_SECRET for å låse den.`;
 }

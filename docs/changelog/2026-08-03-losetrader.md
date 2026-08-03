@@ -102,10 +102,16 @@ hemmelighet — også mot `/api/admin/*`. Bruker-ID-en ligger dessuten i klartek
 
 - **Lokalt (`dev`)**: headeren godtas fritt. Det er der Playwright kjører, og en
   dev-server på localhost er ikke en angrepsflate.
-- **Deployet**: må følges av `x-resonans-secret` som matcher
-  `RESONANS_HEADER_SECRET`.
-- **Uten variabelen satt i prod**: headeren avvises. Fail closed — en glemt
-  miljøvariabel skal gi tapt tilgang, ikke åpen dør.
+- **Deployet, med `RESONANS_HEADER_SECRET` satt**: må følges av `x-resonans-secret`
+  som matcher.
+- **Deployet, uten variabelen**: headeren godtas som før, og at låsen ikke står på
+  logges én gang per instans.
+
+Miljøvariabelen er altså **bryteren**. Første utgave var fail *closed* — uten
+variabelen ble headeren avvist — men det slo ut curl-tilgangen i samme øyeblikk
+koden ble deployet, før noen hadde satt den. Valget ble derfor snudd til fail open:
+prisen er at en glemt variabel gir åpen dør framfor tapt tilgang, og advarselen i
+loggen er det eneste sporet av det. Å sette variabelen er hele migreringen.
 
 Modulen leser ikke `$app/environment` selv, men får miljøet inn: de modulene finnes
 ikke under vitest, og en sikkerhetsvakt som ikke kan enhetstestes er ikke verdt å
@@ -142,6 +148,6 @@ forventer (1223), og *hver* design-seksjon avviker med noen piksler i høyde —
 ingen av disse endringene rører. Baselinene for `dashboardkort` og det nye
 `sheet-metrikk-innstillinger.png` må genereres på en maskin med riktig nettleser.
 
-**Krever handling ved deploy:** `RESONANS_HEADER_SECRET` må settes i Vercel. Fram til
-den er satt vil `x-resonans-user-id` bli avvist i prod — det er den tilsiktede
-fail-closed-oppførselen, men det betyr at curl-tilgang utenfra er nede i mellomtida.
+**Gjenstår:** `RESONANS_HEADER_SECRET` er ikke satt, så diagnoseheaderen er ulåst i
+prod. Alt virker som før; loggen sier én gang per instans at låsen mangler. Sett
+variabelen når det passer — ingen andre endringer trengs.
