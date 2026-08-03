@@ -7,8 +7,12 @@ import { getValidAccessToken, getWithingsSensor } from '$lib/server/integrations
 import { fetchWithingsIntradayActivity } from '$lib/server/integrations/withings';
 import { requireAdmin } from '$lib/server/admin-auth';
 import {
+	bestRecoveryNearEffortEnd,
 	computeHrRecovery,
 	parseIntradayHeartRate,
+	SEARCH_AFTER_SECONDS,
+	SEARCH_BEFORE_SECONDS,
+	sliceWindow,
 	summarizeSampling
 } from '$lib/domain/health/hr-recovery';
 import { osloWallClockToUtc } from '$lib/domain/oslo-time';
@@ -80,25 +84,44 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			durationSeconds !== null
 				? new Date(workout.startTime.getTime() + durationSeconds * 1000).toISOString()
 				: null;
+		const endMs = endAt ? new Date(endAt).getTime() : null;
 
 		return {
 			startAt: workout.startTime.toISOString(),
 			endAt,
 			sportFamily: workout.sportFamily,
 			durationSeconds,
-			// Null her betyr at serien mangler punkter nær slutt eller nær +60 s.
-			recovery: endAt ? computeHrRecovery({ samples, effortEndAt: endAt }) : null
+			// Tettheten LOKALT rundt økta. Den globale medianen blander aktiv modus
+			// med 10-minutters hvilemodus og sier derfor ingenting om HRR.
+			localSampling:
+				endMs === null
+					? null
+					: summarizeSampling(
+							sliceWindow(
+								samples,
+								endMs - SEARCH_BEFORE_SECONDS * 1000,
+								endMs + SEARCH_AFTER_SECONDS * 1000
+							)
+						),
+			// Målingen vi faktisk stoler på: bratteste 60-sekunders fall i vinduet.
+			best: endAt ? bestRecoveryNearEffortEnd({ samples, effortEndAt: endAt }) : null,
+			// Samme fall målt fra øktas oppgitte sluttid. Med for sammenligning —
+			// den er systematisk for lav fordi stoppknappen trykkes etterpå.
+			atDeclaredEnd: endAt ? computeHrRecovery({ samples, effortEndAt: endAt }) : null
 		};
 	});
+
+	const measurable = perWorkout.filter((w) => w.best !== null).length;
 
 	return json({
 		window: { start: window.start.toISOString(), end: window.end.toISOString() },
 		sampling,
-		verdict: sampling.sufficientForRecovery
-			? 'Oppløsningen holder til HRR60.'
-			: sampling.count === 0
+		verdict:
+			sampling.count === 0
 				? 'Ingen pulspunkter i vinduet — enheten registrerer ikke kontinuerlig puls, eller den var ikke på.'
-				: `Median avstand ${sampling.medianGapSeconds} s er for grovt for HRR60. HealthKit-veien må vurderes.`,
+				: perWorkout.length === 0
+					? `${sampling.count} pulspunkter, men ingen økter i vinduet å måle fall etter.`
+					: `${measurable} av ${perWorkout.length} økter fikk et brukbart 60-sekunders fall. Sammenlign best mot atDeclaredEnd.`,
 		workouts: perWorkout,
 		samples
 	});

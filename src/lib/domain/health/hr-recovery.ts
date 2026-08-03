@@ -26,6 +26,16 @@ export interface HrSample {
 	bpm: number;
 }
 
+/**
+ * Beskrivelse av punktavstanden i et vindu. Ren diagnostikk.
+ *
+ * NB: dette er **ikke** en test på om HRR60 kan regnes. Withings skrur opp
+ * frekvensen under og rett etter aktivitet, og faller tilbake til 10-minutters
+ * intervaller først et kvarter senere. Medianen over et døgn blander de to
+ * modusene og lander på 30–170 s selv når det lokalt er 8–30 s rundt økta. Om
+ * fallet kan måles avgjøres av om `bestRecoveryNearEffortEnd` finner et brukbart
+ * punktpar — ikke av en median. Se `2026-08-03-hr-recovery-diagnose.md`.
+ */
 export interface SamplingSummary {
 	count: number;
 	/** Første og siste tidspunkt i vinduet. */
@@ -35,21 +45,7 @@ export interface SamplingSummary {
 	medianGapSeconds: number | null;
 	minGapSeconds: number | null;
 	maxGapSeconds: number | null;
-	/**
-	 * Sant når oppløsningen holder til HRR60. Under dette er svaret at Withings
-	 * intraday ikke er nok, og at HealthKit-veien må vurderes.
-	 */
-	sufficientForRecovery: boolean;
 }
-
-/**
- * Grovest tillatte medianavstand for at et 60-sekunders fall er meningsfullt.
- *
- * 20 sekunder gir tre punkter i vinduet. Grovere enn det, og «fallet etter 60 s»
- * blir i praksis «fallet etter et sted mellom 40 og 80 s», som ikke er
- * sammenlignbart fra økt til økt.
- */
-export const MAX_USABLE_GAP_SECONDS = 20;
 
 function sortByTime(samples: HrSample[]): HrSample[] {
 	return [...samples]
@@ -73,8 +69,7 @@ export function summarizeSampling(samples: HrSample[]): SamplingSummary {
 			lastAt: null,
 			medianGapSeconds: null,
 			minGapSeconds: null,
-			maxGapSeconds: null,
-			sufficientForRecovery: false
+			maxGapSeconds: null
 		};
 	}
 
@@ -92,9 +87,16 @@ export function summarizeSampling(samples: HrSample[]): SamplingSummary {
 		lastAt: sorted[sorted.length - 1].at,
 		medianGapSeconds: medianGap === null ? null : Math.round(medianGap),
 		minGapSeconds: gaps.length > 0 ? Math.round(Math.min(...gaps)) : null,
-		maxGapSeconds: gaps.length > 0 ? Math.round(Math.max(...gaps)) : null,
-		sufficientForRecovery: medianGap !== null && medianGap <= MAX_USABLE_GAP_SECONDS
+		maxGapSeconds: gaps.length > 0 ? Math.round(Math.max(...gaps)) : null
 	};
+}
+
+/** Punktene innenfor et tidsvindu, sortert. */
+export function sliceWindow(samples: HrSample[], fromMs: number, toMs: number): HrSample[] {
+	return sortByTime(samples).filter((s) => {
+		const t = new Date(s.at).getTime();
+		return t >= fromMs && t <= toMs;
+	});
 }
 
 export interface HrRecoveryInput {
@@ -185,6 +187,132 @@ export function computeHrRecovery(input: HrRecoveryInput): HrRecovery | null {
 		atSeconds: Math.round(atWindow.offset),
 		band: classifyRecovery(dropBpm)
 	};
+}
+
+export interface AnchoredHrRecovery {
+	/** Tidspunktet fallet måles fra — funnet i pulsserien. */
+	anchorAt: string;
+	/** Hvor ankeret ligger i forhold til øktas oppgitte slutt. Negativt = før. */
+	anchorOffsetSeconds: number;
+	/** Puls ved ankeret. */
+	endBpm: number;
+	recoveredBpm: number;
+	dropBpm: number;
+	/** Faktisk avstand mellom de to punktene. */
+	spanSeconds: number;
+	band: HrRecovery['band'];
+	/** Høyeste puls i søkevinduet, så et mistenkelig anker er synlig. */
+	peakBpm: number;
+	peakOffsetSeconds: number;
+}
+
+/** Hvor langt før og etter oppgitt slutt vi leter etter ankeret. */
+export const SEARCH_BEFORE_SECONDS = 120;
+export const SEARCH_AFTER_SECONDS = 180;
+
+/**
+ * Terskler for å avvise sensorbrudd forkledd som pulsfall.
+ *
+ * Fra el-sykkelturen 28. juli: 119 slag, og 8 sekunder senere 78. Et fall på 41
+ * slag på 8 sekunder er ikke fysiologi — det er den optiske sensoren som mister
+ * og gjenvinner feste. Uten denne vakta plukker søket den kanten og rapporterer
+ * et fall på 42 slag der det virkelige svaret er «ingen restitusjon å måle».
+ *
+ * Pulsen kan falle raskt rett etter maksimal innsats, men i størrelsesorden ett
+ * slag per sekund. Vi krever både et betydelig fall og en urimelig rate før vi
+ * avviser, slik at støy på to-sekunders punkter (±3 slag) ikke rammes.
+ */
+export const ARTEFACT_MIN_DROP = 20;
+export const ARTEFACT_MAX_BPM_PER_SECOND = 2;
+
+/** Sant hvis to nabopunkter faller raskere enn kroppen kan. */
+function isImplausibleStep(from: HrSample, to: HrSample): boolean {
+	const seconds = (new Date(to.at).getTime() - new Date(from.at).getTime()) / 1000;
+	if (seconds <= 0) return false;
+	const drop = from.bpm - to.bpm;
+	if (drop < ARTEFACT_MIN_DROP) return false;
+	return drop / seconds > ARTEFACT_MAX_BPM_PER_SECOND;
+}
+
+/**
+ * Det bratteste 60-sekunders pulsfallet rundt slutten av en økt.
+ *
+ * ## Hvorfor ikke bare måle fra øktas sluttid
+ *
+ * Fordi den lyver, målt på ekte data. Toppulsen ligger 17–105 sekunder **før**
+ * oppgitt slutt: man slutter å presse, jogger eller går ut, og trykker stopp
+ * etterpå. Måler man fra det oppgitte tidspunktet, er halve fallet alt skjedd.
+ *
+ * På løpeturen 1. august ga oppgitt slutt et fall på **1 slag** der det virkelige
+ * fallet var **29**. På en el-sykkeltur ga det **−6** — altså «pulsen steg» — der
+ * fallet var 42. Det er ikke en unøyaktighet, det er motsatt svar.
+ *
+ * Så vi leter i stedet etter det bratteste fallet i et vindu rundt slutten.
+ * Det er samme fysiologi, det er sammenlignbart fra økt til økt, og det er
+ * immunt mot når stoppknappen ble trykket.
+ *
+ * `anchorOffsetSeconds` og `peakBpm` er med i svaret nettopp fordi metoden er en
+ * heuristikk: ligger ankeret langt fra slutten, eller langt under toppen, skal
+ * leseren kunne se det.
+ *
+ * Null når serien ikke har et brukbart punktpar i vinduet.
+ */
+/** Inneholder strekket mellom anker og måling et umulig sprang? */
+function spanHasArtefact(samples: HrSample[], anchorAt: string, spanSeconds: number): boolean {
+	const from = new Date(anchorAt).getTime();
+	const within = sliceWindow(samples, from, from + spanSeconds * 1000);
+	for (let i = 1; i < within.length; i++) {
+		if (isImplausibleStep(within[i - 1], within[i])) return true;
+	}
+	return false;
+}
+
+export function bestRecoveryNearEffortEnd(input: {
+	samples: HrSample[];
+	effortEndAt: string;
+	searchBeforeSeconds?: number;
+	searchAfterSeconds?: number;
+	windowSeconds?: number;
+	toleranceSeconds?: number;
+}): AnchoredHrRecovery | null {
+	const endMs = new Date(input.effortEndAt).getTime();
+	if (!Number.isFinite(endMs)) return null;
+
+	const before = input.searchBeforeSeconds ?? SEARCH_BEFORE_SECONDS;
+	const after = input.searchAfterSeconds ?? SEARCH_AFTER_SECONDS;
+	const candidates = sliceWindow(input.samples, endMs - before * 1000, endMs + after * 1000);
+	if (candidates.length < 2) return null;
+
+	const peak = candidates.reduce((a, b) => (b.bpm > a.bpm ? b : a));
+
+	let best: AnchoredHrRecovery | null = null;
+	for (const anchor of candidates) {
+		const measured = computeHrRecovery({
+			samples: candidates,
+			effortEndAt: anchor.at,
+			windowSeconds: input.windowSeconds,
+			toleranceSeconds: input.toleranceSeconds
+		});
+		if (!measured) continue;
+		// Størst fall vinner; ved likhet det tidligste ankeret, så svaret er
+		// deterministisk uansett rekkefølge inn.
+		if (best && measured.dropBpm <= best.dropBpm) continue;
+		if (spanHasArtefact(candidates, anchor.at, measured.atSeconds)) continue;
+
+		best = {
+			anchorAt: anchor.at,
+			anchorOffsetSeconds: Math.round((new Date(anchor.at).getTime() - endMs) / 1000),
+			endBpm: measured.endBpm,
+			recoveredBpm: measured.recoveredBpm,
+			dropBpm: measured.dropBpm,
+			spanSeconds: measured.atSeconds,
+			band: measured.band,
+			peakBpm: peak.bpm,
+			peakOffsetSeconds: Math.round((new Date(peak.at).getTime() - endMs) / 1000)
+		};
+	}
+
+	return best;
 }
 
 /**

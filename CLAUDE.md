@@ -289,12 +289,27 @@ Se `docs/changelog/2026-08-03-hr-recovery-diagnose.md`. Logikken i
   en pulsserie uavhengig av økter: Withings `getintradayactivity`, eller HealthKit.
 - Withings' `body.series` fra intraday er et **objekt nøklet på unix-tidsstempel**, ikke
   en array. `fetchAllWithingsData` antar en liste; bruk `parseIntradayHeartRate`.
-- `computeHrRecovery` returnerer **null** når punkter nær slutt eller nær +60 s mangler,
-  og `atSeconds` sier hva som faktisk ble målt. Ikke bytt til nærmeste punkt uansett
-  avstand — da presenteres «fallet etter 8 minutter» som HRR60.
-- Om oppløsningen holder er et **empirisk** spørsmål: ScanWatch måler ofte hvert
-  10. minutt i ro. `GET /api/admin/debug-intraday?date=…&from=…&to=…` svarer på ekte
-  data. Ingenting bør bygges videre på HRR før `sampling.medianGapSeconds` er sett.
+- **Oppløsningen holder** — målt på seks treningsdager. Withings skrur opp frekvensen
+  under og rett etter aktivitet (lokalt 8–30 s rundt økta) og faller til 10-minutters
+  intervaller først et kvarter senere. **Den globale medianen over et døgn blander de to
+  modusene** og er ubrukelig som test; bruk `sliceWindow` og se lokalt. Derfor er
+  `sufficientForRecovery` fjernet: om fallet kan måles avgjøres av om et brukbart
+  punktpar finnes.
+- **Øktas oppgitte sluttid er ikke der innsatsen sluttet.** Toppulsen ligger 17–105 s
+  *før* stoppknappen. Mål alltid med `bestRecoveryNearEffortEnd`, aldri
+  `computeHrRecovery` mot `endTime` direkte — 1. august ga sistnevnte 1 slag der svaret
+  var 29, og på en el-sykkeltur ga den −6 der svaret var 3.
+- **Sensorbrudd ser ut som pulsfall.** 119 → 78 på åtte sekunder er optisk sensor som
+  mister feste. `ARTEFACT_MIN_DROP`/`ARTEFACT_MAX_BPM_PER_SECOND` avviser strekk der
+  nabopunkter faller ≥20 slag *og* raskere enn 2 slag/s. Begge vilkår må til.
+- `computeHrRecovery` returnerer **null** når punkter nær anker eller nær +60 s mangler.
+  Ikke bytt til nærmeste punkt uansett avstand — da presenteres «fallet etter 8
+  minutter» som HRR60.
+- Dekningen er ikke universell: lagidrett uten kontinuerlig puls gir ingen HRR
+  (fotball 26. juli hadde ett punkt i vinduet). Flaten må tåle hull, ikke vise null.
+- `GET /api/admin/debug-intraday?date=…&from=…&to=…` er diagnoseverktøyet. Det
+  rapporterer `best` mot `atDeclaredEnd` side om side nettopp for å gjøre skjevheten
+  synlig.
 - Oslo-veggklokke → UTC for vilkårlig dato: `osloWallClockToUtc` i
   `$lib/domain/oslo-time.ts`. `todayAtLocalTime` i `sleep-goals` dekker bare i dag.
 

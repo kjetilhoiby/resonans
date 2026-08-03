@@ -1,7 +1,7 @@
 # Pulsfall etter innsats: diagnose før bygging
 
 Dato: 2026-08-03
-Status: pågår (steg 1 ferdig, steg 2 avhenger av svaret)
+Status: pågår (steg 1 ferdig og målt — svaret er ja, steg 2 er verdt å bygge)
 
 ## Kontekst
 
@@ -73,11 +73,85 @@ så man kan se hullene med egne øyne. Withings-status ≠ 0 gir 502 med statusk
 401/403 der betyr manglende `user.activity`-scope, som er det ene svaret koden ikke kan
 gjette seg til. (Scopet *bes* det om i dag: `user.metrics,user.activity`.)
 
+### Steg 1b: målingen, og de to feilene den avslørte
+
+Kjørt mot ekte data for seks treningsdager (25.–28. juli, 31. juli, 1. august).
+**Svaret er at Withings intraday holder** — men begge de to tallene endepunktet
+først rapporterte var feil.
+
+#### Feil 1: den globale medianen måler den gale tingen
+
+Withings skrur opp frekvensen under og rett etter aktivitet, og faller tilbake til
+10-minutters intervaller **først et kvarter senere**. Medianen over et døgn blander
+de to modusene:
+
+| Dag | Global median | Lokal median rundt økta |
+|---|---|---|
+| 25. juli | 30 s | **8 s** |
+| 26. juli | 46 s | **15 s** |
+| 27. juli | 55 s | **28 s** |
+| 28. juli | 168 s | **30 s** |
+| 31. juli | 30 s | **24 s** |
+| 1. august | 73 s | **10 s** |
+
+Den globale medianen på 30–168 s ga dommen «for grovt for HRR60». Lokalt er det
+8–30 s, altså rikelig. `MAX_USABLE_GAP_SECONDS = 20` og
+`sufficientForRecovery` er fjernet: om fallet kan måles avgjøres av om det finnes
+et brukbart punktpar, ikke av en median over et vindu brukeren valgte. Medianen er
+beskrivelse, ikke en port.
+
+#### Feil 2: øktas oppgitte sluttid er ikke der innsatsen sluttet
+
+Toppulsen ligger **17–105 sekunder før** oppgitt slutt. Man slutter å presse,
+jogger eller går ut, og trykker stopp etterpå. Måler man fra det oppgitte
+tidspunktet, er halve fallet allerede skjedd:
+
+| Dag | Fra oppgitt slutt | Bratteste 60 s-fall | Anker |
+|---|---|---|---|
+| 25. juli, løp | 28 | 28 (god) | −10 s |
+| 26. juli, løp | 19 | 19 (moderat) | −1 s |
+| 27. juli, løp | 27 | 30 (god) | +14 s |
+| 28. juli, løp + el-sykkel | 4 | 9 (svak) | +68 s |
+| 31. juli, løp | **ingenting** | 29 (god) | −28 s |
+| 1. august, løp | **1** | **29** (god) | −46 s |
+| 28. juli, el-sykkel | **−6** | 3 (svak) | −105 s |
+
+1. august er det avgjørende tilfellet: **1 slag mot 29**. Det er ikke en
+unøyaktighet, det er motsatt konklusjon — «svak restitusjon» der svaret er «god».
+El-sykkelturen ga negativt fall, altså «pulsen steg».
+
+`bestRecoveryNearEffortEnd` leter derfor etter det bratteste 60-sekunders fallet i
+[slutt − 120 s, slutt + 180 s]. Samme fysiologi, sammenlignbart mellom økter, og
+immunt mot når stoppknappen ble trykket. `anchorOffsetSeconds` og `peakBpm` er med i
+svaret fordi metoden *er* en heuristikk — ligger ankeret langt fra slutten, eller
+langt under toppen, skal leseren se det.
+
+#### Fallgruve funnet på veien: sensorbrudd ser ut som pulsfall
+
+El-sykkelturen 28. juli: 119 slag, og åtte sekunder senere 78. Det er den optiske
+sensoren som mister og gjenvinner feste, ikke fysiologi. Uten vakt plukket søket
+nettopp den kanten og meldte et fall på **42 slag**.
+
+`ARTEFACT_MIN_DROP = 20` og `ARTEFACT_MAX_BPM_PER_SECOND = 2`: et strekk forkastes
+hvis to nabopunkter faller minst 20 slag *og* raskere enn 2 slag/sekund. Begge
+vilkår må til — 19 slags sprang på to tettmålte punkter er normal jitter og skal
+ikke kunne blokkere en måling, mens 41 slag på åtte sekunder er umulig. Med vakta
+gir el-sykkelturen 3 slag, altså «ingen restitusjon å måle», som er det ærlige
+svaret for en tur man tråkket til siste slutt.
+
 ### Steg 2: metrikken (ikke startet)
 
-Betinget på svaret fra steg 1. Median avstand ≤ 20 s → HRR60 per økt inn i
-`sensor_aggregates` og på treningsdashboardet. Median rundt 600 s → Withings intraday
-er for grovt, og HealthKit-veien via `ekko` må veies mot kostnaden.
+Grunnlaget holder: 6 av 7 økter med pulsdekning fikk et brukbart fall, og spredningen
+(9–30 slag) er fysiologisk troverdig. Gjenstår å skrive HRR60 til `sensor_aggregates`
+per økt og vise et rullende bilde på treningsdashboardet, på samme måte som VO2max.
+
+To ting steg 2 må ta med:
+
+- **Lagre `anchorOffsetSeconds` og `peakBpm`**, ikke bare fallet. Uten dem kan ingen
+  senere se om en måling var godt forankret.
+- **Dekningen er ikke universell.** Fotballøkta 26. juli hadde nøyaktig *ett*
+  pulspunkt i vinduet. Lagidrett og annet uten kontinuerlig puls gir ingen HRR, og
+  flaten må tåle hull framfor å vise null.
 
 ## Beslutninger
 
@@ -91,14 +165,28 @@ er for grovt, og HealthKit-veien via `ekko` må veies mot kostnaden.
 - **Negativt fall skjules ikke.** Steg pulsen etter stopp, er `dropBpm` negativ og
   båndet «svak». Det er informasjon, ikke støy.
 
+## Beslutninger, andre runde
+
+- **Bratteste fall framfor «fallet fra sluttidspunktet».** Sistnevnte er den
+  bokstavelige definisjonen av HRR60, men den forutsetter at sluttidspunktet er
+  riktig, og målingene viser at det ikke er. Metrikken heter derfor det den er.
+- **Vakt framfor filtrering av rådata.** Vi kunne glattet serien. Da ville
+  sensorbruddet blitt usynlig i stedet for avvist, og vi ville ikke kunne skille
+  «ingen data» fra «data vi ikke stoler på».
+- **`sufficientForRecovery` fjernet framfor justert.** Terskelen var ikke for streng,
+  den målte feil størrelse. Å skru 20 opp til 60 ville gitt riktig svar for disse
+  seks dagene og feil svar neste gang vinduet var formet annerledes.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
-- `npm test`: 2204 grønne i 170 filer (fra 2175), 29 nye.
+- `npm test`: 2211 grønne i 170 filer (fra 2175), 36 nye.
 
-Den avgjørende testen er `summarizeSampling` med 10 minutters avstand →
-`sufficientForRecovery: false`. Det er nøyaktig scenariet endepunktet skal avgjøre, og
-den sier hva svaret betyr.
+**Mot ekte data.** Endepunktet ble kalt i prod for seks treningsdager, og serien for
+hver dag lagret. Begge tabellene over er regnet av den faktiske koden på de faktiske
+seriene, ikke av en sidemodell. De to avgjørende seriene — løpeturen 1. august og
+el-sykkelturen 28. juli — ligger nå som testdata i `hr-recovery.test.ts`, med
+`dropBpm` 1 mot 29 og −6 mot 3 som eksplisitte assertions. Det er den eneste måten
+disse to feilene ikke kan komme tilbake.
 
-Endepunktet selv kan ikke verifiseres herfra — det krever brukerens Withings-token i
-prod. Det er hele poenget med steg 1.
+Fotballøkta 26. juli er med som null-tilfellet: ett pulspunkt i vinduet, ingen måling.
