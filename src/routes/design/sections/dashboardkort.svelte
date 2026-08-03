@@ -13,6 +13,7 @@
 	import Vo2maxCard from '$lib/components/domain/training/Vo2maxCard.svelte';
 	import HrRecoveryCard from '$lib/components/domain/training/HrRecoveryCard.svelte';
 	import HrvCard from '$lib/components/domain/sleep/HrvCard.svelte';
+	import MacroSplitBar from '$lib/components/domain/nutrition/MacroSplitBar.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -30,6 +31,9 @@
 		hrvUnder,
 		hrvBuilding,
 		breathingMild,
+		macroSplitTypical,
+		macroSplitHighProtein,
+		macroSplitUnaccounted,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -229,6 +233,21 @@
 	<div class="demo-card demo-card--wide"><HrvCard metric={hrvNormal} /></div>
 	<div class="demo-card demo-card--wide"><HrvCard metric={hrvUnder} breathing={breathingMild} /></div>
 	<div class="demo-card demo-card--wide"><HrvCard metric={hrvBuilding} /></div>
+
+	<h3 class="subsection">MacroSplitBar — hvor energien kom fra</h3>
+	<p class="section-desc">
+		Del-av-helhet med tre kategorier, altså en liggende stablet stolpe — ikke et
+		kakediagram. Poenget er at gram ikke er sammenlignbare: fett har 9 kcal per gram
+		mot 4 for de to andre, så i første eksempel har fett færrest gram og flest
+		kalorier. Fargene er de tre første slottene fra den kategoriske paletten, tildelt
+		i fast rekkefølge så et segment beholder fargen når et annet blir null (validert
+		mot flaten: verste nabopar ΔE 9,4 deutan, 26,5 normalt syn). Identiteten ligger
+		aldri i fargen alene — hvert segment er direkte merket, og legenden gjentar gram
+		og kcal. Siste eksempel viser forklaringen når makroene og kcal-tallet spriker.
+	</p>
+	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitTypical} /></div>
+	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitHighProtein} /></div>
+	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitUnaccounted} /></div>
 
 </section>
 

@@ -13,15 +13,24 @@
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import { weeklyWeightTrend, type EnergyBalance } from '$lib/domain/nutrition/energy-balance';
 	import type { BodyComposition, CompositionChange } from '$lib/domain/health/body-composition';
+	import type { ExpenditureBreakdown } from '$lib/domain/nutrition/expenditure-breakdown';
 
 	interface Props {
 		balance: EnergyBalance | null;
 		composition: BodyComposition | null;
 		compositionChange: CompositionChange | null;
 		compositionDate: string | null;
+		/** Hva «forbrent» består av. Null når Withings ikke har levert dagen. */
+		expenditure?: ExpenditureBreakdown | null;
 	}
 
-	let { balance, composition, compositionChange, compositionDate }: Props = $props();
+	let {
+		balance,
+		composition,
+		compositionChange,
+		compositionDate,
+		expenditure = null
+	}: Props = $props();
 
 	function nb(value: number, decimals = 0): string {
 		return value.toFixed(decimals).replace('.', ',');
@@ -59,6 +68,25 @@
 					<span class="label">Forbrent</span>
 					<span class="value">{balance.expenditureKcal.toLocaleString('nb-NO')} kcal</span>
 				</div>
+				{#if expenditure && expenditure.basalKcal !== null}
+					<p class="breakdown">
+						Hvile ~{expenditure.basalKcal.toLocaleString('nb-NO')}
+						{#if expenditure.activityKcal !== null}
+							+ aktivitet {expenditure.activityKcal.toLocaleString('nb-NO')}
+						{/if}
+						· fra Withings
+					</p>
+				{/if}
+
+				{#if expenditure && !expenditure.reconciles && expenditure.impliedKcal !== null}
+					<p class="breakdown breakdown--warn">
+						Withings' egne tall spriker i dag: delene summerer til
+						{expenditure.impliedKcal.toLocaleString('nb-NO')} kcal, men totalen oppgis som
+						{expenditure.reportedKcal.toLocaleString('nb-NO')}. Feltene oppdateres
+						retroaktivt gjennom dagen, så tallet er i bevegelse.
+					</p>
+				{/if}
+
 				<div class="row row--total" class:is-deficit={balance.balanceKcal < 0}>
 					<span class="label">
 						{balance.balanceKcal < 0 ? 'Underskudd' : balance.balanceKcal > 0 ? 'Overskudd' : 'Balanse'}
@@ -134,6 +162,17 @@
 {/if}
 
 <style>
+	.breakdown {
+		margin: -2px 0 2px;
+		font-size: 0.7rem;
+		line-height: 1.5;
+		color: var(--text-tertiary, #777);
+	}
+
+	.breakdown--warn {
+		color: #f0b429;
+	}
+
 	.balance {
 		display: flex;
 		flex-direction: column;

@@ -227,6 +227,15 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   LLM-gjetning på «knekkebrød» spriker fra 25 til 90 kcal.
 - `metrics.nutrition` i aggregatene er **spist**; `metrics.calories` er **forbrent** fra
   Withings. Ikke bland dem.
+- **Makroer vises som andel av energi, ikke gram.** Fett har 9 kcal/g mot 4 —
+  «mest gram» og «mest energi» er ulike spørsmål, og på en typisk dag er svaret ulikt.
+  `macroEnergySplit` regner andelene av makro-energien (summerer til 100 %) og bærer
+  differansen mot det loggede kcal-tallet i `unaccountedKcal`.
+- **«Forbrent» er ikke en fasit.** Withings' `totalCalories` og `calories` kan sprike
+  på en delvis dag: 3. august ga 1 460 aktivitet + ~1 958 hvile = 3 418 mot en oppgitt
+  total på 2 763. `describeExpenditure` viser komponentene og flagger sprik over 150 kcal.
+  Enheten krediterte dessuten 52 min el-sykkel med 1 460 kcal (28 kcal/min) — vår
+  effort-modell vekter `ebike` ned, energibalansen gjør det ikke.
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.

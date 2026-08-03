@@ -1668,6 +1668,34 @@ export const vo2maxMeasured = {
 	bestAt: '2026-08-01T06:20:00.000Z'
 };
 
+/* ── Ernæring: makrofordeling ───────────────────────────── */
+
+import { macroEnergySplit } from '$lib/domain/nutrition/macro-split';
+
+/** Tallene fra 3. august: fett har minst gram og mest energi. */
+export const macroSplitTypical = macroEnergySplit({
+	kcal: 634,
+	proteinG: 31.2,
+	carbsG: 50.9,
+	fatG: 32.1
+});
+
+/** Proteinrik dag — samme komponent, helt annen form. */
+export const macroSplitHighProtein = macroEnergySplit({
+	kcal: 1850,
+	proteinG: 160,
+	carbsG: 140,
+	fatG: 55
+});
+
+/** Stort avvik mellom makroene og kcal-tallet → kortet forklarer det. */
+export const macroSplitUnaccounted = macroEnergySplit({
+	kcal: 1000,
+	proteinG: 20,
+	carbsG: 50,
+	fatG: 20
+});
+
 /* ── Søvn: hjerterytmevariasjon ─────────────────────────── */
 
 export const hrvNormal = {

@@ -56,6 +56,7 @@
 		composition={data.composition}
 		compositionChange={data.compositionChange}
 		compositionDate={data.compositionDate}
+		expenditure={data.expenditureBreakdown ?? null}
 	/>
 
 	<section class="nutrition-source">

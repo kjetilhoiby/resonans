@@ -8,6 +8,8 @@ import { averagePerLoggedDay, osloDateKey, summarizeDay } from '$lib/domain/nutr
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
 import { loadNutritionTargets } from '$lib/server/nutrition/targets';
+import { loadExpenditureContext } from '$lib/server/nutrition/expenditure';
+import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
 import { sensorEvents } from '$lib/db/schema';
 import { gte } from 'drizzle-orm';
@@ -66,6 +68,18 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		weight,
 		targets,
 		today: todaySummary,
+		/**
+		 * Hva «forbrent» består av. Ett tall kan ikke etterprøves, og 3. august ga
+		 * Withings komponenter som ikke summerte til sin egen total.
+		 */
+		expenditureBreakdown:
+			withings.expenditureKcal === null
+				? null
+				: describeExpenditure({
+						reportedKcal: withings.expenditureKcal,
+						activityKcal: withings.activityKcal,
+						basalKcal: withings.basalKcal
+					}),
 		/** Spist mot forbrent. Null når én av sidene mangler — se computeEnergyBalance. */
 		energyBalance: computeEnergyBalance({
 			intakeKcal: todaySummary.totals.kcal,
@@ -95,17 +109,7 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 async function loadWithingsContext(userId: string, todayKey: string) {
 	const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 
-	const [activityRows, weightRows] = await Promise.all([
-		db.query.sensorEvents.findMany({
-			columns: { timestamp: true, data: true },
-			where: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'activity'),
-				gte(sensorEvents.timestamp, since)
-			),
-			orderBy: [desc(sensorEvents.timestamp)],
-			limit: 70
-		}),
+	const [weightRows] = await Promise.all([
 		db.query.sensorEvents.findMany({
 			columns: { timestamp: true, data: true },
 			where: and(
@@ -118,15 +122,10 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 		})
 	]);
 
-	// Aktivitetsraden er datert til UTC-midnatt for brukerens lokale dag, så
-	// dagsnøkkelen sammenlignes direkte.
-	const todayActivity = activityRows.find(
-		(row) => row.timestamp.toISOString().slice(0, 10) === todayKey
-	);
-	const expenditureKcal =
-		typeof (todayActivity?.data as { totalCalories?: unknown })?.totalCalories === 'number'
-			? ((todayActivity!.data as { totalCalories: number }).totalCalories)
-			: null;
+	// Forbruket leses gjennom den delte loaderen, som også gir komponentene og en
+	// utledet hvileforbrenning. Duplisert her ville valget mellom `calories` og
+	// `totalCalories` bodd på to steder.
+	const expenditure = await loadExpenditureContext(userId, todayKey);
 
 	const compositions = weightRows.flatMap((row) => {
 		const data = (row.data ?? {}) as Record<string, unknown>;
@@ -154,7 +153,9 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 	const oldest = compositions.length > 1 ? compositions[compositions.length - 1] : null;
 
 	return {
-		expenditureKcal,
+		expenditureKcal: expenditure.totalKcal,
+		activityKcal: expenditure.activityKcal,
+		basalKcal: expenditure.basalKcal,
 		composition: latest?.composition ?? null,
 		compositionDate: latest?.at ?? null,
 		compositionChange: latest && oldest ? describeCompositionChange(oldest, latest) : null

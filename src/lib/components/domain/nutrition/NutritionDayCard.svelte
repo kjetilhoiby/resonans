@@ -8,6 +8,8 @@
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import NutritionEntryRow from './NutritionEntryRow.svelte';
 	import { groupBySlot, type DaySummary } from '$lib/domain/nutrition/day-summary';
+	import MacroSplitBar from './MacroSplitBar.svelte';
+	import { macroEnergySplit } from '$lib/domain/nutrition/macro-split';
 	import { mealSlotMeta } from '$lib/domain/nutrition/meal-slots';
 
 	interface Props {
@@ -31,6 +33,11 @@
 	}
 
 	const slotGroups = $derived(groupBySlot(day.entries));
+	/**
+	 * Gram er ikke sammenlignbare — fett har 9 kcal/g mot 4 for de to andre. Uten
+	 * denne stolpen ser fett minst ut i talltilene og er største energikilde.
+	 */
+	const macroSplit = $derived(macroEnergySplit(day.totals));
 </script>
 
 <section class="day">
@@ -60,6 +67,8 @@
 			<span class="total-unit">g fett</span>
 		</div>
 	</div>
+
+	<MacroSplitBar split={macroSplit} />
 
 	{#if day.kcalShare != null || day.proteinShare != null}
 		<div class="bars">
