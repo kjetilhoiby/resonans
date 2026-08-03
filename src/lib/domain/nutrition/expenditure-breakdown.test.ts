@@ -46,6 +46,22 @@ describe('describeExpenditure', () => {
 	// Hvileforbrenningen utledet fra de rene dagene.
 	const BASAL = 1958;
 
+	it('holder splitten tilbake på en delvis dag', () => {
+		// Totalen vokste 405 kcal på nitti minutter uten aktivitet — enheten
+		// reviderer dagen retroaktivt. Å trekke et helt døgns hvile fra en delvis
+		// total ville gitt et aktivitetstall som ikke betyr noe.
+		const partial = describeExpenditure({
+			totalKcal: 3168,
+			reportedActivityKcal: 1474,
+			basalKcal: 1953,
+			partialDay: true
+		});
+		expect(partial.partialDay).toBe(true);
+		expect(partial.activityKcal).toBeNull();
+		expect(partial.activityFieldSuspect).toBe(false);
+		expect(partial.totalKcal).toBe(3168);
+	});
+
 	it('utleder aktiviteten fra totalen, ikke fra calories-feltet', () => {
 		// 3. august: totalen minus hvile gir 805, som er nettopp hva øktene tilsier
 		// (698 fra Withings' egne økt-tall pluss 2 378 skritt). calories-feltet sa

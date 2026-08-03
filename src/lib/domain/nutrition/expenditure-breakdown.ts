@@ -36,6 +36,17 @@
  * svikter.** Aktiviteten utledes derfor som `totalCalories − basal`, ikke fra
  * `calories`. Sistnevnte beholdes som kryssjekk: spriker den, er det et
  * datakvalitetssignal om enheten, ikke en grunn til å mistro totalen.
+ *
+ * ## Midt på dagen betyr splitten lite
+ *
+ * Tabellen over gjelder **komplette** dager. Målt kl. 15:57 var `totalCalories`
+ * 2 763; kl. 17:24 var den 3 168 — 405 kcal på nitti minutter uten aktivitet, altså
+ * langt over hvilestoffskiftets ~80 kcal i timen. Enheten reviderer dagen
+ * retroaktivt, og vi kjenner ikke om tallet er «så langt» eller et døgnanslag.
+ *
+ * Å trekke et helt døgns hvileforbrenning fra en delvis total er derfor
+ * meningsløst, og `partialDay` gjør at splitten holdes tilbake framfor å vises som
+ * om den var etterprøvbar.
  */
 
 /** Hvor stort avvik vi godtar før komponentene kalles uenige. */
@@ -91,6 +102,12 @@ export interface ExpenditureBreakdown {
 	activityFieldDeviationKcal: number | null;
 	/** Sant når `calories`-feltet ikke stemmer med resten av dagen. */
 	activityFieldSuspect: boolean;
+	/**
+	 * Sant når dagen ikke er omme. Da er splitten ikke etterprøvbar — enheten
+	 * reviderer tallet gjennom døgnet — og flaten skal ikke sammenligne den med et
+	 * døgnanslag.
+	 */
+	partialDay: boolean;
 }
 
 export function describeExpenditure(input: {
@@ -100,10 +117,16 @@ export function describeExpenditure(input: {
 	basalKcal: number | null;
 	/** Summen av dagens økter, hvis kjent. */
 	workoutKcal?: number | null;
+	/** Dagen er ikke omme. Standard false, altså komplett døgn. */
+	partialDay?: boolean;
 }): ExpenditureBreakdown {
 	const { totalKcal, reportedActivityKcal, basalKcal } = input;
+	const partialDay = input.partialDay ?? false;
 
-	const activityKcal = basalKcal === null ? null : Math.round(totalKcal - basalKcal);
+	// På en delvis dag har totalen ikke samlet opp et helt døgns hvileforbrenning,
+	// så differansen er ikke aktivitet. Da oppgis den ikke.
+	const activityKcal =
+		basalKcal === null || partialDay ? null : Math.round(totalKcal - basalKcal);
 	const activityFieldDeviationKcal =
 		activityKcal === null || reportedActivityKcal === null
 			? null
@@ -116,6 +139,7 @@ export function describeExpenditure(input: {
 		reportedActivityKcal:
 			reportedActivityKcal === null ? null : Math.round(reportedActivityKcal),
 		workoutKcal: input.workoutKcal ?? null,
+		partialDay,
 		activityFieldDeviationKcal,
 		// Mangler grunnlaget, påstår vi ingenting. Ukjent er ikke det samme som feil.
 		activityFieldSuspect:

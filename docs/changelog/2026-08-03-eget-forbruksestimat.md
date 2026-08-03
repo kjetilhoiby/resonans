@@ -103,9 +103,42 @@ stilles opp mot et fra en svart boks — og at spriket er informasjon.
 - Tallene fra 3. august ligger som testdata: at de to el-sykkelturene havner mellom
   230 og 330 kcal, og under en fjerdedel av Withings' 1 460.
 
-**Ikke verifisert:** estimatet på ekte data. Kroppsprofilen er ikke satt ennå, så
-kortet sier nå hva som mangler. Sett høyde, fødselsår og kjønn via
-`PUT /api/helse/profil`, og tallet dukker opp ved siden av Withings'.
+### 5. Etterspill: de to metodene er enige om hvileforbrenningen
+
+Med brukerens faktiske tall — mann, 187 cm, født 1984, ~100,1 kg:
+
+| Metode | Hvileforbrenning |
+|---|---|
+| Mifflin-St Jeor (vår) | **1 964** |
+| `totalCalories − calories` over rene dager (Withings) | **1 953** |
+
+**11 kcal fra hverandre**, fra to helt uavhengige veier. Det er den sterkeste
+bekreftelsen noen av dem kunne fått, og det gjør basalen til den delen av
+regnestykket man kan stole på.
+
+Vårt døgnanslag for 3. august: 2 455 (baseline) + 316 (52 min el-sykkel) + 14 (yoga)
+= **2 786 kcal**. Withings oppga 3 168 kl. 17:24.
+
+**Og vekttrenden avgjør resten.** Månedssnitt: juni 101,58 → juli 99,95 → august
+100,06. Altså 1,53 kg ned over ~61 dager, som er **193 kcal underskudd per dag** —
+ikke 1 729. Med et forbruk rundt 2 786 betyr det et faktisk inntak nær 2 590, mens
+loggen sto på 1 439. Avviket ligger på inntakssiden.
+
+### 6. Retting: splitten holdes tilbake midt på dagen
+
+`totalCalories` var 2 763 kl. 15:57 og 3 168 kl. 17:24 — 405 kcal på nitti minutter
+uten aktivitet, mot hvilestoffskiftets ~80 i timen. Enheten reviderer dagen
+retroaktivt, og vi vet ikke om tallet er «så langt» eller et døgnanslag.
+
+Å trekke et helt døgns hvileforbrenning fra en delvis total er derfor meningsløst.
+`partialDay` gjør at splitten holdes tilbake, og differansen mot vårt eget anslag
+vises bare på en komplett dag — ellers ville en formiddag blitt sammenlignet med et
+døgn.
+
+## Verifisert mot ekte data
+
+De to hvileforbrenningene over er regnet fra prod: brukerens profil mot fire dagers
+Withings-rader.
 
 **Gjenstår:** ingen UI for å sette profilen — bare endepunktet. Et felt i
 terskelarket er det naturlige stedet.

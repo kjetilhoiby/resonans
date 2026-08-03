@@ -43,9 +43,17 @@
 		ownExpenditureMissing = []
 	}: Props = $props();
 
-	/** Hvor langt fra hverandre de to estimatene ligger. */
+	/**
+	 * Differansen mellom de to anslagene, men bare på en komplett dag.
+	 *
+	 * Vårt anslag gjelder hele døgnet; Withings' tall midt på dagen gjør ikke det, og
+	 * enheten reviderer det dessuten retroaktivt. Å vise en differanse kl. 17 ville
+	 * sammenlignet et døgn med en formiddag.
+	 */
 	const gapKcal = $derived(
-		ownExpenditure && balance ? ownExpenditure.totalKcal - balance.expenditureKcal : null
+		ownExpenditure && balance && expenditure && !expenditure.partialDay
+			? ownExpenditure.totalKcal - balance.expenditureKcal
+			: null
 	);
 
 	function nb(value: number, decimals = 0): string {
@@ -84,7 +92,7 @@
 					<span class="label">Forbrent</span>
 					<span class="value">{balance.expenditureKcal.toLocaleString('nb-NO')} kcal</span>
 				</div>
-				{#if expenditure && expenditure.basalKcal !== null && expenditure.activityKcal !== null}
+				{#if expenditure && expenditure.activityKcal !== null && expenditure.basalKcal !== null}
 					<p class="breakdown">
 						Hvile ~{expenditure.basalKcal.toLocaleString('nb-NO')} + aktivitet
 						{expenditure.activityKcal.toLocaleString('nb-NO')}
@@ -92,11 +100,16 @@
 							· økter {expenditure.workoutKcal.toLocaleString('nb-NO')}
 						{/if}
 					</p>
+				{:else if expenditure?.workoutKcal !== null && expenditure?.workoutKcal !== undefined}
+					<p class="breakdown">
+						Withings' tall, revidert gjennom døgnet. Øktene deres summerer til
+						{expenditure.workoutKcal.toLocaleString('nb-NO')} kcal.
+					</p>
 				{/if}
 
 				{#if ownExpenditure}
 					<p class="breakdown">
-						Vårt eget anslag: {ownExpenditure.totalKcal.toLocaleString('nb-NO')} kcal
+						Vårt eget anslag for hele dagen: {ownExpenditure.totalKcal.toLocaleString('nb-NO')} kcal
 						(hvile {ownExpenditure.basalKcal.toLocaleString('nb-NO')} × kontorhverdag, pluss
 						{ownExpenditure.workoutKcal.toLocaleString('nb-NO')} fra
 						{ownExpenditure.workouts.length}

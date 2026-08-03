@@ -86,7 +86,9 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 						totalKcal: withings.expenditureKcal,
 						reportedActivityKcal: withings.activityKcal,
 						basalKcal: withings.basalKcal,
-						workoutKcal: withings.workoutKcal
+						workoutKcal: withings.workoutKcal,
+						// Dagen er alltid delvis her: flaten viser i dag.
+						partialDay: true
 					}),
 		/**
 		 * Vårt eget forbruksestimat, uavhengig av Withings. Null når kroppsprofilen

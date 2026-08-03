@@ -250,6 +250,12 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   samme minuttene. `e_bike` er 4,5 MET mot syklingens 7; løping skaleres med farten.
   Krever kroppsprofil i `metricSettings.profile` (`PUT /api/helse/profil`) — uten den
   returneres null framfor et gjettet tall.
+  **De to metodene er enige om hvilen:** Mifflin-St Jeor ga 1 964 og
+  `totalCalories − calories` over rene dager ga 1 953. Basalen er altså den delen av
+  regnestykket man kan stole på.
+- **Withings reviderer dagen retroaktivt.** `totalCalories` vokste 405 kcal på nitti
+  minutter uten aktivitet. Splitten hvile/aktivitet oppgis derfor bare for **komplette**
+  døgn (`partialDay`), og differansen mot vårt eget døgnanslag vises bare da.
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.
