@@ -2017,6 +2017,10 @@ export const sensorEvents = pgTable('sensor_events', {
 		confidence?: number;
 		imageUrl?: string;
 		estimateSource?: 'text' | 'vision' | 'vision+text' | 'manual';
+		/** Måltidsslot, se $lib/domain/nutrition/meal-slots. */
+		mealSlot?: 'frokost' | 'lunsj' | 'middag' | 'kvelds' | 'snacks';
+		/** 'derived' = utledet fra klokka ved logging, 'user' = valgt selv. */
+		mealSlotSource?: 'derived' | 'user';
 		/** Brukerens egne beskrivelser, i rekkefølge. Første er den opprinnelige. */
 		descriptions?: string[];
 		/** Sann når brukeren har rettet tallene selv — da skal de ikke overskrives. */

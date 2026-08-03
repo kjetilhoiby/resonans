@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	averagePerLoggedDay,
 	groupByDay,
+	groupBySlot,
 	osloDateKey,
 	osloTimeLabel,
 	summarizeDay,
@@ -17,6 +18,8 @@ function entry(overrides: Partial<LoggedEntry> = {}): LoggedEntry {
 		macros: { kcal: 158, proteinG: 8.9, carbsG: 13.6, fatG: 6.5 },
 		confidence: 0.8,
 		imageUrl: null,
+		mealSlot: 'lunsj',
+		mealSlotSource: 'derived',
 		...overrides
 	};
 }
@@ -170,5 +173,63 @@ describe('averagePerLoggedDay', () => {
 			loggedDays: 0,
 			perDay: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 }
 		});
+	});
+});
+
+
+describe('groupBySlot', () => {
+	it('grupperer i MEAL_SLOTS-rekkefølge, ikke i loggerekkefølge', () => {
+		const groups = groupBySlot([
+			entry({ id: 'middag', mealSlot: 'middag' }),
+			entry({ id: 'frokost', mealSlot: 'frokost' }),
+			entry({ id: 'lunsj', mealSlot: 'lunsj' })
+		]);
+		expect(groups.map((g) => g.slot)).toEqual(['frokost', 'lunsj', 'middag']);
+	});
+
+	it('summerer hver slot', () => {
+		const groups = groupBySlot([
+			entry({ id: 'a', mealSlot: 'lunsj', macros: { kcal: 300, proteinG: 20, carbsG: 0, fatG: 0 } }),
+			entry({ id: 'b', mealSlot: 'lunsj', macros: { kcal: 200, proteinG: 10, carbsG: 0, fatG: 0 } })
+		]);
+		expect(groups).toHaveLength(1);
+		expect(groups[0].totals.kcal).toBe(500);
+		expect(groups[0].totals.proteinG).toBe(30);
+	});
+
+	it('viser bare slots som har noe', () => {
+		// En tom «Snacks»-overskrift hver dag er støy.
+		const groups = groupBySlot([entry({ mealSlot: 'frokost' })]);
+		expect(groups.map((g) => g.slot)).toEqual(['frokost']);
+	});
+
+	it('sorterer innslagene i hver slot kronologisk', () => {
+		const groups = groupBySlot([
+			entry({ id: 'sen', mealSlot: 'lunsj', timestamp: '2026-08-02T11:00:00.000Z' }),
+			entry({ id: 'tidlig', mealSlot: 'lunsj', timestamp: '2026-08-02T09:00:00.000Z' })
+		]);
+		expect(groups[0].entries.map((e) => e.id)).toEqual(['tidlig', 'sen']);
+	});
+
+	it('samler rader uten slot til slutt framfor å skjule dem', () => {
+		// Rader logget før slots fantes skal fortsatt vises.
+		const groups = groupBySlot([
+			entry({ id: 'gammel', mealSlot: null, mealSlotSource: null }),
+			entry({ id: 'ny', mealSlot: 'middag' })
+		]);
+		expect(groups.map((g) => g.slot)).toEqual(['middag', null]);
+	});
+
+	it('muterer ikke inn-arrayen', () => {
+		const entries = [
+			entry({ id: 'sen', mealSlot: 'lunsj', timestamp: '2026-08-02T11:00:00.000Z' }),
+			entry({ id: 'tidlig', mealSlot: 'lunsj', timestamp: '2026-08-02T09:00:00.000Z' })
+		];
+		groupBySlot(entries);
+		expect(entries.map((e) => e.id)).toEqual(['sen', 'tidlig']);
+	});
+
+	it('gir tom liste for ingen innslag', () => {
+		expect(groupBySlot([])).toEqual([]);
 	});
 });

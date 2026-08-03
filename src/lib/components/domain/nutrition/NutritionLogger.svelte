@@ -17,6 +17,7 @@
 		describeItem,
 		type NutritionEstimate
 	} from '$lib/domain/nutrition/estimate';
+	import { MEAL_SLOTS, mealSlotForTime, type MealSlotId } from '$lib/domain/nutrition/meal-slots';
 
 	interface Props {
 		/** Kalles etter lagring, slik at flaten kan hente loggen på nytt. */
@@ -30,6 +31,29 @@
 	let imageUrl = $state<string | null>(null);
 	let estimate = $state<NutritionEstimate | null>(null);
 	let descriptions = $state<string[]>([]);
+
+	/**
+	 * Tidspunkt og slot, som «datetime-local»-streng i lokal tid.
+	 *
+	 * Spises kl. 11 og logges kl. 13 er normalen, ikke unntaket — så feltet er
+	 * synlig og forhåndsutfylt med nå, ikke gjemt bak en «endre»-knapp.
+	 */
+	let eatenAtLocal = $state(localInputValue(new Date()));
+	/** Null = følg klokka. Et valg her overstyrer og lagres som brukervalgt. */
+	let chosenSlot = $state<MealSlotId | null>(null);
+
+	function localInputValue(date: Date): string {
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+	}
+
+	const eatenAtDate = $derived.by(() => {
+		const parsed = new Date(eatenAtLocal);
+		return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+	});
+
+	/** Sloten som faktisk lagres: valgt hvis satt, ellers utledet fra klokka. */
+	const effectiveSlot = $derived<MealSlotId | null>(chosenSlot ?? mealSlotForTime(eatenAtDate));
 
 	let busy = $state(false);
 	let uploading = $state(false);
@@ -47,6 +71,8 @@
 		imageUrl = null;
 		estimate = null;
 		descriptions = [];
+		eatenAtLocal = localInputValue(new Date());
+		chosenSlot = null;
 		error = '';
 	}
 
@@ -134,7 +160,16 @@
 		saving = true;
 		error = '';
 		try {
-			await post('/api/helse/ernaering/logg', { estimate, imageUrl, descriptions });
+			await post('/api/helse/ernaering/logg', {
+				estimate,
+				imageUrl,
+				descriptions,
+				timestamp: eatenAtDate.toISOString(),
+				// Utelates når brukeren ikke har valgt: serveren utleder da fra klokka
+				// og merker sloten som 'derived', slik at den følger et senere
+				// tidspunkt-bytte.
+				...(chosenSlot ? { mealSlot: chosenSlot } : {})
+			});
 			reset();
 			onLogged?.();
 		} catch (err) {
@@ -295,6 +330,37 @@
 			{#if estimate.notes}
 				<p class="estimate-notes">{estimate.notes}</p>
 			{/if}
+
+			<div class="when">
+				<label class="when-time">
+					<span class="when-label">Spist</span>
+					<input
+						type="datetime-local"
+						bind:value={eatenAtLocal}
+						max={localInputValue(new Date())}
+						data-track="ernaering:rett-tidspunkt"
+					/>
+				</label>
+				<div class="slot-row" role="group" aria-label="Måltid">
+					{#each MEAL_SLOTS as slot (slot.id)}
+						<button
+							type="button"
+							class="slot"
+							class:is-active={effectiveSlot === slot.id}
+							class:is-derived={chosenSlot === null && effectiveSlot === slot.id}
+							aria-pressed={effectiveSlot === slot.id}
+							onclick={() => (chosenSlot = chosenSlot === slot.id ? null : slot.id)}
+							data-track={`ernaering:slot-${slot.id}`}
+						>
+							<span aria-hidden="true">{slot.emoji}</span>
+							{slot.label}
+						</button>
+					{/each}
+				</div>
+				{#if chosenSlot === null && effectiveSlot}
+					<p class="when-hint">Foreslått fra klokka. Trykk for å velge selv.</p>
+				{/if}
+			</div>
 
 			<div class="estimate-actions">
 				<button
@@ -508,6 +574,78 @@
 		font-size: 0.74rem;
 		line-height: 1.5;
 		color: #777;
+	}
+
+	.when {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding-top: 2px;
+	}
+
+	.when-time {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.when-label {
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #777;
+	}
+
+	.when-time input {
+		flex: 1;
+		min-width: 0;
+		padding: 7px 8px;
+		border-radius: 10px;
+		border: 1px solid #2a2a2a;
+		background: #0f0f0f;
+		color: #eee;
+		font: inherit;
+		font-size: 0.82rem;
+	}
+
+	/* Wrap framfor scroll: fem chips får ikke plass på 430 px, og en klippet
+	   «Snacks» ser ut som en feil framfor noe man kan bla til. */
+	.slot-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.slot {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 9px;
+		border-radius: 999px;
+		border: 1px solid #2a2a2a;
+		background: #0f0f0f;
+		color: #999;
+		font: inherit;
+		font-size: 0.74rem;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.slot.is-active {
+		border-color: #7c8ef5;
+		color: #eee;
+	}
+
+	/* Foreslått, ikke valgt: samme markering, men dempet, så det er tydelig at
+	   den kommer fra klokka og ikke fra brukeren. */
+	.slot.is-derived {
+		border-style: dashed;
+	}
+
+	.when-hint {
+		margin: 0;
+		font-size: 0.7rem;
+		color: #666;
 	}
 
 	.estimate-actions {

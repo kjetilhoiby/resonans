@@ -220,6 +220,11 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.
+- Måltidsslots (frokost/lunsj/middag/kvelds/snacks) i
+  `src/lib/domain/nutrition/meal-slots.ts` — et *tredje* slot-vokabular, fordi
+  `mealPlans.mealType` og egenfrekvens sine periode-slots mangler «kvelds». Sloten
+  utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
+  valgt, og det er den som avgjør om en tidsretting flytter sloten med.
 
 ### Transaksjons-kategorisering
 

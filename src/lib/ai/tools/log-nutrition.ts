@@ -3,6 +3,7 @@ import { listIntake, logIntake } from '$lib/server/nutrition/intake-log';
 import { invalidateNutritionAggregates } from '$lib/server/nutrition/aggregate-refresh';
 import { describeItem } from '$lib/domain/nutrition/estimate';
 import { osloDateKey, summarizeDay } from '$lib/domain/nutrition/day-summary';
+import { isMealSlotId, mealSlotForTime, MEAL_SLOT_IDS } from '$lib/domain/nutrition/meal-slots';
 
 /**
  * Logger et måltid fra chatten.
@@ -27,6 +28,10 @@ Ikke bruk for å planlegge måltid eller finne oppskrifter — da er find_recipe
 mat-temaet riktig. Ikke bruk for å SPØRRE om næringsinnhold uten å spise; det er
 bare et estimat, ikke en logg.
 
+Sier brukeren når de spiste («til lunsj», «kl. 11», «i går kveld»), send det med i
+eatenAt og/eller mealSlot. Utelater du dem, brukes tidspunktet nå og måltidet
+utledes fra klokka.
+
 Svaret inneholder dagens totalsum etterpå, og et oppfølgingsspørsmål hvis mengden
 måtte gjettes. Still det spørsmålet til brukeren.`,
 
@@ -40,12 +45,29 @@ måtte gjettes. Still det spørsmålet til brukeren.`,
 			imageUrl: {
 				type: 'string',
 				description: 'Cloudinary-URL til et bilde av måltidet, hvis brukeren har lastet opp ett.'
+			},
+			eatenAt: {
+				type: 'string',
+				description:
+					'ISO-tidspunkt for når måltidet ble spist, hvis brukeren oppgir et annet enn nå. Kan ikke være i framtiden.'
+			},
+			mealSlot: {
+				type: 'string',
+				enum: [...MEAL_SLOT_IDS],
+				description:
+					'Måltidet, hvis brukeren sier det. Utelates ellers — da utledes det fra klokka.'
 			}
 		},
 		required: ['description']
 	},
 
-	execute: async (args: { userId: string; description?: string; imageUrl?: string }) => {
+	execute: async (args: {
+		userId: string;
+		description?: string;
+		imageUrl?: string;
+		eatenAt?: string;
+		mealSlot?: string;
+	}) => {
 		if (!args.description?.trim() && !args.imageUrl) {
 			return { error: 'Trenger en beskrivelse av måltidet eller et bilde.' };
 		}
@@ -68,13 +90,22 @@ måtte gjettes. Still det spørsmålet til brukeren.`,
 			};
 		}
 
-		const timestamp = new Date();
+		// Bare bakover: et måltid i framtiden ville lagt seg i en periode som ikke
+		// er begynt, og dagssummene ville sluttet å stemme.
+		const parsedEatenAt = args.eatenAt ? new Date(args.eatenAt) : null;
+		const timestamp =
+			parsedEatenAt && !Number.isNaN(parsedEatenAt.getTime()) && parsedEatenAt <= new Date()
+				? parsedEatenAt
+				: new Date();
+
+		const slot = isMealSlotId(args.mealSlot) ? args.mealSlot : null;
 		const created = await logIntake({
 			userId: args.userId,
 			estimate,
 			timestamp,
 			imageUrl: args.imageUrl ?? null,
-			descriptions: args.description?.trim() ? [args.description.trim()] : []
+			descriptions: args.description?.trim() ? [args.description.trim()] : [],
+			mealSlot: slot
 		});
 
 		await invalidateNutritionAggregates(args.userId, timestamp).catch((err) =>
@@ -96,6 +127,8 @@ måtte gjettes. Still det spørsmålet til brukeren.`,
 			logged: {
 				id: created.id,
 				label: estimate.label,
+				eatenAt: created.timestamp,
+				mealSlot: slot ?? mealSlotForTime(timestamp),
 				items: estimate.items.map(describeItem),
 				macros: estimate.totals,
 				confidence: estimate.confidence

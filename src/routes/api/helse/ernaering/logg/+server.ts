@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { listIntake, logIntake } from '$lib/server/nutrition/intake-log';
 import { parseEstimateResponse } from '$lib/domain/nutrition/estimate';
+import { isMealSlotId } from '$lib/domain/nutrition/meal-slots';
 import { invalidateNutritionAggregates } from '$lib/server/nutrition/aggregate-refresh';
 
 /** Loggen for et vindu bakover. `days` er 1–90, standard 7. */
@@ -22,7 +23,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = (await request.json().catch(() => null)) as
-		| { estimate?: unknown; imageUrl?: string; descriptions?: string[]; timestamp?: string }
+		| {
+				estimate?: unknown;
+				imageUrl?: string;
+				descriptions?: string[];
+				timestamp?: string;
+				mealSlot?: string;
+		  }
 		| null;
 
 	if (!body?.estimate) {
@@ -49,7 +56,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		imageUrl: body.imageUrl ?? null,
 		descriptions: Array.isArray(body.descriptions)
 			? body.descriptions.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
-			: []
+			: [],
+		// Utelatt slot betyr «bruk klokka» — det er standarden, og loggIntake
+		// utleder den. En ukjent verdi ignoreres framfor å avvise lagringen.
+		mealSlot: isMealSlotId(body.mealSlot) ? body.mealSlot : null
 	});
 
 	// Dagens og ukas aggregater er nå utdaterte. Uten dette viser

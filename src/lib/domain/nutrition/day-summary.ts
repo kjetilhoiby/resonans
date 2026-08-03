@@ -6,6 +6,7 @@
  */
 
 import { addMacros, describeMacros, EMPTY_MACROS, roundMacros, type NutritionMacros } from './estimate';
+import { MEAL_SLOTS, type MealSlotId } from './meal-slots';
 
 export interface LoggedEntry {
 	id: string;
@@ -15,6 +16,10 @@ export interface LoggedEntry {
 	macros: NutritionMacros;
 	confidence: number;
 	imageUrl: string | null;
+	/** Frokost/lunsj/middag/kvelds/snacks. Null for rader logget før slots fantes. */
+	mealSlot: MealSlotId | null;
+	/** 'derived' = utledet fra klokka, 'user' = valgt selv. */
+	mealSlotSource: 'derived' | 'user' | null;
 }
 
 export interface NutritionTargets {
@@ -133,4 +138,40 @@ export function averagePerLoggedDay(entries: LoggedEntry[]): {
 			fatG: total.fatG / days.length
 		})
 	};
+}
+
+
+/**
+ * Dagen gruppert i måltidsslots, i MEAL_SLOTS-rekkefølge.
+ *
+ * Bare slots som har noe vises — en tom «Snacks»-overskrift hver dag er støy.
+ * Rader uten slot (logget før slots fantes) samles til slutt under `null`, slik
+ * at de ikke forsvinner fra visningen.
+ */
+export function groupBySlot(
+	entries: LoggedEntry[]
+): Array<{ slot: MealSlotId | null; entries: LoggedEntry[]; totals: NutritionMacros }> {
+	const bySlot = new Map<MealSlotId | null, LoggedEntry[]>();
+	for (const entry of entries) {
+		const key = entry.mealSlot ?? null;
+		const list = bySlot.get(key);
+		if (list) list.push(entry);
+		else bySlot.set(key, [entry]);
+	}
+
+	const groups: Array<{ slot: MealSlotId | null; entries: LoggedEntry[]; totals: NutritionMacros }> = [];
+	for (const meta of MEAL_SLOTS) {
+		const list = bySlot.get(meta.id);
+		if (!list?.length) continue;
+		const sorted = [...list].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		groups.push({ slot: meta.id, entries: sorted, totals: sumEntries(sorted) });
+	}
+
+	const unslotted = bySlot.get(null);
+	if (unslotted?.length) {
+		const sorted = [...unslotted].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		groups.push({ slot: null, entries: sorted, totals: sumEntries(sorted) });
+	}
+
+	return groups;
 }

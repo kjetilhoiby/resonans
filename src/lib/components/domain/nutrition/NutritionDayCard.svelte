@@ -6,9 +6,9 @@
 -->
 <script lang="ts">
 	import SectionLabel from '../../ui/SectionLabel.svelte';
-	import { extractApiErrorMessage } from '$lib/client/api-error';
-	import { confidenceLabel } from '$lib/domain/nutrition/estimate';
-	import { osloTimeLabel, type DaySummary } from '$lib/domain/nutrition/day-summary';
+	import NutritionEntryRow from './NutritionEntryRow.svelte';
+	import { groupBySlot, type DaySummary } from '$lib/domain/nutrition/day-summary';
+	import { mealSlotMeta } from '$lib/domain/nutrition/meal-slots';
 
 	interface Props {
 		day: DaySummary;
@@ -20,9 +20,6 @@
 
 	let { day, targets, average = null, onChanged }: Props = $props();
 
-	let deleting = $state<string | null>(null);
-	let error = $state('');
-
 	function nb(value: number): string {
 		return value.toLocaleString('nb-NO');
 	}
@@ -33,20 +30,7 @@
 		return `${Math.min(100, Math.round(share * 100))}%`;
 	}
 
-	async function remove(id: string) {
-		if (deleting) return;
-		deleting = id;
-		error = '';
-		try {
-			const res = await fetch(`/api/helse/ernaering/logg/${id}`, { method: 'DELETE' });
-			if (!res.ok) throw new Error(extractApiErrorMessage(res.status, await res.text()));
-			onChanged?.();
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		} finally {
-			deleting = null;
-		}
-	}
+	const slotGroups = $derived(groupBySlot(day.entries));
 </script>
 
 <section class="day">
@@ -100,35 +84,27 @@
 		</div>
 	{/if}
 
-	{#if day.entries.length > 0}
-		<ul class="entries">
-			{#each day.entries as entry (entry.id)}
-				<li class="entry">
-					{#if entry.imageUrl}
-						<img class="entry-thumb" src={entry.imageUrl} alt="" />
-					{/if}
-					<span class="entry-main">
-						<span class="entry-label">{entry.label}</span>
-						<span class="entry-meta">
-							{osloTimeLabel(entry.timestamp)} · {nb(entry.macros.kcal)} kcal · {nb(entry.macros.proteinG)} g protein
-							{#if entry.confidence > 0}
-								· {confidenceLabel(entry.confidence)} sikkerhet
-							{/if}
-						</span>
+	{#if slotGroups.length > 0}
+		{#each slotGroups as group (group.slot ?? 'uten')}
+			<div class="slot-group">
+				<div class="slot-head">
+					<span class="slot-name">
+						{#if group.slot}
+							<span aria-hidden="true">{mealSlotMeta(group.slot).emoji}</span>
+							{mealSlotMeta(group.slot).label}
+						{:else}
+							Uten måltid
+						{/if}
 					</span>
-					<button
-						type="button"
-						class="entry-remove"
-						aria-label={`Slett ${entry.label}`}
-						onclick={() => void remove(entry.id)}
-						disabled={deleting === entry.id}
-						data-track="ernaering:slett-maltid"
-					>
-						{deleting === entry.id ? '…' : '✕'}
-					</button>
-				</li>
-			{/each}
-		</ul>
+					<span class="slot-total">{nb(group.totals.kcal)} kcal</span>
+				</div>
+				<ul class="entries">
+					{#each group.entries as entry (entry.id)}
+						<NutritionEntryRow {entry} {onChanged} />
+					{/each}
+				</ul>
+			</div>
+		{/each}
 	{:else}
 		<p class="empty">Ingenting logget i dag ennå.</p>
 	{/if}
@@ -140,9 +116,6 @@
 		</p>
 	{/if}
 
-	{#if error}
-		<p class="error">{error}</p>
-	{/if}
 </section>
 
 <style>
@@ -241,6 +214,35 @@
 		color: #f0b429;
 	}
 
+	.slot-group {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.slot-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 0 2px;
+	}
+
+	.slot-name {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #888;
+	}
+
+	.slot-total {
+		font-size: 0.72rem;
+		color: #666;
+	}
+
 	.entries {
 		margin: 0;
 		padding: 0;
@@ -248,55 +250,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-	}
-
-	.entry {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 12px;
-		border-radius: 12px;
-		background: #141414;
-	}
-
-	.entry-thumb {
-		width: 36px;
-		height: 36px;
-		object-fit: cover;
-		border-radius: 8px;
-		flex-shrink: 0;
-	}
-
-	.entry-main {
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.entry-label {
-		font-size: 0.85rem;
-		color: #eee;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.entry-meta {
-		font-size: 0.7rem;
-		color: #777;
-	}
-
-	.entry-remove {
-		background: none;
-		border: none;
-		color: #666;
-		font: inherit;
-		font-size: 0.85rem;
-		padding: 4px 6px;
-		cursor: pointer;
-		flex-shrink: 0;
 	}
 
 	.empty,
@@ -309,12 +262,5 @@
 
 	.average-days {
 		color: #666;
-	}
-
-	.error {
-		margin: 0;
-		font-size: 0.78rem;
-		color: #e0776b;
-		overflow-wrap: anywhere;
 	}
 </style>

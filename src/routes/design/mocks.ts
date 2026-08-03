@@ -1574,6 +1574,8 @@ export const healthSignals: PresentedSignal[] = [
 const nutritionEntries: LoggedEntry[] = [
 	{
 		id: 'n1',
+		mealSlot: 'frokost' as const,
+		mealSlotSource: 'derived' as const,
 		timestamp: '2026-08-02T05:40:00.000Z',
 		label: 'To knekkebrød med egg',
 		macros: { kcal: 158, proteinG: 8.9, carbsG: 13.6, fatG: 6.5 },
@@ -1582,6 +1584,8 @@ const nutritionEntries: LoggedEntry[] = [
 	},
 	{
 		id: 'n2',
+		mealSlot: 'lunsj' as const,
+		mealSlotSource: 'derived' as const,
 		timestamp: '2026-08-02T10:15:00.000Z',
 		label: 'Skyr med havregryn og banan',
 		macros: { kcal: 415, proteinG: 24, carbsG: 62, fatG: 6 },
@@ -1590,6 +1594,8 @@ const nutritionEntries: LoggedEntry[] = [
 	},
 	{
 		id: 'n3',
+		mealSlot: 'middag' as const,
+		mealSlotSource: 'derived' as const,
 		timestamp: '2026-08-02T16:30:00.000Z',
 		label: 'Laks med poteter og brokkoli',
 		macros: { kcal: 620, proteinG: 42, carbsG: 45, fatG: 28 },
