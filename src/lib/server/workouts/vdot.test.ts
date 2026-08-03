@@ -3,7 +3,8 @@ import {
 	vdotFromTime,
 	paceZonesForVdot,
 	estimateVdotFromBestEfforts,
-	vdotFromCooper
+	vdotFromCooper,
+	averagePaceSecPerKm
 } from './vdot';
 
 describe('vdotFromTime', () => {
@@ -111,5 +112,86 @@ describe('vdotFromCooper', () => {
 
 	it('short Cooper distance (<1500m) returns null', () => {
 		expect(vdotFromCooper(1000)).toBeNull();
+	});
+});
+
+describe('stigningsjustering', () => {
+	it('gir høyere VDOT for en motbakketur', () => {
+		// Beste 3k på 16:20. Flatt gir ett tall; stiger økta, tilsvarer samme
+		// innsats en raskere flat tid, og dermed en høyere VDOT.
+		const flat = estimateVdotFromBestEfforts({ '3k': 980 });
+		const uphill = estimateVdotFromBestEfforts(
+			{ '3k': 980 },
+			{ gapSecPerKm: 310, rawPaceSecPerKm: 340 }
+		);
+		expect(uphill!.vdot).toBeGreaterThan(flat!.vdot);
+		expect(uphill!.gradeAdjusted).toBe(true);
+		expect(flat!.gradeAdjusted).toBe(false);
+	});
+
+	it('gir lavere VDOT for en utforbakke', () => {
+		const flat = estimateVdotFromBestEfforts({ '5k': 1500 });
+		const downhill = estimateVdotFromBestEfforts(
+			{ '5k': 1500 },
+			{ gapSecPerKm: 320, rawPaceSecPerKm: 300 }
+		);
+		expect(downhill!.vdot).toBeLessThan(flat!.vdot);
+	});
+
+	it('avviser justeringer utenfor ±20 %', () => {
+		// Feil høydedata skal ikke kunne gange et dårlig tall opp.
+		const flat = estimateVdotFromBestEfforts({ '3k': 980 });
+		const absurd = estimateVdotFromBestEfforts(
+			{ '3k': 980 },
+			{ gapSecPerKm: 150, rawPaceSecPerKm: 340 }
+		);
+		expect(absurd!.vdot).toBe(flat!.vdot);
+		expect(absurd!.gradeAdjusted).toBe(false);
+	});
+
+	it('treffer grensene', () => {
+		const flat = estimateVdotFromBestEfforts({ '3k': 980 })!.vdot;
+		const atLimit = estimateVdotFromBestEfforts(
+			{ '3k': 980 },
+			{ gapSecPerKm: 80, rawPaceSecPerKm: 100 }
+		);
+		expect(atLimit!.gradeAdjusted).toBe(true);
+		const justOutside = estimateVdotFromBestEfforts(
+			{ '3k': 980 },
+			{ gapSecPerKm: 79, rawPaceSecPerKm: 100 }
+		);
+		expect(justOutside!.vdot).toBe(flat);
+	});
+
+	it('ignorerer tull uten å kaste', () => {
+		const flat = estimateVdotFromBestEfforts({ '3k': 980 })!.vdot;
+		for (const grade of [
+			null,
+			undefined,
+			{ gapSecPerKm: 0, rawPaceSecPerKm: 340 },
+			{ gapSecPerKm: 310, rawPaceSecPerKm: 0 },
+			{ gapSecPerKm: Number.NaN, rawPaceSecPerKm: 340 }
+		]) {
+			expect(estimateVdotFromBestEfforts({ '3k': 980 }, grade as never)!.vdot).toBe(flat);
+		}
+	});
+
+	it('beholder prioriteringen 10k > 5k > 3k', () => {
+		const result = estimateVdotFromBestEfforts({ '3k': 900, '5k': 1600, '10k': 3400 });
+		expect(result!.sourceDistance).toBe('10k');
+	});
+});
+
+describe('averagePaceSecPerKm', () => {
+	it('regner sek/km', () => {
+		expect(averagePaceSecPerKm(5000, 1550)).toBe(310);
+	});
+
+	it('gir null for manglende eller urimelige tall', () => {
+		expect(averagePaceSecPerKm(null, 1550)).toBeNull();
+		expect(averagePaceSecPerKm(5000, null)).toBeNull();
+		expect(averagePaceSecPerKm(0, 1550)).toBeNull();
+		expect(averagePaceSecPerKm(300, 100)).toBeNull();
+		expect(averagePaceSecPerKm(5000, 0)).toBeNull();
 	});
 });

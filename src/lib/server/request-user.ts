@@ -6,6 +6,7 @@ import { DEFAULT_USER_ID, ensureUser } from '$lib/server/users';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
+import { isUserHeaderTrusted } from '$lib/server/user-header-auth';
 
 export const USER_ID_HEADER_NAME = 'x-resonans-user-id';
 export const USER_ID_QUERY_PARAM = 'userId';
@@ -52,7 +53,14 @@ export async function resolveRequestUserId(event: RequestEvent): Promise<string>
 		}
 	}
 
-	const userIdFromHeader = sanitizeUserId(event.request.headers.get(USER_ID_HEADER_NAME));
+	// Samme gating som i authorizationHandle: en header uten hemmelighet er ikke
+	// bevis når vi er deployet.
+	const userIdFromHeader = isUserHeaderTrusted(event.request.headers, {
+		isDev: dev,
+		expectedSecret: env.RESONANS_HEADER_SECRET
+	})
+		? sanitizeUserId(event.request.headers.get(USER_ID_HEADER_NAME))
+		: null;
 	const userIdFromQuery = sanitizeUserId(event.url.searchParams.get(USER_ID_QUERY_PARAM));
 	const userIdFromCookie = sanitizeUserId(event.cookies.get(USER_ID_COOKIE_NAME));
 	const authConfigured = isGoogleAuthConfigured();

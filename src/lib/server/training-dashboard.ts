@@ -18,7 +18,7 @@ import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { mapDailyEffortSeries } from '$lib/domain/health/daily-effort';
 import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
 import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
-import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
+import { averagePaceSecPerKm, estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
@@ -73,7 +73,13 @@ async function loadVo2max(userId: string) {
 				eq(canonicalWorkouts.userId, userId),
 				gte(canonicalWorkouts.startTime, since)
 			),
-			columns: { startTime: true, bestEfforts: true }
+			columns: {
+			startTime: true,
+			bestEfforts: true,
+			distanceMeters: true,
+			durationSeconds: true,
+			gapSecPerKm: true
+		}
 		}),
 		db.query.sensorEvents.findMany({
 			where: and(
@@ -95,7 +101,17 @@ async function loadVo2max(userId: string) {
 
 	for (const run of runs) {
 		if (!run.bestEfforts) continue;
-		const estimate = estimateVdotFromBestEfforts(run.bestEfforts);
+		// Stigningsjustering: gapSecPerKm har ligget her hele tiden uten å bli brukt,
+		// og en fadende motbakketur gir ellers en VDOT som er for lav.
+		const rawPace = averagePaceSecPerKm(
+			run.distanceMeters ? Number(run.distanceMeters) : null,
+			run.durationSeconds ? Number(run.durationSeconds) : null
+		);
+		const gap = run.gapSecPerKm ? Number(run.gapSecPerKm) : null;
+		const estimate = estimateVdotFromBestEfforts(
+			run.bestEfforts,
+			gap !== null && rawPace !== null ? { gapSecPerKm: gap, rawPaceSecPerKm: rawPace } : null
+		);
 		if (!estimate) continue;
 		samples.push({
 			value: estimate.vdot,

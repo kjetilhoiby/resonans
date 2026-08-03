@@ -537,10 +537,13 @@
 
 	{#if healthDashboardProps}
 		<div class="health-dashboard-wrap">
+			<!-- Ikon-knapp: aria-label kreves, ellers logges klikket som «⚙». -->
 			<button
 				class="metric-settings-btn"
 				onclick={() => metricSettingsSheetOpen = true}
 				type="button"
+				aria-label="Terskelverdier"
+				data-track="tema-data:terskelverdier"
 				title="Konfigurer terskelverdier"
 			>⚙</button>
 			<HealthDashboard {...healthDashboardProps} />

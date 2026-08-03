@@ -79,25 +79,79 @@ export function paceZonesForVdot(vdot: number): DanielsPaces {
  * gir mer pålitelig estimat (mindre påvirket av sprintkapasitet), så vi
  * foretrekker 10k > 5k > 3k.
  */
-export function estimateVdotFromBestEfforts(efforts: {
-	'1k'?: number;
-	'3k'?: number;
-	'5k'?: number;
-	'10k'?: number;
-}): { vdot: number; sourceDistance: '3k' | '5k' | '10k' } | null {
-	if (typeof efforts['10k'] === 'number') {
-		const v = vdotFromTime(10000, efforts['10k']);
-		if (v != null) return { vdot: v, sourceDistance: '10k' };
-	}
-	if (typeof efforts['5k'] === 'number') {
-		const v = vdotFromTime(5000, efforts['5k']);
-		if (v != null) return { vdot: v, sourceDistance: '5k' };
-	}
-	if (typeof efforts['3k'] === 'number') {
-		const v = vdotFromTime(3000, efforts['3k']);
-		if (v != null) return { vdot: v, sourceDistance: '3k' };
+export function estimateVdotFromBestEfforts(
+	efforts: {
+		'1k'?: number;
+		'3k'?: number;
+		'5k'?: number;
+		'10k'?: number;
+	},
+	grade?: GradeAdjustment | null
+): { vdot: number; sourceDistance: '3k' | '5k' | '10k'; gradeAdjusted: boolean } | null {
+	const factor = gradeFactor(grade);
+	const adjust = (seconds: number) => seconds * factor;
+
+	const candidates: Array<[number, '3k' | '5k' | '10k']> = [
+		[10000, '10k'],
+		[5000, '5k'],
+		[3000, '3k']
+	];
+
+	for (const [meters, key] of candidates) {
+		const seconds = efforts[key];
+		if (typeof seconds !== 'number') continue;
+		const v = vdotFromTime(meters, adjust(seconds));
+		if (v != null) return { vdot: v, sourceDistance: key, gradeAdjusted: factor !== 1 };
 	}
 	return null;
+}
+
+/**
+ * Stigningsjustering av en øktbasert VDOT.
+ *
+ * `gapSecPerKm` (grade adjusted pace) er den pacen samme innsats ville gitt på
+ * flatmark, og ligger allerede på `canonical_workouts` uten at VDOT-stien har
+ * brukt den. Det er en målbar feilkilde: løpeturen 1. august stiger på siste
+ * kilometer, og en «beste 3k» derfra er tregere enn formen tilsier.
+ *
+ * Vi kjenner ikke stigningen for nettopp det 3k-strekket, bare for økta som
+ * helhet, så forholdet mellom justert og rå snittpace brukes som en enkel
+ * skalering. Grovt, men riktig retning — og bedre enn å late som terrenget var
+ * flatt.
+ */
+export interface GradeAdjustment {
+	/** Stigningsjustert snittpace for økta, sek/km. */
+	gapSecPerKm: number;
+	/** Faktisk snittpace for økta, sek/km. */
+	rawPaceSecPerKm: number;
+}
+
+/**
+ * Justeringen begrenses til ±20 %. Utenfor det er det mer sannsynlig at
+ * høydedataen eller distansen er feil enn at terrenget var så ekstremt, og en
+ * ukritisk skalering ville gjort et dårlig tall verre.
+ */
+export const MAX_GRADE_FACTOR = 1.2;
+export const MIN_GRADE_FACTOR = 0.8;
+
+function gradeFactor(grade?: GradeAdjustment | null): number {
+	if (!grade) return 1;
+	const { gapSecPerKm, rawPaceSecPerKm } = grade;
+	if (!Number.isFinite(gapSecPerKm) || !Number.isFinite(rawPaceSecPerKm)) return 1;
+	if (gapSecPerKm <= 0 || rawPaceSecPerKm <= 0) return 1;
+	const factor = gapSecPerKm / rawPaceSecPerKm;
+	if (factor < MIN_GRADE_FACTOR || factor > MAX_GRADE_FACTOR) return 1;
+	return factor;
+}
+
+/** Snittpace i sek/km, eller null når økta mangler tall. */
+export function averagePaceSecPerKm(
+	distanceMeters: number | null | undefined,
+	durationSeconds: number | null | undefined
+): number | null {
+	if (!distanceMeters || !durationSeconds) return null;
+	if (distanceMeters < 500 || durationSeconds <= 0) return null;
+	return durationSeconds / (distanceMeters / 1000);
 }
 
 /**

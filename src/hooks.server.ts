@@ -1,5 +1,6 @@
 import { sequence } from '@sveltejs/kit/hooks';
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
@@ -9,11 +10,17 @@ import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 import { isPublicPath } from '$lib/server/public-paths';
+import { headerAuthDiagnosis, isUserHeaderTrusted } from '$lib/server/user-header-auth';
 import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
 
 // Start scheduler when server starts
 if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
 	startScheduler();
+}
+
+/** Miljøet vakta trenger. Lest her, siden modulen selv holdes testbar. */
+function headerAuthContext() {
+	return { isDev: dev, expectedSecret: env.RESONANS_HEADER_SECRET };
 }
 
 const authorizationHandle: Handle = async ({ event, resolve }) => {
@@ -29,10 +36,13 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	// Allow requests that carry an explicit user-id header (e.g. curl / cron jobs)
-	if (event.request.headers.get('x-resonans-user-id')) {
+	// Headeren for curl og Playwright. Fritt lokalt, men deployet må den følges av
+	// x-resonans-secret — se user-header-auth.ts for hvorfor den ikke kunne stå åpen.
+	if (isUserHeaderTrusted(event.request.headers, headerAuthContext())) {
 		return resolve(event);
 	}
+	const headerProblem = headerAuthDiagnosis(event.request.headers, headerAuthContext());
+	if (headerProblem) console.warn(`${headerProblem} ${event.request.method} ${event.url.pathname}`);
 
 	const session = await event.locals.auth();
 	if (session?.user?.id) {

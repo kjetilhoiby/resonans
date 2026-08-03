@@ -113,3 +113,34 @@ test.describe('Design-system', () => {
 		}
 	});
 });
+
+/**
+ * Bottom sheets, åpnet på ekte.
+ *
+ * Ingen test har åpnet et ark før nå, og det er derfor
+ * `ThemeMetricSettingsSheet` kunne kaste på første render uten at noe ble rødt:
+ * `fields` ble bare fylt i en `$effect`, så `bind:value={f.goal}` traff
+ * `undefined` i det `{#if open}` rendret. Hele flaten så frisk ut i suiten.
+ *
+ * `toBeVisible()` er derfor den viktigste linja her — viktigere enn
+ * skjermbildet. Den ville fanget nettopp den buggen.
+ */
+test.describe('Bottom sheets', () => {
+	test('metrikk-innstillinger åpner og rendrer', async ({ page }) => {
+		const errors: string[] = [];
+		page.on('pageerror', (err) => errors.push(err.message));
+
+		await page.goto('/tema/helse');
+		await page.waitForLoadState('networkidle');
+
+		await page.getByRole('button', { name: 'Terskelverdier' }).click();
+
+		const sheet = page.getByRole('dialog', { name: 'Metrikk-innstillinger' });
+		await expect(sheet).toBeVisible();
+		// Feltene skal finnes ved første render, ikke først etter en effekt.
+		await expect(sheet.locator('input').first()).toBeVisible();
+		expect(errors, `konsollfeil ved åpning av arket: ${errors.join(' | ')}`).toHaveLength(0);
+
+		await expect(sheet).toHaveScreenshot('sheet-metrikk-innstillinger.png');
+	});
+});

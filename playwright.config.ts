@@ -14,6 +14,11 @@ export default defineConfig({
 		baseURL: 'http://localhost:5174',
 		extraHTTPHeaders: {
 			'x-resonans-user-id': '8e8b4aae-14f4-4e79-8fc3-ec5f37b0579d',
+			// Headeren godtas fritt mot en lokal dev-server. Peker man testene mot et
+			// deployet miljø, må hemmeligheten med — se user-header-auth.ts.
+			...(process.env.RESONANS_HEADER_SECRET
+				? { 'x-resonans-secret': process.env.RESONANS_HEADER_SECRET }
+				: {}),
 		},
 	},
 	webServer: {

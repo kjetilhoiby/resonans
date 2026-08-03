@@ -201,6 +201,10 @@ der. To feller:
 
 - **«ø» og «æ» dekomponeres ikke** av `normalize('NFD')` (bare «å» → «a»). Skriv termer med
   norske tegn, gjerne i begge varianter (`søvn`/`sovn`).
+- `api/tema/[id=uuid]` bruker en **ruteparameter-matcher** (`src/params/uuid.ts`): 37
+  endepunkter gjør `eq(themes.id, params.id)` mot en uuid-kolonne, og et ikke-uuid
+  segment ga 500 fra Postgres der svaret er 404. Sideruta `/tema/[id]` tar bevisst imot
+  navn (`/tema/helse`) og er derfor **ikke** dekket av matcheren.
 - `/api/health` er **eksakt match** i `PUBLIC_API_EXACT` (`src/lib/server/public-paths.ts`),
   ikke prefiks — så nye endepunkter under `/api/health/` får normal auth. Det var motsatt
   fram til 2026-08 og kostet tre bugs. Nye helse-endepunkter hører uansett under
@@ -280,11 +284,12 @@ Se `docs/changelog/2026-08-03-vo2max.md`.
   Oslo). Kallet er fortsatt separat, så et feil målingsnummer ikke kan velte vektsynken,
   og verdier utenfor 15–90 forkastes.
 - **Best-efforts-estimatet leser ~9 poeng lavere enn Withings' måling** for denne
-  brukeren: 33,7 mot 42,8 på samme økt. Årsaken er forutsetningen, ikke regnestykket —
-  VDOT antar maksimal innsats, og en fadende motbakketur er ikke det. Withings vinner
-  automatisk der den finnes (`pickVo2maxMetric` prioriterer kilde), men en uke uten
-  måling faller tilbake til estimatet og viser et fantomfall. `gapSecPerKm` finnes på
-  `canonical_workouts` og brukes *ikke* av VDOT-stien — det er den åpenbare forbedringen.
+  brukeren: 33,7 mot 42,8 på samme økt. To feilkilder. Terrenget er nå håndtert —
+  `estimateVdotFromBestEfforts` tar en `GradeAdjustment` fra `gapSecPerKm`, begrenset til
+  ±20 %. Den andre står igjen og kan ikke fikses med matematikk: **VDOT antar maksimal
+  innsats**, og brukeren racer ikke. Withings vinner automatisk der den finnes
+  (`pickVo2maxMetric` prioriterer kilde), men en uke uten måling faller tilbake til
+  estimatet og viser et fantomfall.
 
 ### Pulsfall (HR recovery)
 
@@ -328,6 +333,22 @@ Se `docs/changelog/2026-08-03-hr-recovery-diagnose.md`. Logikken i
   én som startet etter at fallet var i gang; sistnevnte er et gulv, og flaten skal si det.
 - Oslo-veggklokke → UTC for vilkårlig dato: `osloWallClockToUtc` i
   `$lib/domain/oslo-time.ts`. `todayAtLocalTime` i `sleep-goals` dekker bare i dag.
+
+### HRV (hjerterytmevariasjon)
+
+Se `docs/changelog/2026-08-03-losetrader.md`. Logikken i `$lib/domain/health/hrv.ts`.
+
+- **HRV ligger ikke i `getsummary`**, bare i `action=get` per dato. Derfor et eget
+  selvhelende steg (`syncSleepHrv`), ikke en del av søvnsynken.
+- **Retningen er motsatt av VO2max og pulsfall.** Der er *beste* observasjon riktig
+  fordi begge forutsetter maksimal innsats. HRV måles i søvn hver natt uten innsats, så
+  **siste natt** er tallet. «Beste HRV siste åtte uker» er meningsløst.
+- **Absoluttverdien vises aldri alene.** SDNN varierer for mye mellom folk, og det
+  finnes ingen normtabell. `pickHrvMetric` krever sju netter før den regner avvik og sier
+  `band: 'ukjent'` til da.
+- Nattas verdi er **medianen** over minuttmålingene: ett minutt med dårlig sensorfeste
+  ga ellers utslag. Nattnøkkelen er datoen du **våkner** (`nightKeyForTime`), ellers
+  ligger HRV-nettene forskjøvet fra nattlengdene de sammenlignes med.
 
 ### Søvnlogg
 
@@ -390,6 +411,11 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
+
+**Diagnosetilgang:** `RESONANS_HEADER_SECRET`. `x-resonans-user-id` godtas fritt lokalt,
+men **deployet må den følges av `x-resonans-secret`** som matcher denne. Uten variabelen
+satt avvises headeren i prod (fail closed) — se `$lib/server/user-header-auth.ts`. For
+langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 
