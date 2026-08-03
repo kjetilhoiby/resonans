@@ -275,9 +275,16 @@ Se `docs/changelog/2026-08-03-vo2max.md`.
 - **`vdotFromPaceAndHr` skal ikke skrives til vo2max-feltet.** Den er god på trend og
   dårlig på nivå: ±10 slag feil makspuls flytter tallet 3–4 poeng, og makspulsen vår er
   `Math.max(...)` av observerte topper. Bruk best-efforts-stien.
-- Withings' `meastype 123` er **ikke bekreftet** å være VO2max. Kallet er separat (så
-  det ikke kan velte vektsynken), logger rått, og forkaster verdier utenfor 15–90.
-  Søk etter `[vo2max]` i loggen.
+- Withings' `meastype 123` **er** «Treningsnivå»: vår lagrede 42,8 for
+  `2026-07-25T14:42:00Z` er samme minutt og samme tall som appen viser (43 kl. 16:42
+  Oslo). Kallet er fortsatt separat, så et feil målingsnummer ikke kan velte vektsynken,
+  og verdier utenfor 15–90 forkastes.
+- **Best-efforts-estimatet leser ~9 poeng lavere enn Withings' måling** for denne
+  brukeren: 33,7 mot 42,8 på samme økt. Årsaken er forutsetningen, ikke regnestykket —
+  VDOT antar maksimal innsats, og en fadende motbakketur er ikke det. Withings vinner
+  automatisk der den finnes (`pickVo2maxMetric` prioriterer kilde), men en uke uten
+  måling faller tilbake til estimatet og viser et fantomfall. `gapSecPerKm` finnes på
+  `canonical_workouts` og brukes *ikke* av VDOT-stien — det er den åpenbare forbedringen.
 
 ### Pulsfall (HR recovery)
 

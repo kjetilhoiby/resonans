@@ -511,14 +511,12 @@ export async function syncVo2maxData(
 		enddate
 	});
 
-	// Rå-logg av de første gruppene, slik at vi kan bekrefte hva 123 faktisk er.
-	// Fjernes når spørsmålet er avgjort.
-	if (data.length > 0) {
-		console.log(
-			`   [vo2max] ${data.length} måling(er) fra meastype ${WITHINGS_MEASTYPE_VO2MAX}. Første: ${JSON.stringify(data.slice(0, 2))}`
-		);
-	} else {
-		console.log(`   [vo2max] Ingen målinger fra meastype ${WITHINGS_MEASTYPE_VO2MAX} — enheten produserer det ikke.`);
+	// Meastype 123 er bekreftet å være Withings' «Treningsnivå»: vår lagrede verdi
+	// 42,8 for 2026-07-25T14:42:00Z er samme minutt og samme tall som appen viser
+	// (43 for 25.07.2026 16:42 Oslo). Rå-loggingen som sto her for å avgjøre det er
+	// derfor fjernet.
+	if (data.length === 0) {
+		console.log(`   [vo2max] Ingen målinger fra meastype ${WITHINGS_MEASTYPE_VO2MAX} i vinduet.`);
 		return 0;
 	}
 
@@ -528,7 +526,7 @@ export async function syncVo2maxData(
 		const value = measure.value * Math.pow(10, measure.unit);
 		if (!isPlausibleVo2max(value)) {
 			console.warn(
-				`   [vo2max] Forkastet verdi ${value} (rå: value=${measure.value} unit=${measure.unit}) — utenfor ${VO2MAX_MIN}–${VO2MAX_MAX} ml/kg/min. Er meastype ${WITHINGS_MEASTYPE_VO2MAX} noe annet enn VO2max?`
+				`   [vo2max] Forkastet verdi ${value} (rå: value=${measure.value} unit=${measure.unit}) — utenfor ${VO2MAX_MIN}–${VO2MAX_MAX} ml/kg/min.`
 			);
 			return [];
 		}
