@@ -224,6 +224,13 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.
+- **Chatten leser loggen med `query_nutrition`** (`$lib/ai/tools/query-nutrition.ts`),
+  skriver med `log_nutrition`. `query_food` er noe annet — den dekker oppskrifter, ukemeny
+  og lager. Dagsmål og forbruk leses gjennom `server/nutrition/targets.ts` og
+  `expenditure.ts`, så valget mellom `calories` og `totalCalories` bor på ett sted.
+- Sult-ord (`sulten`, `kalori`, `protein`, `spist`, …) ruter til **både** `health` og
+  `food` i `detectPromptFocusModules`. NB: mønsteret må si «sulten», ikke «sult» — den
+  substrengen ligger inni «resultat».
 - Måltidsslots (frokost/lunsj/middag/kvelds/snacks) i
   `src/lib/domain/nutrition/meal-slots.ts` — et *tredje* slot-vokabular, fordi
   `mealPlans.mealType` og egenfrekvens sine periode-slots mangler «kvelds». Sloten

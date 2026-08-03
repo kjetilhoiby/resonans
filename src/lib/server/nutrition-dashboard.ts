@@ -7,6 +7,7 @@ import { listIntake } from '$lib/server/nutrition/intake-log';
 import { averagePerLoggedDay, osloDateKey, summarizeDay } from '$lib/domain/nutrition/day-summary';
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
+import { loadNutritionTargets } from '$lib/server/nutrition/targets';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
 import { sensorEvents } from '$lib/db/schema';
 import { gte } from 'drizzle-orm';
@@ -158,24 +159,6 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 		compositionDate: latest?.at ?? null,
 		compositionChange: latest && oldest ? describeCompositionChange(oldest, latest) : null
 	};
-}
-
-/**
- * Dagsmål for kalorier og protein.
- *
- * Bor i `themes.metricSettings` på Helse-mortemaet, etter samme konvensjon som
- * søvnterskelen: tersklene er felles for helse-familien, og undertemaet leser
- * dem derfra i stedet for å ha sin egen tomme kopi.
- */
-async function loadNutritionTargets(userId: string): Promise<{ kcal: number | null; proteinG: number | null }> {
-	const parent = await findThemeByName(userId, HEALTH_PARENT_THEME_NAME);
-	const settings = (parent?.metricSettings ?? {}) as Record<string, unknown>;
-	const nutrition = (settings.nutrition ?? {}) as Record<string, unknown>;
-
-	const num = (value: unknown): number | null =>
-		typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
-
-	return { kcal: num(nutrition.kcalTarget), proteinG: num(nutrition.proteinTarget) };
 }
 
 /** Brukerens mat-tema, om det finnes. Navnet er ikke gitt, så vi matcher på kind. */

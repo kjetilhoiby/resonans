@@ -175,3 +175,44 @@ export function groupBySlot(
 
 	return groups;
 }
+
+export interface RemainingBudget {
+	/** Kcal igjen mot dagsmålet. Negativt betyr over. Null uten mål. */
+	kcalLeft: number | null;
+	/** Gram protein igjen mot dagsmålet. Null uten mål. */
+	proteinLeft: number | null;
+	/**
+	 * Kcal igjen mot **forbruket** så langt i dag, ikke mot et mål. Withings måler
+	 * hvileforbrenning + aktivitet, så dette er hvor mye man kunne spist for å gå i
+	 * null akkurat nå. Null når forbruket mangler.
+	 */
+	kcalToBalance: number | null;
+}
+
+/**
+ * Hva som er igjen av dagen.
+ *
+ * Tallene får være negative. «Du har spist 300 kcal for mye» er informasjon, og å
+ * klippe til null ville skjult nettopp det man spør om.
+ *
+ * NB på `kcalToBalance`: den er mot forbruket *så langt*, og forbruket vokser fram
+ * til midnatt. Klokka 15 er den derfor et strengere tall enn den blir kl. 22 — det
+ * må sies der den vises, ikke skjules her.
+ */
+export function remainingForDay(input: {
+	totals: NutritionMacros;
+	targets: NutritionTargets;
+	expenditureKcal?: number | null;
+}): RemainingBudget {
+	const { totals, targets, expenditureKcal } = input;
+
+	const kcalTarget = typeof targets.kcal === 'number' ? targets.kcal : null;
+	const proteinTarget = typeof targets.proteinG === 'number' ? targets.proteinG : null;
+	const burned = typeof expenditureKcal === 'number' ? expenditureKcal : null;
+
+	return {
+		kcalLeft: kcalTarget === null ? null : Math.round(kcalTarget - totals.kcal),
+		proteinLeft: proteinTarget === null ? null : Math.round(proteinTarget - totals.proteinG),
+		kcalToBalance: burned === null ? null : Math.round(burned - totals.kcal)
+	};
+}

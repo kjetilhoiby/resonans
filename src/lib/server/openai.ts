@@ -280,9 +280,18 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    const text = input.toLowerCase();
    const modules = new Set<PromptFocusModule>();
 
-   if (/sovn|søvn|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time/.test(text)) modules.add('health');
+   // `\bsov` dekker «sov», «sover», «sovet», «sovnet» — «hvor mye sov jeg i natt»
+   // traff ellers ingen modul, fordi mønsteret krevde substantivet «søvn».
+   if (/sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time/.test(text)) modules.add('health');
    if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
+   // Sult og inntak treffer BEGGE: loggen bor under Helse (Ernæring er undertema),
+   // mens forslag om hva man skal spise trenger lager og ukemeny fra food.
+   // NB: «sulten», ikke «sult» — sistnevnte ligger inni «resultat».
+   if (/sulten|sultne|\bsult\b|kalori|kcal|protein|ernæring|ernaering|mellommåltid|mellommaltid|snack|spist|spise|energibalanse/.test(text)) {
+      modules.add('health');
+      modules.add('food');
+   }
    if (/familie|barn|barna|barnet|partner|kone|mann|samboer|datter|sønn|son|svigerfam|svigermor|svigerfar|sviger|forelder|foreldre|svoger|svigerinne|onkel|tante|fetter|kusine|bestemor|bestefar|besteforeldre|barnebarn|familieliv/.test(text)) modules.add('family');
    if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker|identitet|verdier|selvfølelse|selvbilde|hvem er jeg|formål|meningsfull/.test(text)) modules.add('self');
    if (/\bjobb(?:e[nrt]?)?\b|karriere|arbeid(?:s|et|e)?\b|prosjekt|deadline|leveranse|sprint|standup|kolleg|teamet?\b|presentasjon|kunde|klient|backlog/.test(text)) modules.add('jobb');

@@ -41,6 +41,7 @@ import { manageFoodSettingsTool } from '$lib/ai/tools/manage-food-settings';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
+import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
 import {
 	createUserWidget,
 	findSimilarWidget,
@@ -1384,6 +1385,22 @@ const tools = [
 							servings: { type: 'number' }
 						},
 						required: ['imageUrl']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'query_nutrition',
+					description:
+						'Les ernæringsloggen — hva brukeren FAKTISK har spist, ikke oppskrifter eller lager (det er query_food). Kall denne før du gir råd om mat, sult eller kaloribudsjett; uten den gjetter du på tall som finnes. queryType today gir dagens logg per måltidsslot, summer, mål, hva som er igjen, og spist mot forbrent fra Withings. recent gir siste N dager. Forbrent-tallet vokser fram til midnatt, så et underskudd midt på dagen er strengere enn det blir om kvelden — si det hvis du bruker det.',
+					parameters: {
+						type: 'object',
+						properties: {
+							queryType: { type: 'string', enum: ['today', 'recent'] },
+							days: { type: 'number', description: 'Dager for recent (default 7, maks 30)' }
+						},
+						required: ['queryType']
 					}
 				}
 			},
@@ -2858,6 +2875,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🍽️ Analyze meal image');
 					const result = await analyzeMealImageTool.execute(args);
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_nutrition') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🥗 Query nutrition:', args.queryType);
+					const result = await queryNutritionTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_nutrition') {
 					const args = JSON.parse(toolCall.function.arguments);

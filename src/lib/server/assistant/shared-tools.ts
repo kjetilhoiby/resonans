@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AssistantTool } from './tools';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
+import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
 import { queryFamilyTool } from '$lib/ai/tools/query-family';
 import { queryHomeTool } from '$lib/ai/tools/query-home';
 import { queryProjectsTool } from '$lib/ai/tools/query-projects';
@@ -153,6 +154,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	// Spørringer
 	adaptSharedTool(queryEconomicsTool),
 	adaptSharedTool(queryFoodTool),
+	adaptSharedTool(queryNutritionTool),
 	adaptSharedTool(queryFamilyTool),
 	adaptSharedTool(queryHomeTool),
 	adaptSharedTool(queryProjectsTool),

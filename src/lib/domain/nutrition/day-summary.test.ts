@@ -6,6 +6,7 @@ import {
 	osloDateKey,
 	osloTimeLabel,
 	summarizeDay,
+	remainingForDay,
 	sumEntries,
 	type LoggedEntry
 } from './day-summary';
@@ -231,5 +232,44 @@ describe('groupBySlot', () => {
 
 	it('gir tom liste for ingen innslag', () => {
 		expect(groupBySlot([])).toEqual([]);
+	});
+});
+
+describe('remainingForDay', () => {
+	const totals = { kcal: 1439, proteinG: 85.7, carbsG: 148.9, fatG: 54.6 };
+
+	it('regner ut hva som er igjen mot målet', () => {
+		const left = remainingForDay({ totals, targets: { kcal: 2200, proteinG: 130 } });
+		expect(left.kcalLeft).toBe(761);
+		expect(left.proteinLeft).toBe(44);
+	});
+
+	it('regner mot forbruket, ikke bare mot målet', () => {
+		// Tallene fra 3. august: 1439 spist, 2763 forbrent kl. 17.
+		const left = remainingForDay({ totals, targets: {}, expenditureKcal: 2763 });
+		expect(left.kcalToBalance).toBe(1324);
+	});
+
+	it('lar tallene bli negative', () => {
+		// «300 for mye» er svaret man spør om; å klippe til null skjuler det.
+		const left = remainingForDay({
+			totals: { kcal: 2500, proteinG: 140, carbsG: 200, fatG: 90 },
+			targets: { kcal: 2200, proteinG: 130 },
+			expenditureKcal: 2000
+		});
+		expect(left.kcalLeft).toBe(-300);
+		expect(left.proteinLeft).toBe(-10);
+		expect(left.kcalToBalance).toBe(-500);
+	});
+
+	it('gir null der målet eller forbruket mangler', () => {
+		const none = remainingForDay({ totals, targets: {} });
+		expect(none.kcalLeft).toBeNull();
+		expect(none.proteinLeft).toBeNull();
+		expect(none.kcalToBalance).toBeNull();
+
+		const partial = remainingForDay({ totals, targets: { kcal: null, proteinG: 130 } });
+		expect(partial.kcalLeft).toBeNull();
+		expect(partial.proteinLeft).toBe(44);
 	});
 });
