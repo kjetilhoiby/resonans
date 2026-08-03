@@ -16,9 +16,11 @@ import {
 import { getRoutesWithEffort } from '$lib/server/tracks/routes-repository';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { mapDailyEffortSeries } from '$lib/domain/health/daily-effort';
+import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
+import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 import { db } from '$lib/db';
-import { sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 
 // Dekker 365d-vinduet i aktivitetslista.
 const WORKOUT_LOOKBACK_DAYS = 400;
@@ -41,6 +43,61 @@ async function loadDailyEffort(userId: string) {
 		limit: DAILY_EFFORT_DAYS
 	});
 	return mapDailyEffortSeries(rows);
+}
+
+// Rullende vindu for formgulvet. Åtte uker: langt nok til at en uke uten hard
+// løping ikke ser ut som et formfall, kort nok til at det fortsatt er «nå».
+const VO2MAX_WINDOW_DAYS = 56;
+
+/**
+ * VO2max: Withings-måling der den finnes, ellers VDOT fra løpenes best-efforts.
+ *
+ * Leses rett fra kildene framfor fra ukesaggregatet, av samme grunn som dagens
+ * ernæringstall: det er ferskt rett etter en økt, og det slipper å vente på
+ * neste cron-kjøring. Aggregatet finnes for historikk og AI-kontekst.
+ */
+async function loadVo2max(userId: string) {
+	const since = new Date(Date.now() - VO2MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+	const [runs, measured] = await Promise.all([
+		db.query.canonicalWorkouts.findMany({
+			where: and(
+				eq(canonicalWorkouts.userId, userId),
+				gte(canonicalWorkouts.startTime, since)
+			),
+			columns: { startTime: true, bestEfforts: true }
+		}),
+		db.query.sensorEvents.findMany({
+			where: and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'vo2max'),
+				gte(sensorEvents.timestamp, since)
+			),
+			columns: { timestamp: true, data: true }
+		})
+	]);
+
+	const samples: Vo2maxSample[] = [];
+
+	for (const event of measured) {
+		const value = (event.data as { vo2max?: unknown } | null)?.vo2max;
+		if (typeof value !== 'number') continue;
+		samples.push({ value, at: event.timestamp.toISOString(), source: 'withings' });
+	}
+
+	for (const run of runs) {
+		if (!run.bestEfforts) continue;
+		const estimate = estimateVdotFromBestEfforts(run.bestEfforts);
+		if (!estimate) continue;
+		samples.push({
+			value: estimate.vdot,
+			at: run.startTime.toISOString(),
+			source: 'best_efforts',
+			sourceDistance: estimate.sourceDistance
+		});
+	}
+
+	return pickVo2maxMetric(samples);
 }
 
 /**
@@ -112,7 +169,11 @@ export async function loadTrainingDashboardData(
 ) {
 	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
 	// balanse er verdt å se også i oppsett-modus.
-	const [plan, dailyEffort] = await Promise.all([getActivePlan(userId), loadDailyEffort(userId)]);
+	const [plan, dailyEffort, vo2max] = await Promise.all([
+		getActivePlan(userId),
+		loadDailyEffort(userId),
+		loadVo2max(userId).catch(() => null)
+	]);
 
 	if (!plan) {
 		// Oppsett-modus: prefyll baseline fra det vi vet om utøveren
@@ -123,6 +184,7 @@ export async function loadTrainingDashboardData(
 			milestones: [] as MilestoneView[],
 			snapshot,
 			dailyEffort,
+			vo2max,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -235,6 +297,7 @@ export async function loadTrainingDashboardData(
 		})),
 		snapshot: null,
 		dailyEffort,
+		vo2max,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

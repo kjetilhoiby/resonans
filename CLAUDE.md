@@ -226,6 +226,22 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
 
+### VO2max
+
+Se `docs/changelog/2026-08-03-vo2max.md`.
+
+- `metrics.vo2max.best` er **beste** observasjon i perioden, ikke snittet eller siste.
+  Daniels' VDOT antar maksimal innsats, så en rolig 10k gir et lavt tall som bare sier
+  at du løp rolig — i praksis 45,3 mot 32,3 for samme distanse.
+- Per-periode-verdien svinger med om du løp hardt den uka. Vis alltid et rullende
+  maksimum (`rollingBestVo2max`, eller `loadVo2max` i training-dashboard).
+- **`vdotFromPaceAndHr` skal ikke skrives til vo2max-feltet.** Den er god på trend og
+  dårlig på nivå: ±10 slag feil makspuls flytter tallet 3–4 poeng, og makspulsen vår er
+  `Math.max(...)` av observerte topper. Bruk best-efforts-stien.
+- Withings' `meastype 123` er **ikke bekreftet** å være VO2max. Kallet er separat (så
+  det ikke kan velte vektsynken), logger rått, og forkaster verdier utenfor 15–90.
+  Søk etter `[vo2max]` i loggen.
+
 ### Søvnlogg
 
 Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.

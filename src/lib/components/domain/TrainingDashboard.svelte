@@ -15,6 +15,7 @@
 	import TrainingMixCard from '$lib/components/domain/training/TrainingMixCard.svelte';
 	import RouteLibrary from '$lib/components/domain/training/RouteLibrary.svelte';
 	import TrainingLoadSection from '$lib/components/domain/training/TrainingLoadSection.svelte';
+	import Vo2maxCard from '$lib/components/domain/training/Vo2maxCard.svelte';
 	import EffortWeightCard from '$lib/components/domain/health/EffortWeightCard.svelte';
 	import HealthActivityList from '$lib/components/domain/health/HealthActivityList.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
@@ -282,8 +283,10 @@
 			<RouteLibrary routes={data.states?.routes ?? []} />
 		{/if}
 
-		<!-- Trening → effekt, samlet: form/balanse og effort→vekt. Utenfor
-		     plan-grenen, fordi belastning er verdt å se også i oppsett-modus. -->
+		<!-- Trening → effekt, samlet: oksygenopptak, form/balanse og effort→vekt.
+		     Utenfor plan-grenen, fordi de er verdt å se også i oppsett-modus. -->
+		<Vo2maxCard metric={data.vo2max ?? null} />
+
 		<TrainingLoadSection series={trainingLoadSeries} />
 
 		<EffortWeightCard />

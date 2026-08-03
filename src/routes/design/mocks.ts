@@ -1625,3 +1625,36 @@ const sleepDisturbanceEntries: LoggedDisturbance[] = [
 ];
 
 export const sleepDisturbanceNights = groupDisturbancesByNight(sleepDisturbanceEntries);
+
+
+/* ── Trening: oksygenopptak ─────────────────────────────── */
+
+export const vo2maxEstimated = {
+	best: 45.3,
+	latest: 32.3,
+	source: 'best_efforts' as const,
+	confidence: 0.7,
+	samples: 2,
+	bestAt: '2026-07-14T10:07:00.000Z',
+	sourceDistance: '10k' as const
+};
+
+/** Kort distanse → lavere konfidens → kortet skal advare om nettopp det. */
+export const vo2maxShaky = {
+	best: 41.8,
+	latest: 41.8,
+	source: 'best_efforts' as const,
+	confidence: 0.55,
+	samples: 1,
+	bestAt: '2026-07-28T17:30:00.000Z',
+	sourceDistance: '3k' as const
+};
+
+export const vo2maxMeasured = {
+	best: 48.0,
+	latest: 48.0,
+	source: 'withings' as const,
+	confidence: 0.85,
+	samples: 3,
+	bestAt: '2026-08-01T06:20:00.000Z'
+};

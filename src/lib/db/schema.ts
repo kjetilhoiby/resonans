@@ -2559,7 +2559,16 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 		weight?: { avg?: number; min?: number; max?: number; change?: number };
 		steps?: { sum?: number; avg?: number; max?: number };
 		sleep?: { avg?: number; min?: number; max?: number };
-		vo2max?: { avg?: number; latest?: number };
+		/** Se $lib/domain/health/vo2max. `best` er formgulvet i perioden. */
+		vo2max?: {
+			best: number;
+			latest: number;
+			source: 'withings' | 'best_efforts';
+			confidence: number;
+			samples: number;
+			bestAt: string;
+			sourceDistance?: '3k' | '5k' | '10k';
+		};
 		// Activity metrics
 		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
 		intenseMinutes?: { sum?: number; avg?: number };

@@ -10,6 +10,7 @@
 	import HealthSignalSection from '$lib/components/domain/health/HealthSignalSection.svelte';
 	import NutritionDayCard from '$lib/components/domain/nutrition/NutritionDayCard.svelte';
 	import SleepDisturbanceList from '$lib/components/domain/sleep/SleepDisturbanceList.svelte';
+	import Vo2maxCard from '$lib/components/domain/training/Vo2maxCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -17,6 +18,9 @@
 		nutritionTargets,
 		nutritionAverage,
 		sleepDisturbanceNights,
+		vo2maxEstimated,
+		vo2maxShaky,
+		vo2maxMeasured,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -180,6 +184,16 @@
 
 	<!-- SleepLogger er, som NutritionLogger, ikke demonstrert her: /design er en
 	     public path og loggeren kaller /api/soevn/*, som krever innlogging. -->
+
+	<h3 class="subsection">Vo2maxCard — oksygenopptak</h3>
+	<p class="section-desc">
+		Beste observasjon i vinduet, ikke siste: en rolig 10k gir lav VDOT og sier bare
+		at du løp rolig. Kortet er eksplisitt om kilde og usikkerhet — et estimat fra en
+		3k advarer om seg selv.
+	</p>
+	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxEstimated} /></div>
+	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxShaky} /></div>
+	<div class="demo-card demo-card--wide"><Vo2maxCard metric={vo2maxMeasured} /></div>
 
 </section>
 

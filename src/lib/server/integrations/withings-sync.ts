@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
+import { isPlausibleVo2max, VO2MAX_MAX, VO2MAX_MIN } from '$lib/domain/health/vo2max';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { autocheckChecklistItemsForDay, autocheckWeekChecklistItems } from '$lib/server/checklist-autocheck';
@@ -391,6 +392,100 @@ export async function syncWeightData(
 }
 
 /**
+ * Withings' målingstype for VO2max i Measure-API-et.
+ *
+ * NB: verdien er IKKE bekreftet mot dokumentasjonen fra vår side — den er lagt
+ * inn for å svare empirisk på om vi i det hele tatt får noe. Derfor logges det rå
+ * svaret, og verdier utenfor menneskelig VO2max-område forkastes framfor å lagres
+ * (`isPlausibleVo2max`). Kommer det blodtrykk eller millisekunder ut av 123, ser
+ * vi det i loggen og lagrer ingenting.
+ */
+const WITHINGS_MEASTYPE_VO2MAX = 123;
+
+/**
+ * Henter VO2max fra Withings, hvis enheten produserer det.
+ *
+ * Eget kall framfor å utvide vekt-kallet med `meastypes`: vektsynken er den
+ * viktigste stien vi har, og et feil målingsnummer eller en API-endring skal
+ * ikke kunne velte den. Kallstedet pakker denne i try/catch av samme grunn.
+ *
+ * Bare ScanWatch-familien beregner VO2max, og bare fra økter du har hatt klokka
+ * på. Har brukeren bare vekta, returnerer dette 0 for alltid — som er et gyldig
+ * svar, ikke en feil.
+ */
+export async function syncVo2maxData(
+	userId: string,
+	accessToken: string,
+	sensorId: string,
+	lastSync?: Date | null,
+	fullSync = false,
+	toDate?: Date | null
+): Promise<number> {
+	const startdate = fullSync
+		? Math.floor(new Date('2017-09-01').getTime() / 1000)
+		: lastSync
+			? Math.floor(lastSync.getTime() / 1000)
+			: undefined;
+	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
+
+	const data = await fetchAllWithingsData(accessToken, {
+		action: 'getmeas',
+		meastype: WITHINGS_MEASTYPE_VO2MAX,
+		category: 1,
+		startdate,
+		enddate
+	});
+
+	// Rå-logg av de første gruppene, slik at vi kan bekrefte hva 123 faktisk er.
+	// Fjernes når spørsmålet er avgjort.
+	if (data.length > 0) {
+		console.log(
+			`   [vo2max] ${data.length} måling(er) fra meastype ${WITHINGS_MEASTYPE_VO2MAX}. Første: ${JSON.stringify(data.slice(0, 2))}`
+		);
+	} else {
+		console.log(`   [vo2max] Ingen målinger fra meastype ${WITHINGS_MEASTYPE_VO2MAX} — enheten produserer det ikke.`);
+		return 0;
+	}
+
+	const parsed = data.flatMap((grp: any) => {
+		const measure = grp.measures?.find((m: any) => m.type === WITHINGS_MEASTYPE_VO2MAX);
+		if (!measure) return [];
+		const value = measure.value * Math.pow(10, measure.unit);
+		if (!isPlausibleVo2max(value)) {
+			console.warn(
+				`   [vo2max] Forkastet verdi ${value} (rå: value=${measure.value} unit=${measure.unit}) — utenfor ${VO2MAX_MIN}–${VO2MAX_MAX} ml/kg/min. Er meastype ${WITHINGS_MEASTYPE_VO2MAX} noe annet enn VO2max?`
+			);
+			return [];
+		}
+		return [
+			{
+				timestamp: new Date(grp.date * 1000),
+				data: { vo2max: Math.round(value * 10) / 10 },
+				metadata: { grpid: grp.grpid, deviceid: grp.deviceid, meastype: WITHINGS_MEASTYPE_VO2MAX }
+			}
+		];
+	});
+
+	if (parsed.length === 0) return 0;
+
+	await SensorEventService.writeMany(
+		parsed.map((event) => ({
+			userId,
+			sensorId,
+			eventType: 'measurement',
+			dataType: 'vo2max',
+			timestamp: event.timestamp,
+			data: event.data,
+			metadata: event.metadata,
+			source: 'withings_sync_vo2max'
+		})),
+		{ conflictMode: 'ignore' }
+	);
+
+	return parsed.length;
+}
+
+/**
  * Sync activity data from Withings
  * 
  * Note: Withings updates activity data retroactively throughout the day.
@@ -670,6 +765,18 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	console.log('📊 Syncing weight data...');
 	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
 	console.log(`   ✓ Synced ${weight} weight measurements`);
+
+	// VO2max er best-effort: bare noen Withings-enheter produserer det, og
+	// målingsnummeret er ikke bekreftet. En feil her skal ikke stoppe synken.
+	let vo2max = 0;
+	try {
+		vo2max = await syncVo2maxData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+		if (vo2max > 0) console.log(`   ✓ Synced ${vo2max} VO2max measurements`);
+	} catch (err) {
+		console.warn(
+			`[withings-sync] VO2max-synk feilet (ufarlig) user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
 
 	console.log('🏃 Syncing activity data...');
 	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);

@@ -9,6 +9,8 @@ import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { isNapSleepEvent } from '$lib/domain/sleep-goals';
 import { computeNutritionMetrics } from '$lib/domain/nutrition/aggregate-metrics';
 import { computeSleepDisturbanceMetrics } from '$lib/domain/sleep/disturbance-metrics';
+import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
+import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
@@ -227,6 +229,54 @@ async function computeWeeklyEffort(
  * Withings + manuell logg), og ekskluderer skjulte (dismissed) økter — som
  * begge ga kunstig høye «løpt»-tall ved summering av rå sensor_events.
  */
+/**
+ * VO2max-observasjoner i en periode: Withings-målinger fra hendelsene, og
+ * VDOT-estimater fra løpenes best-efforts.
+ *
+ * Best-efforts-stien er den gode: den trenger ingen puls, og dermed heller ikke
+ * makspuls-baselinen som er den største feilkilden i den andre metoden
+ * (`vdotFromPaceAndHr` — se `$lib/domain/health/vo2max` for hvorfor den ikke
+ * skrives hit).
+ */
+async function collectVo2maxSamples(
+	userId: string,
+	start: Date,
+	end: Date,
+	events: any[]
+): Promise<Vo2maxSample[]> {
+	const samples: Vo2maxSample[] = [];
+
+	for (const event of events) {
+		if (event.dataType !== 'vo2max') continue;
+		const value = event.data?.vo2max;
+		if (typeof value !== 'number') continue;
+		samples.push({ value, at: event.timestamp.toISOString(), source: 'withings' });
+	}
+
+	const runs = await db.query.canonicalWorkouts.findMany({
+		where: and(
+			eq(canonicalWorkouts.userId, userId),
+			gte(canonicalWorkouts.startTime, start),
+			lte(canonicalWorkouts.startTime, end)
+		),
+		columns: { startTime: true, bestEfforts: true }
+	});
+
+	for (const run of runs) {
+		if (!run.bestEfforts) continue;
+		const estimate = estimateVdotFromBestEfforts(run.bestEfforts);
+		if (!estimate) continue;
+		samples.push({
+			value: estimate.vdot,
+			at: run.startTime.toISOString(),
+			source: 'best_efforts',
+			sourceDistance: estimate.sourceDistance
+		});
+	}
+
+	return samples;
+}
+
 async function computeWorkoutSummaryFromCanonical(
 	userId: string,
 	start: Date,
@@ -324,6 +374,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, week.startTime, week.endTime);
+		const vo2maxSamples = await collectVo2maxSamples(userId, week.startTime, week.endTime, events);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -347,6 +398,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
 		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
 		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
+		// Beste observasjon i perioden, ikke snittet: en rolig 10k gir lav VDOT
+		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
+		const vo2max = pickVo2maxMetric(vo2maxSamples);
+		if (vo2max) metrics.vo2max = vo2max;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
@@ -430,6 +485,7 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, month.startTime, month.endTime);
+		const vo2maxSamples = await collectVo2maxSamples(userId, month.startTime, month.endTime, events);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -453,6 +509,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
 		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
 		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
+		// Beste observasjon i perioden, ikke snittet: en rolig 10k gir lav VDOT
+		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
+		const vo2max = pickVo2maxMetric(vo2maxSamples);
+		if (vo2max) metrics.vo2max = vo2max;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
@@ -522,6 +582,7 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, year.startTime, year.endTime);
+		const vo2maxSamples = await collectVo2maxSamples(userId, year.startTime, year.endTime, events);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -545,6 +606,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
 		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
 		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
+		// Beste observasjon i perioden, ikke snittet: en rolig 10k gir lav VDOT
+		// og sier bare at du løp rolig. Konsumenten tar rullende maks over uker.
+		const vo2max = pickVo2maxMetric(vo2maxSamples);
+		if (vo2max) metrics.vo2max = vo2max;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });
