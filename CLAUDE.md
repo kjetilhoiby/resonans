@@ -279,6 +279,25 @@ Se `docs/changelog/2026-08-03-vo2max.md`.
   det ikke kan velte vektsynken), logger rått, og forkaster verdier utenfor 15–90.
   Søk etter `[vo2max]` i loggen.
 
+### Pulsfall (HR recovery)
+
+Se `docs/changelog/2026-08-03-hr-recovery-diagnose.md`. Logikken i
+`$lib/domain/health/hr-recovery.ts`.
+
+- **Øktfiler kan ikke bære HRR60.** En `.gpx`/`.tcx` slutter å skrive når du trykker
+  stopp, så de 60 sekundene *etter* innsatsen — hele målingen — mangler. Kilden må være
+  en pulsserie uavhengig av økter: Withings `getintradayactivity`, eller HealthKit.
+- Withings' `body.series` fra intraday er et **objekt nøklet på unix-tidsstempel**, ikke
+  en array. `fetchAllWithingsData` antar en liste; bruk `parseIntradayHeartRate`.
+- `computeHrRecovery` returnerer **null** når punkter nær slutt eller nær +60 s mangler,
+  og `atSeconds` sier hva som faktisk ble målt. Ikke bytt til nærmeste punkt uansett
+  avstand — da presenteres «fallet etter 8 minutter» som HRR60.
+- Om oppløsningen holder er et **empirisk** spørsmål: ScanWatch måler ofte hvert
+  10. minutt i ro. `GET /api/admin/debug-intraday?date=…&from=…&to=…` svarer på ekte
+  data. Ingenting bør bygges videre på HRR før `sampling.medianGapSeconds` er sett.
+- Oslo-veggklokke → UTC for vilkårlig dato: `osloWallClockToUtc` i
+  `$lib/domain/oslo-time.ts`. `todayAtLocalTime` i `sleep-goals` dekker bare i dag.
+
 ### Søvnlogg
 
 Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.

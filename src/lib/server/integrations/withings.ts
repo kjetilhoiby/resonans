@@ -112,7 +112,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<Withings
 export async function fetchWithingsMeasurements(
 	accessToken: string,
 	params: {
-		action: 'getmeas' | 'getactivity' | 'getsummary' | 'getworkouts';
+		action: 'getmeas' | 'getactivity' | 'getintradayactivity' | 'getsummary' | 'getworkouts';
 		meastype?: number; // 1=weight, 11=pulse, 54=spo2, etc.
 		/** Kommaseparert liste av måletyper. Brukes i stedet for `meastype` når vi
 		 *  vil ha flere — f.eks. hele kroppssammensetningen i ett kall. */
@@ -230,4 +230,42 @@ export async function fetchAllWithingsData(
 	}
 
 	return allData;
+}
+
+
+/**
+ * Minutt-oppløst aktivitet, inkludert `heart_rate`.
+ *
+ * Dette er den ene Withings-kilden som gir puls UAVHENGIG av økter, og dermed den
+ * eneste som kan inneholde minuttene etter at en løpetur stoppet. En `.gpx` fra
+ * iSmoothRun slutter ved målstreken; det er derfor pulsfall (HRR60) ikke kan
+ * regnes fra øktfiler alene.
+ *
+ * Krever scope `user.activity`, som vi allerede ber om i autorisasjonen.
+ *
+ * NB på formen: `body.series` er et OBJEKT nøklet på unix-tidsstempel, ikke en
+ * array. `fetchAllWithingsData` antar en liste og ville stille returnert tomt.
+ * Bruk `parseIntradayHeartRate` fra `$lib/domain/health/hr-recovery`.
+ *
+ * NB på vinduet: Withings anbefaler under 24 timer per kall.
+ */
+export async function fetchWithingsIntradayActivity(
+	accessToken: string,
+	params: { startdate: number; enddate: number; data_fields?: string }
+): Promise<{ status: number; error?: string; body?: { series?: unknown } }> {
+	const response = await fetch('https://wbsapi.withings.net/v2/measure', {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			'Content-Type': 'application/x-www-form-urlencoded'
+		},
+		body: new URLSearchParams({
+			action: 'getintradayactivity',
+			startdate: String(params.startdate),
+			enddate: String(params.enddate),
+			data_fields: params.data_fields ?? 'heart_rate,steps,distance,calories'
+		})
+	});
+
+	return (await response.json()) as { status: number; error?: string; body?: { series?: unknown } };
 }
