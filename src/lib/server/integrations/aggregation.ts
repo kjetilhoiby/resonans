@@ -11,6 +11,7 @@ import { computeNutritionMetrics } from '$lib/domain/nutrition/aggregate-metrics
 import { computeSleepDisturbanceMetrics } from '$lib/domain/sleep/disturbance-metrics';
 import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
 import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
+import { isPlausibleHrv } from '$lib/domain/health/hrv';
 import { estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
@@ -306,6 +307,34 @@ function computeHrRecoveryMetrics(events: any[]) {
 	return pickHrRecoveryMetric(samples);
 }
 
+/**
+ * HRV i perioden, fra `data.hrv` på søvnhendelsene.
+ *
+ * Medianen, ikke snittet: én natt med dårlig sensorfeste skal ikke flytte uka.
+ * Avviket mot egen baseline hører ikke hit — det er et rullende tall, og en
+ * aggregatrad beskriver én periode.
+ */
+function computeHrvMetrics(events: any[]) {
+	const values: number[] = [];
+	for (const event of events) {
+		if (event.dataType !== 'sleep') continue;
+		const sdnn = event.data?.hrv?.sdnnMs;
+		if (isPlausibleHrv(sdnn)) values.push(sdnn);
+	}
+	if (values.length === 0) return null;
+
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	const medianMs = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+	return {
+		medianMs: Math.round(medianMs * 10) / 10,
+		nights: sorted.length,
+		minMs: sorted[0],
+		maxMs: sorted[sorted.length - 1]
+	};
+}
+
 async function computeWorkoutSummaryFromCanonical(
 	userId: string,
 	start: Date,
@@ -435,6 +464,8 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
 		const hrRecovery = computeHrRecoveryMetrics(events);
 		if (hrRecovery) metrics.hrRecovery = hrRecovery;
+		const hrv = computeHrvMetrics(events);
+		if (hrv) metrics.hrv = hrv;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
@@ -550,6 +581,8 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
 		const hrRecovery = computeHrRecoveryMetrics(events);
 		if (hrRecovery) metrics.hrRecovery = hrRecovery;
+		const hrv = computeHrvMetrics(events);
+		if (hrv) metrics.hrv = hrv;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
@@ -651,6 +684,8 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		// rolig tur sier at pulsen aldri var høy, ikke at restitusjonen er dårlig.
 		const hrRecovery = computeHrRecoveryMetrics(events);
 		if (hrRecovery) metrics.hrRecovery = hrRecovery;
+		const hrv = computeHrvMetrics(events);
+		if (hrv) metrics.hrv = hrv;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });

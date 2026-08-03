@@ -18,6 +18,7 @@
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
 	import SleepLogger from './sleep/SleepLogger.svelte';
 	import SleepDisturbanceList from './sleep/SleepDisturbanceList.svelte';
+	import HrvCard from './sleep/HrvCard.svelte';
 	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 
 	interface Props {
@@ -132,6 +133,8 @@
 			</ul>
 		</section>
 	{/if}
+
+	<HrvCard metric={data.hrv ?? null} breathing={data.breathing ?? null} />
 
 	<SleepDisturbanceList nights={data.disturbanceNights} onChanged={() => onRefresh?.()} />
 

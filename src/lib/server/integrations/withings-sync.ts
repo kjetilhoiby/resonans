@@ -9,6 +9,7 @@ import { autocheckChecklistItemsForDay, autocheckWeekChecklistItems } from '$lib
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { syncHrRecovery } from './withings-hr-recovery';
+import { syncSleepHrv } from './withings-sleep-hrv';
 
 /**
  * Get active Withings sensor for user
@@ -225,6 +226,11 @@ function parseSleepData(series: any[]): any[] {
 				waso: sleep.data?.waso,
 				outOfBedCount: sleep.data?.out_of_bed_count,
 				sleepEfficiency: sleep.data?.sleep_efficiency,
+				// Pust og snorking. `snoring` er sekunder, ikke en score.
+				apneaHypopneaIndex: sleep.data?.apnea_hypopnea_index,
+				breathingDisturbances: sleep.data?.breathing_disturbances_intensity,
+				snoringSeconds: sleep.data?.snoring,
+				snoringEpisodes: sleep.data?.snoringepisodecount,
 				...(sleepLag !== undefined && { sleepLag })
 			},
 			metadata: {
@@ -661,7 +667,14 @@ const WITHINGS_SLEEP_DATA_FIELDS = [
 	'out_of_bed_count',
 	'sleep_efficiency',
 	'hr_min',
-	'hr_max'
+	'hr_max',
+	// Pusteforstyrrelser og snorking. Apné-indeksen er hendelser per time; over 5
+	// er klinisk grense for mild apné. Vi tolker ingenting medisinsk av det, men
+	// et tall som ligger og vokser er verdt å se ved siden av søvnscoren.
+	'apnea_hypopnea_index',
+	'breathing_disturbances_intensity',
+	'snoring',
+	'snoringepisodecount'
 ].join(',');
 
 /**
@@ -728,9 +741,17 @@ export async function syncSleepData(
 		// «leverer enheten innsovningstid?» besvares av loggen og ikke av gjetning.
 		const sample = allData.find((s: any) => s?.data);
 		if (sample) {
-			const present = ['sleep_latency', 'waso', 'out_of_bed_count', 'sleep_efficiency', 'hr_min'].filter(
-				(f) => sample.data[f] !== undefined
-			);
+			const present = [
+				'sleep_latency',
+				'waso',
+				'out_of_bed_count',
+				'sleep_efficiency',
+				'hr_min',
+				'apnea_hypopnea_index',
+				'breathing_disturbances_intensity',
+				'snoring',
+				'snoringepisodecount'
+			].filter((f) => sample.data[f] !== undefined);
 			console.log(
 				`   [søvnfelt] Nye felter til stede: ${present.length ? present.join(', ') : 'ingen — enheten leverer dem ikke'}`
 			);
@@ -965,6 +986,21 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 		});
 	}
 
+	// HRV ligger ikke i getsummary, bare i action=get per dato. Selvhelende og
+	// takstyrt av samme grunn som pulsfallet under.
+	try {
+		const hrv = await syncSleepHrv(userId, accessToken);
+		if (hrv.stored > 0 || hrv.missing > 0) {
+			console.log(
+				`   ✓ HRV: ${hrv.stored} netter lagret av ${hrv.missing} manglende (${hrv.fetches} kall, ${hrv.unavailable} uten SDNN, ${hrv.deferred} utsatt)`
+			);
+		}
+	} catch (err) {
+		console.warn(
+			`[withings-sync] HRV-synk feilet (ufarlig) user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
+
 	// Pulsfall regnes til slutt, og er selvhelende: den ser på de siste ukene og
 	// fyller hullene. Det er nødvendig fordi canonical_workouts bygges av en
 	// projeksjonsjobb *etter* at øktene er skrevet — en beregning som krevde
@@ -1138,7 +1174,9 @@ export async function backfillSleepHrForDate(
 		action: 'get',
 		startdate: dayStart,
 		enddate: dayEnd,
-		data_fields: 'hr,sdnn_1'
+		// Bare hr: HRV eies av syncSleepHrv, som faktisk lagrer den. Dette kallet
+		// ba historisk om sdnn_1 og kastet den.
+		data_fields: 'hr'
 	});
 
 	if (response?.status !== 0) {

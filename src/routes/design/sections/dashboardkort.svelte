@@ -12,6 +12,7 @@
 	import SleepDisturbanceList from '$lib/components/domain/sleep/SleepDisturbanceList.svelte';
 	import Vo2maxCard from '$lib/components/domain/training/Vo2maxCard.svelte';
 	import HrRecoveryCard from '$lib/components/domain/training/HrRecoveryCard.svelte';
+	import HrvCard from '$lib/components/domain/sleep/HrvCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -25,6 +26,10 @@
 		hrRecoveryGood,
 		hrRecoveryLateAnchor,
 		hrRecoveryWeak,
+		hrvNormal,
+		hrvUnder,
+		hrvBuilding,
+		breathingMild,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -210,6 +215,20 @@
 	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryGood} /></div>
 	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryLateAnchor} /></div>
 	<div class="demo-card demo-card--wide"><HrRecoveryCard metric={hrRecoveryWeak} /></div>
+
+	<h3 class="subsection">HrvCard — hjerterytmevariasjon</h3>
+	<p class="section-desc">
+		Motsatt retning av kortene over: her er <em>siste</em> måling det interessante,
+		ikke den beste. HRV svarer på hvordan det står til nå. Absoluttverdien står med,
+		men avviket fra egen baseline er hovedtallet — SDNN varierer for mye mellom folk
+		til at et tall uten baseline betyr noe, og det finnes ingen normtabell å plassere
+		folk i. Med for få netter sier kortet «bygger baseline» framfor å vise et avvik
+		det ikke har grunnlag for. Pust og snorking henger under, flagget over klinisk
+		grense på fem pustestopp i timen.
+	</p>
+	<div class="demo-card demo-card--wide"><HrvCard metric={hrvNormal} /></div>
+	<div class="demo-card demo-card--wide"><HrvCard metric={hrvUnder} breathing={breathingMild} /></div>
+	<div class="demo-card demo-card--wide"><HrvCard metric={hrvBuilding} /></div>
 
 </section>
 

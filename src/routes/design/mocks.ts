@@ -1668,6 +1668,47 @@ export const vo2maxMeasured = {
 	bestAt: '2026-08-01T06:20:00.000Z'
 };
 
+/* ── Søvn: hjerterytmevariasjon ─────────────────────────── */
+
+export const hrvNormal = {
+	latest: 42.5,
+	latestDate: '2026-08-03',
+	nights: 21,
+	baseline: 41,
+	baselineNights: 20,
+	deviationPct: 3.7,
+	band: 'normal' as const
+};
+
+/** Flere netter under snittet — kortet skal peke på mønsteret, ikke natta. */
+export const hrvUnder = {
+	latest: 31,
+	latestDate: '2026-08-03',
+	nights: 18,
+	baseline: 41,
+	baselineNights: 17,
+	deviationPct: -24.4,
+	band: 'under' as const
+};
+
+/** For få netter til å regne avvik — tallet vises, konklusjonen ikke. */
+export const hrvBuilding = {
+	latest: 38.2,
+	latestDate: '2026-08-03',
+	nights: 4,
+	baseline: null,
+	baselineNights: 3,
+	deviationPct: null,
+	band: 'ukjent' as const
+};
+
+export const breathingMild = {
+	date: '2026-08-03',
+	apneaHypopneaIndex: 7,
+	snoringMinutes: 38,
+	snoringEpisodes: 12
+};
+
 /* ── Trening: pulsfall ──────────────────────────────────── */
 
 /** Tallene er de faktiske fra løpeturen 1. august 2026. */

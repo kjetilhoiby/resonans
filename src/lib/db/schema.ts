@@ -2596,6 +2596,12 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 			sourceDistance?: '3k' | '5k' | '10k';
 		};
 		/**
+		 * HRV i søvn, oppsummert for perioden. Medianen er tallet som kan
+		 * sammenlignes mellom uker; avviket mot egen baseline regnes i
+		 * $lib/domain/health/hrv og hører på flaten, ikke her.
+		 */
+		hrv?: { medianMs: number; nights: number; minMs: number; maxMs: number };
+		/**
 		 * Pulsfall etter innsats. `best` er beste fall i perioden — se
 		 * $lib/domain/health/hr-recovery for hvorfor det ikke er snittet, og hvorfor
 		 * anker og topp lagres med.
