@@ -226,6 +226,23 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
 
+### Søvnlogg
+
+Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
+
+- **Dagsøvn** er `dataType: 'sleep'` med `data.isNap = true` (`logNap` i
+  `server/integrations/sleep-goals.ts`). Sensoren er den eldre `manual_nap`.
+- **Forstyrrelser** («fikk ikke sove», «våknet og fikk ikke sove igjen») er
+  `dataType: 'sleep_disturbance'` under en `manual`/`sleep_log`-sensor. **Ikke**
+  `'sleep'`: alt som leser `'sleep'` antar en varighet, og `sleepDuration: 0`
+  ville dratt nattsnittet ned — det tallet man ser etter når man sover dårlig.
+- Nattnøkkelen er datoen du **våkner** (`nightKeyForTime`, grense 18:00 Oslo), samme
+  konvensjon som `buildSleepNightSeries`. Kveldens innsovning og nattas oppvåkning
+  havner derfor på samme natt.
+- `awakeMinutes: null` betyr «vet ikke» og skilles fra `0`. Ikke gjett et tall.
+- Endepunktene ligger under `/api/soevn/` (ikke `/api/helse/`) fordi nap-endepunktet
+  alt bor der.
+
 ### Transaksjons-kategorisering
 
 Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.

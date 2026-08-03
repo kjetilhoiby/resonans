@@ -123,3 +123,52 @@ describe('buildSubthemeTiles — Egenfrekvens', () => {
 		).toBe('nøytral');
 	});
 });
+
+
+describe('buildSubthemeTiles — Søvn og urolige netter', () => {
+	function sleepTile(input: Partial<SubthemeTileInput>) {
+		return buildSubthemeTiles({ themeIdsByName: {}, ...input }).find((t) => t.name === 'Søvn')!;
+	}
+
+	it('viser antall urolige netter i stedet for «siste uke»', () => {
+		const tile = sleepTile({ sleepAvgHours: 7.2, sleepDisturbedNights: 3 });
+		expect(tile.delta).toBe('3 urolige netter');
+	});
+
+	it('bøyer natt i entall', () => {
+		expect(sleepTile({ sleepAvgHours: 7.2, sleepDisturbedNights: 1 }).delta).toBe('1 urolig natt');
+	});
+
+	it('lar to urolige netter overstyre en god varighet', () => {
+		// Sju timer der to netter var våkenliggende er ikke sju gode timer.
+		expect(sleepTile({ sleepAvgHours: 7.5, sleepDisturbedNights: 0 }).tone).toBe('positiv');
+		expect(sleepTile({ sleepAvgHours: 7.5, sleepDisturbedNights: 2 }).tone).toBe('varsel');
+	});
+
+	it('demper én urolig natt til nøytral framfor varsel', () => {
+		expect(sleepTile({ sleepAvgHours: 7.5, sleepDisturbedNights: 1 }).tone).toBe('nøytral');
+	});
+
+	it('lar kort søvn fortsatt være varsel uten forstyrrelser', () => {
+		expect(sleepTile({ sleepAvgHours: 6.0, sleepDisturbedNights: 0 }).tone).toBe('varsel');
+	});
+
+	it('faller tilbake på antall urolige netter når varigheten mangler', () => {
+		// En bruker uten Withings som logger manuelt skal ikke se en tom flis.
+		const tile = sleepTile({ sleepAvgHours: null, sleepDisturbedNights: 2 });
+		expect(tile.empty).toBe(false);
+		expect(tile.value).toBe('2');
+		expect(tile.unit).toBe('urolige netter');
+		expect(tile.tone).toBe('varsel');
+	});
+
+	it('er fortsatt tom uten både varighet og forstyrrelser', () => {
+		expect(sleepTile({ sleepAvgHours: null }).empty).toBe(true);
+	});
+
+	it('oppfører seg som før når forstyrrelser mangler', () => {
+		const tile = sleepTile({ sleepAvgHours: 7.2 });
+		expect(tile.delta).toBe('siste uke');
+		expect(tile.tone).toBe('positiv');
+	});
+});

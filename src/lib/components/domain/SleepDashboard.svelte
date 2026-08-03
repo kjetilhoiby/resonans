@@ -5,19 +5,28 @@
   helse-metrikkgriden. Her samles nattlengde, rytme (median leggetid/våkning),
   sleepLag og powernaps ett sted.
 
-  All ren logikk bor i $lib/domain/health/sleep-overview og
-  $lib/domain/sleep-goals, og er testet der.
+  Fra august 2026 eier flaten også manuell registrering: dagsøvn, «fikk ikke
+  sove» og «våknet og fikk ikke sove igjen». Det er de tre tingene Withings ikke
+  kan se — og de to siste er hendelser uten varighet, så de ligger på en egen
+  dataType og telles ved siden av nattlengden, ikke inni den.
+
+  All ren logikk bor i $lib/domain/health/sleep-overview,
+  $lib/domain/sleep-goals og $lib/domain/sleep/disturbance, og er testet der.
 -->
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
+	import SleepLogger from './sleep/SleepLogger.svelte';
+	import SleepDisturbanceList from './sleep/SleepDisturbanceList.svelte';
 	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 
 	interface Props {
 		data: SleepDashboardPayload;
+		/** Ber flaten hente dashboardet på nytt etter en registrering. */
+		onRefresh?: () => void;
 	}
 
-	let { data }: Props = $props();
+	let { data, onRefresh }: Props = $props();
 
 	const nights = $derived(data.nights.filter((n) => !n.isNap));
 	const recentNights = $derived(nights.slice(-14));
@@ -55,6 +64,8 @@
 </script>
 
 <div class="sleep-dashboard">
+	<SleepLogger onLogged={() => onRefresh?.()} />
+
 	<section class="sleep-summary">
 		<div class="summary-tile">
 			<span class="tile-label">Snitt per natt</span>
@@ -121,6 +132,8 @@
 			</ul>
 		</section>
 	{/if}
+
+	<SleepDisturbanceList nights={data.disturbanceNights} onChanged={() => onRefresh?.()} />
 
 	{#if napItems.length > 0}
 		<section class="sleep-naps">

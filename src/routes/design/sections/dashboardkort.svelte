@@ -9,12 +9,14 @@
 	import HealthSubthemeStrip from '$lib/components/domain/health/HealthSubthemeStrip.svelte';
 	import HealthSignalSection from '$lib/components/domain/health/HealthSignalSection.svelte';
 	import NutritionDayCard from '$lib/components/domain/nutrition/NutritionDayCard.svelte';
+	import SleepDisturbanceList from '$lib/components/domain/sleep/SleepDisturbanceList.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
 		nutritionToday,
 		nutritionTargets,
 		nutritionAverage,
+		sleepDisturbanceNights,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -166,6 +168,18 @@
 	<!-- NutritionLogger er bevisst ikke demonstrert her: /design er en public
 	     path, og loggeren kaller /api/helse/ernaering/* som krever innlogging.
 	     En demo ville bare vist 401-feil. -->
+
+	<h3 class="subsection">SleepDisturbanceList — urolige netter</h3>
+	<p class="section-desc">
+		Gruppert per natt, ikke per hendelse: tre oppvåkninger samme natt er én dårlig
+		natt. «Vet ikke» på minutter er et gyldig svar og vises da ikke.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<SleepDisturbanceList nights={sleepDisturbanceNights} />
+	</div>
+
+	<!-- SleepLogger er, som NutritionLogger, ikke demonstrert her: /design er en
+	     public path og loggeren kaller /api/soevn/*, som krever innlogging. -->
 
 </section>
 

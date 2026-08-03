@@ -8,6 +8,7 @@ import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/ef
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { isNapSleepEvent } from '$lib/domain/sleep-goals';
 import { computeNutritionMetrics } from '$lib/domain/nutrition/aggregate-metrics';
+import { computeSleepDisturbanceMetrics } from '$lib/domain/sleep/disturbance-metrics';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
@@ -342,6 +343,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		// spist ligger under `nutrition` for å holde de to fra hverandre.
 		const nutrition = computeNutritionMetrics(events);
 		if (nutrition) metrics.nutrition = nutrition;
+		// Selvrapporterte søvnforstyrrelser, ved siden av metrics.sleep (varighet).
+		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
+		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
+		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
@@ -444,6 +449,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		// spist ligger under `nutrition` for å holde de to fra hverandre.
 		const nutrition = computeNutritionMetrics(events);
 		if (nutrition) metrics.nutrition = nutrition;
+		// Selvrapporterte søvnforstyrrelser, ved siden av metrics.sleep (varighet).
+		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
+		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
+		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
@@ -532,6 +541,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		// spist ligger under `nutrition` for å holde de to fra hverandre.
 		const nutrition = computeNutritionMetrics(events);
 		if (nutrition) metrics.nutrition = nutrition;
+		// Selvrapporterte søvnforstyrrelser, ved siden av metrics.sleep (varighet).
+		// De skal kunne stilles MOT nattlengden, ikke blandes inn i den.
+		const sleepDisturbances = computeSleepDisturbanceMetrics(events);
+		if (sleepDisturbances) metrics.sleepDisturbances = sleepDisturbances;
 		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });

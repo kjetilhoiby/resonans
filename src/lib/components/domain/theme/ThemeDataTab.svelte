@@ -615,7 +615,7 @@
 	{/if}
 
 	{#if sleepData}
-		<SleepDashboard data={sleepData} />
+		<SleepDashboard data={sleepData} onRefresh={() => void ensureDashboardLoaded(true)} />
 	{/if}
 
 	{#if screenTimeData}

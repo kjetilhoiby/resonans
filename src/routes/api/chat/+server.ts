@@ -22,6 +22,7 @@ import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
+import { logSleepDisturbanceTool } from '$lib/ai/tools/log-sleep-disturbance';
 import { logChoreTool } from '$lib/ai/tools/log-chore';
 import { logParentTimeTool } from '$lib/ai/tools/log-parent-time';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
@@ -405,6 +406,14 @@ const tools = [
 				},
 				required: ['type', 'metrics']
 			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: logSleepDisturbanceTool.name,
+			description: logSleepDisturbanceTool.description,
+			parameters: logSleepDisturbanceTool.parameters
 		}
 	},
 	{
@@ -2647,6 +2656,15 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const result = await logActivityTool.execute({ userId, ...args });
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_sleep_disturbance') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🌙 Log sleep disturbance:', args.kind);
+					const result = await logSleepDisturbanceTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
 						content: JSON.stringify(result),

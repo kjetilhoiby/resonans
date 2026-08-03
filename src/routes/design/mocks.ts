@@ -707,6 +707,7 @@ export const bookChatMessagesMock = [
 import type { TripApi, DayForecast } from '$lib/components/domain/trip-api';
 import type { FerieBook } from '$lib/ferie/ferie-reading';
 import { averagePerLoggedDay, summarizeDay, type LoggedEntry } from '$lib/domain/nutrition/day-summary';
+import { groupDisturbancesByNight, type LoggedDisturbance } from '$lib/domain/sleep/disturbance';
 
 /** Lesing i ferien: slider-snapshots over demo-perioden 1.–4. juni. */
 export const ferieBooksMock: FerieBook[] = [
@@ -1607,3 +1608,20 @@ const nutritionEntries: LoggedEntry[] = [
 export const nutritionTargets = { kcal: 2400, proteinG: 140 };
 export const nutritionToday = summarizeDay('2026-08-02', nutritionEntries, nutritionTargets);
 export const nutritionAverage = averagePerLoggedDay(nutritionEntries);
+
+
+/* ── Søvn: urolige netter ───────────────────────────────── */
+
+const sleepDisturbanceEntries: LoggedDisturbance[] = [
+	{
+		id: 'd1',
+		timestamp: '2026-08-01T21:40:00.000Z',
+		kind: 'innsovning',
+		awakeMinutes: 50,
+		note: 'tankekjør etter sen jobbing'
+	},
+	{ id: 'd2', timestamp: '2026-08-02T01:10:00.000Z', kind: 'oppvaakning', awakeMinutes: 35, note: null },
+	{ id: 'd3', timestamp: '2026-08-03T02:20:00.000Z', kind: 'oppvaakning', awakeMinutes: null, note: null }
+];
+
+export const sleepDisturbanceNights = groupDisturbancesByNight(sleepDisturbanceEntries);

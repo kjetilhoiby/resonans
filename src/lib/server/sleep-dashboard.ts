@@ -13,6 +13,8 @@ import {
 	summarizeSleepRhythm,
 	compositeSleepLag
 } from '$lib/domain/health/sleep-overview';
+import { listDisturbances } from '$lib/server/sleep/disturbance-log';
+import { groupDisturbancesByNight } from '$lib/domain/sleep/disturbance';
 
 const SLEEP_LOOKBACK_DAYS = 30;
 
@@ -22,7 +24,7 @@ const SLEEP_LOOKBACK_DAYS = 30;
  * testede primitivene i $lib/domain/sleep-goals.
  */
 export async function loadSleepDashboardData(userId: string) {
-	const [weekly, monthly, nights, naps, goalRecords, metricSettings] = await Promise.all([
+	const [weekly, monthly, nights, naps, goalRecords, metricSettings, disturbances] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -38,7 +40,8 @@ export async function loadSleepDashboardData(userId: string) {
 		listSleepGoals(userId),
 		// Tersklene bor på mortemaet — én kilde. Undertemaet har sin egen
 		// (tomme) metric_settings-kolonne som bevisst ikke brukes.
-		readParentMetricSettings(userId)
+		readParentMetricSettings(userId),
+		listDisturbances(userId, { sinceDays: SLEEP_LOOKBACK_DAYS })
 	]);
 
 	const latestWeek = weekly[0] ?? null;
@@ -47,6 +50,7 @@ export async function loadSleepDashboardData(userId: string) {
 		sleepLag?: number;
 		earlyWake?: number;
 		sleepHeartRate?: { avg?: number };
+		sleepDisturbances?: { nights?: number; awakeMinutes?: number | null };
 	} | null;
 
 	return {
@@ -63,6 +67,8 @@ export async function loadSleepDashboardData(userId: string) {
 			manual: nap.manual,
 			note: nap.note ?? null
 		})),
+		/** Selvrapporterte forstyrrelser, gruppert per natt (nyeste først). */
+		disturbanceNights: groupDisturbancesByNight(disturbances),
 		goals: goalRecords.map((record) => ({
 			id: record.id,
 			title: record.title,
@@ -72,7 +78,9 @@ export async function loadSleepDashboardData(userId: string) {
 		latest: {
 			avgHours: latestMetrics?.sleep?.avg ?? null,
 			sleepLag: compositeSleepLag(latestMetrics),
-			sleepHeartRate: latestMetrics?.sleepHeartRate?.avg ?? null
+			sleepHeartRate: latestMetrics?.sleepHeartRate?.avg ?? null,
+			disturbedNights: latestMetrics?.sleepDisturbances?.nights ?? null,
+			awakeMinutes: latestMetrics?.sleepDisturbances?.awakeMinutes ?? null
 		}
 	};
 }

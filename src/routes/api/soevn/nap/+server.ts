@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { deleteNap, listRecentNaps, logNap } from '$lib/server/integrations/sleep-goals';
 import { todayAtLocalTime } from '$lib/domain/sleep-goals';
+import { invalidateSleepAggregates } from '$lib/server/sleep/aggregate-refresh';
 import type { RequestHandler } from './$types';
 
 /**
@@ -32,6 +33,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	const note = typeof body?.note === 'string' && body.note.trim() ? body.note.trim() : undefined;
 	const nap = await logNap(locals.userId, { durationMinutes, at, note });
+
+	// Powernaps holdes ute av nattsnittet, men de teller i powernap-signalet og
+	// i ukesmetrikken. Uten dette ser flaten uendret ut til neste cron-kjøring.
+	await invalidateSleepAggregates(locals.userId, at).catch((err) =>
+		console.error('[søvn] aggregat-oppdatering feilet', err)
+	);
+
 	return json({ ok: true, nap });
 };
 
@@ -45,5 +53,10 @@ export const DELETE: RequestHandler = async ({ locals, url }) => {
 	if (!id) return json({ error: 'Mangler id' }, { status: 400 });
 	const deleted = await deleteNap(locals.userId, id);
 	if (!deleted) return json({ error: 'Fant ingen manuell nap med denne id-en' }, { status: 404 });
+
+	await invalidateSleepAggregates(locals.userId).catch((err) =>
+		console.error('[søvn] aggregat-oppdatering feilet', err)
+	);
+
 	return json({ ok: true });
 };

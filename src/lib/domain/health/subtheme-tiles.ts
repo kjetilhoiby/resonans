@@ -35,6 +35,8 @@ export interface SubthemeTileInput {
 	nutrition?: { kcalPerDay?: number; proteinPerDay?: number; loggedDays?: number } | null;
 	egenfrekvens?: { recentAvg?: number | null; direction?: string | null } | null;
 	sleepAvgHours?: number | null;
+	/** Selvrapporterte urolige netter i siste uke. */
+	sleepDisturbedNights?: number | null;
 	screenTimeAvgPerDayMinutes?: number | null;
 }
 
@@ -132,15 +134,35 @@ function buildEgenfrekvens(input: SubthemeTileInput): Pick<SubthemeTile, 'value'
 
 function buildSleep(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | 'unit' | 'delta' | 'tone' | 'empty'> {
 	const hours = input.sleepAvgHours;
+	const disturbedFallback = input.sleepDisturbedNights ?? 0;
 	if (typeof hours !== 'number') {
+		// Uten varighet fra Withings, men med selvrapporterte netter, er antallet
+		// urolige netter det eneste flisen har — og det er bedre enn tomt.
+		if (disturbedFallback > 0) {
+			return {
+				value: String(disturbedFallback),
+				unit: disturbedFallback === 1 ? 'urolig natt' : 'urolige netter',
+				delta: 'siste uke',
+				tone: 'varsel',
+				empty: false
+			};
+		}
 		return { value: null, unit: null, delta: null, tone: 'nøytral', empty: true };
 	}
+	// Urolige netter overstyrer varigheten: sju timer der to av dem var
+	// våkenliggende er ikke sju gode timer, og flisen skal ikke si «positiv» da.
+	const disturbed = input.sleepDisturbedNights ?? 0;
+	const byHours = hours < 6.5 ? 'varsel' : hours >= 7 ? 'positiv' : 'nøytral';
+
 	return {
 		value: nb(hours),
 		unit: 'timer/natt',
-		delta: 'siste uke',
+		delta:
+			disturbed > 0
+				? `${disturbed} ${disturbed === 1 ? 'urolig natt' : 'urolige netter'}`
+				: 'siste uke',
 		// Her er lite dårlig — motsatt av vekt og skjermtid.
-		tone: hours < 6.5 ? 'varsel' : hours >= 7 ? 'positiv' : 'nøytral',
+		tone: disturbed >= 2 ? 'varsel' : disturbed === 1 && byHours === 'positiv' ? 'nøytral' : byHours,
 		empty: false
 	};
 }
