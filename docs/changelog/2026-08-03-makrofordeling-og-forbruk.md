@@ -75,7 +75,47 @@ uenige komponenter.
 
 Konklusjonen: «Underskudd 1 324 kcal» kl. 17:24 den dagen var ikke til å stole på.
 
-### 3. Tallet gjort etterprøvbart
+### 3. Retting: det var motsatt felt som var ødelagt
+
+Første analyse konkluderte at `totalCalories` ikke stemte med sine egne deler.
+Brukeren la til to opplysninger som snudde det: Withings-appen viser **350 kcal**
+for el-sykkelturene, og de ligger som *Cycling*, ikke el-sykkel.
+
+Withings' egne kalorier per økt lå i basen hele tiden — 355 + 324 + 18 = **697
+kcal**. Sammenlignet med dagsradens `calories`-felt:
+
+| Dag | `calories` | Sum av øktene | Differanse | Skritt |
+|---|---|---|---|---|
+| 3. aug | **1 460** | 698 | **762** | **2 378** |
+| 2. aug | 318 | 167 | 151 | 5 079 |
+| 1. aug | 728 | 516 | 213 | 11 123 |
+| 31. juli | 476 | 287 | 190 | 8 390 |
+| 30. juli | 269 | 0 | 269 | 8 224 |
+| 29. juli | 412 | 0 | 412 | 12 469 |
+
+Differansen — bevegelse utenom økter — ligger på 150–412 kcal og følger skrittene.
+3. august krever 762 kcal fra bevegelse på dagens **laveste** skrittall. Umulig.
+
+Og den avgjørende testen:
+
+| Dag | `totalCalories` | minus basal | `calories`-feltet | avvik |
+|---|---|---|---|---|
+| 31. juli | 2 430 | 472 | 476 | 5 |
+| 1. august | 2 699 | 741 | 728 | −12 |
+| 2. august | 2 276 | 318 | 318 | 0 |
+| 3. august | 2 763 | **805** | **1 460** | **654** |
+
+`totalCalories − basal` treffer `calories` innenfor 12 kcal på tre dager. Den
+fjerde spriker med 654 — og 805 er nettopp hva øktene (698) pluss 2 378 skritt
+tilsier.
+
+**`totalCalories` er den konsistente kilden. `calories` er feltet som svikter.**
+Aktiviteten utledes nå som `totalCalories − basal`, og `calories` beholdes bare som
+kryssjekk. Dagsradens puls forklarer hvorfor: `hr_max: 69` for hele døgnet, altså
+ingen puls under turene, så enhetens kaloriestimat er en gjetning fra distanse og
+klassifisering — og den klassifiserte 52 minutter el-sykkel som «intense».
+
+### 4. Tallet gjort etterprøvbart
 
 Vi kan ikke rette Withings. Vi kan slutte å vise summen som om den var en fasit.
 
@@ -94,7 +134,32 @@ som, og at feltene oppdateres retroaktivt.
 
 Mangler grunnlaget, påstås ingen uenighet — ukjent er ikke det samme som feil.
 
-### 4. Opprydding på veien
+### 5. Vekta som dommer
+
+Brukerens innvending var den sterkeste dataen i hele saken: *«Hvis dette var i
+nærheten av å stemme hadde jeg gått raskt ned i vekt, men det gjør jeg jo ikke.»*
+
+Et underskudd på 1 300 kcal om dagen er 1,2 kg i uka. Holder vekta seg, er
+regnestykket feil — og feilen kan ligge på **begge** sider. Forbruket kan være for
+høyt, eller inntaket underlogget. Termodynamikken lyver ikke, men begge måletallene
+kan.
+
+`checkAgainstWeight` i `weight-reality-check.ts` regner derfor ut hvor mye balansen
+bommer per dag, ut fra observert vektendring. Det er den ene kontrollen som ikke
+lener seg på at loggen er komplett.
+
+- Minst **14 dagers** horisont før dommen felles: kortere endringer er mest vann.
+- Avvik under 200 kcal/dag regnes som målestøy.
+- Feilen fordeles på de **loggede** dagene, ikke på kalenderdagene — det er de
+  dagene regnestykket faktisk er gjort.
+- Ingen automatisk korreksjon. Vi justerer ikke tall bak brukerens rygg; vi sier
+  hvor stort avviket er.
+
+Kortet sier det rett ut når dommen faller: hva regnestykket forutsa, hva vekta
+gjorde, og hvor mange kcal per dag det tilsvarer — «som regel umålt mat, ikke et
+ekte underskudd». Med for kort horisont sier det det i stedet for å konkludere.
+
+### 6. Opprydding på veien
 
 `loadWithingsContext` hentet 70 aktivitetsrader per sidevisning for å plukke ett
 felt. Forbruket leses nå gjennom `loadExpenditureContext`, som også gir komponentene
@@ -109,13 +174,16 @@ og baselinen, og den døde spørringen er borte.
   energibalansen slik effort-modellen gjør. Men da ville flaten vist et tall som
   verken er Withings' eller brukerens, uten at noe sa det. Å vise hva summen består
   av lar brukeren gjøre vurderingen — og gjør neste sprik synlig av seg selv.
+- **Vekta dømmer, den korrigerer ikke.** Å skalere inntaket opp til det vekta
+  tilsier ville gitt en logg som alltid stemmer og aldri lærer noe. Avviket vises som
+  avvik.
 - **Median framfor snitt for hvileforbrenningen.** Én uenig dag skal ikke flytte
   baselinen den skal måles mot.
 
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
-- `npm test`: 2300 grønne i 179 filer (fra 2283), 17 nye.
+- `npm test`: 2309 grønne i 180 filer (fra 2283), 26 nye.
 - **Paletten kjørt gjennom validatoren**, ikke vurdert for øyet. Første forsøk
   feilet; det andre passerte alle seks sjekkene.
 - **Alle tre stolpetilstandene rendret i ekte Chromium**, ingen konsollfeil:
@@ -123,6 +191,9 @@ og baselinen, og den døde spørringen er borte.
 - Regnestykkene fra tabellen over ligger som testdata i
   `expenditure-breakdown.test.ts`, med −655 som eksplisitt assertion.
 
-**Ikke verifisert:** energikortet med sprik-varselet på ekte data. Den lokale basen
-har ikke 3. august-radene fra Withings. Neste gang komponentene spriker skal linja
-dukke opp av seg selv.
+Tallene i begge tabellene over er hentet fra prod og ligger som testdata, med 654
+og −655 som eksplisitte assertions.
+
+**Ikke verifisert:** vektdommen på ekte data. Den krever 14 dager med logging, og
+loggen er to dager gammel. Den slår inn av seg selv, og fram til da sier kortet at
+horisonten er for kort — som er det sanne svaret nå.

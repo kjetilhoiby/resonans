@@ -231,11 +231,16 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   «mest gram» og «mest energi» er ulike spørsmål, og på en typisk dag er svaret ulikt.
   `macroEnergySplit` regner andelene av makro-energien (summerer til 100 %) og bærer
   differansen mot det loggede kcal-tallet i `unaccountedKcal`.
-- **«Forbrent» er ikke en fasit.** Withings' `totalCalories` og `calories` kan sprike
-  på en delvis dag: 3. august ga 1 460 aktivitet + ~1 958 hvile = 3 418 mot en oppgitt
-  total på 2 763. `describeExpenditure` viser komponentene og flagger sprik over 150 kcal.
-  Enheten krediterte dessuten 52 min el-sykkel med 1 460 kcal (28 kcal/min) — vår
-  effort-modell vekter `ebike` ned, energibalansen gjør det ikke.
+- **`totalCalories` er til å stole på; `calories` er ikke.** Målt over fire dager
+  treffer `totalCalories − basal` `calories`-feltet innenfor 12 kcal på tre av dem, og
+  spriker med 654 på den fjerde — der enheten krediterte 52 min el-sykkel (klassifisert
+  som *Cycling*, uten puls: `hr_max` 69 for hele døgnet) med 1 460 kcal mot øktenes egne
+  697. Aktiviteten utledes derfor som `totalCalories − basal`; `calories` er kryssjekk,
+  og `activityFieldSuspect` flagger sprik.
+- **Vekta dømmer over energibalansen** (`checkAgainstWeight`). Et underskudd som ikke gir
+  vektnedgang er feil, og feilen kan ligge på begge sider — forbruket for høyt *eller*
+  inntaket underlogget. Krever 14 dagers horisont; korrigerer ingenting, bare rapporterer
+  avviket per dag.
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.

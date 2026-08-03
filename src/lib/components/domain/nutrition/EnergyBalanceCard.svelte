@@ -14,6 +14,7 @@
 	import { weeklyWeightTrend, type EnergyBalance } from '$lib/domain/nutrition/energy-balance';
 	import type { BodyComposition, CompositionChange } from '$lib/domain/health/body-composition';
 	import type { ExpenditureBreakdown } from '$lib/domain/nutrition/expenditure-breakdown';
+	import type { RealityCheck } from '$lib/domain/nutrition/weight-reality-check';
 
 	interface Props {
 		balance: EnergyBalance | null;
@@ -22,6 +23,8 @@
 		compositionDate: string | null;
 		/** Hva «forbrent» består av. Null når Withings ikke har levert dagen. */
 		expenditure?: ExpenditureBreakdown | null;
+		/** Vekta målt mot regnestykket. Null før det er nok å regne på. */
+		realityCheck?: RealityCheck | null;
 	}
 
 	let {
@@ -29,7 +32,8 @@
 		composition,
 		compositionChange,
 		compositionDate,
-		expenditure = null
+		expenditure = null,
+		realityCheck = null
 	}: Props = $props();
 
 	function nb(value: number, decimals = 0): string {
@@ -68,22 +72,22 @@
 					<span class="label">Forbrent</span>
 					<span class="value">{balance.expenditureKcal.toLocaleString('nb-NO')} kcal</span>
 				</div>
-				{#if expenditure && expenditure.basalKcal !== null}
+				{#if expenditure && expenditure.basalKcal !== null && expenditure.activityKcal !== null}
 					<p class="breakdown">
-						Hvile ~{expenditure.basalKcal.toLocaleString('nb-NO')}
-						{#if expenditure.activityKcal !== null}
-							+ aktivitet {expenditure.activityKcal.toLocaleString('nb-NO')}
+						Hvile ~{expenditure.basalKcal.toLocaleString('nb-NO')} + aktivitet
+						{expenditure.activityKcal.toLocaleString('nb-NO')}
+						{#if expenditure.workoutKcal !== null}
+							· økter {expenditure.workoutKcal.toLocaleString('nb-NO')}
 						{/if}
-						· fra Withings
 					</p>
 				{/if}
 
-				{#if expenditure && !expenditure.reconciles && expenditure.impliedKcal !== null}
+				{#if expenditure?.activityFieldSuspect && expenditure.reportedActivityKcal !== null}
 					<p class="breakdown breakdown--warn">
-						Withings' egne tall spriker i dag: delene summerer til
-						{expenditure.impliedKcal.toLocaleString('nb-NO')} kcal, men totalen oppgis som
-						{expenditure.reportedKcal.toLocaleString('nb-NO')}. Feltene oppdateres
-						retroaktivt gjennom dagen, så tallet er i bevegelse.
+						Withings' aktivitetsfelt sier {expenditure.reportedActivityKcal.toLocaleString('nb-NO')}
+						kcal i dag, mens resten av dagen tilsier
+						{expenditure.activityKcal?.toLocaleString('nb-NO')}. Vi bruker det siste. Skjer
+						det ofte, er det enheten som klassifiserer en økt feil.
 					</p>
 				{/if}
 
@@ -94,7 +98,25 @@
 					<span class="value">
 						{Math.abs(balance.balanceKcal).toLocaleString('nb-NO')} kcal
 					</span>
-				</div>
+	
+				{#if realityCheck?.balanceIsOff}
+					<p class="reality">
+						Men vekta sier noe annet: over {realityCheck.days}
+						{realityCheck.days === 1 ? 'logget dag' : 'loggede dager'} forutsier regnestykket
+						{nb(Math.abs(realityCheck.predictedKg), 1)} kg
+						{realityCheck.predictedKg < 0 ? 'ned' : 'opp'}, mens du faktisk gikk
+						{nb(Math.abs(realityCheck.observedKg), 1)} kg
+						{realityCheck.observedKg < 0 ? 'ned' : realityCheck.observedKg > 0 ? 'opp' : 'ingen vei'}.
+						Det tilsvarer {Math.abs(realityCheck.impliedDailyErrorKcal).toLocaleString('nb-NO')} kcal
+						per dag — som regel umålt mat, ikke et ekte underskudd.
+					</p>
+				{:else if realityCheck && !realityCheck.conclusive}
+					<p class="breakdown">
+						For kort horisont til å sjekke mot vekta ennå. To uker med logging gjør
+						tallet etterprøvbart.
+					</p>
+				{/if}
+			</div>
 
 				{#if balance.partialDay}
 					<p class="note">
@@ -170,6 +192,15 @@
 	}
 
 	.breakdown--warn {
+		color: #f0b429;
+	}
+
+	.reality {
+		margin: 6px 0 0;
+		padding-top: 8px;
+		border-top: 1px solid #222;
+		font-size: 0.72rem;
+		line-height: 1.5;
 		color: #f0b429;
 	}
 

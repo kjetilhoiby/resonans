@@ -43,59 +43,86 @@ describe('deriveBasalMetabolism', () => {
 });
 
 describe('describeExpenditure', () => {
-	it('splitter en normal dag i hvile og aktivitet', () => {
-		// 1. august: 1 970 hvile + 728 aktivitet = 2 698, som er totalen.
+	// Hvileforbrenningen utledet fra de rene dagene.
+	const BASAL = 1958;
+
+	it('utleder aktiviteten fra totalen, ikke fra calories-feltet', () => {
+		// 3. august: totalen minus hvile gir 805, som er nettopp hva øktene tilsier
+		// (698 fra Withings' egne økt-tall pluss 2 378 skritt). calories-feltet sa
+		// 1 460, altså 654 for høyt.
 		const breakdown = describeExpenditure({
-			reportedKcal: 2698.7,
-			activityKcal: 728.36,
-			basalKcal: 1958
+			totalKcal: 2763.46,
+			reportedActivityKcal: 1459.6,
+			basalKcal: BASAL,
+			workoutKcal: 698
 		});
-		expect(breakdown.impliedKcal).toBe(2686);
-		expect(breakdown.discrepancyKcal).toBe(13);
-		expect(breakdown.reconciles).toBe(true);
+		expect(breakdown.activityKcal).toBe(805);
+		expect(breakdown.reportedActivityKcal).toBe(1460);
+		expect(breakdown.activityFieldDeviationKcal).toBe(655);
+		expect(breakdown.activityFieldSuspect).toBe(true);
+		// Totalen mistros IKKE — den er den konsistente kilden.
+		expect(breakdown.totalKcal).toBe(2763);
 	});
 
-	it('avslører at 3. august ikke henger sammen', () => {
-		// Dette er spørsmålet brukeren stilte. 1 460 aktivitet + 1 958 hvile er
-		// 3 418, men Withings oppgir 2 763 — over 600 kcal fra hverandre.
-		const breakdown = describeExpenditure({
-			reportedKcal: 2763.46,
-			activityKcal: 1459.6,
-			basalKcal: 1958
-		});
-		expect(breakdown.impliedKcal).toBe(3418);
-		expect(breakdown.discrepancyKcal).toBe(-655);
-		expect(breakdown.reconciles).toBe(false);
+	it('lar de rene dagene passere uten flagg', () => {
+		// På disse treffer calories-feltet innenfor 12 kcal.
+		for (const [total, reported, expected] of [
+			[2429.61, 476.23, 472],
+			[2698.7, 728.36, 741],
+			[2276.31, 318.37, 318]
+		] as [number, number, number][]) {
+			const breakdown = describeExpenditure({
+				totalKcal: total,
+				reportedActivityKcal: reported,
+				basalKcal: BASAL
+			});
+			expect(breakdown.activityKcal, String(total)).toBe(expected);
+			expect(breakdown.activityFieldSuspect, String(total)).toBe(false);
+		}
 	});
 
 	it('treffer toleransegrensa', () => {
 		const inside = describeExpenditure({
-			reportedKcal: 2000 + RECONCILE_TOLERANCE_KCAL,
-			activityKcal: 500,
-			basalKcal: 1500
-		});
-		expect(inside.reconciles).toBe(true);
-
-		const outside = describeExpenditure({
-			reportedKcal: 2000 + RECONCILE_TOLERANCE_KCAL + 1,
-			activityKcal: 500,
-			basalKcal: 1500
-		});
-		expect(outside.reconciles).toBe(false);
-	});
-
-	it('påstår ikke uenighet når grunnlaget mangler', () => {
-		// Ukjent er ikke det samme som feil.
-		const noBasal = describeExpenditure({ reportedKcal: 2500, activityKcal: 400, basalKcal: null });
-		expect(noBasal.impliedKcal).toBeNull();
-		expect(noBasal.discrepancyKcal).toBeNull();
-		expect(noBasal.reconciles).toBe(true);
-
-		const noActivity = describeExpenditure({
-			reportedKcal: 2500,
-			activityKcal: null,
+			totalKcal: 2500,
+			reportedActivityKcal: 542 + RECONCILE_TOLERANCE_KCAL,
 			basalKcal: 1958
 		});
-		expect(noActivity.reconciles).toBe(true);
+		expect(inside.activityFieldSuspect).toBe(false);
+
+		const outside = describeExpenditure({
+			totalKcal: 2500,
+			reportedActivityKcal: 542 + RECONCILE_TOLERANCE_KCAL + 1,
+			basalKcal: 1958
+		});
+		expect(outside.activityFieldSuspect).toBe(true);
+	});
+
+	it('påstår ingenting når grunnlaget mangler', () => {
+		const noBasal = describeExpenditure({
+			totalKcal: 2500,
+			reportedActivityKcal: 400,
+			basalKcal: null
+		});
+		expect(noBasal.activityKcal).toBeNull();
+		expect(noBasal.activityFieldDeviationKcal).toBeNull();
+		expect(noBasal.activityFieldSuspect).toBe(false);
+
+		const noField = describeExpenditure({
+			totalKcal: 2500,
+			reportedActivityKcal: null,
+			basalKcal: 1958
+		});
+		expect(noField.activityKcal).toBe(542);
+		expect(noField.activityFieldSuspect).toBe(false);
+	});
+
+	it('tar med øktsummen når den er kjent', () => {
+		const breakdown = describeExpenditure({
+			totalKcal: 2763,
+			reportedActivityKcal: 1460,
+			basalKcal: BASAL,
+			workoutKcal: 698
+		});
+		expect(breakdown.workoutKcal).toBe(698);
 	});
 });

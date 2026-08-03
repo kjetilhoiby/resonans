@@ -15,15 +15,27 @@
  * den på 1 954, 1 971 og 1 958. Vi utleder den derfor som medianen over flere
  * dager framfor å regne på høyde og vekt.
  *
- * ## Hvorfor avstemmingen må sjekkes
+ * ## Hvilket felt som er til å stole på
  *
- * 3. august ga Withings `calories = 1 460` og `totalCalories = 2 763`. Med en
- * hvileforbrenning rundt 1 960 skulle totalen vært ~3 420. Feltene oppdateres
- * retroaktivt gjennom dagen og tydeligvis ikke i takt, så en delvis dag kan ha
- * internt uenige komponenter.
+ * Målt over fire dager: `totalCalories − basal` treffer `calories`-feltet innenfor
+ * 12 kcal på tre av dem. Den fjerde — 3. august — spriker med 654.
  *
- * Det er ikke vår feil å rette, men det er vår feil å skjule. `reconciles: false`
- * lar flaten si at tallet er i bevegelse.
+ * | Dag | `totalCalories` | minus basal | `calories`-feltet | avvik |
+ * |---|---|---|---|---|
+ * | 31. juli | 2 430 | 472 | 476 | 5 |
+ * | 1. august | 2 699 | 741 | 728 | −12 |
+ * | 2. august | 2 276 | 318 | 318 | 0 |
+ * | 3. august | 2 763 | **805** | **1 460** | **654** |
+ *
+ * Og 805 er nettopp hva øktene tilsier: Withings' egne tall for de to
+ * el-sykkelturene og yogaen summerer til 698, pluss 2 378 skritt.
+ * `calories`-feltet på 1 460 ville krevd 762 kcal fra skritt alene — på dagens
+ * laveste skrittall.
+ *
+ * **`totalCalories` er altså den konsistente kilden, og `calories` er feltet som
+ * svikter.** Aktiviteten utledes derfor som `totalCalories − basal`, ikke fra
+ * `calories`. Sistnevnte beholdes som kryssjekk: spriker den, er det et
+ * datakvalitetssignal om enheten, ikke en grunn til å mistro totalen.
  */
 
 /** Hvor stort avvik vi godtar før komponentene kalles uenige. */
@@ -62,41 +74,52 @@ export function deriveBasalMetabolism(days: ExpenditureDay[]): number | null {
 }
 
 export interface ExpenditureBreakdown {
-	/** Tallet Withings oppgir som total. Det flaten viser. */
-	reportedKcal: number;
+	/** Withings' `totalCalories`. Den konsistente kilden — se modulkommentaren. */
+	totalKcal: number;
 	/** Utledet hvileforbrenning. Null når vi ikke har grunnlag. */
 	basalKcal: number | null;
-	/** Aktivitetskalorier fra Withings. */
+	/** Aktiviteten, utledet som total minus hvile. Null uten hvileforbrenning. */
 	activityKcal: number | null;
-	/** Hva komponentene summerer til. Null når en av dem mangler. */
-	impliedKcal: number | null;
-	/** Oppgitt minus implisert. Positivt = totalen er høyere enn delene. */
-	discrepancyKcal: number | null;
-	/** Sant når delene og totalen er enige innenfor toleransen. */
-	reconciles: boolean;
+	/** Withings' eget `calories`-felt, til kryssjekk. */
+	reportedActivityKcal: number | null;
+	/** Summen av dagens økter, fra Withings' egne tall per økt. */
+	workoutKcal: number | null;
+	/**
+	 * Hvor mye `calories`-feltet avviker fra den utledede aktiviteten. Positivt =
+	 * feltet er høyere, altså for høyt.
+	 */
+	activityFieldDeviationKcal: number | null;
+	/** Sant når `calories`-feltet ikke stemmer med resten av dagen. */
+	activityFieldSuspect: boolean;
 }
 
 export function describeExpenditure(input: {
-	reportedKcal: number;
-	activityKcal: number | null;
+	totalKcal: number;
+	/** Withings' `calories`-felt. Kryssjekk, ikke kilde. */
+	reportedActivityKcal: number | null;
 	basalKcal: number | null;
+	/** Summen av dagens økter, hvis kjent. */
+	workoutKcal?: number | null;
 }): ExpenditureBreakdown {
-	const { reportedKcal, activityKcal, basalKcal } = input;
+	const { totalKcal, reportedActivityKcal, basalKcal } = input;
 
-	const impliedKcal =
-		typeof activityKcal === 'number' && typeof basalKcal === 'number'
-			? Math.round(activityKcal + basalKcal)
-			: null;
-	const discrepancyKcal = impliedKcal === null ? null : Math.round(reportedKcal - impliedKcal);
+	const activityKcal = basalKcal === null ? null : Math.round(totalKcal - basalKcal);
+	const activityFieldDeviationKcal =
+		activityKcal === null || reportedActivityKcal === null
+			? null
+			: Math.round(reportedActivityKcal - activityKcal);
 
 	return {
-		reportedKcal: Math.round(reportedKcal),
+		totalKcal: Math.round(totalKcal),
 		basalKcal,
-		activityKcal: activityKcal === null ? null : Math.round(activityKcal),
-		impliedKcal,
-		discrepancyKcal,
-		// Mangler grunnlaget, påstår vi ikke uenighet. Ukjent er ikke det samme som feil.
-		reconciles:
-			discrepancyKcal === null ? true : Math.abs(discrepancyKcal) <= RECONCILE_TOLERANCE_KCAL
+		activityKcal,
+		reportedActivityKcal:
+			reportedActivityKcal === null ? null : Math.round(reportedActivityKcal),
+		workoutKcal: input.workoutKcal ?? null,
+		activityFieldDeviationKcal,
+		// Mangler grunnlaget, påstår vi ingenting. Ukjent er ikke det samme som feil.
+		activityFieldSuspect:
+			activityFieldDeviationKcal !== null &&
+			Math.abs(activityFieldDeviationKcal) > RECONCILE_TOLERANCE_KCAL
 	};
 }

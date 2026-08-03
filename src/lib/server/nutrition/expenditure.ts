@@ -37,17 +37,35 @@ export async function loadExpenditureContext(
 	totalKcal: number | null;
 	activityKcal: number | null;
 	basalKcal: number | null;
+	workoutKcal: number | null;
+	/** Dagsforbruk per dato, til vektkontrollen. Nyeste først. */
+	byDay: Array<{ dateKey: string; totalKcal: number }>;
 }> {
-	const rows = await db.query.sensorEvents.findMany({
-		columns: { timestamp: true, data: true },
-		where: and(
-			eq(sensorEvents.userId, userId),
-			eq(sensorEvents.dataType, 'activity'),
-			gte(sensorEvents.timestamp, new Date(Date.now() - 21 * 24 * 60 * 60 * 1000))
-		),
-		orderBy: [desc(sensorEvents.timestamp)],
-		limit: 30
-	});
+	const since = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
+	const [rows, workoutRows] = await Promise.all([
+		db.query.sensorEvents.findMany({
+			columns: { timestamp: true, data: true },
+			where: and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'activity'),
+				gte(sensorEvents.timestamp, since)
+			),
+			orderBy: [desc(sensorEvents.timestamp)],
+			limit: 30
+		}),
+		// Withings' egne kalorier per økt. De er den uavhengige kryssjekken mot
+		// dagsradens `calories`-felt, som 3. august viste kan være dobbelt så høyt.
+		db.query.sensorEvents.findMany({
+			columns: { timestamp: true, data: true },
+			where: and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'workout'),
+				gte(sensorEvents.timestamp, new Date(Date.now() - 3 * 24 * 60 * 60 * 1000))
+			),
+			orderBy: [desc(sensorEvents.timestamp)],
+			limit: 40
+		})
+	]);
 
 	const num = (value: unknown): number | null =>
 		typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -65,9 +83,21 @@ export async function loadExpenditureContext(
 	// dagsnøkkelen sammenlignes direkte.
 	const today = days.find((day) => day.dateKey === todayKey);
 
+	let workoutKcal: number | null = null;
+	for (const row of workoutRows) {
+		if (row.timestamp.toISOString().slice(0, 10) !== todayKey) continue;
+		const value = num((row.data as Record<string, unknown> | null)?.calories);
+		if (value === null) continue;
+		workoutKcal = (workoutKcal ?? 0) + value;
+	}
+
 	return {
 		totalKcal: today?.totalCalories ?? null,
 		activityKcal: today?.activityCalories ?? null,
+		workoutKcal: workoutKcal === null ? null : Math.round(workoutKcal),
+		byDay: days.flatMap((day) =>
+			day.totalCalories === null ? [] : [{ dateKey: day.dateKey, totalKcal: day.totalCalories }]
+		),
 		// Dagens egen rad holdes utenfor: er den uenig med seg selv, skal den ikke
 		// definere baselinen den måles mot.
 		basalKcal: deriveBasalMetabolism(days.filter((day) => day.dateKey !== todayKey))

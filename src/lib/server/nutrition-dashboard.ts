@@ -4,12 +4,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import { findThemeByName } from '$lib/server/themes';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { listIntake } from '$lib/server/nutrition/intake-log';
-import { averagePerLoggedDay, osloDateKey, summarizeDay } from '$lib/domain/nutrition/day-summary';
+import { averagePerLoggedDay, groupByDay, osloDateKey, summarizeDay } from '$lib/domain/nutrition/day-summary';
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
 import { loadNutritionTargets } from '$lib/server/nutrition/targets';
 import { loadExpenditureContext } from '$lib/server/nutrition/expenditure';
 import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown';
+import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
 import { sensorEvents } from '$lib/db/schema';
 import { gte } from 'drizzle-orm';
@@ -76,10 +77,32 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 			withings.expenditureKcal === null
 				? null
 				: describeExpenditure({
-						reportedKcal: withings.expenditureKcal,
-						activityKcal: withings.activityKcal,
-						basalKcal: withings.basalKcal
+						totalKcal: withings.expenditureKcal,
+						reportedActivityKcal: withings.activityKcal,
+						basalKcal: withings.basalKcal,
+						workoutKcal: withings.workoutKcal
 					}),
+		/**
+		 * Vekta som dommer over regnestykket. Et underskudd som ikke gir vektnedgang
+		 * er feil, uansett hvor pent det er satt opp — og feilen kan ligge på begge
+		 * sider. Se weight-reality-check.
+		 */
+		realityCheck: checkAgainstWeight({
+			balances: groupByDay(entries).flatMap((day) => {
+				const expenditureKcal = withings.expenditureByDay.find(
+					(row) => row.dateKey === day.date
+				)?.totalKcal;
+				if (typeof expenditureKcal !== 'number') return [];
+				const balance = computeEnergyBalance({
+					intakeKcal: summarizeDay(day.date, day.entries, targets).totals.kcal,
+					expenditureKcal,
+					// Historiske dager er komplette; bare i dag vokser fortsatt.
+					partialDay: day.date === today
+				});
+				return balance ? [{ date: day.date, balanceKcal: balance.balanceKcal }] : [];
+			}),
+			weights: withings.weightPoints
+		}),
 		/** Spist mot forbrent. Null når én av sidene mangler — se computeEnergyBalance. */
 		energyBalance: computeEnergyBalance({
 			intakeKcal: todaySummary.totals.kcal,
@@ -156,6 +179,13 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 		expenditureKcal: expenditure.totalKcal,
 		activityKcal: expenditure.activityKcal,
 		basalKcal: expenditure.basalKcal,
+		workoutKcal: expenditure.workoutKcal,
+		expenditureByDay: expenditure.byDay,
+		weightPoints: weightRows.flatMap((row) => {
+			const kg = (row.data as { weight?: unknown } | null)?.weight;
+			if (typeof kg !== 'number' || !Number.isFinite(kg)) return [];
+			return [{ date: osloDateKey(row.timestamp), kg }];
+		}),
 		composition: latest?.composition ?? null,
 		compositionDate: latest?.at ?? null,
 		compositionChange: latest && oldest ? describeCompositionChange(oldest, latest) : null
