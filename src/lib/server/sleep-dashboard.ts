@@ -21,6 +21,11 @@ import {
 	type MeasuredNight
 } from '$lib/domain/sleep/disturbance';
 import { pickHrvMetric, type HrvNight } from '$lib/domain/health/hrv';
+import {
+	buildSleepHeartRateNights,
+	summarizeSleepHeartRate,
+	type SleepHeartRateRow
+} from '$lib/domain/health/sleep-heart-rate';
 import { sensorEvents } from '$lib/db/schema';
 import { gte } from 'drizzle-orm';
 
@@ -103,6 +108,25 @@ export async function loadSleepDashboardData(userId: string) {
 		 * varierer for mye mellom folk til at et tall uten baseline betyr noe.
 		 */
 		hrv: pickHrvMetric(physiology.hrvNights),
+		/**
+		 * Hvorfor HRV eventuelt mangler.
+		 *
+		 * Kortet skjulte seg helt når `hrv` var null, og da ser en usynkronisert måling
+		 * ut som en funksjon som ikke finnes. HRV ligger bare i Withings'
+		 * `action=get` per dato (`syncSleepHrv`), ikke i `getsummary` — så «søvn er
+		 * synket» og «HRV er synket» er to ulike ting, og flaten må kunne skille dem.
+		 */
+		hrvAvailability: {
+			sleepNights: physiology.sleepNights,
+			nightsWithHrv: physiology.hrvNights.length
+		},
+		/**
+		 * Sovepuls per natt. Hvilepulsen (`hr_min`) er hovedtallet — `hr_average`
+		 * blander REM og oppvåkninger inn og ligger 5–10 slag høyere.
+		 */
+		sleepHeartRate: summarizeSleepHeartRate(
+			buildSleepHeartRateNights(physiology.heartRateRows)
+		),
 		/** Pust og snorking siste natt som hadde tallene. */
 		breathing: physiology.breathing,
 		latest: {
@@ -157,6 +181,9 @@ async function readNightlyPhysiology(
 	sinceDays: number
 ): Promise<{
 	hrvNights: HrvNight[];
+	/** Netter med søvnmåling i det hele tatt — grunnlaget for å forklare hull. */
+	sleepNights: number;
+	heartRateRows: SleepHeartRateRow[];
 	breathing: {
 		date: string;
 		apneaHypopneaIndex: number | null;
@@ -176,12 +203,15 @@ async function readNightlyPhysiology(
 	});
 
 	const hrvNights: HrvNight[] = [];
+	const heartRateRows: SleepHeartRateRow[] = [];
+	const nightKeys = new Set<string>();
 	let breathing: Awaited<ReturnType<typeof readNightlyPhysiology>>['breathing'] = null;
 
 	for (const row of rows) {
 		const data = (row.data ?? {}) as Record<string, unknown>;
 		const date = nightKeyForTime(row.timestamp);
 		if (!date) continue;
+		nightKeys.add(date);
 
 		const hrv = data.hrv as { sdnnMs?: unknown; samples?: unknown } | null | undefined;
 		if (hrv && typeof hrv.sdnnMs === 'number') {
@@ -191,6 +221,13 @@ async function readNightlyPhysiology(
 				samples: typeof hrv.samples === 'number' ? hrv.samples : 0
 			});
 		}
+
+		// Ett innslag per segment: sammenslåingen per natt skjer i domenelaget.
+		heartRateRows.push({
+			date,
+			minBpm: typeof data.hr_min === 'number' ? data.hr_min : null,
+			averageBpm: typeof data.hr_average === 'number' ? data.hr_average : null
+		});
 
 		// Radene er nyeste først, så den første med tall er siste natt som har dem.
 		const ahi = typeof data.apneaHypopneaIndex === 'number' ? data.apneaHypopneaIndex : null;
@@ -206,7 +243,7 @@ async function readNightlyPhysiology(
 		}
 	}
 
-	return { hrvNights, breathing };
+	return { hrvNights, sleepNights: nightKeys.size, heartRateRows, breathing };
 }
 
 /** Helse-mortemaets metric_settings, eller tomt objekt. */

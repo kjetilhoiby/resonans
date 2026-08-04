@@ -493,6 +493,31 @@ Se `docs/changelog/2026-08-03-losetrader.md`. Logikken i `$lib/domain/health/hrv
 - Nattas verdi er **medianen** over minuttmålingene: ett minutt med dårlig sensorfeste
   ga ellers utslag. Nattnøkkelen er datoen du **våkner** (`nightKeyForTime`), ellers
   ligger HRV-nettene forskjøvet fra nattlengdene de sammenlignes med.
+- **`HrvCard` skjuler seg ikke lenger når data mangler.** Den skilte ikke «ingen
+  søvnmåling» fra «søvnmåling uten HRV» — to helt ulike ting å gjøre noe med — og et kort
+  som forsvinner ser ut som en funksjon som ikke finnes. `hrvAvailability` i
+  søvn-payloaden bærer `sleepNights` og `nightsWithHrv`. **NB: HRV har aldri produsert
+  data i prod** (15 netter søvn, 0 med HRV per 4. august); årsaken er ikke funnet.
+
+### Sovepuls (hvilepuls i søvn)
+
+Se `docs/changelog/2026-08-04-sovepuls-og-hrv-synlig.md`. Logikken i
+`$lib/domain/health/sleep-heart-rate.ts`.
+
+- **`hr_min` er hvilepulsen, `hr_average` er ikke.** Snittet blander REM og oppvåkninger
+  inn og ligger 5–10 slag høyere; det vises som kryssjekk, aldri som hovedtallet. Samme
+  prioritering som `heart-rate-baseline.ts` gjør med `sleep_min`.
+- **Netter har som regel to segmenter** — Withings deler natta når man er ute av senga, og
+  i prod gjaldt det *hver* natt. Hvilepulsen er **minimum av segmentminimaene**; snitt av
+  dem ville gitt et kunstig høyt tall for alle netter.
+- **Lav puls er bra**, så en *stigning* er signalet (motsatt av VO2max). Fargene følger:
+  grønt for «lavere enn vanlig», gult for «høyere».
+- Siste natt holdes **utenfor** sin egen baseline, ellers demper en avvikende natt sitt
+  eget avvik. Median over de øvrige, som i HRV.
+- Sparklinen har et gulv på 8 slag, av samme grunn som `MIN_WEIGHT_AXIS_SPAN_KG`: 51 og 53
+  skal ikke se ut som et stup.
+- **HRV og puls ligger i to kort.** ms og slag/min har ingen felles skala, og det finnes
+  ingen grunn til å betale for en dobbeltakse her.
 
 ### Søvnlogg
 

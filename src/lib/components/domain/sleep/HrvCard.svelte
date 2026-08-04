@@ -22,9 +22,30 @@
 			snoringMinutes: number | null;
 			snoringEpisodes: number | null;
 		} | null;
+		/**
+		 * Hvorfor HRV mangler, når den mangler. Kortet skjulte seg helt før — og da ser
+		 * en usynkronisert måling ut som en funksjon som ikke finnes.
+		 */
+		availability?: { sleepNights: number; nightsWithHrv: number } | null;
 	}
 
-	let { metric, breathing = null }: Props = $props();
+	let { metric, breathing = null, availability = null }: Props = $props();
+
+	/**
+	 * Hvorfor det ikke er noe å vise.
+	 *
+	 * Skillet som betyr noe: har vi søvnnetter men ingen HRV, er det synken som ikke har
+	 * levert (HRV ligger bare i Withings' `action=get` per dato, ikke i `getsummary`).
+	 * Har vi ingen søvnnetter i det hele tatt, er det søvnmålingen som mangler — en helt
+	 * annen ting å gjøre noe med.
+	 */
+	const missingReason = $derived.by(() => {
+		if (metric) return null;
+		if (!availability || availability.sleepNights === 0) {
+			return 'Ingen søvnmålinger de siste 30 dagene. HRV måles i søvn, så den kommer når søvndata gjør det.';
+		}
+		return `${availability.sleepNights} netter med søvndata, men ingen med HRV. Withings leverer HRV kun per natt gjennom et eget kall — får du aldri tall her, er det verdt å sjekke at enheten faktisk måler puls gjennom natta.`;
+	});
 
 	function osloDate(iso: string): string {
 		const date = new Date(`${iso}T12:00:00Z`);
@@ -48,9 +69,14 @@
 	const apneaWorthMentioning = $derived((breathing?.apneaHypopneaIndex ?? 0) >= 5);
 </script>
 
-{#if metric}
-	<section class="hrv">
-		<SectionLabel tag="h2">Hjerterytmevariasjon</SectionLabel>
+<section class="hrv">
+	<SectionLabel tag="h2">Hjerterytmevariasjon</SectionLabel>
+
+	{#if !metric}
+		<div class="card">
+			<p class="note is-shaky">{missingReason}</p>
+		</div>
+	{:else}
 		<div class="card">
 			<div class="head">
 				<span class="value">{formatHrv(metric.latest).replace(' ms', '')}</span>
@@ -84,24 +110,29 @@
 				{/if}
 			</p>
 
-			{#if breathing && (breathing.apneaHypopneaIndex !== null || breathing.snoringMinutes !== null)}
-				<div class="breathing">
-					<span class="breathing-label">Pust natt til {osloDate(breathing.date)}</span>
-					<span class="breathing-values">
-						{#if breathing.apneaHypopneaIndex !== null}
-							<span class:is-flagged={apneaWorthMentioning}>
-								{breathing.apneaHypopneaIndex} pustestopp/time
-							</span>
-						{/if}
-						{#if breathing.snoringMinutes !== null}
-							<span>{breathing.snoringMinutes} min snorking</span>
-						{/if}
-					</span>
-				</div>
-			{/if}
 		</div>
-	</section>
-{/if}
+	{/if}
+
+	<!-- Pust og snorking henger ikke på HRV: de kommer fra andre felt i samme
+	     søvnmåling, og skal vises selv om HRV mangler. -->
+	{#if breathing && (breathing.apneaHypopneaIndex !== null || breathing.snoringMinutes !== null)}
+		<div class="card">
+			<div class="breathing">
+				<span class="breathing-label">Pust natt til {osloDate(breathing.date)}</span>
+				<span class="breathing-values">
+					{#if breathing.apneaHypopneaIndex !== null}
+						<span class:is-flagged={apneaWorthMentioning}>
+							{breathing.apneaHypopneaIndex} pustestopp/time
+						</span>
+					{/if}
+					{#if breathing.snoringMinutes !== null}
+						<span>{breathing.snoringMinutes} min snorking</span>
+					{/if}
+				</span>
+			</div>
+		</div>
+	{/if}
+</section>
 
 <style>
 	.hrv {
@@ -176,9 +207,6 @@
 		flex-wrap: wrap;
 		gap: 4px 10px;
 		align-items: baseline;
-		margin-top: 8px;
-		padding-top: 10px;
-		border-top: 1px solid #222;
 	}
 
 	.breathing-label {

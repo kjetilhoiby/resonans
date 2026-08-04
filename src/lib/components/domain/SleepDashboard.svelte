@@ -19,6 +19,7 @@
 	import SleepLogger from './sleep/SleepLogger.svelte';
 	import SleepDisturbanceList from './sleep/SleepDisturbanceList.svelte';
 	import HrvCard from './sleep/HrvCard.svelte';
+	import SleepHeartRateCard from './sleep/SleepHeartRateCard.svelte';
 	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 
 	interface Props {
@@ -35,6 +36,18 @@
 
 	const goalHours = $derived(
 		(data.metricSettings as { sleep?: { goal?: number } } | undefined)?.sleep?.goal ?? 7.5
+	);
+
+	/**
+	 * Flisen viser siste **natt**, ikke ukesnittet fra aggregatet.
+	 *
+	 * Aggregatet er `sleepHeartRate.avg` for hele uka, og et ukesnitt svarer ikke på
+	 * «hvordan sov jeg i natt». Faller den tilbake til aggregatet bare når per-natt-serien
+	 * mangler helt.
+	 */
+	const tileRestingBpm = $derived(
+		data.sleepHeartRate?.latest?.restingBpm ??
+			(data.latest.sleepHeartRate !== null ? Math.round(data.latest.sleepHeartRate) : null)
 	);
 
 	function fmtHours(value: number | null): string {
@@ -84,11 +97,9 @@
 			<span class="tile-meta">median</span>
 		</div>
 		<div class="summary-tile">
-			<span class="tile-label">Sovepuls</span>
-			<span class="tile-value">
-				{data.latest.sleepHeartRate !== null ? Math.round(data.latest.sleepHeartRate) : '–'}
-			</span>
-			<span class="tile-meta">slag/min</span>
+			<span class="tile-label">Hvilepuls</span>
+			<span class="tile-value">{tileRestingBpm ?? '–'}</span>
+			<span class="tile-meta">{tileRestingBpm === null ? 'slag/min' : 'siste natt'}</span>
 		</div>
 	</section>
 
@@ -134,7 +145,15 @@
 		</section>
 	{/if}
 
-	<HrvCard metric={data.hrv ?? null} breathing={data.breathing ?? null} />
+	{#if data.sleepHeartRate}
+		<SleepHeartRateCard summary={data.sleepHeartRate} />
+	{/if}
+
+	<HrvCard
+		metric={data.hrv ?? null}
+		breathing={data.breathing ?? null}
+		availability={data.hrvAvailability ?? null}
+	/>
 
 	<SleepDisturbanceList nights={data.disturbanceNights} onChanged={() => onRefresh?.()} />
 
