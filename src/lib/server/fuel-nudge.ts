@@ -28,6 +28,9 @@ import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-
 import { repeatableMeals } from '$lib/domain/nutrition/repeat-meals';
 import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
 import { decideFuelNudge } from '$lib/domain/nutrition/fuel-nudge';
+import { predictHunger } from '$lib/domain/nutrition/hunger';
+import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
+import { listHunger } from '$lib/server/nutrition/hunger-log';
 import { estimateWorkoutKcal } from '$lib/domain/health/energy-expenditure';
 import { readBodyProfile } from '$lib/server/health/body-profile';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
@@ -130,8 +133,21 @@ export async function sendFuelNudge(
 			];
 		});
 
+	// Sultmodellen og det kumulative gapet. Samme loader flaten bruker, så en nudge
+	// aldri kan fyre på et gap flaten ikke viste.
+	const [intraday, hungerHistory] = await Promise.all([
+		loadIntradayEnergy(userId, now),
+		listHunger(userId)
+	]);
+	const hunger = predictHunger({
+		history: hungerHistory,
+		gapNowKcal: intraday?.gapNow ?? null
+	});
+
 	const macroTargets = evaluateMacroTargets({ totals: summary.totals, targets });
 	const nudge = decideFuelNudge({
+		hunger,
+		gapNowKcal: intraday?.gapNow ?? null,
 		osloHour: osloHourNow(now),
 		pacing: describeIntakePacing({
 			kcalSoFar: summary.totals.kcal,

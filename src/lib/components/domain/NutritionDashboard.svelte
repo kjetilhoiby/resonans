@@ -13,6 +13,8 @@
 	import NutritionLogger from './nutrition/NutritionLogger.svelte';
 	import NutritionDayCard from './nutrition/NutritionDayCard.svelte';
 	import NutritionTargetsCard from './nutrition/NutritionTargetsCard.svelte';
+	import IntradayEnergyChart from './nutrition/IntradayEnergyChart.svelte';
+	import HungerScale from './nutrition/HungerScale.svelte';
 	import EnergyBalanceCard from './nutrition/EnergyBalanceCard.svelte';
 	import EnergyHistoryChart from './nutrition/EnergyHistoryChart.svelte';
 	import NutritionHistory from './nutrition/NutritionHistory.svelte';
@@ -58,6 +60,18 @@
 		targets={data.targets}
 		weightKg={data.latestWeightKg ?? null}
 		onSaved={() => onRefresh?.()}
+	/>
+
+	{#if data.intraday}
+		<IntradayEnergyChart
+			energy={data.intraday}
+			prediction={data.hungerPrediction ?? null}
+		/>
+	{/if}
+
+	<HungerScale
+		prediction={data.hungerPrediction ?? null}
+		onLogged={() => onRefresh?.()}
 	/>
 
 	<EnergyBalanceCard

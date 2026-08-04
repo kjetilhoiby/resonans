@@ -82,6 +82,17 @@
 		return value.toFixed(decimals).replace('.', ',');
 	}
 
+	/**
+	 * Kalorier, alltid som hele tall.
+	 *
+	 * Withings leverer desimaler (`1851.46`), og `toLocaleString` viser dem: prod sto
+	 * med «1 851,46 kcal — 890,54 kcal under vårt». To desimaler påstår en presisjon
+	 * ingen av anslagene har.
+	 */
+	function kcal(value: number): string {
+		return Math.round(value).toLocaleString('nb-NO');
+	}
+
 	const trend = $derived(balance ? weeklyWeightTrend(balance.balanceKcal) : null);
 
 	const dateLabel = $derived.by(() => {
@@ -108,26 +119,26 @@
 			<div class="card">
 				<div class="row">
 					<span class="label">Spist</span>
-					<span class="value">{balance.intakeKcal.toLocaleString('nb-NO')} kcal</span>
+					<span class="value">{kcal(balance.intakeKcal)} kcal</span>
 				</div>
 				<div class="row">
 					<span class="label">Forbrent</span>
-					<span class="value">{balance.expenditureKcal.toLocaleString('nb-NO')} kcal</span>
+					<span class="value">{kcal(balance.expenditureKcal)} kcal</span>
 				</div>
 
 				{#if ownExpenditure}
 					<p class="breakdown">
-						Vårt anslag for hele dagen: hvile {ownExpenditure.basalKcal.toLocaleString('nb-NO')}
-						× kontorhverdag = {ownExpenditure.baselineKcal.toLocaleString('nb-NO')}, pluss
-						{ownExpenditure.workoutKcal.toLocaleString('nb-NO')} fra
+						Vårt anslag for hele dagen: hvile {kcal(ownExpenditure.basalKcal)}
+						× kontorhverdag = {kcal(ownExpenditure.baselineKcal)}, pluss
+						{kcal(ownExpenditure.workoutKcal)} fra
 						{ownExpenditure.workouts.length}
 						{ownExpenditure.workouts.length === 1 ? 'økt' : 'økter'}
 					</p>
 					{#if withingsExpenditureKcal !== null}
 						<p class="breakdown">
-							Withings sier {withingsExpenditureKcal.toLocaleString('nb-NO')}
+							Withings sier {kcal(withingsExpenditureKcal)}
 							{#if gapKcal !== null && Math.abs(gapKcal) >= 200}
-								— {Math.abs(gapKcal).toLocaleString('nb-NO')} kcal
+								— {kcal(Math.abs(gapKcal))} kcal
 								{gapKcal < 0 ? 'over' : 'under'} vårt, og deres tall revideres gjennom døgnet
 							{/if}
 						</p>
@@ -141,9 +152,9 @@
 
 				{#if expenditure?.activityFieldSuspect && expenditure.reportedActivityKcal !== null}
 					<p class="breakdown breakdown--warn">
-						Withings' aktivitetsfelt sier {expenditure.reportedActivityKcal.toLocaleString('nb-NO')}
+						Withings' aktivitetsfelt sier {kcal(expenditure.reportedActivityKcal)}
 						kcal i dag, mens resten av dagen tilsier
-						{expenditure.activityKcal?.toLocaleString('nb-NO')}. Vi bruker det siste. Skjer
+						{expenditure.activityKcal === null ? '–' : kcal(expenditure.activityKcal)}. Vi bruker det siste. Skjer
 						det ofte, er det enheten som klassifiserer en økt feil.
 					</p>
 				{/if}
@@ -155,7 +166,7 @@
 				>
 					<span class="label">{framing?.label}</span>
 					<span class="value">
-						{(framing?.kcal ?? 0).toLocaleString('nb-NO')} kcal
+						{kcal(framing?.kcal ?? 0)} kcal
 					</span>
 	
 				{#if realityCheck?.balanceIsOff}
@@ -166,7 +177,7 @@
 						{realityCheck.predictedKg < 0 ? 'ned' : 'opp'}, mens du faktisk gikk
 						{nb(Math.abs(realityCheck.observedKg), 1)} kg
 						{realityCheck.observedKg < 0 ? 'ned' : realityCheck.observedKg > 0 ? 'opp' : 'ingen vei'}.
-						Det tilsvarer {Math.abs(realityCheck.impliedDailyErrorKcal).toLocaleString('nb-NO')} kcal
+						Det tilsvarer {kcal(Math.abs(realityCheck.impliedDailyErrorKcal))} kcal
 						per dag — som regel umålt mat, ikke et ekte underskudd.
 					</p>
 				{:else if realityCheck && !realityCheck.conclusive}

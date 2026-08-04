@@ -246,7 +246,15 @@ export async function listIntake(
 	const sensorIds = await nutritionSensorIds(userId);
 	if (sensorIds.length === 0) return [];
 
-	const conditions = [eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)];
+	// Sensoren bærer mer enn måltider: sultmeldinger ligger på samme sensor med
+	// `dataType: 'hunger'`. Uten dette filteret leser vi dem som måltider på 0 kcal —
+	// de ville blitt fantomdager i `groupByDay`, dratt ned `averagePerLoggedDay`, og
+	// dukket opp som tomme rader i dagskortet. Samme felle som `sleep_disturbance`.
+	const conditions = [
+		eq(sensorEvents.userId, userId),
+		inArray(sensorEvents.sensorId, sensorIds),
+		eq(sensorEvents.dataType, NUTRITION_DATA_TYPE)
+	];
 	if (opts.since) conditions.push(gte(sensorEvents.timestamp, opts.since));
 	if (opts.until) conditions.push(lte(sensorEvents.timestamp, opts.until));
 

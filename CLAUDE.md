@@ -298,6 +298,27 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   langt på dagen man er, med en bevisst **ikke-lineær** forventningskurve (folk spiser ikke
   mens de sover). 3. august: 304 kcal kl. 15 mot forventet 1 170 — og brukeren var
   «veldig sulten i 15-17-tida». `pacing.behind` er det chatten skal se på i et sultråd.
+- **Sult måles nå direkte** (`$lib/domain/nutrition/hunger.ts`, skala 1–5 i
+  `HungerScale`, `dataType: 'hunger'` på nutrition-sensoren). Det er det eneste signalet
+  i domenet ingen sensor kan hente. `predictHunger` finner **medianen** av det kumulative
+  gapet ved meldinger på ≥4 — brukerens egen terskel — og varsler på 85 % av den, altså
+  som forvarsel. Den **holder kjeft** under `MIN_OBSERVATIONS` (5) og
+  `MIN_HIGH_OBSERVATIONS` (2): en prediksjon fra én måling er en gjetning med
+  selvtillit, og bommer den, slutter brukeren å svare. Gapet lagres *med* meldingen,
+  siden kroppsprofilen kan endres i ettertid.
+  **Ingen påstander om blodsukker**, heller ikke her — og den ærlige varianten er
+  sterkere: «du ligger på gapet du har meldt sterk sult på tre ganger før» er
+  etterprøvbart. `predicted-hunger` er derfor høyest prioritert i `decideFuelNudge`.
+- **Kumulative kurver gjør gapet reelt** (`intraday-energy.ts`, `IntradayEnergyChart`).
+  Både spist og forbrent tegnes «så langt», så gapet kl. 15 kan handles på — i motsetning
+  til døgnanslag minus formiddag. Forbrukskurven er **modellert**: hvile jevnt over
+  døgnet, kontorpåslaget bare over våken tid (07–23), øktene der de skjedde. Flaten skal
+  si at den er modellert. Inntaket projiseres ikke — en flat linje ut dagen ville påstått
+  at man ikke spiser mer. Se `docs/changelog/2026-08-04-kumulativ-energi-og-sultskala.md`.
+- **`listIntake` filtrerer på `dataType`, og må gjøre det.** Sultmeldinger ligger på
+  samme `manual`/`nutrition_log`-sensor som måltidene. Uten filteret leses de som
+  måltider på 0 kcal: fantomdager i `groupByDay`, feil `averagePerLoggedDay`, tomme rader
+  i dagskortet. Legger du en ny `dataType` på den sensoren, sjekk alle leserne.
 - **`energyBalance` bruker vårt eget forbruksanslag** når kroppsprofilen holder, ikke
   Withings'. Withings vises som kryssjekk. Ikke fordi vårt er sannere, men fordi det kan
   etterprøves.

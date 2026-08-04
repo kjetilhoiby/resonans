@@ -17,10 +17,13 @@
  *
  * ## Rangeringen
  *
- * Én nudge, aldri tre. Den mest spesifikke vinner, fordi den bærer mest
+ * Én nudge, aldri fire. Den mest spesifikke vinner, fordi den bærer mest
  * informasjon:
  *
- * 1. **Underernært etter trening** — det er en konkret grunn, ikke bare et avvik.
+ * 0. **Forutsagt sult** — brukerens egen terskel, målt fra sultskalaen. Den vinner
+ *    over alt annet fordi den er målt på *denne* kroppen framfor utledet av en
+ *    generisk forventningskurve, og fordi den kommer før sulten framfor etter.
+ * 1. **Underernært etter trening** — en konkret grunn, ikke bare et avvik.
  * 2. **Bak skjema** — avviket alene.
  * 3. **Måltid hoppet over** — svakest, og derfor formulert som et spørsmål framfor
  *    et råd.
@@ -30,11 +33,17 @@
  * Ikke medisinske påstander. Vi sier «få på plass energi», ikke hva som skjer med
  * blodsukkeret — appen måler ikke blodsukker, og et råd som later som den gjør det
  * er verre enn intet råd.
+ *
+ * Dette gjelder også sultvarselet, og der er den ærlige formuleringen dessuten den
+ * sterkeste: «du ligger på gapet du har meldt sterk sult på tre ganger før» er
+ * etterprøvbart for brukeren, mens «blodsukkeret krasjer snart» er en påstand vi
+ * ikke kan innfri.
  */
 
 import type { MealSlotId } from './meal-slots';
 import type { RepeatableMeal } from './repeat-meals';
 import type { IntakePacing } from './intake-pacing';
+import type { HungerPrediction } from './hunger';
 
 /** Vinduet nudgen kan sendes i. Utenfor er den påtrengende eller for sent. */
 export const EARLIEST_HOUR = 10;
@@ -50,7 +59,11 @@ export const TRAINING_KCAL_THRESHOLD = 250;
 /** Etter denne timen forventer vi at lunsjen er spist. */
 export const LUNCH_EXPECTED_BY_HOUR = 13.5;
 
-export type FuelNudgeKind = 'underfuelled-after-training' | 'behind-pacing' | 'missing-meal';
+export type FuelNudgeKind =
+	| 'predicted-hunger'
+	| 'underfuelled-after-training'
+	| 'behind-pacing'
+	| 'missing-meal';
 
 export interface FuelNudgeInput {
 	osloHour: number;
@@ -63,6 +76,13 @@ export interface FuelNudgeInput {
 	repeatable: RepeatableMeal[];
 	/** Gram protein som mangler mot målet, når det er satt. */
 	proteinGapG?: number | null;
+	/**
+	 * Brukerens egen sultmodell, når den er klar. Den vinner over alt annet fordi den
+	 * er målt på denne kroppen framfor utledet av en forventningskurve.
+	 */
+	hunger?: HungerPrediction | null;
+	/** Kumulativt gap nå, til å tallfeste sultvarselet. */
+	gapNowKcal?: number | null;
 }
 
 export interface FuelNudge {
@@ -89,6 +109,24 @@ export function decideFuelNudge(input: FuelNudgeInput): FuelNudge | null {
 
 	const trainingKcal = input.workouts.reduce((sum, w) => sum + (w.kcal || 0), 0);
 	const suggestions = pickSuggestions(input.repeatable, input.proteinGapG ?? null);
+
+	// 0. Brukerens egen sultterskel. Den vinner, fordi den er målt på denne kroppen
+	//    framfor utledet av en generisk forventningskurve — og fordi den kommer FØR
+	//    sulten, som er hele poenget med å ha bygget skalaen.
+	const hunger = input.hunger;
+	if (hunger?.ready && hunger.approaching && hunger.thresholdKcal !== null) {
+		return {
+			kind: 'predicted-hunger',
+			headline: 'Snart sulten — ta noe nå',
+			body: `Du ligger på ${
+				typeof input.gapNowKcal === 'number' ? `${Math.round(input.gapNowKcal)} kcal` : 'det'
+			} gap, og der har du meldt sterk sult ${hunger.highObservations} ganger før${
+				hunger.typicalHour !== null ? `, oftest rundt ${hunger.typicalHour}-tida` : ''
+			}. Ta noe før det slår inn.`,
+			suggestions,
+			askHunger: false
+		};
+	}
 
 	// 1. Trent, og spist for lite. Den sterkeste varianten: det finnes en grunn.
 	if (trainingKcal >= TRAINING_KCAL_THRESHOLD && pacing.behind) {

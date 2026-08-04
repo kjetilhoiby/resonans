@@ -19,6 +19,9 @@ import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
 import { repeatableMeals } from '$lib/domain/nutrition/repeat-meals';
 import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { buildHistorySeries } from '$lib/domain/nutrition/history-series';
+import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
+import { listHunger } from '$lib/server/nutrition/hunger-log';
+import { predictHunger } from '$lib/domain/nutrition/hunger';
 import { ageFromBirthYear, readBodyProfile } from '$lib/server/health/body-profile';
 import { canonicalWorkouts } from '$lib/db/schema';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
@@ -54,8 +57,17 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 	const today = osloDateKey(new Date());
 	const windowStart = dateKeyDaysBefore(today, HISTORY_DAYS - 1);
 
-	const [weightAggregates, foodTheme, entries, targets, withings, bodyProfile, workoutsByDay] =
-		await Promise.all([
+	const [
+		weightAggregates,
+		foodTheme,
+		entries,
+		targets,
+		withings,
+		bodyProfile,
+		workoutsByDay,
+		intraday,
+		hungerHistory
+	] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
 			orderBy: [desc(sensorAggregates.startDate)],
@@ -68,7 +80,11 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		loadNutritionTargets(userId),
 		loadWithingsContext(userId, today),
 		readBodyProfile(userId),
-		loadWorkoutsByDay(userId, windowStart, today)
+		loadWorkoutsByDay(userId, windowStart, today),
+		// Kumulative kurver og sulthistorikken. Samme loader som sultendepunktet og
+		// nudgen, så de tre er enige om gapet.
+		loadIntradayEnergy(userId),
+		listHunger(userId)
 	]);
 
 	const todayWorkouts = workoutsByDay.get(today) ?? [];
@@ -249,7 +265,20 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 			partialDate: today
 		}),
 		/** Hvilken av de to forbrukskildene søylene viser. */
-		expenditureSource
+		expenditureSource,
+		/**
+		 * Kumulative kurver for i dag. Null uten kroppsprofil — uten hvilestoffskifte
+		 * finnes ingen forbrukskurve å tegne.
+		 */
+		intraday,
+		/**
+		 * Sultmodellen: hvilket gap brukeren pleier å bli skikkelig sulten på, målt fra
+		 * egne meldinger. Ikke en fysiologisk påstand — se `hunger.ts`.
+		 */
+		hungerPrediction: predictHunger({
+			history: hungerHistory,
+			gapNowKcal: intraday?.gapNow ?? null
+		})
 	};
 }
 
