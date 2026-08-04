@@ -61,6 +61,7 @@
 		ownExpenditure={data.ownExpenditure ?? null}
 		ownExpenditureMissing={data.ownExpenditureMissing ?? []}
 		withingsExpenditureKcal={data.withingsExpenditureKcal ?? null}
+		targetKcal={data.targets?.kcal ?? null}
 	/>
 
 	<section class="nutrition-source">

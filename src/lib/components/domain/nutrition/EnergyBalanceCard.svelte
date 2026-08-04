@@ -16,6 +16,7 @@
 	import type { ExpenditureBreakdown } from '$lib/domain/nutrition/expenditure-breakdown';
 	import type { RealityCheck } from '$lib/domain/nutrition/weight-reality-check';
 	import type { DailyExpenditureEstimate } from '$lib/domain/health/energy-expenditure';
+	import { frameDay } from '$lib/domain/nutrition/day-framing';
 
 	interface Props {
 		balance: EnergyBalance | null;
@@ -30,6 +31,8 @@
 		ownExpenditure?: DailyExpenditureEstimate | null;
 		/** Withings' tall, nå som kryssjekk. */
 		withingsExpenditureKcal?: number | null;
+		/** Dagsmålet, som «igjen i dag» måles mot når det finnes. */
+		targetKcal?: number | null;
 		/** Hva som mangler for å kunne regne selv. */
 		ownExpenditureMissing?: string[];
 	}
@@ -43,8 +46,24 @@
 		realityCheck = null,
 		ownExpenditure = null,
 		ownExpenditureMissing = [],
-		withingsExpenditureKcal = null
+		withingsExpenditureKcal = null,
+		targetKcal = null
 	}: Props = $props();
+
+	/**
+	 * Før midnatt er «underskudd» feil: forbruket er et døgnanslag, inntaket er så
+	 * langt. Da er det ene meningsfulle tallet hvor mye som er igjen å spise.
+	 */
+	const framing = $derived(
+		balance
+			? frameDay({
+					intakeKcal: balance.intakeKcal,
+					expenditureKcal: balance.expenditureKcal,
+					targetKcal,
+					dayComplete: !balance.partialDay
+				})
+			: null
+	);
 
 	/**
 	 * Differansen mellom de to anslagene, men bare på en komplett dag.
@@ -129,12 +148,14 @@
 					</p>
 				{/if}
 
-				<div class="row row--total" class:is-deficit={balance.balanceKcal < 0}>
-					<span class="label">
-						{balance.balanceKcal < 0 ? 'Underskudd' : balance.balanceKcal > 0 ? 'Overskudd' : 'Balanse'}
-					</span>
+				<div
+					class="row row--total"
+					class:is-deficit={framing?.direction === 'deficit'}
+					class:is-over={framing?.overBasis}
+				>
+					<span class="label">{framing?.label}</span>
 					<span class="value">
-						{Math.abs(balance.balanceKcal).toLocaleString('nb-NO')} kcal
+						{(framing?.kcal ?? 0).toLocaleString('nb-NO')} kcal
 					</span>
 	
 				{#if realityCheck?.balanceIsOff}
@@ -156,9 +177,13 @@
 				{/if}
 			</div>
 
-				{#if balance.partialDay}
+				{#if framing?.mode === 'remaining'}
 					<p class="note">
-						Dagen er ikke omme — begge tallene vokser fram til midnatt.
+						{framing.basis === 'target'
+							? 'Mot dagsmålet ditt.'
+							: 'Mot forbruksanslaget, altså å holde vekta.'} Dagen gjøres opp ved
+						midnatt — før det er «underskudd» bare et mål på hvor lite du har spist så
+						langt.
 					</p>
 				{:else if trend !== null && trend !== 0}
 					<p class="note">
@@ -285,6 +310,11 @@
 	.row--total .value {
 		font-weight: 700;
 		color: #eee;
+	}
+
+	/* Over budsjettet er verdt å merke, men ikke å skjelle ut. */
+	.row--total.is-over .value {
+		color: #f0b429;
 	}
 
 	.row--total.is-deficit .value {

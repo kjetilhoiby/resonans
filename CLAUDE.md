@@ -270,6 +270,10 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - **`energyBalance` bruker vårt eget forbruksanslag** når kroppsprofilen holder, ikke
   Withings'. Withings vises som kryssjekk. Ikke fordi vårt er sannere, men fordi det kan
   etterprøves.
+- **«Underskudd» hører til en avsluttet dag.** Forbruket er et *døgnanslag* og inntaket
+  er *så langt*, så differansen starter på sitt maksimum og krymper — «underskudd 2 396»
+  kl. 07:27 ser ut som en prestasjon. `frameDay` viser derfor **«Igjen i dag»** før
+  midnatt, målt mot dagsmålet når det finnes, ellers mot forbruksanslaget.
 - **Chatten leser loggen med `query_nutrition`** (`$lib/ai/tools/query-nutrition.ts`),
   skriver med `log_nutrition`. `query_food` er noe annet — den dekker oppskrifter, ukemeny
   og lager. Dagsmål og forbruk leses gjennom `server/nutrition/targets.ts` og
