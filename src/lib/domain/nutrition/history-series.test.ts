@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildHistorySeries, weightPointsForChart, weightSegments } from './history-series';
+import {
+	buildHistorySeries,
+	weightAxisForOverlay,
+	weightPointsForChart,
+	weightSegments,
+	MIN_WEIGHT_AXIS_SPAN_KG
+} from './history-series';
 
 describe('buildHistorySeries', () => {
 	it('fyller ut datoer selv der data mangler', () => {
@@ -151,6 +157,72 @@ describe('weightPointsForChart', () => {
 			weightByDate: { '2026-08-02': 100 }
 		});
 		expect(weightPointsForChart(series)).toEqual([]);
+	});
+});
+
+describe('weightAxisForOverlay', () => {
+	function withWeights(weightByDate: Record<string, number>) {
+		return buildHistorySeries({
+			endDate: '2026-08-14',
+			days: 14,
+			intakeByDate: {},
+			expenditureByDate: {},
+			weightByDate
+		});
+	}
+
+	it('gulver spennet slik at 200 gram ikke blir en kurve', () => {
+		// Uten gulvet ville disse to målingene fylt hele feltet og sett ut som et
+		// stup. Det er hele mekanismen som gjør to y-akser upålitelige.
+		const axis = weightAxisForOverlay(withWeights({ '2026-08-05': 82, '2026-08-14': 81.8 }));
+		expect(axis).not.toBeNull();
+		expect(axis!.spanFloored).toBe(true);
+		expect(axis!.maxKg - axis!.minKg).toBeGreaterThanOrEqual(MIN_WEIGHT_AXIS_SPAN_KG);
+
+		const points = weightPointsForChart(withWeights({ '2026-08-05': 82, '2026-08-14': 81.8 }), axis);
+		// Kurven bruker en femtedel av feltet, ikke hele.
+		expect(points[0].y - points[1].y).toBeLessThan(0.3);
+	});
+
+	it('følger målingene når de er større enn gulvet', () => {
+		const axis = weightAxisForOverlay(withWeights({ '2026-08-05': 83.5, '2026-08-14': 81.5 }));
+		expect(axis!.spanFloored).toBe(false);
+		expect(axis!.minKg).toBeLessThanOrEqual(81.5);
+		expect(axis!.maxKg).toBeGreaterThanOrEqual(83.5);
+	});
+
+	it('runder aksen til halve kilo', () => {
+		const axis = weightAxisForOverlay(withWeights({ '2026-08-05': 82.13, '2026-08-14': 81.47 }));
+		expect((axis!.minKg * 2) % 1).toBe(0);
+		expect((axis!.maxKg * 2) % 1).toBe(0);
+	});
+
+	it('gir null uten vektspenn', () => {
+		expect(weightAxisForOverlay(withWeights({ '2026-08-14': 82 }))).toBeNull();
+	});
+
+	it('holder alle punkter innenfor feltet', () => {
+		const cases: Array<Record<string, number>> = [
+			{ '2026-08-05': 82, '2026-08-14': 81.8 },
+			{ '2026-08-05': 83.5, '2026-08-10': 82.2, '2026-08-14': 81.5 },
+			{ '2026-08-05': 79.02, '2026-08-14': 84.97 }
+		];
+		for (const weights of cases) {
+			const series = withWeights(weights);
+			const axis = weightAxisForOverlay(series)!;
+			expect(weightPointsForChart(series, axis).every((p) => p.y >= 0 && p.y <= 1)).toBe(true);
+		}
+	});
+
+	it('plasserer punktene mot aksen, ikke mot sine egne ytterpunkter', () => {
+		const series = withWeights({ '2026-08-05': 82, '2026-08-14': 81.8 });
+		const points = weightPointsForChart(series, weightAxisForOverlay(series));
+		expect(points.every((p) => p.y > 0 && p.y < 1)).toBe(true);
+
+		// Den selvskalerende varianten presser dem ut til rammene.
+		const selfScaled = weightPointsForChart(series);
+		expect(selfScaled[0].y).toBe(1);
+		expect(selfScaled[1].y).toBe(0);
 	});
 });
 

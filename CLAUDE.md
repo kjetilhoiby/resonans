@@ -301,11 +301,15 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   `mealPlans.mealType` og egenfrekvens sine periode-slots mangler «kvelds». Sloten
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
-- **Historikken har ikke to y-akser.** Ønsket var «kalorier inn/ut som søyler med vekt
-  som overlay», men vekt (~82 kg) og energi (~2 500 kcal) har ingen felles skala: med to
-  akser avgjør *skalavalget* hvilken kurve som ser ut å lede, og man kan få vekta til å
-  bekrefte eller motsi underskuddet ved å endre et tall ingen ser. `EnergyHistoryChart`
-  legger derfor søylene og vektlinja i **to felt over samme datoakse**. Se
+- **Historikken har to y-akser, og et gulv som holder dem ærlige.** `EnergyHistoryChart`
+  viser inn/ut som søyler med vekta som overlay. Faren er kjent — vekt (~82 kg) og energi
+  (~2 500 kcal) har ingen felles skala, så skalavalget avgjør hvilken kurve som ser ut å
+  lede. Det som gjør regelen etterprøvbar er `MIN_WEIGHT_AXIS_SPAN_KG` (1 kg): en akse
+  som strekkes til målingene forvandler 100 gram til et stup. Aksene er **uavhengige** —
+  grafen sammenligner *formen*, og det tallfestede oppgjøret bor i `checkAgainstWeight`.
+  **Ikke prøv å binde aksene med 7 700 kcal/kg** — det ble bygget og forkastet:
+  vektendring er kumulativ mens søylene er daglige nivåer, og det låste spennet blir
+  0,45 kg, som vann sprenger nesten hver uke. Se
   `docs/changelog/2026-08-04-ernaeringshistorikk.md`.
 - **Hull i serien er `null`, aldri 0** (`history-series.ts`). En dag man glemte å logge
   er ikke en dag man ikke spiste. Vektlinja brytes over hull større enn

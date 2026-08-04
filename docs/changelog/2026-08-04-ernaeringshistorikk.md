@@ -18,6 +18,11 @@ med `queryType: 'recent'` ga kcal og protein per dag, men aldri *hva* som ble sp
 
 ## Faser
 
+Første utgave la vekta i et **eget felt under** søylene framfor som overlay, for å
+unngå to y-akser. Brukeren ba deretter eksplisitt om to akser: «Jeg vil ha to y-akser
+for å sammenlikne trender.» Det er bygget, og fase 5 under beskriver hva som holder
+skalaen ærlig.
+
 ### Fase 1: Serien bak historikken
 
 `src/lib/domain/nutrition/history-series.ts` *(ny)* med `buildHistorySeries`,
@@ -48,8 +53,7 @@ holder sammen målinger innen tre dager og bryter forbi det.
 
 ### Fase 3: Flaten
 
-- `EnergyHistoryChart.svelte` *(ny)* — søyler for inn/ut over en vektlinje, samme
-  datoakse.
+- `EnergyHistoryChart.svelte` *(ny)* — søyler for inn/ut med vekta som overlay.
 - `NutritionHistory.svelte` *(ny)* — dag for dag, nyeste først, i går åpen. Radene er
   samme `NutritionEntryRow` som dagskortet, så retting og sletting virker likt uansett
   hvilken dag måltidet ligger på.
@@ -61,20 +65,50 @@ holder sammen målinger innen tre dager og bryter forbi det.
 kcal, protein og slot. Verktøybeskrivelsen sier eksplisitt at den skal brukes på «hva
 spiste jeg i går».
 
+### Fase 5: To y-akser
+
+`weightAxisForOverlay` og `MIN_WEIGHT_AXIS_SPAN_KG` i `history-series.ts`; `plot`-gridet
+i `EnergyHistoryChart.svelte` med kcal til venstre, kg til høyre, felles rutenett og
+datoakse. `weightPointsForChart` og `weightSegments` tar nå en valgfri akse, slik at
+serien ikke bestemmer sin egen skala.
+
 ## Beslutninger
 
-### Ikke overlay med to akser — to felt over samme datoakse
+### Overlay med to y-akser, med et gulv på vektaksen
 
-Dette er det ene stedet arbeidet avviker fra det som ble bedt om, og det er bevisst.
+Faren ved to y-akser er reell: vekt (~82 kg) og energi (~2 500 kcal) har ingen felles
+skala, så skalavalget avgjør hvilken kurve som ser ut å lede. Første utgave løste det
+ved å nekte — to felt over samme datoakse. Brukeren ba om aksene likevel, for å kunne
+sammenligne trender, og det er den riktige avveiningen å overlate til den som leser
+grafen hver dag.
 
-Vekt (~82 kg) og energi (~2 500 kcal) har ingen felles skala. En overlay krever to
-y-akser, og da bestemmer **valget av skala** hvilken av kurvene som ser ut å lede: man
-kan få vekta til å «forklare» underskuddet eller motsi det ved å endre et tall ingen
-ser. På en flate som allerede har brukt to runder på å rette opp forbrukstall som ikke
-tålte etterprøving, er det den gale sjansen å ta.
+Det som gjør skalaen etterprøvbar er `MIN_WEIGHT_AXIS_SPAN_KG = 1`: vektaksen er alltid
+minst ett kilo høy. **Det er den mekanismen som ellers gjør dobbeltakser upålitelige** —
+en akse som strekkes til de målte ytterpunktene forvandler 100 gram til et stup. Ett
+kilo fordi det er omtrent døgnvariasjonen fra vann og fordøyelse; under det er det ikke
+en utvikling å lese. Ellers er spennet målingene pluss 25 % luft, rundet ut til halve
+kilo. Ingen del av regelen settes per graf.
 
-Løsningen er to felt over hverandre med samme datoakse. Man skanner nedover en dato og
-ser begge, uten at en skala har valgt en fortelling. Prisen er noen piksler høyde.
+Bunnteksten sier at aksene er uavhengige, at man skal sammenligne *formen* på kurvene,
+og hvor mye vekta faktisk beveget seg.
+
+### Forkastet: å binde aksene fysisk med 7 700 kcal per kilo
+
+Første forsøk på å svare på skalainnvendingen var å låse aksene til hverandre — 1 kg på
+vektaksen = 7 700 kcal på energiaksen — slik at stigningstallene skulle bli
+sammenlignbare. Det ble bygget, testet og så forkastet, av to grunner som er verdt å
+skrive ned så ingen prøver igjen:
+
+1. **Dimensjonene stemmer ikke.** Vektendring er kumulativ; søylene viser daglige
+   nivåer. Å legge dem på samme vertikale skala sammenligner ikke to stigningstall, det
+   sammenligner to ulike størrelser.
+2. **Spennet blir for trangt.** Med et 3 500 kcal-tak blir det låste spennet 0,45 kg.
+   Normal døgnvariasjon fra vann sprenger det nesten hver uke, så koblingen ville vært
+   brutt nesten alltid — og en akse som stille skifter regel er verre enn en åpen regel.
+
+Det tallfestede oppgjøret mellom energibalanse og vekt finnes allerede i
+`checkAgainstWeight`, som energibalansekortet rett over grafen viser. Grafen trenger
+ikke gjøre det om igjen med geometri.
 
 ### Én forbrukskilde for hele serien
 
@@ -104,13 +138,16 @@ kveldsmaten leses baklengs. `NutritionHistory` sorterer stigende innenfor dagen.
 ## Verifisering
 
 - `npm run check`: 0 feil.
-- `npm test`: 186 filer, 2398 tester grønne (14 nye i `history-series.test.ts`).
+- `npm test`: 186 filer, 2404 tester grønne (22 nye i `history-series.test.ts`).
 - Mot lokal Postgres med seedet logg, i Chromium på 390 px:
   - `GET /api/tema/<id>/dashboard/nutrition` ga `expenditureSource: 'own'`, fjorten
     dagsrader med `intakeKcal: null` der loggen manglet, og `partial: true` bare på
     2026-08-04.
-  - Grafen tegnet søylepar, brutt vektlinje og datoakse uten konsollfeil. Dagene uten
-    logg viste stubbe framfor null-søyle.
+  - Grafen tegnet søylepar, vektlinje over søylene, begge y-aksene (0–3 500 kcal og
+    81,0–82,5 kg) på felles rutenett, og datoakse justert mot søylene — uten
+    konsollfeil. Dagene uten logg viste stubbe framfor null-søyle.
+  - Med et vektspenn på 0,5 kg slo gulvet inn: aksen ble 1,5 kg høy og kurven brukte en
+    tredel av feltet framfor hele.
   - Lista viste «I går» (åpen), «I forgårs», «Lørdag 1. august», «Torsdag 30. juli».
     Klikk lukket i går og åpnet 30. juli; `aria-expanded` fulgte med.
 - Fargene `#3987e5` (spist) og `#d95926` (forbrent) validert mot `#141414`: ΔE 31,8 for
