@@ -1,8 +1,9 @@
 import { db } from '$lib/db';
-import { persons, users } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { persons, sensorEvents, users } from '$lib/db/schema';
+import { and, desc, eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import { ensureUser } from '$lib/server/users';
+import { readBodyProfile } from '$lib/server/health/body-profile';
 import {
 	acceptMarriageInvite,
 	cancelMarriageInvite,
@@ -28,6 +29,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		),
 		columns: { birthDate: true }
 	});
+	// Kroppsprofilen og siste vekt: kortet viser hvileforbrenningen den gir, og uten
+	// vekta er det ikke noe tall å vise. Vekta kommer fra Withings og kan ikke skrives
+	// inn, så den hentes her framfor å være et felt.
+	const [bodyProfile, latestWeight] = await Promise.all([
+		readBodyProfile(locals.userId),
+		db.query.sensorEvents.findFirst({
+			columns: { data: true },
+			where: and(eq(sensorEvents.userId, locals.userId), eq(sensorEvents.dataType, 'weight')),
+			orderBy: [desc(sensorEvents.timestamp)]
+		})
+	]);
+	const weightValue = (latestWeight?.data as { weight?: unknown } | null)?.weight;
+
 	const relationship = await getRelationshipOverview(locals.userId);
 	const partnerInviteShareUrl = relationship.outgoingInvite
 		? `${url.origin}/partner-invite/${relationship.outgoingInvite.token}`
@@ -36,6 +50,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		user: user || null,
 		selfBirthDate: selfPerson?.birthDate ?? null,
+		bodyProfile,
+		weightKg: typeof weightValue === 'number' && Number.isFinite(weightValue) ? weightValue : null,
 		relationship,
 		partnerInviteShareUrl
 	};

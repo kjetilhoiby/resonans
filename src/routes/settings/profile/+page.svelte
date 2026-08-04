@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AppPage, Button, DateInput, Input, PageHeader, PageSection } from '$lib/components/ui';
+	import BodyProfileCard from '$lib/components/domain/health/BodyProfileCard.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -75,7 +76,8 @@
 			<div class="card-icon">👤</div>
 			<h2>Profil</h2>
 			<p class="help-text">
-				Samle personinfo på ett sted. Navn, e-post og fødselsdato vises her nå; høyde og kjønn kan legges til i neste steg.
+				Samle personinfo på ett sted. Fødselsdatoen brukes både til årskavalkaden og til
+				hvileforbrenningen i kroppsprofilen under.
 			</p>
 			<div class="notification-option">
 				<div class="option-info">
@@ -118,13 +120,9 @@
 					<p>Hentes fra innloggingsleverandør (kommer som redigerbart felt senere).</p>
 				</div>
 			</div>
-			<div class="notification-option">
-				<div class="option-info">
-					<strong>Høyde og kjønn</strong>
-					<p>Ikke modellert i brukerprofil enda. Kan legges til som neste iterasjon.</p>
-				</div>
-			</div>
 		</section>
+
+		<BodyProfileCard profile={data.bodyProfile} weightKg={data.weightKg} />
 
 		<section class="settings-card">
 			<div class="card-icon">💍</div>

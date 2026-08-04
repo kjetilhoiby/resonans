@@ -6,6 +6,11 @@ import { eq } from 'drizzle-orm';
 import { findThemeByName } from '$lib/server/themes';
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { readBodyProfile } from '$lib/server/health/body-profile';
+import {
+	isPlausibleBirthYear,
+	validateDeskJobFactor,
+	validateHeightCm
+} from '$lib/domain/health/body-profile-fields';
 
 /**
  * Kroppsprofilen som trengs for å regne hvileforbrenning selv: høyde, fødselsår
@@ -37,20 +42,23 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 	const profile = { ...((current.profile ?? {}) as Record<string, unknown>) };
 
 	// Hvert felt er valgfritt, slik at man kan sette ett av gangen. null fjerner.
+	// Grensene og meldingene deles med flaten, så en verdi som godtas der ikke
+	// avvises her med en annen forklaring.
 	if ('heightCm' in body) {
 		const value = body.heightCm;
 		if (value === null) delete profile.heightCm;
-		else if (typeof value !== 'number' || value < 120 || value > 230) {
-			return json({ error: 'heightCm må være mellom 120 og 230.' }, { status: 400 });
-		} else profile.heightCm = value;
+		else {
+			const error = validateHeightCm(value);
+			if (error) return json({ error }, { status: 400 });
+			profile.heightCm = value;
+		}
 	}
 
 	if ('birthYear' in body) {
 		const value = body.birthYear;
-		const thisYear = new Date().getUTCFullYear();
 		if (value === null) delete profile.birthYear;
-		else if (typeof value !== 'number' || value < thisYear - 110 || value > thisYear - 10) {
-			return json({ error: 'birthYear må være et rimelig fødselsår.' }, { status: 400 });
+		else if (!isPlausibleBirthYear(value)) {
+			return json({ error: 'Fødselsåret må være et rimelig årstall.' }, { status: 400 });
 		} else profile.birthYear = value;
 	}
 
@@ -65,9 +73,11 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 	if ('deskJobFactor' in body) {
 		const value = body.deskJobFactor;
 		if (value === null) delete profile.deskJobFactor;
-		else if (typeof value !== 'number' || value < 1.1 || value > 1.9) {
-			return json({ error: 'deskJobFactor må være mellom 1,1 og 1,9.' }, { status: 400 });
-		} else profile.deskJobFactor = value;
+		else {
+			const error = validateDeskJobFactor(value);
+			if (error) return json({ error }, { status: 400 });
+			profile.deskJobFactor = value;
+		}
 	}
 
 	await db

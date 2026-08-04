@@ -130,7 +130,7 @@ Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$
 
 - **Knapper med beskrivende tekst** («Legg til», «Opprett»): trenger ingenting — teksten blir label.
 - **Ikon-knapper** (✕, ✨, …): skal ha `aria-label` (dekker både tilgjengelighet og logging). Legg til `data-track` i tillegg hvis aria-labelen er dynamisk.
-- **Tekstfelt og viktige kontroller**: sett `data-track="område:handling"` i kebab-case på norsk, f.eks. `data-track="tema-oppgaver:slett"` eller `data-track="prosjekter:nytt-prosjekt-navn"`. Området er konteksten (siden/widgeten), handlingen er hva kontrollen gjør.
+- **Tekstfelt og viktige kontroller**: sett `data-track="område:handling"` i kebab-case på norsk, f.eks. `data-track="tema-oppgaver:slett"` eller `data-track="prosjekter:nytt-prosjekt-navn"`. Området er konteksten (siden/widgeten), handlingen er hva kontrollen gjør. På delte komponenter er attributtet en **prop**: `<Input dataTrack="…">`, ikke `data-track` (Svelte videresender ikke ukjente attributter til komponenter).
 - Sjekk at nye kontroller ikke ender som anonyme labels (`✕`, `input[text]`, `<div>`) — det gjør bruksstatistikken ulesbar.
 - Bruksdata hentes med `GET /api/usage/summary?days=30` (sider, oppmerksomhetstid, økter, topp-interaksjoner).
 
@@ -249,7 +249,13 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   toppen) pluss øktene fra MET-verdier med **(MET − 1)**, som trekker fra hvilen i de
   samme minuttene. `e_bike` er 4,5 MET mot syklingens 7; løping skaleres med farten.
   Krever kroppsprofil i `metricSettings.profile` (`PUT /api/helse/profil`) — uten den
-  returneres null framfor et gjettet tall.
+  returneres null framfor et gjettet tall. Brukeren setter den i **`/settings/profile`**
+  (`BodyProfileCard`); grensene og feilmeldingene deles av flate og endepunkt gjennom
+  `$lib/domain/health/body-profile-fields.ts`, så en verdi som godtas ett sted ikke
+  avvises et annet. **Fødselsår spørres ikke om der:** det bor på self-personens
+  `birthDate`, og `metricSettings.profile.birthYear` er bare en overstyring —
+  `birthYearSource` sier hvilken kilde tallet kom fra. Se
+  `docs/changelog/2026-08-04-kroppsprofil-ui.md`.
   **De to metodene er enige om hvilen:** Mifflin-St Jeor ga 1 964 og
   `totalCalories − calories` over rene dager ga 1 953. Basalen er altså den delen av
   regnestykket man kan stole på.

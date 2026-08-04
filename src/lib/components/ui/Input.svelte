@@ -14,6 +14,17 @@
 		max?: string | number;
 		step?: string | number;
 		autocomplete?: HTMLInputAttributes['autocomplete'];
+		/**
+		 * Tastaturet mobilen skal vise. `type="number"` alene gir ikke talltastatur på
+		 * iOS, så et cm- eller kcal-felt trenger `inputmode="numeric"` i tillegg.
+		 */
+		inputmode?: HTMLInputAttributes['inputmode'];
+		/**
+		 * Etiketten brukslogging skal bruke, i kebab-case på norsk («område:handling»).
+		 * Se brukslogging-avsnittet i CLAUDE.md: uten den ender feltet som en anonym
+		 * `input[text]` i statistikken, og da er den ulesbar.
+		 */
+		dataTrack?: string;
 		className?: string;
 		onChange?: (event: Event) => void;
 	}
@@ -30,6 +41,8 @@
 		max,
 		step,
 		autocomplete,
+		inputmode,
+		dataTrack,
 		className = '',
 		onChange,
 		value = $bindable()
@@ -48,6 +61,8 @@
 	{max}
 	{step}
 	{autocomplete}
+	{inputmode}
+	data-track={dataTrack}
 	bind:value
 	onchange={onChange}
 	class={`ds-input ${className}`.trim()}

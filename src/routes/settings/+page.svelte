@@ -30,7 +30,15 @@
 		Boolean(sparebank1Status?.sensor?.isExpired) ||
 		Boolean(googleSheetsStatus?.sensor?.isExpired)
 	);
-	const hasProfileWarning = $derived(!user?.name || !user?.email);
+	const hasProfileWarning = $derived(!user?.name || !user?.email || !data.bodyProfileComplete);
+	/** Den mest handlingsrettede mangelen først — kroppsprofilen er den stille. */
+	const profileSummary = $derived(
+		!user?.name || !user?.email
+			? 'Mangler profilinfo'
+			: !data.bodyProfileComplete
+				? 'Mangler kroppsprofil — energibalansen bruker Withings i mellomtiden'
+				: 'Navn, fødselsdato, kroppsprofil og partner'
+	);
 
 	onMount(async () => {
 		await loadWithingsStatus();
@@ -109,7 +117,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<span class="status-dot {hasProfileWarning ? 'warn' : 'ok'}"></span>
 					<h2>Profil</h2>
 				</div>
-				<p>{hasProfileWarning ? 'Mangler profilinfo' : 'Navn, fødselsdato og partner'}</p>
+				<p>{profileSummary}</p>
 				<a href="/settings/profile" class="overview-link">Åpne profil</a>
 			</article>
 			<article class="overview-card" id="sources-overview">
