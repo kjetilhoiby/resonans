@@ -14,6 +14,8 @@ export type NotificationRouteKey =
 	| 'applianceCycleStart'
 	| 'applianceCycleFinish'
 	| 'groceryWeekly'
+	/** Inntaket ligger bak — se $lib/server/fuel-nudge. */
+	| 'fuelSnack'
 	| 'projectFollowUp';
 
 export type GoogleChatChannel = {

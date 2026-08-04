@@ -7,6 +7,8 @@ export async function createNudgeEvent(params: {
 	nudgeType:
 		| 'plan_day'
 		| 'close_day'
+		/** Inntaket ligger bak — se $lib/server/fuel-nudge. */
+		| 'fuel_snack'
 		| 'digest_day'
 		| 'relationship_checkin_morning'
 		| 'salary_received'

@@ -263,6 +263,14 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   protein i gram, og målandeler per makro. `evaluateMacroTargets` regner avviket i både
   andel og **gram** — gram er det et råd kan handle på. Absolutt proteinmål vinner over
   andelen, siden protein settes per kg kroppsvekt.
+- **Nudgen som sier fra først** (`$lib/server/fuel-nudge.ts`, cron `/api/cron/fuel-nudge`,
+  hver time). Beslutningen bor rent og testet i `$lib/domain/nutrition/fuel-nudge.ts` og
+  rangerer tre varianter: trent-men-underspist > bak skjema > lunsj mangler. Den siste
+  *spør* («hvor sulten er du, 1–5?») framfor å råde, siden signalet er svakest. Gater på
+  10–20 Oslo, på at et kcal-mål finnes, og på én per dag — en nudge som fyrer hver dag blir
+  bakgrunnsstøy, og bakgrunnsstøy blir slått av. Forslagene kommer fra `repeatableMeals`,
+  proteinrike først når protein mangler. **Ingen medisinske påstander:** vi sier «få på
+  plass energi», ikke hva som skjer med blodsukkeret — appen måler ikke blodsukker.
 - **Sultkriser er pacing, ikke viljestyrke.** `intake-pacing.ts` måler inntaket mot hvor
   langt på dagen man er, med en bevisst **ikke-lineær** forventningskurve (folk spiser ikke
   mens de sover). 3. august: 304 kcal kl. 15 mot forventet 1 170 — og brukeren var
