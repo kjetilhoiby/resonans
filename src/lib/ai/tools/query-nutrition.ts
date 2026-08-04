@@ -28,6 +28,9 @@ import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
 import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
 import { loadTodayExpenditure } from '$lib/server/nutrition/expenditure';
+import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
+import { listHunger } from '$lib/server/nutrition/hunger-log';
+import { predictHunger } from '$lib/domain/nutrition/hunger';
 
 export const queryNutritionTool = {
 	name: 'query_nutrition',
@@ -41,7 +44,11 @@ queryType:
 
 Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.
 
-macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan handle på. pacing sier hvor langt på dagen inntaket ligger — det er der sultkriser forklares.`,
+macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan handle på. pacing sier hvor langt på dagen inntaket ligger — det er der sultkriser forklares.
+
+På «jeg er dritsulten» eller «trenger en snack»: bruk queryType today og les 'hunger' og 'cumulativeSoFar' sammen. cumulativeSoFar.gapKcal er forbrent minus spist SÅ LANGT — det eneste gap-tallet som er sammenlignbart med brukerens egen terskel (hunger.thresholdKcal, målt fra deres egne 1–5-meldinger). Ligger gapet nær eller over terskelen, si det med tallene: «du ligger på X kcal gap, og der har du meldt sterk sult N ganger før». Er hunger.ready false, si at skalaen trenger flere svar framfor å gjette — og bruk pacing i mellomtiden.
+
+Si ALDRI noe om blodsukker. Appen måler det ikke.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
@@ -89,11 +96,17 @@ macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan hand
 
 		const today = osloDateKey(new Date());
 		const since = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-		const [entries, targets, expenditureKcal] = await Promise.all([
+		const [entries, targets, expenditureKcal, intraday, hungerHistory] = await Promise.all([
 			listIntake(userId, { since }),
 			loadNutritionTargets(userId),
-			loadTodayExpenditure(userId, today)
+			loadTodayExpenditure(userId, today),
+			loadIntradayEnergy(userId),
+			listHunger(userId)
 		]);
+		const hungerPrediction = predictHunger({
+			history: hungerHistory,
+			gapNowKcal: intraday?.gapNow ?? null
+		});
 
 		const todayEntries = entries.filter((entry) => osloDateKey(entry.timestamp) === today);
 		const summary = summarizeDay(today, todayEntries, targets);
@@ -123,6 +136,34 @@ macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan hand
 				targetProteinG: targets.proteinG,
 				osloHour: osloHourNow()
 			}),
+			/**
+			 * Kumulativt gap **så langt**, i motsetning til `energyBalance` under, som
+			 * trekker et inntak-så-langt fra et døgnanslag. Det er dette tallet et sultråd
+			 * skal bruke: det er sammenlignbart med brukerens egen sultterskel.
+			 */
+			cumulativeSoFar: intraday
+				? {
+						intakeKcal: intraday.intakeNow,
+						expenditureKcal: intraday.expenditureNow,
+						gapKcal: intraday.gapNow,
+						expenditureFullDayKcal: intraday.expenditureFullDay,
+						note: 'Forbruket er modellert: hvile jevnt over døgnet, kontorpåslag over våken tid, øktene der de skjedde.'
+					}
+				: null,
+			/**
+			 * Brukerens **egen** sultterskel, målt fra sultskalaen. Dette er sterkere enn
+			 * pacing i et sultråd, fordi det er målt på denne kroppen. Si aldri noe om
+			 * blodsukker — vi måler det ikke.
+			 */
+			hunger: {
+				...hungerPrediction,
+				recentReports: hungerHistory.slice(0, 8).map((obs) => ({
+					at: obs.at,
+					level: obs.level,
+					gapKcal: obs.gapKcal,
+					osloHour: obs.osloHour
+				}))
+			},
 			remaining: remainingForDay({ totals: summary.totals, targets, expenditureKcal }),
 			energyBalance: computeEnergyBalance({
 				intakeKcal: summary.totals.kcal,

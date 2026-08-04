@@ -43,6 +43,7 @@ import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
 import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
 import { manageNutritionTargetsTool } from '$lib/ai/tools/manage-nutrition-targets';
+import { logHungerTool } from '$lib/ai/tools/log-hunger';
 import {
 	createUserWidget,
 	findSimilarWidget,
@@ -1411,6 +1412,22 @@ const tools = [
 					name: logNutritionTool.name,
 					description: logNutritionTool.description,
 					parameters: logNutritionTool.parameters
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: logHungerTool.name,
+					description:
+						'Registrer hvor sulten brukeren er, 1–5 (1 = ikke sulten, 5 = skrubbsulten). Bruk når brukeren OPPGIR et nivå, eller svarer på sultvarselets «hvor sulten er du, 1–5?». IKKE gjett nivået ut fra ordbruk — skalaen er kalibrert mot brukerens egne svar, og et gjettet tall ødelegger kalibreringen. Er nivået uklart, spør. Systemet legger selv på det kumulative gapet, og lærer over tid hvilket gap som gjør denne brukeren sulten. Si aldri noe om blodsukker.',
+					parameters: {
+						type: 'object',
+						properties: {
+							level: { type: 'number', description: 'Sultnivået brukeren oppgav, 1–5. Aldri gjettet.' },
+							note: { type: 'string', description: 'Brukerens egne ord, hvis de sa mer enn tallet.' }
+						},
+						required: ['level']
+					}
 				}
 			},
 			{
@@ -2911,6 +2928,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🥗 Log nutrition:', args.description);
 					const result = await logNutritionTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_hunger') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🥗 Log hunger:', args.level);
+					const result = await logHungerTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_nutrition_targets') {
 					const args = JSON.parse(toolCall.function.arguments);

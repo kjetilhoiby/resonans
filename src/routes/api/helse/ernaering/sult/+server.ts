@@ -1,16 +1,15 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listHunger, logHunger } from '$lib/server/nutrition/hunger-log';
+import { listHunger, recordHunger } from '$lib/server/nutrition/hunger-log';
 import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
-import { isHungerLevel, predictHunger } from '$lib/domain/nutrition/hunger';
-import { osloHourNow } from '$lib/domain/nutrition/intake-pacing';
+import { predictHunger } from '$lib/domain/nutrition/hunger';
 
 /**
  * Sultskalaen 1–5.
  *
- * Gapet regnes ut **her**, ikke i klienten: det er det ene tallet meldingen får verdi
- * av, og en klient som sender sitt eget gap kunne sendt hva som helst. Samme loader
- * som flaten og nudgen bruker, så de tre er enige om tallet.
+ * Skrivingen bor i `recordHunger`, delt med chat-verktøyet `log_hunger`: gapet regnes
+ * ut der, ikke i klienten, og de to inngangene kan derfor ikke bli uenige om hverken
+ * tallet eller valideringen.
  */
 export const GET: RequestHandler = async ({ locals }) => {
 	const [history, intraday] = await Promise.all([
@@ -24,28 +23,18 @@ export const GET: RequestHandler = async ({ locals }) => {
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-	const body = await request.json().catch(() => null);
-	const level = (body as { level?: unknown } | null)?.level;
-	if (!isHungerLevel(level)) {
-		return json({ error: 'Sultnivå må være et helt tall mellom 1 og 5.' }, { status: 400 });
-	}
+	const body = (await request.json().catch(() => null)) as {
+		level?: unknown;
+		note?: unknown;
+	} | null;
 
-	const intraday = await loadIntradayEnergy(locals.userId);
-	const created = await logHunger({
+	const result = await recordHunger({
 		userId: locals.userId,
-		level,
-		gapKcal: intraday?.gapNow ?? null,
-		intakeKcal: intraday?.intakeNow ?? null,
-		osloHour: osloHourNow(),
-		note: typeof (body as { note?: unknown }).note === 'string' ? (body as { note: string }).note : null
+		level: body?.level as number,
+		note: typeof body?.note === 'string' ? body.note : null
 	});
-	if (!created) return json({ error: 'Kunne ikke lagre sultmeldingen.' }, { status: 400 });
+	if (!result.ok) return json({ error: result.error }, { status: 400 });
 
-	const history = await listHunger(locals.userId);
-	return json({
-		...created,
-		gapKcal: intraday?.gapNow ?? null,
-		/** Modellen etter denne meldingen — så flaten kan si at den lærte noe. */
-		prediction: predictHunger({ history, gapNowKcal: intraday?.gapNow ?? null })
-	});
+	const { ok: _ok, ...payload } = result;
+	return json(payload);
 };

@@ -17,13 +17,17 @@ import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import {
 	isHungerLevel,
-	type HungerObservation
+	predictHunger,
+	type HungerObservation,
+	type HungerPrediction
 } from '$lib/domain/nutrition/hunger';
+import { osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import {
 	NUTRITION_PROVIDER,
 	NUTRITION_SENSOR_TYPE,
 	ensureNutritionSensor
 } from '$lib/server/nutrition/intake-log';
+import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
 
 export const HUNGER_DATA_TYPE = 'hunger';
 
@@ -126,6 +130,49 @@ export async function listHunger(
 			}
 		];
 	});
+}
+
+/**
+ * Registrerer en sultmelding **med** gapet, og returnerer modellen etterpå.
+ *
+ * Én skrivevei, delt av `POST /api/helse/ernaering/sult` og chat-verktøyet
+ * `log_hunger`. Gapet regnes ut her framfor å komme fra klienten: det er det ene tallet
+ * meldingen får verdi av, og en klient som sender sitt eget kunne sendt hva som helst.
+ */
+export async function recordHunger(input: {
+	userId: string;
+	level: number;
+	note?: string | null;
+	now?: Date;
+}): Promise<
+	| { ok: true; id: string; timestamp: string; gapKcal: number | null; prediction: HungerPrediction }
+	| { ok: false; error: string }
+> {
+	if (!isHungerLevel(input.level)) {
+		return { ok: false, error: 'Sultnivå må være et helt tall mellom 1 og 5.' };
+	}
+
+	const now = input.now ?? new Date();
+	const intraday = await loadIntradayEnergy(input.userId, now);
+
+	const created = await logHunger({
+		userId: input.userId,
+		level: input.level,
+		timestamp: now,
+		gapKcal: intraday?.gapNow ?? null,
+		intakeKcal: intraday?.intakeNow ?? null,
+		osloHour: osloHourNow(now),
+		note: input.note ?? null
+	});
+	if (!created) return { ok: false, error: 'Kunne ikke lagre sultmeldingen.' };
+
+	const history = await listHunger(input.userId);
+	return {
+		ok: true,
+		...created,
+		gapKcal: intraday?.gapNow ?? null,
+		prediction: predictHunger({ history, gapNowKcal: intraday?.gapNow ?? null })
+	};
 }
 
 export async function deleteHunger(userId: string, eventId: string): Promise<boolean> {

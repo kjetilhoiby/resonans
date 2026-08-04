@@ -309,6 +309,12 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   **Ingen påstander om blodsukker**, heller ikke her — og den ærlige varianten er
   sterkere: «du ligger på gapet du har meldt sterk sult på tre ganger før» er
   etterprøvbart. `predicted-hunger` er derfor høyest prioritert i `decideFuelNudge`.
+- **Chatten leser sult med `query_nutrition` (`today`) og skriver med `log_hunger`.**
+  `cumulativeSoFar.gapKcal` er tallet et sultråd skal bruke — `energyBalance` trekker et
+  inntak-så-langt fra et *døgnanslag* og er ikke sammenlignbart med terskelen.
+  `log_hunger` **transkriberer et tall brukeren oppgir**, den tolker ikke: modellen skal
+  ikke gjette at «dritsulten» er en 5, siden skalaen er kalibrert mot brukerens egne
+  svar. Begge inngangene skriver gjennom `recordHunger`.
 - **Kumulative kurver gjør gapet reelt** (`intraday-energy.ts`, `IntradayEnergyChart`).
   Både spist og forbrent tegnes «så langt», så gapet kl. 15 kan handles på — i motsetning
   til døgnanslag minus formiddag. Forbrukskurven er **modellert**: hvile jevnt over

@@ -146,11 +146,36 @@ anslagene har.
   med klokkeslett og stiplet projeksjon. En seedet overspisingsdag (4 120 spist mot
   1 766 forbrent) snudde feltet til inntaksfargen og overskriften til «Over nå 2 354».
   Sultskalaen viste fem knapper og modell-linja. Ingen konsollfeil.
+- Chat-verktøyene, kjørt i dev-serveren: `query_nutrition` today ga
+  `cumulativeSoFar {intake 1520, expenditure 1815, gap 295, fullDay 2230}` og `hunger`
+  med terskel 1 320, typisk time 15 og fem siste meldinger med gap. `log_hunger` med
+  `level: 4` lagret med gap 295 og svarte «Modellen er klar: du melder sterk sult rundt
+  1250 kcal gap»; `level: 9` og `level: 3.5` avvist med samme melding som endepunktet.
+  `POST /api/helse/ernaering/sult` etter refaktoren til `recordHunger` ga samme svar,
+  og `level: 0` / tomt objekt samme feil.
+- Alle seks kortene på Ernæring rendret, og et trykk på sult-3 ga «Registrert».
+
+### Fase 5: Chatten leser og skriver sult
+
+`query_nutrition` med `queryType: 'today'` returnerer nå `cumulativeSoFar` (inn, ut og
+gap **så langt**) og `hunger` (modellen pluss åtte siste meldinger). Verktøybeskrivelsen
+sier eksplisitt hva som skal brukes på «jeg er dritsulten»: gapet så langt mot brukerens
+egen terskel, med tallene — og at skalaen trenger flere svar framfor å gjette når
+modellen ikke er klar.
+
+`log_hunger` *(nytt verktøy)* registrerer et nivå brukeren **oppgir**. Uten det hadde
+nudgens interaktive variant ingen plass å landet: den spør «hvor sulten føler du deg, 1–5?»,
+og sa brukeren «4» i chatten, forsvant svaret. Å spørre om noe man ikke tar imot er den
+raskeste måten å få folk til å slutte å svare.
+
+Verktøyet **transkriberer, det tolker ikke**: modellen skal ikke gjette at «dritsulten»
+er en 5. Skalaen er kalibrert mot brukerens egne tidligere svar, og et gjettet nivå
+forurenser nettopp den kalibreringen — beskrivelsen sier at den skal spørre i stedet.
+
+Skrivingen flyttet til `recordHunger`, delt av endepunktet og verktøyet, etter samme
+mønster som `saveNutritionTargets`.
 
 ## Gjenstår
 
-- Chatten kan ikke ennå *lese* sultloggen. `query_nutrition` bør få med
-  `hungerPrediction`, slik at «jeg er dritsulten» kan besvares med brukerens egen
-  terskel framfor bare pacing.
-- Visuelle baselines må fortsatt regenereres på brukerens maskin (Chromium 1194 mot
-  forventet 1223), nå også med to nye kort på Ernæring.
+Visuelle baselines må fortsatt regenereres på brukerens maskin (Chromium 1194 mot
+forventet 1223), nå også med to nye kort på Ernæring.
