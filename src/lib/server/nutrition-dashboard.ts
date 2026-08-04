@@ -11,10 +11,14 @@ import { loadNutritionTargets } from '$lib/server/nutrition/targets';
 import { loadExpenditureContext } from '$lib/server/nutrition/expenditure';
 import { describeExpenditure } from '$lib/domain/nutrition/expenditure-breakdown';
 import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
-import { estimateDailyExpenditure } from '$lib/domain/health/energy-expenditure';
+import {
+	estimateDailyExpenditure,
+	type WorkoutForEstimate
+} from '$lib/domain/health/energy-expenditure';
 import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
 import { repeatableMeals } from '$lib/domain/nutrition/repeat-meals';
 import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
+import { buildHistorySeries } from '$lib/domain/nutrition/history-series';
 import { ageFromBirthYear, readBodyProfile } from '$lib/server/health/body-profile';
 import { canonicalWorkouts } from '$lib/db/schema';
 import { normalizeBodyComposition, describeCompositionChange } from '$lib/domain/health/body-composition';
@@ -35,12 +39,22 @@ import { gte } from 'drizzle-orm';
  * Vektserien blir liggende: den er utfallet kostholdet påvirker. Selve
  * effort→vekt-modellen bor på Trening (effort → effekt).
  */
+/**
+ * Historikkvinduet.
+ *
+ * Fjorten dager er langt nok til å se et mønster og kort nok til at søylene har
+ * lesbar bredde på en telefon. Det er også vinduet loggen alt hentes i, så
+ * historikken koster ingen ekstra spørring mot `sensor_events`.
+ */
+export const HISTORY_DAYS = 14;
+
 export async function loadNutritionDashboardData(userId: string, theme: { name: string; emoji: string | null }) {
-	const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+	const since = new Date(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000);
 
 	const today = osloDateKey(new Date());
+	const windowStart = dateKeyDaysBefore(today, HISTORY_DAYS - 1);
 
-	const [weightAggregates, foodTheme, entries, targets, withings, bodyProfile, todayWorkouts] =
+	const [weightAggregates, foodTheme, entries, targets, withings, bodyProfile, workoutsByDay] =
 		await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
@@ -54,8 +68,10 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		loadNutritionTargets(userId),
 		loadWithingsContext(userId, today),
 		readBodyProfile(userId),
-		loadTodayWorkouts(userId, today)
+		loadWorkoutsByDay(userId, windowStart, today)
 	]);
+
+	const todayWorkouts = workoutsByDay.get(today) ?? [];
 
 	const weight = weightAggregates
 		.slice()
@@ -71,19 +87,62 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 	const todaySummary = summarizeDay(today, todayEntries, targets);
 
 	/**
+	 * Kroppsprofilen begge forbruksanslagene regnes fra. Vekta er siste måling og
+	 * brukes for hele vinduet: Mifflin-St Jeor flytter seg 10 kcal per kilo, så en
+	 * kilos variasjon over fjorten dager er under støygulvet — og en «vekt per dag»
+	 * ville krevd interpolering over dagene uten måling.
+	 */
+	const estimateProfile = {
+		weightKg: withings.weightPoints[0]?.kg ?? undefined,
+		heightCm: bodyProfile.heightCm ?? undefined,
+		ageYears: ageFromBirthYear(bodyProfile.birthYear) ?? undefined,
+		sex: bodyProfile.sex ?? undefined
+	};
+
+	/**
 	 * Vårt eget forbruksestimat. Null når kroppsprofilen mangler — vi gjetter ikke
 	 * på høyde eller alder.
 	 */
 	const ownExpenditure = estimateDailyExpenditure({
-		profile: {
-			weightKg: withings.weightPoints[0]?.kg ?? undefined,
-			heightCm: bodyProfile.heightCm ?? undefined,
-			ageYears: ageFromBirthYear(bodyProfile.birthYear) ?? undefined,
-			sex: bodyProfile.sex ?? undefined
-		},
+		profile: estimateProfile,
 		workouts: todayWorkouts,
 		deskJobFactor: bodyProfile.deskJobFactor ?? undefined
 	});
+
+	const intakeByDate: Record<string, number> = {};
+	for (const day of groupByDay(entries)) {
+		intakeByDate[day.date] = Math.round(summarizeDay(day.date, day.entries, targets).totals.kcal);
+	}
+
+	/**
+	 * Én forbrukskilde for hele serien, aldri blandet.
+	 *
+	 * Vårt eget anslag når profilen holder — det er tallet energibalansekortet
+	 * leder med, og en historikk som viste Withings ville motsagt kortet rett over
+	 * seg. Uten profil faller vi tilbake til Withings, og sier hvilken kilde det er.
+	 */
+	const expenditureSource: 'own' | 'withings' | null = ownExpenditure
+		? 'own'
+		: withings.expenditureByDay.length > 0
+			? 'withings'
+			: null;
+
+	const expenditureByDate: Record<string, number> = {};
+	if (expenditureSource === 'own') {
+		for (let i = 0; i < HISTORY_DAYS; i++) {
+			const date = dateKeyDaysBefore(today, i);
+			const estimate = estimateDailyExpenditure({
+				profile: estimateProfile,
+				workouts: workoutsByDay.get(date) ?? [],
+				deskJobFactor: bodyProfile.deskJobFactor ?? undefined
+			});
+			if (estimate) expenditureByDate[date] = estimate.totalKcal;
+		}
+	} else if (expenditureSource === 'withings') {
+		for (const row of withings.expenditureByDay) {
+			expenditureByDate[row.dateKey] = Math.round(row.totalKcal);
+		}
+	}
 
 	return {
 		themeName: theme.name,
@@ -174,7 +233,21 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		repeatable: repeatableMeals(entries),
 		/** Siste 14 dager, nyeste først. Mater både historikken og snittet. */
 		recent: entries,
-		average: averagePerLoggedDay(entries)
+		average: averagePerLoggedDay(entries),
+		/**
+		 * Inn, ut og vekt per dag. Ikke én overlay med to akser — se
+		 * `history-series` for hvorfor skalavalget der ville avgjort fortellingen.
+		 */
+		history: buildHistorySeries({
+			endDate: today,
+			days: HISTORY_DAYS,
+			intakeByDate,
+			expenditureByDate,
+			weightByDate: averageWeightByDate(withings.weightPoints),
+			partialDate: today
+		}),
+		/** Hvilken av de to forbrukskildene søylene viser. */
+		expenditureSource
 	};
 }
 
@@ -252,31 +325,81 @@ async function loadWithingsContext(userId: string, todayKey: string) {
 }
 
 /**
- * Dagens økter, til vårt eget forbruksestimat.
+ * Øktene i vinduet, gruppert på Oslo-dato — til vårt eget forbruksestimat.
  *
  * Fra `canonical_workouts` og ikke fra Withings' dagsrad: det er sportstypen og
  * varigheten vi trenger, og den kanoniske raden er dedupliserende. Vinduet er
  * romslig i UTC og filtreres deretter på Oslo-dato, siden døgnskillet ikke er det
  * samme.
+ *
+ * Én spørring for hele vinduet framfor én per dag: historikken trenger fjorten
+ * dager, og fjorten rundturer for det samme er sløseri i en sidelasting.
  */
-async function loadTodayWorkouts(userId: string, todayKey: string) {
-	const dayStart = new Date(`${todayKey}T00:00:00.000Z`);
+async function loadWorkoutsByDay(
+	userId: string,
+	fromKey: string,
+	toKey: string
+): Promise<Map<string, WorkoutForEstimate[]>> {
+	const from = new Date(`${fromKey}T00:00:00.000Z`);
+	const to = new Date(`${toKey}T00:00:00.000Z`);
+
 	const rows = await db.query.canonicalWorkouts.findMany({
 		columns: { startTime: true, sportType: true, durationSeconds: true, distanceMeters: true },
 		where: and(
 			eq(canonicalWorkouts.userId, userId),
-			gte(canonicalWorkouts.startTime, new Date(dayStart.getTime() - 12 * 60 * 60 * 1000)),
-			lte(canonicalWorkouts.startTime, new Date(dayStart.getTime() + 36 * 60 * 60 * 1000))
+			gte(canonicalWorkouts.startTime, new Date(from.getTime() - 12 * 60 * 60 * 1000)),
+			lte(canonicalWorkouts.startTime, new Date(to.getTime() + 36 * 60 * 60 * 1000))
 		)
 	});
 
-	return rows
-		.filter((row) => osloDateKey(row.startTime) === todayKey)
-		.map((row) => ({
+	const byDay = new Map<string, WorkoutForEstimate[]>();
+	for (const row of rows) {
+		const key = osloDateKey(row.startTime);
+		if (!key || key < fromKey || key > toKey) continue;
+		const workout: WorkoutForEstimate = {
 			sportType: row.sportType,
 			durationSeconds: row.durationSeconds ? Number(row.durationSeconds) : null,
 			distanceMeters: row.distanceMeters ? Number(row.distanceMeters) : null
-		}));
+		};
+		const list = byDay.get(key);
+		if (list) list.push(workout);
+		else byDay.set(key, [workout]);
+	}
+	return byDay;
+}
+
+/** Dagsnøkkelen `count` dager før `dateKey`. */
+function dateKeyDaysBefore(dateKey: string, count: number): string {
+	const ms = Date.parse(`${dateKey}T00:00:00Z`);
+	if (!Number.isFinite(ms)) return dateKey;
+	return new Date(ms - count * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Vekt per dag, som snitt av dagens målinger.
+ *
+ * Snitt framfor siste: går man på vekta både morgen og kveld, skiller de to
+ * målingene gjerne et kilo, og «siste» ville gjort en kveldsmåling til dagens
+ * vekt. Snittet er det samme valget `checkAgainstWeight` gjør i hver ende av
+ * vinduet sitt.
+ */
+function averageWeightByDate(points: Array<{ date: string; kg: number }>): Record<string, number> {
+	const sums = new Map<string, { sum: number; count: number }>();
+	for (const point of points) {
+		const bucket = sums.get(point.date);
+		if (bucket) {
+			bucket.sum += point.kg;
+			bucket.count += 1;
+		} else {
+			sums.set(point.date, { sum: point.kg, count: 1 });
+		}
+	}
+
+	const result: Record<string, number> = {};
+	for (const [date, { sum, count }] of sums) {
+		result[date] = Math.round((sum / count) * 10) / 10;
+	}
+	return result;
 }
 
 /** Brukerens mat-tema, om det finnes. Navnet er ikke gitt, så vi matcher på kind. */

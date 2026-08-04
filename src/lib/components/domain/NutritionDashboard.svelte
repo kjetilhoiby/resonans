@@ -13,6 +13,8 @@
 	import NutritionLogger from './nutrition/NutritionLogger.svelte';
 	import NutritionDayCard from './nutrition/NutritionDayCard.svelte';
 	import EnergyBalanceCard from './nutrition/EnergyBalanceCard.svelte';
+	import EnergyHistoryChart from './nutrition/EnergyHistoryChart.svelte';
+	import NutritionHistory from './nutrition/NutritionHistory.svelte';
 	import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 
 	interface Props {
@@ -62,6 +64,19 @@
 		ownExpenditureMissing={data.ownExpenditureMissing ?? []}
 		withingsExpenditureKcal={data.withingsExpenditureKcal ?? null}
 		targetKcal={data.targets?.kcal ?? null}
+	/>
+
+	{#if data.history}
+		<EnergyHistoryChart
+			series={data.history}
+			expenditureSource={data.expenditureSource ?? null}
+		/>
+	{/if}
+
+	<NutritionHistory
+		entries={data.recent ?? []}
+		today={data.today.date}
+		onChanged={() => onRefresh?.()}
 	/>
 
 	<section class="nutrition-source">

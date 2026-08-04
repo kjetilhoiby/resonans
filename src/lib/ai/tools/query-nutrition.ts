@@ -37,7 +37,7 @@ Bruk denne FØR du gir råd om mat, sult eller kaloribudsjett. Uten den gjetter 
 
 queryType:
 - 'today': dagens logg gruppert i frokost/lunsj/middag/kvelds/snacks, summer, mål, hva som er igjen, og spist mot forbrent fra Withings. Inkluderer hvilken måltidsslot klokka er i nå.
-- 'recent': siste N dager (default 7) med kcal og protein per dag, pluss snitt per logget dag.
+- 'recent': siste N dager (default 7) med kcal og protein per dag, **måltidene med navn og klokkeslett**, og snitt per logget dag. Bruk denne på «hva spiste jeg i går».
 
 Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.
 
@@ -66,7 +66,20 @@ macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan hand
 						date: day.date,
 						kcal: Math.round(summary.totals.kcal),
 						proteinG: Math.round(summary.totals.proteinG),
-						meals: day.entries.length
+						meals: day.entries.length,
+						/**
+						 * Hva som ble spist, ikke bare hvor mye. «Hva spiste jeg i går?»
+						 * kunne før bare besvares med «1 910 kcal over tre måltider» —
+						 * summen, aldri maten. Klokkeslettet er med fordi et råd om
+						 * pacing trenger å vite når på dagen det ble spist.
+						 */
+						entries: summary.entries.map((entry) => ({
+							time: osloTimeLabel(entry.timestamp),
+							label: entry.label,
+							kcal: Math.round(entry.macros.kcal),
+							proteinG: Math.round(entry.macros.proteinG),
+							slot: entry.mealSlot
+						}))
 					};
 				}),
 				averagePerLoggedDay: averagePerLoggedDay(entries),

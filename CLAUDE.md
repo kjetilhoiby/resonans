@@ -301,6 +301,24 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   `mealPlans.mealType` og egenfrekvens sine periode-slots mangler «kvelds». Sloten
   utledes fra Osloklokka og kan overstyres; `mealSlotSource` skiller utledet fra
   valgt, og det er den som avgjør om en tidsretting flytter sloten med.
+- **Historikken har ikke to y-akser.** Ønsket var «kalorier inn/ut som søyler med vekt
+  som overlay», men vekt (~82 kg) og energi (~2 500 kcal) har ingen felles skala: med to
+  akser avgjør *skalavalget* hvilken kurve som ser ut å lede, og man kan få vekta til å
+  bekrefte eller motsi underskuddet ved å endre et tall ingen ser. `EnergyHistoryChart`
+  legger derfor søylene og vektlinja i **to felt over samme datoakse**. Se
+  `docs/changelog/2026-08-04-ernaeringshistorikk.md`.
+- **Hull i serien er `null`, aldri 0** (`history-series.ts`). En dag man glemte å logge
+  er ikke en dag man ikke spiste. Vektlinja brytes over hull større enn
+  `MAX_WEIGHT_GAP_DAYS` (3) — en rett strek over ti dager påstår en utvikling ingen har
+  målt.
+- **Serien bruker én forbrukskilde, aldri blandet.** Vårt eget anslag når kroppsprofilen
+  holder (samme tall kortet over leder med), ellers Withings; `expenditureSource` sier
+  hvilken. Et kildebytte midt i vinduet ville sett ut som en endring i forbruket.
+- `HistoryDay.partial` merker dagen som ikke er omme: inntaket er «så langt», forbruket
+  for hele døgnet, så søylene er ikke sammenlignbare — `frameDay`-feilen i søyleform.
+- `query_nutrition` med `queryType: 'recent'` returnerer **måltidene med navn og
+  klokkeslett**, ikke bare dagssummer. «Hva spiste jeg i går» kunne før bare besvares
+  med «1 910 kcal over tre måltider».
 
 ### Puls-baseline (HRR)
 
