@@ -151,6 +151,8 @@ export async function loadNutritionDashboardData(userId: string, theme: { name: 
 		foodThemeName: foodTheme?.name ?? null,
 		weight,
 		targets,
+		/** Siste vektmåling — til proteinforslaget i målkortet (1,6–2,0 g/kg). */
+		latestWeightKg: withings.weightPoints[0]?.kg ?? null,
 		today: todaySummary,
 		/** Mot makromålene, i gram. */
 		macroTargets: evaluateMacroTargets({ totals: todaySummary.totals, targets }),

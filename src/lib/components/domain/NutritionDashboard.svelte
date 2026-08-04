@@ -12,6 +12,7 @@
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import NutritionLogger from './nutrition/NutritionLogger.svelte';
 	import NutritionDayCard from './nutrition/NutritionDayCard.svelte';
+	import NutritionTargetsCard from './nutrition/NutritionTargetsCard.svelte';
 	import EnergyBalanceCard from './nutrition/EnergyBalanceCard.svelte';
 	import EnergyHistoryChart from './nutrition/EnergyHistoryChart.svelte';
 	import NutritionHistory from './nutrition/NutritionHistory.svelte';
@@ -51,6 +52,12 @@
 		targets={data.targets}
 		average={data.average}
 		onChanged={() => onRefresh?.()}
+	/>
+
+	<NutritionTargetsCard
+		targets={data.targets}
+		weightKg={data.latestWeightKg ?? null}
+		onSaved={() => onRefresh?.()}
 	/>
 
 	<EnergyBalanceCard

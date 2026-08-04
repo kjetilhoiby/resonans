@@ -265,10 +265,27 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - Dagens tall leses fra loggen, ikke fra dagsaggregatet: `aggregateDailyEffort` setter
   `metrics` i sin helhet på `period = 'day'`-rader og overskriver alt annet der.
 - Endepunktene ligger under `/api/helse/ernaering/`.
-- **Makromål** settes i `metricSettings.nutrition` (`PUT /api/helse/ernaering/mal`): kcal,
-  protein i gram, og målandeler per makro. `evaluateMacroTargets` regner avviket i både
-  andel og **gram** — gram er det et råd kan handle på. Absolutt proteinmål vinner over
-  andelen, siden protein settes per kg kroppsvekt.
+- **Makromål** bor i `metricSettings.nutrition`: kcal, protein i gram, og målandeler per
+  makro. `evaluateMacroTargets` regner avviket i både andel og **gram** — gram er det et
+  råd kan handle på. Absolutt proteinmål vinner over andelen, siden protein settes per kg
+  kroppsvekt.
+  **Tre innganger, én skrivevei.** `PUT /api/helse/ernaering/mal`,
+  `NutritionTargetsCard` på Ernæring-flaten og chat-verktøyet
+  `manage_nutrition_targets` går alle gjennom `saveNutritionTargets`
+  (`$lib/server/nutrition/save-targets.ts`), og validerer med
+  `$lib/domain/nutrition/target-settings.ts`. Legger du til et felt, legg det i
+  `TARGET_FIELDS`/`TARGET_LIMITS` — ikke i én av de tre. Se
+  `docs/changelog/2026-08-04-dagsmal-chat-og-ui.md`.
+  Målene hører på **Ernæring**, ikke i metrikk-arket: de justeres mens man ser på loggen.
+  Kroppsprofilen gikk motsatt vei, til `/settings/profile`, fordi den er statiske fakta.
+- **`macroPctWarning` er ikke en feil.** Andelene trenger ikke summere til 100 — de er tre
+  uavhengige mål. Den holder kjeft under tre satte andeler (har man satt bare protein, er
+  de to andre *usatte*, ikke 0 %) og sier fra utenfor 90–110 %, fordi målene da er umulige
+  å nå samtidig. Får chatten en `warning` tilbake, skal den videreformidles.
+- **`null` fjerner et mål**, og kortet sender tomme felt som null nettopp derfor: utelot
+  det dem, ville et tømt felt betydd «ingen endring», og da kan man ikke slette et mål.
+  Uten kcal-mål kan ikke andelene regnes om til gram, og `sendFuelNudge` returnerer
+  `no-kcal-target` — konsekvensen skal sies, ikke oppdages.
 - **Nudgen som sier fra først** (`$lib/server/fuel-nudge.ts`, cron `/api/cron/fuel-nudge`,
   hver time). Beslutningen bor rent og testet i `$lib/domain/nutrition/fuel-nudge.ts` og
   rangerer tre varianter: trent-men-underspist > bak skjema > lunsj mangler. Den siste

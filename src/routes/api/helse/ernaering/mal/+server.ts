@@ -1,32 +1,20 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
-import { themes } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { findThemeByName } from '$lib/server/themes';
-import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
 import { loadNutritionTargets } from '$lib/server/nutrition/targets';
+import { saveNutritionTargets, type TargetPatch } from '$lib/server/nutrition/save-targets';
+import { TARGET_FIELDS } from '$lib/domain/nutrition/target-settings';
 
 /**
  * Dagsmål og makrobalanse.
  *
  * Ligger i `metricSettings.nutrition` på Helse-mortemaet, som resten av tersklene.
- * `PUT /api/tema/[id]/metric-settings` bevarer nøkler den ikke eier, så arket og
- * dette endepunktet skriver ikke over hverandre.
+ * Selve skrivingen og valideringen bor i `saveNutritionTargets`, delt med
+ * chat-verktøyet `manage_nutrition_targets` — de to skal ikke kunne bli uenige om
+ * hva som er en gyldig verdi.
  *
- * Andelene trenger ikke summere til 100 — de er mål, ikke en fordeling. Men
- * summerer de til noe langt over, sier vi det, siden det da er umulig å treffe alle.
+ * Andelene trenger ikke summere til 100 — de er tre uavhengige mål. Men summerer de
+ * til noe langt unna, følger en `warning` med svaret.
  */
-const FIELDS = ['kcalTarget', 'proteinTarget', 'proteinPct', 'carbsPct', 'fatPct'] as const;
-
-const LIMITS: Record<(typeof FIELDS)[number], [number, number]> = {
-	kcalTarget: [800, 6000],
-	proteinTarget: [30, 400],
-	proteinPct: [5, 60],
-	carbsPct: [5, 80],
-	fatPct: [5, 70]
-};
-
 export const GET: RequestHandler = async ({ locals }) => {
 	return json(await loadNutritionTargets(locals.userId));
 };
@@ -37,41 +25,15 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 		return json({ error: 'Forventet et JSON-objekt.' }, { status: 400 });
 	}
 
-	const parent = await findThemeByName(locals.userId, HEALTH_PARENT_THEME_NAME);
-	if (!parent) {
-		return json({ error: 'Fant ingen Helse-tema å lagre målene på.' }, { status: 400 });
+	// Bare kjente felt slipper gjennom, slik at en skrivefeil i nøkkelnavnet ikke
+	// havner i metricSettings som en rad ingenting leser.
+	const patch: TargetPatch = {};
+	for (const field of TARGET_FIELDS) {
+		if (field in body) patch[field] = body[field];
 	}
 
-	const current = (parent.metricSettings ?? {}) as Record<string, unknown>;
-	const nutrition = { ...((current.nutrition ?? {}) as Record<string, unknown>) };
+	const result = await saveNutritionTargets(locals.userId, patch);
+	if (!result.ok) return json({ error: result.error }, { status: 400 });
 
-	for (const field of FIELDS) {
-		if (!(field in body)) continue;
-		const value = body[field];
-		if (value === null) {
-			delete nutrition[field];
-			continue;
-		}
-		const [min, max] = LIMITS[field];
-		if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
-			return json({ error: `${field} må være et tall mellom ${min} og ${max}.` }, { status: 400 });
-		}
-		nutrition[field] = value;
-	}
-
-	await db
-		.update(themes)
-		.set({ metricSettings: { ...current, nutrition }, updatedAt: new Date() })
-		.where(eq(themes.id, parent.id));
-
-	const saved = await loadNutritionTargets(locals.userId);
-	const pctSum = (saved.proteinPct ?? 0) + (saved.carbsPct ?? 0) + (saved.fatPct ?? 0);
-	return json({
-		...saved,
-		// Ikke en feil, men verdt å si: alle tre kan ikke nås om summen er langt fra 100.
-		warning:
-			pctSum > 0 && (pctSum < 90 || pctSum > 110)
-				? `Andelene summerer til ${Math.round(pctSum)} %. De trenger ikke treffe 100 presis, men langt unna gjør målene umulige å nå samtidig.`
-				: null
-	});
+	return json({ ...result.targets, warning: result.warning });
 };

@@ -42,6 +42,7 @@ import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
 import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
+import { manageNutritionTargetsTool } from '$lib/ai/tools/manage-nutrition-targets';
 import {
 	createUserWidget,
 	findSimilarWidget,
@@ -1410,6 +1411,31 @@ const tools = [
 					name: logNutritionTool.name,
 					description: logNutritionTool.description,
 					parameters: logNutritionTool.parameters
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: manageNutritionTargetsTool.name,
+					description:
+						'Les eller sett dagsmålene for kalorier, protein og makrofordeling. Bruk get når brukeren spør hva målene er, og FØR du endrer ett av dem — du må se de andre for ikke å lage en umulig kombinasjon. Bruk set på «sett kalorimålet til 2600», «jeg vil ha 180 g protein», «2 gram protein per kilo». Bare feltene du sender endres. Send proteinPerKg for gram per kilo, så regnes det om med siste vekt. Andelene trenger ikke summere til 100; får du en warning tilbake, SI den til brukeren. Målene vises og kan justeres på Ernæring-temaet.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['get', 'set'] },
+							kcalTarget: { type: ['number', 'null'], description: 'Dagsmål kcal, 800–6000. null fjerner.' },
+							proteinTarget: { type: ['number', 'null'], description: 'Proteinmål i gram, 30–400. null fjerner.' },
+							proteinPerKg: { type: 'number', description: 'Gram protein per kg kroppsvekt, f.eks. 1.8.' },
+							proteinPct: { type: ['number', 'null'], description: 'Proteinandel av energien, i prosent.' },
+							carbsPct: { type: ['number', 'null'], description: 'Karboandel av energien, i prosent.' },
+							fatPct: { type: ['number', 'null'], description: 'Fettandel av energien, i prosent.' },
+							useDefaultMacroSplit: {
+								type: 'boolean',
+								description: 'Setter 30/40/30 når brukeren vil ha en fordeling uten å ha en mening om tallene.'
+							}
+						},
+						required: ['action']
+					}
 				}
 			},
 			{
@@ -2885,6 +2911,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🥗 Log nutrition:', args.description);
 					const result = await logNutritionTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_nutrition_targets') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🥗 Manage nutrition targets:', args.action);
+					const result = await manageNutritionTargetsTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_family') {
 					const args = JSON.parse(toolCall.function.arguments);

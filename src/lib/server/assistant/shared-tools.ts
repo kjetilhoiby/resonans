@@ -3,6 +3,7 @@ import type { AssistantTool } from './tools';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
+import { manageNutritionTargetsTool } from '$lib/ai/tools/manage-nutrition-targets';
 import { queryFamilyTool } from '$lib/ai/tools/query-family';
 import { queryHomeTool } from '$lib/ai/tools/query-home';
 import { queryProjectsTool } from '$lib/ai/tools/query-projects';
@@ -168,6 +169,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(generateShoppingListTool),
 	adaptSharedTool(findRecipesTool),
 	adaptSharedTool(manageFoodSettingsTool),
+	adaptSharedTool(manageNutritionTargetsTool),
 	// Familie
 	adaptSharedTool(managePersonTool),
 	adaptSharedTool(manageRelationTool),
