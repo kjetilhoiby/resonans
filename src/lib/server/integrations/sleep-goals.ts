@@ -172,6 +172,104 @@ export async function deleteNap(userId: string, eventId: string): Promise<boolea
 	return true;
 }
 
+/**
+ * Retter en manuell dupp: varighet, tidspunkt og/eller notat.
+ *
+ * Delvis oppdatering — å kreve alle tre for å flytte en dupp fra 13 til 11 ville tvunget
+ * klienten til å sende tilbake tall den ikke rørte.
+ *
+ * **`metadata.enddate` må flyttes med.** `sleepEventEnddateSec` bruker den til å utlede
+ * varighet når `sleepDuration` mangler, og `isNapSleepEvent` til å klassifisere. Ville vi
+ * bare oppdatert `sleepDuration`, hadde raden hatt to motstridende varigheter.
+ *
+ * Returnerer null når raden ikke finnes, ikke er din, eller ikke er en *manuell* dupp.
+ */
+export async function updateNap(
+	userId: string,
+	eventId: string,
+	patch: { durationMinutes?: number; at?: Date; note?: string | null }
+): Promise<LoggedNap | null> {
+	const existing = await db.query.sensorEvents.findFirst({
+		where: and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId))
+	});
+	if (!existing || existing.dataType !== 'sleep') return null;
+
+	const meta = (existing.metadata ?? {}) as { manual?: boolean; [key: string]: unknown };
+	const data = (existing.data ?? {}) as { sleepDuration?: number; isNap?: boolean; note?: string; [key: string]: unknown };
+	if (meta.manual !== true || data.isNap !== true) return null;
+
+	const start = patch.at ?? existing.timestamp;
+	const durationMinutes =
+		patch.durationMinutes ?? Math.round((data.sleepDuration ?? 0) / 60);
+
+	const nextData: Record<string, unknown> = {
+		...data,
+		sleepDuration: durationMinutes * 60,
+		isNap: true
+	};
+	if (patch.note !== undefined) {
+		if (patch.note === null) delete nextData.note;
+		else nextData.note = patch.note;
+	}
+
+	await db
+		.update(sensorEvents)
+		.set({
+			timestamp: start,
+			data: nextData,
+			metadata: {
+				...meta,
+				enddate: Math.round(start.getTime() / 1000) + durationMinutes * 60
+			}
+		})
+		.where(eq(sensorEvents.id, eventId));
+
+	return {
+		id: eventId,
+		start,
+		durationMinutes,
+		manual: true,
+		note: typeof nextData.note === 'string' ? nextData.note : undefined
+	};
+}
+
+/**
+ * Omklassifiserer en **oppdaget** dupp: «dette var ikke en dupp».
+ *
+ * Alternativet til en slett-knapp som ville løyet. Withings-raden er en ekte måling av at
+ * du lå stille — den skal ikke slettes. Men *klassifiseringen* er vår:
+ * `isNapSleepEvent` leser et eksplisitt `data.isNap` før den faller tilbake på varighet
+ * og klokkeslett.
+ *
+ * Overstyringen er varig fordi søvnsynken skriver med `conflictMode: 'ignore'` — en
+ * eksisterende rad røres ikke. Vi skriver dessuten bare inn `isNap` og lar resten av
+ * `data` stå, samme mønster som HRV- og `hr_average`-backfillene.
+ *
+ * Nekter på manuelle dupper: der er sletting det riktige, og to veier til «vekk» ville
+ * etterlatt rader som ser slettet ut men ligger igjen.
+ */
+export async function reclassifyNap(
+	userId: string,
+	eventId: string,
+	isNap: boolean
+): Promise<boolean> {
+	const existing = await db.query.sensorEvents.findFirst({
+		where: and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId))
+	});
+	if (!existing || existing.dataType !== 'sleep') return false;
+
+	const meta = (existing.metadata ?? {}) as { manual?: boolean };
+	if (meta.manual === true) return false;
+
+	const data = (existing.data ?? {}) as Record<string, unknown>;
+	await db
+		.update(sensorEvents)
+		.set({ data: { ...data, isNap } })
+		.where(eq(sensorEvents.id, eventId));
+
+	return true;
+}
+
 /** Naps (detekterte + manuelle) siste `sinceDays` døgn, nyeste først. */
 export async function listRecentNaps(userId: string, sinceDays = 7): Promise<LoggedNap[]> {
 	const since = new Date(Date.now() - sinceDays * 86_400_000);

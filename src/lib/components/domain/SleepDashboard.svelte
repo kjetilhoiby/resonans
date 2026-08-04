@@ -15,11 +15,11 @@
 -->
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
-	import CompactRecordList from '../ui/CompactRecordList.svelte';
 	import SleepLogger from './sleep/SleepLogger.svelte';
 	import SleepDisturbanceList from './sleep/SleepDisturbanceList.svelte';
 	import HrvCard from './sleep/HrvCard.svelte';
 	import SleepHeartRateCard from './sleep/SleepHeartRateCard.svelte';
+	import NapList from './sleep/NapList.svelte';
 	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 
 	interface Props {
@@ -60,21 +60,6 @@
 		return new Intl.DateTimeFormat('nb-NO', { weekday: 'narrow' }).format(d);
 	}
 
-	const napItems = $derived(
-		data.naps.map((nap) => ({
-			id: nap.id,
-			title: `${nap.durationMinutes} min`,
-			subtitle: nap.manual ? 'Registrert manuelt' : 'Oppdaget automatisk',
-			meta: new Intl.DateTimeFormat('nb-NO', {
-				day: 'numeric',
-				month: 'short',
-				hour: '2-digit',
-				minute: '2-digit'
-			}).format(new Date(nap.start)),
-			amount: nap.note ?? '',
-			amountTone: 'neutral' as const
-		}))
-	);
 </script>
 
 <div class="sleep-dashboard">
@@ -157,11 +142,7 @@
 
 	<SleepDisturbanceList nights={data.disturbanceNights} onChanged={() => onRefresh?.()} />
 
-	{#if napItems.length > 0}
-		<section class="sleep-naps">
-			<CompactRecordList title="Powernaps" items={napItems} emptyText="Ingen powernaps registrert." />
-		</section>
-	{/if}
+	<NapList naps={data.naps} onChanged={() => onRefresh?.()} />
 </div>
 
 <style>

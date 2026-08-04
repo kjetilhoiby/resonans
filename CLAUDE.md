@@ -535,6 +535,20 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 - `awakeMinutes: null` betyr «vet ikke» og skilles fra `0`. Ikke gjett et tall.
 - Endepunktene ligger under `/api/soevn/` (ikke `/api/helse/`) fordi nap-endepunktet
   alt bor der.
+- **Oppdagede dupper slettes ikke, de omklassifiseres.** En manuell dupp er vår rad og
+  kan rettes/slettes (`updateNap`/`deleteNap`, begge nekter på ikke-manuelle rader). En
+  oppdaget dupp er en *Withings-måling* av at du lå stille — den skjedde. Det som er vårt
+  er klassifiseringen, så `reclassifyNap` skriver `data.isNap = false`, som
+  `isNapSleepEvent` leser før den faller tilbake på varighet. Overstyringen er varig fordi
+  søvnsynken bruker `conflictMode: 'ignore'` og vi bare merger inn `isNap`. Se
+  `docs/changelog/2026-08-04-redigere-slette-dupper.md`.
+- **`metadata.enddate` må flyttes når varigheten endres.** `sleepEventEnddateSec` bruker
+  den når `sleepDuration` mangler, og `isNapSleepEvent` til å klassifisere — oppdaterer du
+  bare `sleepDuration`, har raden to motstridende varigheter.
+- **`todayAtLocalTime('13:30')` kan peke på framtiden.** Den bruker dagens dato i *Oslo*,
+  så sent på kvelden i UTC er det en dato som ikke har hatt sin kl. 13:30 ennå — POST
+  opprettet en dupp tretten timer fram i tid. Bruk `validateNapStart`
+  (`$lib/domain/sleep/nap-fields.ts`) på alle skrivinger med et brukeroppgitt klokkeslett.
 
 ### Transaksjons-kategorisering
 
