@@ -21,6 +21,8 @@ import { db, pgClient } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { fetchWithingsSleep } from './withings';
 import { parseSleepHrvSeries } from '$lib/domain/health/hrv';
+import { nightFetchWindow } from '$lib/domain/sleep/night-window';
+import { nightKeyForTime } from '$lib/domain/sleep/disturbance';
 
 /** Hvor langt bakover vi ser etter netter uten HRV. */
 export const HRV_LOOKBACK_DAYS = 21;
@@ -71,27 +73,41 @@ export async function syncSleepHrv(
 	};
 	if (pending.length === 0) return result;
 
-	// Én natt kan ligge som flere segmenter, og alle deler samme dato-kall.
-	const byDate = new Map<string, string[]>();
+	/**
+	 * Én natt kan ligge som flere segmenter, og alle deler samme kall.
+	 *
+	 * Gruppert på **nattnøkkelen** (datoen du våkner), ikke på UTC-datoen til
+	 * søvnstart. Prod-øktene starter 20:57–22:54 UTC, så en UTC-dato splittet nettene
+	 * vilkårlig og lot hvert kall dekke bare den første timen. Se `night-window.ts`.
+	 */
+	const byNight = new Map<string, { ids: string[]; starts: Date[] }>();
 	for (const row of pending) {
-		const date = row.timestamp.toISOString().slice(0, 10);
-		const bucket = byDate.get(date);
-		if (bucket) bucket.push(row.id);
-		else byDate.set(date, [row.id]);
+		const key = nightKeyForTime(row.timestamp);
+		if (!key) continue;
+		const bucket = byNight.get(key);
+		if (bucket) {
+			bucket.ids.push(row.id);
+			bucket.starts.push(row.timestamp);
+		} else {
+			byNight.set(key, { ids: [row.id], starts: [row.timestamp] });
+		}
 	}
 
 	// Nyeste natt først — den er mest interessant, og taket skal ramme de eldste.
-	const dates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
-	const toFetch = dates.slice(0, MAX_FETCHES_PER_RUN);
-	result.deferred = byDate.size - toFetch.length;
+	const nights = [...byNight.keys()].sort((a, b) => b.localeCompare(a));
+	const toFetch = nights.slice(0, MAX_FETCHES_PER_RUN);
+	result.deferred = byNight.size - toFetch.length;
 	if (result.deferred > 0) {
 		console.log(
-			`   [hrv] ${byDate.size} netter å hente, tar ${toFetch.length} nå. ${result.deferred} utsatt til neste kjøring.`
+			`   [hrv] ${byNight.size} netter å hente, tar ${toFetch.length} nå. ${result.deferred} utsatt til neste kjøring.`
 		);
 	}
 
-	for (const date of toFetch) {
-		const parsed = await fetchNightHrv(accessToken, date);
+	for (const night of toFetch) {
+		const bucket = byNight.get(night);
+		if (!bucket) continue;
+
+		const parsed = await fetchNightHrv(accessToken, night, bucket.starts);
 		result.fetches++;
 
 		if (!parsed) {
@@ -101,13 +117,35 @@ export async function syncSleepHrv(
 			continue;
 		}
 
-		for (const id of byDate.get(date) ?? []) {
-			// Slås inn i eksisterende JSONB, som hr_average-backfillen: å skrive hele
-			// data-objektet ville overskrevet felt andre kilder eier.
+		for (const id of bucket.ids) {
+			/**
+			 * Objektet bygges i SQL, ikke som en JSON-streng i en parameter.
+			 *
+			 * Forrige utgave gjorde `data || ${JSON.stringify({hrv})}::jsonb`, og den
+			 * parameteren nådde basen som en jsonb **streng** framfor et objekt. I
+			 * Postgres er `object || string` ikke en fletting — det er en
+			 * *konkatenering*, så `data` ble arrayen `[originalObjekt, "{\"hrv\":…}"]`.
+			 *
+			 * Verre: `data -> 'hrv'` er NULL på en array, så raden ble aldri regnet som
+			 * ferdig. Hver synk la på én streng til — prod-rader hadde attende elementer,
+			 * og hvert felt i det opprinnelige objektet (`hr_min`, `sleepDuration`) var
+			 * utilgjengelig for alle lesere. Det var årsaken til både «ingen sovepuls
+			 * målt» og «ingen netter med HRV», og til dupper som viste 0 min.
+			 *
+			 * `jsonb_build_object` med tallparametere kan ikke dobbeltkodes.
+			 * `hr_average`-backfillen har gjort det slik hele tiden og virket.
+			 */
 			await pgClient`
 				UPDATE sensor_events
-				SET data = data || ${JSON.stringify({ hrv: parsed })}::jsonb
+				SET data = data || jsonb_build_object(
+					'hrv',
+					jsonb_build_object(
+						'sdnnMs', ${parsed.sdnnMs}::numeric,
+						'samples', ${parsed.samples}::int
+					)
+				)
 				WHERE id = ${id}
+				  AND jsonb_typeof(data) = 'object'
 			`;
 			result.stored++;
 		}
@@ -116,21 +154,31 @@ export async function syncSleepHrv(
 	return result;
 }
 
-/** Null når natta ikke har brukbar SDNN. Kaster ikke på Withings-feil. */
+/**
+ * Null når natta ikke har brukbar SDNN. Kaster ikke på Withings-feil.
+ *
+ * Vinduet bygges fra søvnøktas egne tidspunkter, ikke fra et UTC-kalenderdøgn. Prod
+ * starter nettene 20:57–22:54 UTC, så et kalenderdøgn dekket bare den første timen —
+ * se `night-window.ts`.
+ */
 async function fetchNightHrv(
 	accessToken: string,
-	date: string
+	night: string,
+	starts: Date[]
 ): Promise<{ sdnnMs: number; samples: number } | null> {
+	const window = nightFetchWindow(starts);
+	if (!window) return null;
+
 	const response = await fetchWithingsSleep(accessToken, {
 		action: 'get',
-		startdate: Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000),
-		enddate: Math.floor(new Date(`${date}T23:59:59Z`).getTime() / 1000),
+		startdate: window.startdate,
+		enddate: window.enddate,
 		data_fields: 'sdnn_1'
 	});
 
 	if (response?.status !== 0) {
 		console.warn(
-			`   [hrv] Withings avviste get for ${date} (status ${response?.status}${response?.error ? `: ${response.error}` : ''}).`
+			`   [hrv] Withings avviste get for natt ${night} (status ${response?.status}${response?.error ? `: ${response.error}` : ''}).`
 		);
 		return null;
 	}

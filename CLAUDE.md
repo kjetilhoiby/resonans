@@ -493,6 +493,19 @@ Se `docs/changelog/2026-08-03-losetrader.md`. Logikken i `$lib/domain/health/hrv
 - Nattas verdi er **medianen** over minuttmålingene: ett minutt med dårlig sensorfeste
   ga ellers utslag. Nattnøkkelen er datoen du **våkner** (`nightKeyForTime`), ellers
   ligger HRV-nettene forskjøvet fra nattlengdene de sammenlignes med.
+- **HRV-fletting ødela søvnradene, og det er rettet.** `data = data || $1::jsonb` med en
+  `JSON.stringify(...)`-parameter nådde basen som en jsonb **streng**, og
+  `object || string` er *konkatenering* i Postgres — `data` ble
+  `[originalObjekt, "{\"hrv\":…}"]`. Siden `data -> 'hrv'` er NULL på en array, ble raden
+  aldri ferdig, og synken la på én streng hvert 5. minutt (attende elementer i prod).
+  Alle felt i element 0 ble utilgjengelige: det var årsaken til «ingen sovepuls målt»,
+  «ingen netter med HRV» og dupper på 0 min. **Bygg alltid jsonb i SQL**
+  (`jsonb_build_object` med tall-/tekstparametere), og gate merges på
+  `jsonb_typeof(data) = 'object'`. Reparasjon: `0048_repair_sleep_data_arrays.sql`.
+- **Withings-nettene krysser UTC-midnatt.** Søvnøktene starter 20:57–22:54 UTC, så et
+  UTC-kalenderdøgn dekker bare den første timen av natta. `nightFetchWindow`
+  (`$lib/domain/sleep/night-window.ts`) bygger vinduet fra øktas egne tidspunkter, og
+  nettene grupperes på `nightKeyForTime`, ikke på UTC-datoen.
 - **`HrvCard` skjuler seg ikke lenger når data mangler.** Den skilte ikke «ingen
   søvnmåling» fra «søvnmåling uten HRV» — to helt ulike ting å gjøre noe med — og et kort
   som forsvinner ser ut som en funksjon som ikke finnes. `hrvAvailability` i

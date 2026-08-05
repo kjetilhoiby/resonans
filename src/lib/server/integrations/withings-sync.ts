@@ -1232,6 +1232,9 @@ export async function backfillSleepHrForDate(
 			SET data = data || jsonb_build_object('hr_average', ${hrAverage}::int)
 			WHERE id = ${event.id}
 			  AND (data->>'hr_average') IS NULL
+			  -- En array-rad ville blitt konkatenert, ikke flettet. Se
+			  -- withings-sleep-hrv.ts for hva det kostet sist.
+			  AND jsonb_typeof(data) = 'object'
 		`;
 		updated++;
 	}
