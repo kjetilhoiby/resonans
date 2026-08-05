@@ -19,13 +19,36 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.orderBy(desc(sensorEvents.timestamp))
 		.limit(10);
 
-	const dbSummary = storedEvents.map((e) => ({
-		id: e.id,
-		timestamp: e.timestamp,
-		hr_average: (e.data as any)?.hr_average ?? null,
-		duration: (e.data as any)?.duration ?? null,
-		dataKeys: Object.keys((e.data as any) ?? {})
-	}));
+	const dbSummary = storedEvents.map((e) => {
+		const raw = e.data as unknown;
+		/**
+		 * Formen på `data`, ikke bare nøklene.
+		 *
+		 * `Object.keys()` ga `['0','1',…]` i prod, og det er tvetydig: både en array og
+		 * en **streng** gir tallnøkler. Er raden dobbeltkodet JSON, er hvert felt
+		 * utilgjengelig for alle lesere — `data.sleepDuration` er undefined uansett hvor
+		 * riktig resten av koden er. Diagnosen må skille de tre.
+		 */
+		const shape = Array.isArray(raw)
+			? 'array'
+			: raw === null
+				? 'null'
+				: typeof raw === 'object'
+					? 'object'
+					: typeof raw;
+		return {
+			id: e.id,
+			timestamp: e.timestamp,
+			shape,
+			hr_average: (raw as { hr_average?: unknown })?.hr_average ?? null,
+			sleepDuration: (raw as { sleepDuration?: unknown })?.sleepDuration ?? null,
+			hrv: (raw as { hrv?: unknown })?.hrv ?? null,
+			dataKeys: shape === 'object' ? Object.keys(raw as object) : [],
+			/** Første 300 tegn av rådataen, så formen kan ses med egne øyne. */
+			rawPreview: JSON.stringify(raw)?.slice(0, 300) ?? null,
+			metadataKeys: Object.keys((e.metadata as object) ?? {})
+		};
+	});
 
 	const hrCount = dbSummary.filter((e) => e.hr_average !== null).length;
 
@@ -43,11 +66,19 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const startdateymd = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 	const enddateymd = new Date().toISOString().split('T')[0];
 
-	// 2. getsummary — aggregated per night (hr_average, hr_min, hr_max only on wearables)
+	/**
+	 * 2. getsummary — med `data_fields` eksplisitt.
+	 *
+	 * Kallet ba historisk om ingenting, og fikk da Withings' standardsett. Det settet
+	 * inneholder **ikke** hr_average/hr_min, så testen kunne ikke svare på om enheten
+	 * leverer dem — den målte bare standardsettet. Vi ber om nøyaktig det samme settet
+	 * synken ber om, slik at svaret her gjelder for synken.
+	 */
 	const summaryResponse = await fetchWithingsSleep(accessToken, {
 		action: 'getsummary',
 		startdateymd,
-		enddateymd
+		enddateymd,
+		data_fields: 'hr_average,hr_min,hr_max,total_sleep_time,sleep_score,rr_average'
 	});
 	const summarySeries: any[] = summaryResponse?.body?.series ?? [];
 	const summaryData = summarySeries.slice(0, 7).map((s: any) => ({
