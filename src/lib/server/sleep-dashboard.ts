@@ -211,6 +211,19 @@ async function readNightlyPhysiology(
 		const data = (row.data ?? {}) as Record<string, unknown>;
 		const date = nightKeyForTime(row.timestamp);
 		if (!date) continue;
+
+		/**
+		 * Dagsøvner hører ikke i nattfysiologien.
+		 *
+		 * `nightKeyForTime` legger en dupp kl. 14 i samme bøtte som natta som endte den
+		 * morgenen (kveldsgrensa er 18:00). En dupps hvilepuls er ikke nattas hvilepuls
+		 * — man er nettopp våknet, ligger på sofaen, og pulsen er høyere. Og HRV målt i
+		 * en dupp er ikke sammenlignbar med nattas.
+		 *
+		 * Naps telles for seg, i `naps`-lista.
+		 */
+		if (data.isNap === true) continue;
+
 		nightKeys.add(date);
 
 		const hrv = data.hrv as { sdnnMs?: unknown; samples?: unknown } | null | undefined;

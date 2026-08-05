@@ -502,6 +502,13 @@ Se `docs/changelog/2026-08-03-losetrader.md`. Logikken i `$lib/domain/health/hrv
   «ingen netter med HRV» og dupper på 0 min. **Bygg alltid jsonb i SQL**
   (`jsonb_build_object` med tall-/tekstparametere), og gate merges på
   `jsonb_typeof(data) = 'object'`. Reparasjon: `0048_repair_sleep_data_arrays.sql`.
+- **Dagsøvner er ikke netter, og `nightKeyForTime` skiller dem ikke.** Kveldsgrensa er
+  18:00, så en dupp kl. 14 og natta som endte den morgenen havner i *samme* nattbøtte.
+  Prod fikk derfor nattas HRV stemplet på en dupp (bytelik `samples`), og siden
+  `pickHrvMetric` dedupliserer på dato kunne duppen overskrive nattas ekte verdi. Både
+  `syncSleepHrv` og `readNightlyPhysiology` filtrerer nå bort `data.isNap === true` —
+  gjør det samme i alt nytt som grupperer søvn per natt. Opprydding:
+  `0049_strip_hrv_from_naps.sql`.
 - **Withings-nettene krysser UTC-midnatt.** Søvnøktene starter 20:57–22:54 UTC, så et
   UTC-kalenderdøgn dekker bare den første timen av natta. `nightFetchWindow`
   (`$lib/domain/sleep/night-window.ts`) bygger vinduet fra øktas egne tidspunkter, og

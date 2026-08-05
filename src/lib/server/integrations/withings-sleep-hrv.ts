@@ -60,7 +60,18 @@ export async function syncSleepHrv(
 				eq(sensorEvents.userId, userId),
 				eq(sensorEvents.dataType, 'sleep'),
 				gte(sensorEvents.timestamp, since),
-				isNull(sql`${sensorEvents.data} -> 'hrv'`)
+				isNull(sql`${sensorEvents.data} -> 'hrv'`),
+				/**
+				 * Dagsøvner er ikke netter.
+				 *
+				 * `nightKeyForTime` legger en dupp kl. 14 og natta som endte samme morgen i
+				 * *samme* bøtte (kveldsgrensa er 18:00). Uten dette filteret fikk duppen
+				 * nattas HRV stemplet på seg — prod 2. august hadde en dupp med
+				 * `{sdnnMs: 54, samples: 89}`, bytelikt med natta før. Og siden
+				 * `pickHrvMetric` dedupliserer på dato, kunne duppen overskrive nattas
+				 * ekte verdi.
+				 */
+				sql`(${sensorEvents.data} ->> 'isNap') IS DISTINCT FROM 'true'`
 			)
 		);
 
