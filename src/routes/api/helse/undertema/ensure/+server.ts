@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { ensureHealthSubthemes } from '$lib/server/themes';
 
 /**
- * Oppretter Helse-mortemaets fem undertemaer. Idempotent, så «Aktiver»-knappen
+ * Oppretter Helse-mortemaets undertemaer. Idempotent, så «Aktiver»-knappen
  * på mordashboardet kan trykkes uten fare for duplikater.
  *
  * NB: ikke under /api/health/ — det prefikset er public i hooks.server.ts og

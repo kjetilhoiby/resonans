@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getThemeHueKey, getThemeHue, THEME_HUES } from './theme-hues';
 
 describe('getThemeHueKey — helse-familien', () => {
-	it('gir mortemaet og alle fem undertemaene samme hue', () => {
+	it('gir mortemaet og alle undertemaene samme hue', () => {
 		for (const name of ['Helse', 'Trening', 'Ernæring', 'Egenfrekvens', 'Søvn', 'Skjermtid']) {
 			expect(getThemeHueKey(name), name).toBe('health');
 		}

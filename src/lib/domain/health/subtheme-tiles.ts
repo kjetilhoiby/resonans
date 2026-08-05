@@ -30,6 +30,8 @@ export interface SubthemeTileInput {
 	/** Temanavn → id for undertemaene brukeren faktisk har. */
 	themeIdsByName: Record<string, string>;
 	weeklyEffort?: { total?: number; baseline?: { p4wAvg?: number; delta?: number } } | null;
+	/** Siste veiing i kg — hovedtallet på Vekt-flisen. */
+	weightKg?: number | null;
 	weightChange30d?: number | null;
 	/** Loggede makroer, snitt per logget dag i siste uke. */
 	nutrition?: { kcalPerDay?: number; proteinPerDay?: number; loggedDays?: number } | null;
@@ -77,42 +79,66 @@ function buildTraining(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | '
 }
 
 /**
- * Loggede kalorier når brukeren fører inntak, ellers vektendringen.
+ * Loggede kalorier per dag.
  *
- * Rekkefølgen er poenget: inntak er det Ernæring faktisk eier, og vekten er et
- * utfall den deler med Trening. Før inntaksloggen fantes (august 2026) var vekt
- * det eneste tallet flisen hadde.
+ * Flisen falt tidligere tilbake på vektendringen når ingenting var logget. Den
+ * fallbacken er borte: Vekt er et eget undertema nå, og to naboliggende fliser
+ * som viser samme tall gjør stripen vanskeligere å lese, ikke lettere.
  */
 function buildNutrition(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | 'unit' | 'delta' | 'tone' | 'empty'> {
 	const kcal = input.nutrition?.kcalPerDay;
 	const loggedDays = input.nutrition?.loggedDays ?? 0;
-	if (typeof kcal === 'number' && kcal > 0 && loggedDays > 0) {
-		const protein = input.nutrition?.proteinPerDay;
+	if (typeof kcal !== 'number' || kcal <= 0 || loggedDays <= 0) {
+		return { value: null, unit: null, delta: null, tone: 'nøytral', empty: true };
+	}
+
+	const protein = input.nutrition?.proteinPerDay;
+	return {
+		value: Math.round(kcal).toLocaleString('nb-NO'),
+		unit: 'kcal/dag',
+		delta:
+			typeof protein === 'number' && protein > 0
+				? `${Math.round(protein)} g protein · ${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'}`
+				: `${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'} logget`,
+		// Ingen tone på inntak: vi kjenner ikke brukerens mål, og et grønt
+		// eller gult kort ville dømt et tall vi ikke har terskel for.
+		tone: 'nøytral',
+		empty: false
+	};
+}
+
+/**
+ * Vekta selv som hovedtall, med 30-dagersendringen som undertekst.
+ *
+ * Nivået står øverst framfor endringen fordi det er tallet man kjenner igjen —
+ * «82,4» sier hvor du er, «−0,6» sier bare at noe skjedde. Endringen er
+ * konteksten, ikke overskriften.
+ */
+function buildWeight(input: SubthemeTileInput): Pick<SubthemeTile, 'value' | 'unit' | 'delta' | 'tone' | 'empty'> {
+	const kg = input.weightKg;
+	const change = input.weightChange30d;
+
+	if (typeof kg !== 'number') {
+		// Uten en siste veiing, men med en endring, er endringen det eneste vi har.
+		if (typeof change !== 'number') {
+			return { value: null, unit: null, delta: null, tone: 'nøytral', empty: true };
+		}
 		return {
-			value: Math.round(kcal).toLocaleString('nb-NO'),
-			unit: 'kcal/dag',
-			delta:
-				typeof protein === 'number' && protein > 0
-					? `${Math.round(protein)} g protein · ${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'}`
-					: `${loggedDays} ${loggedDays === 1 ? 'dag' : 'dager'} logget`,
-			// Ingen tone på inntak: vi kjenner ikke brukerens mål, og et grønt
-			// eller gult kort ville dømt et tall vi ikke har terskel for.
-			tone: 'nøytral',
+			value: signed(change),
+			unit: 'kg',
+			delta: 'siste 30 dager',
+			tone: change < -0.2 ? 'positiv' : 'nøytral',
 			empty: false
 		};
 	}
 
-	const change = input.weightChange30d;
-	if (typeof change !== 'number') {
-		return { value: null, unit: null, delta: null, tone: 'nøytral', empty: true };
-	}
 	return {
-		value: signed(change),
+		value: nb(kg),
 		unit: 'kg',
-		delta: 'siste 30 dager',
-		// Vekt ned regnes som ønsket retning her; oppgang er nøytral, ikke varsel
-		// — vi vet ikke brukerens intensjon, og et rødt kort ville dømt for hardt.
-		tone: change < -0.2 ? 'positiv' : 'nøytral',
+		delta: typeof change === 'number' ? `${signed(change)} kg på 30 dager` : null,
+		// Ned regnes som ønsket retning; oppgang er nøytral, ikke varsel — vi
+		// kjenner ikke brukerens intensjon, og et rødt kort ville dømt for hardt.
+		tone: typeof change === 'number' && change < -0.2 ? 'positiv' : 'nøytral',
 		empty: false
 	};
 }
@@ -184,19 +210,39 @@ function buildScreenTime(input: SubthemeTileInput): Pick<SubthemeTile, 'value' |
 const BUILDERS: Record<string, (input: SubthemeTileInput) => Pick<SubthemeTile, 'value' | 'unit' | 'delta' | 'tone' | 'empty'>> = {
 	Trening: buildTraining,
 	Ernæring: buildNutrition,
+	Vekt: buildWeight,
 	Egenfrekvens: buildEgenfrekvens,
 	Søvn: buildSleep,
 	Skjermtid: buildScreenTime
 };
 
 /**
- * Alltid fem fliser, i HEALTH_SUBTHEMES-rekkefølge. Undertemaer som ikke er
+ * Én flis per undertema, i HEALTH_SUBTHEMES-rekkefølge. Undertemaer som ikke er
  * opprettet ennå får `themeId: null` og vises dempet — men de skal fortsatt
  * kunne klikkes, siden det er der man kobler kilden.
+ *
+ * Et nytt undertema MÅ ha en builder her. Oppslaget er på navn, så et navn uten
+ * builder gir «BUILDERS[...] is not a function» på hele mor-flaten — ikke en tom
+ * flis. Vakten under gjør det til en tom flis i stedet.
  */
 export function buildSubthemeTiles(input: SubthemeTileInput): SubthemeTile[] {
 	return HEALTH_SUBTHEMES.map((subtheme) => {
-		const built = BUILDERS[subtheme.name](input);
+		const builder = BUILDERS[subtheme.name];
+		if (!builder) {
+			console.warn(`[helse] Undertemaet «${subtheme.name}» mangler en flis-builder.`);
+			return {
+				name: subtheme.name,
+				emoji: subtheme.emoji,
+				kind: subtheme.kind,
+				themeId: input.themeIdsByName[subtheme.name] ?? null,
+				value: null,
+				unit: null,
+				delta: null,
+				tone: 'nøytral' as TileTone,
+				empty: true
+			};
+		}
+		const built = builder(input);
 		return {
 			name: subtheme.name,
 			emoji: subtheme.emoji,

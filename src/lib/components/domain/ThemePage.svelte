@@ -170,6 +170,7 @@
 		sleep: ['chat', 'data', 'mål', 'flyter', 'filer'],
 		screentime: ['chat', 'data', 'mål', 'filer'],
 		nutrition: ['chat', 'data', 'mål', 'filer'],
+		weight: ['chat', 'data', 'mål', 'flyter', 'filer'],
 		economics: ['chat', 'data', 'mål', 'flyter', 'filer'],
 		travel: ['chat', 'data', 'lister', 'filer'],
 		ferie: ['chat', 'data', 'lister', 'filer'],

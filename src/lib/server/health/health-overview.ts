@@ -73,12 +73,13 @@ function readTileMetrics(weekly: AggregateRow[], monthly: AggregateRow[]) {
 
 	return {
 		weeklyEffort: latestWeek?.weeklyEffort ?? null,
+		// Nivået fra siste uke, endringen fra siste måned: ukesnittet er ferskere,
+		// og en 30-dagersendring hentet fra en ukesrad er ikke 30 dager.
+		weightKg: latestWeek?.weight?.avg ?? latestMonth?.weight?.avg ?? null,
 		weightChange30d: latestMonth?.weight?.change ?? null,
 		sleepAvgHours: latestWeek?.sleep?.avg ?? null,
 		sleepDisturbedNights: latestWeek?.sleepDisturbances?.nights ?? null,
 		screenTimeAvgPerDayMinutes: latestWeek?.screenTime?.avgPerDayMinutes ?? null,
-		// Ernæringsflisen viser loggede makroer når de finnes, ellers faller den
-		// tilbake på vektendringen over — det eneste tallet den hadde før loggen.
 		nutrition: latestWeek?.nutrition ?? null
 	};
 }

@@ -140,9 +140,21 @@ synk etter deploy svarer på det.
 
 ## Neste
 
-1. **Punktpuls inn i `getEffortBaseline`** — den er lagret nå, men ikke brukt.
-   Treffer VO2max, effort-skåringen og hvilepuls-signalet samtidig.
-2. **HRV (`sdnn_1`)** — vi ber alt om den i `backfillSleepHrForDate` og forkaster
-   den. Beste restitusjonsmarkør vi kan få.
-3. **`apnea_hypopnea_index` og `snoring`** — én linje til i søvn-feltlista, hvis
-   enheten er en Sleep Analyzer.
+De tre punktene som sto her er gjort:
+
+1. **Punktpuls inn i `getEffortBaseline`** — `effort-service.ts` legger
+   `restingHeartRate` fra vektrader inn som `scale_spot`, prioritert under søvn og over
+   dagsminimum. Se `2026-08-03-hrr-baseline.md`.
+2. **HRV (`sdnn_1`)** — `2026-08-03-losetrader.md`, med fiksene i
+   `2026-08-04-sovepuls-og-hrv-synlig.md`.
+3. **`apnea_hypopnea_index` og `snoring`** — leses av `readNightlyPhysiology` og vises
+   på HRV-kortet.
+
+Det som fortsatt hentes og lagres uten å leses noe sted: `wakeupLatency`,
+`outOfBedCount`, `sleepEfficiency` (bare deklarert i `schema.ts`) og
+`breathingDisturbances` (skrives av synken, står ikke engang i den deklarerte typen).
+`sleepEfficiency` er den mest interessante — «7 t i senga, 6 t søvn» er en annen
+historie enn «6 t søvn».
+
+Merk også at `conflictMode: 'ignore'` på søvnsynken betyr at nye felt aldri når gamle
+rader: alt over finnes bare fra deploy-datoen framover.

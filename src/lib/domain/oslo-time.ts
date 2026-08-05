@@ -47,3 +47,16 @@ export function osloWallClockToUtc(date: string, time: string): Date | null {
 	const offsetMs = shifted.getTime() - naive.getTime();
 	return new Date(naive.getTime() - offsetMs);
 }
+
+/**
+ * ISO-datonøkkel (`YYYY-MM-DD`) for et tidspunkt i Oslo-tid.
+ *
+ * `sv`-locale formaterer nettopp som ISO. En veiing 00:30 norsk tid hører til
+ * den dagen brukeren opplevde, ikke til UTC-dagen før.
+ *
+ * Klientsikker og ren, slik at domenekode kan bøtte på dato uten å importere
+ * serverlaget. `osloDayKey` i `$lib/server/trip-geo` delegerer hit.
+ */
+export function osloDayKey(date: Date, timezone = OSLO_TZ): string {
+	return date.toLocaleDateString('sv', { timeZone: timezone });
+}

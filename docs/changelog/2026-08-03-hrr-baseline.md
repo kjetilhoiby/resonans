@@ -112,8 +112,7 @@ arket med `maxHr: 186`, og bekreftet at resultatet ble
 
 ## Gjenstår
 
-**Pulsfall mellom intervalldrag** — heart rate *recovery*, som er en sterkere
-formmarkør enn reserven. Trackpoints med puls ligger alt lagret fra Ekkos
-`.gpx`/`.tcx`-opplastinger, men en GPX stopper når økta stopper, så de 60 sekundene
-etter siste innsats mangler oftest. Intervalløkter har fysiologien innebygd i
-pausene, og der finnes dataene.
+**Pulsfall er bygget** — men ikke fra øktfilene. Antakelsen her var at trackpoints
+fra `.gpx`/`.tcx` kunne bære det; de kan ikke, siden en GPX slutter å skrive når du
+trykker stopp og hele målingen ligger i de 60 sekundene etter. Kilden ble Withings'
+`getintradayactivity` i stedet. Se `2026-08-03-hr-recovery-diagnose.md`.

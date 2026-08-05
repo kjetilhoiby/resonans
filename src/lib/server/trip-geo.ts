@@ -130,14 +130,10 @@ export function reconcileDeclaredGeo(
 }
 
 /**
- * ISO-datonøkkel ('YYYY-MM-DD') for et tidspunkt i Oslo-tid. Bruker 'sv'-locale
- * som formaterer nettopp som ISO. Samme idiom som resten av kodebasen
- * (utils/weather.ts). En kjøretur som ankommer 00:30 norsk tid tilskrives den
- * datoen lokalt, ikke UTC-dagen før.
+ * Bor nå i `$lib/domain/oslo-time` — den er ren, og domenekode må kunne bøtte på
+ * Oslo-dato uten å dra inn serverlaget. Re-eksporten står for kallstedene her.
  */
-export function osloDayKey(date: Date, timezone = 'Europe/Oslo'): string {
-	return date.toLocaleDateString('sv', { timeZone: timezone });
-}
+export { osloDayKey } from '$lib/domain/oslo-time';
 
 /** Minimal projeksjon av et reise-tema for å avgjøre om en dato faller i turvinduet. */
 export interface TripCandidate {

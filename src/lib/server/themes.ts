@@ -268,7 +268,7 @@ Svar BARE med valid JSON (ingen markdown):
 }
 
 /**
- * Sørger for at Helse-mortemaet har alle fem undertemaene.
+ * Sørger for at Helse-mortemaet har alle undertemaene i HEALTH_SUBTHEMES.
  *
  * Idempotent: `ensureThemeForUser` gjenbruker eksisterende tema på navn.
  * `forceParentTheme` trengs fordi Egenfrekvens-temaet kan ha `parentTheme`

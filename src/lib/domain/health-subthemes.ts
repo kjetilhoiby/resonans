@@ -1,5 +1,5 @@
 /**
- * Helse-mortemaet og de fem undertemaene.
+ * Helse-mortemaet og undertemaene under det.
  *
  * Hierarkiet bæres av `themes.parentTheme`, som er en fritekstkolonne mot
  * forelderens NAVN (ikke en fremmednøkkel) — samme mekanikk som «Hjem» bruker
@@ -42,6 +42,12 @@ export const HEALTH_SUBTHEMES: readonly HealthSubtheme[] = [
 		emoji: '🥗',
 		kind: 'nutrition',
 		description: 'Kosthold og energibalanse.'
+	},
+	{
+		name: 'Vekt',
+		emoji: '⚖️',
+		kind: 'weight',
+		description: 'Vektutvikling, kroppssammensetning og milepæler.'
 	},
 	{
 		name: 'Egenfrekvens',
@@ -87,7 +93,7 @@ export function isHealthSubthemeName(name: string | null | undefined): boolean {
  * liste her ville blokkert kategorier brukeren finner på selv.
  *
  * De tre første eier faktisk undertemaer i koden («Hjem» → hus-prosjekter,
- * «Familie» → ferier, «Helse» → de fem over). Resten er løse kategorier.
+ * «Familie» → ferier, «Helse» → `HEALTH_SUBTHEMES`). Resten er løse kategorier.
  */
 export const PARENT_THEME_SUGGESTIONS: readonly string[] = [
 	HEALTH_PARENT_THEME_NAME,

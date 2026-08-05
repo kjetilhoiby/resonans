@@ -1777,3 +1777,133 @@ export const hrRecoveryWeak = {
 	wellAnchored: true,
 	sportFamily: 'cycling'
 };
+
+/* ── Vekt ─────────────────────────────────────────────────────────────────
+   Ett år med daglige veiinger: nedgang fra 86 til 81,4 med en platåperiode i
+   midten, pluss deterministisk «støy» så rå målinger og trend faktisk ser ulike
+   ut i demoen. Uten støyen ville grafen vist to sammenfallende kurver, og hele
+   poenget med å tegne begge forsvinner. Ingen Math.random — /design er med i
+   visuell regresjon. */
+function mockWeightDays() {
+	const days: Array<{
+		date: string;
+		weightKg: number;
+		weighInCount: number;
+		fatMassKg: number | null;
+		fatRatio: number | null;
+		muscleMassKg: number | null;
+		fatFreeMassKg: number | null;
+	}> = [];
+
+	const LENGTH = 360;
+	const END = Date.UTC(2026, 7, 4); // 4. august 2026
+
+	for (let i = 0; i < LENGTH; i++) {
+		// Hopp over hver elleve dag, så hull og segmentbrudd blir demonstrert.
+		if (i % 11 === 7) continue;
+
+		const t = i / (LENGTH - 1);
+		// Nedgang, platå i midten, nedgang igjen.
+		const baseline = t < 0.35 ? 86 - t * 6 : t < 0.6 ? 83.9 : 83.9 - (t - 0.6) * 6.2;
+		const noise = Math.sin(i * 1.7) * 0.45 + Math.sin(i * 0.61) * 0.3;
+		const weightKg = Math.round((baseline + noise) * 10) / 10;
+		// To frekvenser: én alene ga et regelrett moiré-mønster i demoen.
+		const fatRatio =
+			Math.round((23.4 - t * 2.6 + Math.sin(i * 0.9) * 0.2 + Math.sin(i * 2.3) * 0.15) * 10) / 10;
+
+		days.push({
+			date: new Date(END - (LENGTH - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+			weightKg,
+			weighInCount: 1,
+			fatMassKg: Math.round(((weightKg * fatRatio) / 100) * 10) / 10,
+			fatRatio,
+			muscleMassKg: Math.round((60.2 + t * 0.6) * 10) / 10,
+			fatFreeMassKg: Math.round((weightKg * (1 - fatRatio / 100)) * 10) / 10
+		});
+	}
+
+	return days;
+}
+
+export const weightDays = mockWeightDays();
+
+export const weightLatest = weightDays[weightDays.length - 1];
+
+export const weightComposition = {
+	windowDays: 90,
+	fromDate: '2026-05-06',
+	toDate: '2026-08-04',
+	sentence: '−2,1 kg — −1,8 kg fett, −0,2 kg muskel',
+	fatShare: 0.86,
+	weightDeltaKg: -2.1,
+	fatDeltaKg: -1.8,
+	muscleDeltaKg: -0.2
+};
+
+/** Fettet falt mer enn vekta — kortet skal si det, ikke regne «200 %». */
+export const weightCompositionMuscleGain = {
+	windowDays: 90,
+	fromDate: '2026-05-08',
+	toDate: '2026-08-04',
+	sentence: '−0,2 kg — −0,4 kg fett, +0,1 kg muskel',
+	fatShare: 2,
+	weightDeltaKg: -0.2,
+	fatDeltaKg: -0.4,
+	muscleDeltaKg: 0.1
+};
+
+/** Rekord på trenden, en navngitt nedgangsperiode og en veiestreak. */
+export const weightMilestones = [
+	{
+		kind: 'lowest-trend' as const,
+		sentence:
+			'Snittvekta har ikke vært lavere enn 81,6 kg siden 14. mars 2025 — 1 år og 5 måneder tilbake.',
+		tone: 'positiv' as const,
+		basis: 'trend' as const,
+		sinceDate: '2025-03-14',
+		longestGapDays: 4
+	},
+	{
+		kind: 'largest-drop' as const,
+		sentence: 'Ned 2,3 kg på 90 dager — den bratteste 90-dagersperioden vi har målt.',
+		tone: 'positiv' as const,
+		basis: 'trend' as const,
+		longestGapDays: 4
+	},
+	{
+		kind: 'weigh-in-streak' as const,
+		sentence: '11 dager på rad med veiing.',
+		tone: 'positiv' as const,
+		basis: 'atferd' as const
+	}
+];
+
+/** Nedgangen som er muskel — feiringen avlyses, og setningen sier hvorfor. */
+export const weightMilestonesQualified = [
+	{
+		kind: 'largest-drop' as const,
+		sentence:
+			'Ned 1,4 kg på 30 dager — den bratteste 30-dagersperioden siden 2. februar 2026. Men 0,9 av de 1,4 kiloene er muskel.',
+		tone: 'nøytral' as const,
+		basis: 'trend' as const,
+		sinceDate: '2026-02-02',
+		longestGapDays: 26
+	},
+	{
+		kind: 'goal-distance' as const,
+		sentence: '1,6 kg til målet på 80,0 kg.',
+		tone: 'nøytral' as const,
+		basis: 'trend' as const
+	}
+];
+
+/** Gamle målinger: rekordene stopper, og kortet sier hvorfor framfor å bli tomt. */
+export const weightMilestonesStale = [
+	{
+		kind: 'stale' as const,
+		sentence:
+			'Siste veiing var 16. juli 2026, 20 dager siden. Rekordene venter på en ferskere måling.',
+		tone: 'nøytral' as const,
+		basis: 'atferd' as const
+	}
+];

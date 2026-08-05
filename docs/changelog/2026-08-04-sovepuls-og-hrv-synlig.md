@@ -110,10 +110,11 @@ Etiketten er endret fra «Sovepuls» til «Hvilepuls», siden det er det tallet 
 
 ## Gjenstår
 
-**HRV har aldri produsert data i prod.** Flaten sier det nå, men årsaken er ikke funnet:
-`syncSleepHrv` kan mangle kjøringer, eller enheten leverer ikke `sdnn_1`. Neste steg er å
-se på `cron_executions` for synken og eventuelt kalle Withings `action=get` manuelt for en
-natt man vet har pulsmåling.
+**Årsaken til at HRV aldri produserte data er funnet og rettet** samme dag, i to steg:
+`data || '<json>'::jsonb` nådde basen som en jsonb-*streng*, og `object || string`
+konkatenerer framfor å flette — søvnradene ble arrayer, og hvert felt i dem utilgjengelig.
+Deretter dekket hentevinduet én UTC-kalenderdag mens øktene starter 20:57–22:54 UTC. Se
+`73cdbac` og `5fecc10`. Prod har nå distinkte HRV-verdier på seks netter.
 
 Visuelle baselines må fortsatt regenereres på brukerens maskin (Chromium 1194 mot
 forventet 1223), nå også med søvnflaten.

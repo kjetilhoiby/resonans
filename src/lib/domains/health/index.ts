@@ -62,7 +62,7 @@ function mapWidgetMetricToSensorMetric(metric: HealthMetric): 'weight' | 'steps'
 // System prompt hints for health domain
 export const HEALTH_DOMAIN_PROMPT = `
 **HEALTH DOMAIN FOCUS:**
-- Helse er et mortema med fem undertemaer: Trening, Ernæring, Egenfrekvens, Søvn og Skjermtid.
+- Helse er et mortema med seks undertemaer: Trening, Ernæring, Vekt, Egenfrekvens, Søvn og Skjermtid.
   Mortemaet eier sammenhengene på tvers; detaljene bor på undertemaet.
 - Bruker spør om helse-metrikker (vekt, søvn, steg, treningsøkter, etc.)
 - Hent ALLTID live sensor-data med query_sensor_data før du svarer

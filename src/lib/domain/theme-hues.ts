@@ -34,7 +34,7 @@ const MATCHERS: Array<{ key: ThemeHueKey; terms: string[] }> = [
 	{ key: 'relations', terms: ['relasjon', 'partner', 'parforhold', 'ekteskap', 'samliv', 'vennskap'] },
 	{ key: 'family', terms: ['familie', 'barn', 'foreldre', 'foreldreliv', 'mamma', 'pappa'] },
 	{
-		// Helse-familien: mortemaet og de fem undertemaene deler hue, slik at
+		// Helse-familien: mortemaet og alle undertemaene deler hue, slik at
 		// View-Transition-crossfaden mellom mor og barn ikke skifter farge.
 		key: 'health',
 		terms: [

@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'training' | 'sleep' | 'screentime' | 'nutrition' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
+export type DashboardKind = 'health' | 'training' | 'sleep' | 'screentime' | 'nutrition' | 'weight' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -37,9 +37,6 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		terms: [
 			'helse',
 			'health',
-			'vekt',
-			'weight',
-			'kropp',
 			'skritt',
 			'steps',
 			// NB: «aktivitet» er 9 tegn og matcher som delstreng. Den blir
@@ -47,6 +44,30 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			// fanget «Barnas aktiviteter» og «Fritidsaktiviteter».
 			'aktivitet',
 			'vitalitet'
+		]
+	},
+	{
+		/**
+		 * NB: må stå ETTER health. «vekt» og «kropp» lå på health fram til august
+		 * 2026, med begrunnelsen at vekt er utfallsmålet undertemaene driver og
+		 * ikke en gren for seg. Det holdt ikke: en høst der vekt er hovedfokus
+		 * trenger sin egen historikk, sine egne milepæler og sin egen graf.
+		 *
+		 * Rekkefølgen bevarer det gamle: «Helse og vekt» inneholder «helse» og
+		 * beholder mordashboardet, mens «Vekt» alene nå får sitt eget.
+		 */
+		kind: 'weight',
+		terms: [
+			'vekt',
+			'vekta',
+			'vektmål',
+			'vektnedgang',
+			'weight',
+			'kropp',
+			'kroppsvekt',
+			'kroppssammensetning',
+			'fettprosent',
+			'slanking'
 		]
 	},
 	{
@@ -268,6 +289,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'nutrition',
 		label: 'Ernæring',
 		icon: '🥗'
+	},
+	weight: {
+		kind: 'weight',
+		label: 'Vekt',
+		icon: '⚖️'
 	},
 	economics: {
 		kind: 'economics',

@@ -11,7 +11,7 @@ function tile(tiles: ReturnType<typeof buildSubthemeTiles>, name: string) {
 }
 
 describe('buildSubthemeTiles — struktur', () => {
-	it('gir alltid fem fliser i fast rekkefølge', () => {
+	it('gir én flis per undertema i fast rekkefølge', () => {
 		const tiles = buildSubthemeTiles(input());
 		expect(tiles.map((t) => t.name)).toEqual(HEALTH_SUBTHEME_NAMES);
 	});
@@ -59,19 +59,55 @@ describe('buildSubthemeTiles — Trening', () => {
 });
 
 describe('buildSubthemeTiles — Ernæring', () => {
-	it('bruker norsk minustegn og komma på vektendring', () => {
+	it('viser loggede kalorier med protein og antall dager', () => {
+		const t = tile(
+			buildSubthemeTiles(input({ nutrition: { kcalPerDay: 2140, proteinPerDay: 118, loggedDays: 5 } })),
+			'Ernæring'
+		);
+		// nb-NO skiller tusener med hardt mellomrom (U+00A0), ikke vanlig mellomrom.
+		expect(t.value).toBe('2\u00a0140');
+		expect(t.unit).toBe('kcal/dag');
+		expect(t.delta).toBe('118 g protein · 5 dager');
+	});
+
+	it('faller ikke tilbake på vekta — den har sin egen flis nå', () => {
+		// To naboliggende fliser med samme tall gjør stripen vanskeligere å lese.
 		const t = tile(buildSubthemeTiles(input({ weightChange30d: -1.4 })), 'Ernæring');
-		expect(t.value).toBe('−1,4');
+		expect(t.empty).toBe(true);
+		expect(t.value).toBeNull();
+	});
+
+	it('gir ingen tone på inntak — vi har ingen terskel å dømme etter', () => {
+		expect(
+			tile(buildSubthemeTiles(input({ nutrition: { kcalPerDay: 900, loggedDays: 3 } })), 'Ernæring')
+				.tone
+		).toBe('nøytral');
+	});
+});
+
+describe('buildSubthemeTiles — Vekt', () => {
+	it('leder med nivået og setter endringen som undertekst', () => {
+		const t = tile(buildSubthemeTiles(input({ weightKg: 82.4, weightChange30d: -1.4 })), 'Vekt');
+		expect(t.value).toBe('82,4');
 		expect(t.unit).toBe('kg');
+		expect(t.delta).toBe('−1,4 kg på 30 dager');
 		expect(t.tone).toBe('positiv');
 	});
 
 	it('regner oppgang som nøytral — vi kjenner ikke intensjonen', () => {
-		expect(tile(buildSubthemeTiles(input({ weightChange30d: 1.2 })), 'Ernæring').tone).toBe('nøytral');
+		expect(tile(buildSubthemeTiles(input({ weightKg: 82.4, weightChange30d: 1.2 })), 'Vekt').tone).toBe(
+			'nøytral'
+		);
+	});
+
+	it('viser endringen alene når siste veiing mangler', () => {
+		const t = tile(buildSubthemeTiles(input({ weightChange30d: -1.4 })), 'Vekt');
+		expect(t.value).toBe('−1,4');
+		expect(t.empty).toBe(false);
 	});
 
 	it('behandler 0 som en verdi, ikke som manglende data', () => {
-		const t = tile(buildSubthemeTiles(input({ weightChange30d: 0 })), 'Ernæring');
+		const t = tile(buildSubthemeTiles(input({ weightChange30d: 0 })), 'Vekt');
 		expect(t.empty).toBe(false);
 		expect(t.value).toBe('0,0');
 	});

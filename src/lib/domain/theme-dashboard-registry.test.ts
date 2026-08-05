@@ -108,10 +108,20 @@ describe('resolveThemeDashboardKind — helse-mortemaet og undertemaene', () => 
 		expect(resolveThemeDashboardKind('Fysisk aktivitet')).toBe('health');
 	});
 
-	it('holder vekt og kropp på mortemaet', () => {
-		// Vekt er utfallsmålet undertemaene driver, ikke et eget undertema.
-		expect(resolveThemeDashboardKind('Vekt')).toBe('health');
-		expect(resolveThemeDashboardKind('Kropp')).toBe('health');
+	it('gir vekt og kropp sitt eget dashboard', () => {
+		/**
+		 * Snudd i august 2026. Begrunnelsen for å holde vekt på mortemaet var at det
+		 * er utfallsmålet de andre grenene driver — men en høst der vekt er
+		 * hovedfokuset trenger sin egen historikk, sine milepæler og sin egen graf.
+		 */
+		expect(resolveThemeDashboardKind('Vekt')).toBe('weight');
+		expect(resolveThemeDashboardKind('Kropp')).toBe('weight');
+		expect(resolveThemeDashboardKind('Kroppsvekt')).toBe('weight');
+	});
+
+	it('lar sammensatte helse-navn beholde mordashboardet', () => {
+		// Rekkefølgen i matcheren: health står før weight, så «helse» vinner.
+		expect(resolveThemeDashboardKind('Helse og vekt')).toBe('health');
 	});
 
 	it('lar korte termer ikke matche inni lengre ord', () => {

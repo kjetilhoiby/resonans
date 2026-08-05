@@ -123,6 +123,6 @@ er nå typet `string | number` med `parseNumber`/`isBlank` som tåler begge.
 
 ## Gjenstår
 
-Makromålene (`PUT /api/helse/ernaering/mal`) har fortsatt ingen UI. De hører hjemme i
-metrikk-innstillingene på Ernæring, ikke her — kcal- og proteinmål er noe man justerer
-mens man ser på loggen.
+Makromålene fikk sitt UI samme dag: `NutritionTargetsCard` på Ernæring-flaten, med
+`saveNutritionTargets` som eneste skrivevei for endepunktet, kortet og chat-verktøyet.
+Se `2026-08-04-dagsmal-chat-og-ui.md`.

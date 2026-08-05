@@ -186,7 +186,7 @@ konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer
 
 `themes.parentTheme` er **fritekst mot forelderens navn**, ikke en fremmednøkkel. Tre
 mortemaer finnes: «Hjem» (hus-prosjekter), «Familie» (ferier) og «Helse» (Trening,
-Ernæring, Egenfrekvens, Søvn, Skjermtid).
+Ernæring, Vekt, Egenfrekvens, Søvn, Skjermtid).
 
 - Barn hentes med `getChildThemes(userId, parentName)` i `src/lib/server/themes.ts`.
 - **Et tema kan peke på seg selv** — kolonnen er fritekst, så basen hindrer det ikke, og
@@ -197,8 +197,12 @@ Ernæring, Egenfrekvens, Søvn, Skjermtid).
   `docs/changelog/2026-08-03-selvloekke-i-temahierarkiet.md`.
 - Helse-settet er lukket og defineres i `src/lib/domain/health-subthemes.ts` — eneste
   sted navnene skrives. Undertemaene provisjoneres av `ensureHealthSubthemes` (idempotent).
+- **Et nytt undertema MÅ ha en builder i `buildSubthemeTiles`.** Oppslaget er på navn
+  (`BUILDERS[subtheme.name]`), så et navn uten builder ga «is not a function» på hele
+  mor-flaten — ikke en tom flis. Det er en vakt der nå, men flisen blir tom.
 - Arbeidsdelingen: **mortemaet viser sammenhenger, undertemaet eier detaljene.**
-- Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra.
+- Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra —
+  gjennom `readHealthMetricSettings` i `$lib/server/health/metric-settings.ts`.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
@@ -373,6 +377,42 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
 - `query_nutrition` med `queryType: 'recent'` returnerer **måltidene med navn og
   klokkeslett**, ikke bare dagssummer. «Hva spiste jeg i går» kunne før bare besvares
   med «1 910 kcal over tre måltider».
+
+### Vektflaten
+
+Se `docs/changelog/2026-08-05-vekt-som-undertema.md`. Vekt lå på mortemaet fram til
+august 2026 — begrunnelsen var at det er utfallsmålet de andre grenene driver — og
+ble flyttet ut da det ble et eget fokusområde.
+
+- **Trenden er etterslepende, ikke sentrert** (`weight-series.ts`). Et sentrert snitt
+  kan ikke regnes for de tre siste dagene, og det er der man ser. `MIN_TREND_SAMPLES`
+  (3) hindrer at «trenden» blir den ene målingen i vinduet.
+- `seriesForRange` regner trend på **hele** historikken før den klipper til perioden.
+  Motsatt rekkefølge gir en 30-dagersgraf uten linje den første uka.
+- **Rekordene regnes på trenden, aldri på rå målinger** (`weight-milestones.ts`). En rå
+  måling kan være en dehydrert morgen. Rå-rekorden finnes, men rangeres under og
+  droppes når den handler om samme periode.
+- **Platå og jevn nedgang er to ulike ting, og `<=` klarte ikke å skille dem.** Første
+  utgave lette etter «like lav eller lavere» og lot det være platå-vakt; en nedgang på
+  0,75 kg/måned gir en trend som står stille i tre-fire dager etter avrunding, så
+  referansedatoen ble «for tre dager siden» og milepælen fyrte aldri. Nå: streng `<`
+  for referansen, og `RECORD_MARGIN_KG` (trenden må ha falt 0,2 kg siste måned) for
+  platået.
+- **«Største nedgang» sammenlignes bare med ikke-overlappende vinduer.** Ellers
+  sammenlignes en periode med seg selv, og et jevnt fall gir «bratteste 90 dager siden
+  for to uker siden».
+- **Muskeltap avlyser feiringen.** Er mer enn `MUSCLE_SHARE_WARN` av nedgangen muskel,
+  faller tonen og setningen sier det. Bruker `describeCompositionChange`.
+- **Atferdsmilepælene er ikke pynt.** En motor som bare feirer synkende vekt er stum i
+  alle ukene vekta stiger. Streak og dekning er sanne uansett retning.
+- **Milepælene ser ti år bakover, grafen tre** (`weight-dashboard.ts`). Dagene caches i
+  localStorage. En setning kan derfor peke utenfor grafen — `milestonesReachBeyondChart`
+  sier det, framfor at setningen gjøres dårligere.
+- **Grafen viser rå målinger OG trend.** Bare trenden skjuler at målingene spriker et
+  kilo på væske; bare punktene gir støy uten retning. `MIN_AXIS_SPAN` er gulvet som
+  hindrer at tre hundre gram tegnes som et stup, og x-aksen er tidsproporsjonal så et
+  hull i veiingene blir et tomrom.
+- Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
 ### Puls-baseline (HRR)
 

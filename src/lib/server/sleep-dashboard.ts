@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
-import { sensorAggregates, themes } from '$lib/db/schema';
+import { sensorAggregates } from '$lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
-import { findHealthThemeId } from '$lib/server/themes';
+import { readHealthMetricSettings } from '$lib/server/health/metric-settings';
 import {
 	listSleepGoals,
 	listRecentNaps,
@@ -63,7 +63,7 @@ export async function loadSleepDashboardData(userId: string) {
 		listSleepGoals(userId),
 		// Tersklene bor på mortemaet — én kilde. Undertemaet har sin egen
 		// (tomme) metric_settings-kolonne som bevisst ikke brukes.
-		readParentMetricSettings(userId),
+		readHealthMetricSettings(userId),
 		listDisturbances(userId, { sinceDays: SLEEP_LOOKBACK_DAYS }),
 		readMeasuredNights(userId, SLEEP_LOOKBACK_DAYS),
 		readNightlyPhysiology(userId, SLEEP_LOOKBACK_DAYS)
@@ -257,17 +257,6 @@ async function readNightlyPhysiology(
 	}
 
 	return { hrvNights, sleepNights: nightKeys.size, heartRateRows, breathing };
-}
-
-/** Helse-mortemaets metric_settings, eller tomt objekt. */
-async function readParentMetricSettings(userId: string): Promise<Record<string, unknown>> {
-	const healthThemeId = await findHealthThemeId(userId);
-	if (!healthThemeId) return {};
-	const parent = await db.query.themes.findFirst({
-		where: eq(themes.id, healthThemeId),
-		columns: { metricSettings: true }
-	});
-	return (parent?.metricSettings ?? {}) as Record<string, unknown>;
 }
 
 export type SleepDashboardPayload = Awaited<ReturnType<typeof loadSleepDashboardData>>;

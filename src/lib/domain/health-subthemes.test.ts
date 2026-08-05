@@ -10,10 +10,14 @@ import {
 import { resolveThemeDashboardKind } from './theme-dashboard-registry';
 
 describe('HEALTH_SUBTHEMES', () => {
-	it('holder de fem undertemaene', () => {
+	it('holder undertemaene i visningsrekkefølge', () => {
+		// Rekkefølgen styrer undertema-stripen på mor-flaten. Vekt kom til i august
+		// 2026: den lå på mortemaet fram til da, med begrunnelsen at vekt er
+		// utfallsmålet de andre grenene driver.
 		expect(HEALTH_SUBTHEME_NAMES).toEqual([
 			'Trening',
 			'Ernæring',
+			'Vekt',
 			'Egenfrekvens',
 			'Søvn',
 			'Skjermtid'
@@ -57,6 +61,7 @@ describe('HEALTH_FAMILY_KINDS', () => {
 			'health',
 			'training',
 			'nutrition',
+			'weight',
 			'egenfrekvens',
 			'sleep',
 			'screentime'

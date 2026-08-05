@@ -55,10 +55,16 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 		domain: 'health',
 		trigger: 'manual',
 		estimatedMinutes: 5,
-		// NB: `theme`, ikke `parentTheme`. Med parentTheme ville flyten dukket
-		// opp på alle fem undertemaene av Helse samtidig. Vekt er utfallsmålet
-		// mortemaet eier.
-		theme: 'Helse',
+		/**
+		 * NB: `theme`, ikke `parentTheme`. Med parentTheme ville flyten dukket opp på
+		 * alle undertemaene av Helse samtidig.
+		 *
+		 * Lå på 'Helse' fram til august 2026, da vekt var mortemaets eget utfallsmål.
+		 * Nå eier Vekt-undertemaet historikken og målvekta, så flyten hører der — og
+		 * `weight` har derfor en «flyter»-fane i `TABS_BY_KIND`. Uten den fanen ville
+		 * flytten skjult flyten helt.
+		 */
+		theme: 'Vekt',
 		badge: 'Populær',
 		steps: [
 			{

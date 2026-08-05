@@ -22,6 +22,7 @@
 	import SleepDashboard from '../SleepDashboard.svelte';
 	import ScreenTimeDashboard from '../ScreenTimeDashboard.svelte';
 	import NutritionDashboard from '../NutritionDashboard.svelte';
+	import WeightDashboard from '../WeightDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
 	import ThemeMetricSettingsSheet from '../ThemeMetricSettingsSheet.svelte';
@@ -31,6 +32,7 @@
 	import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 	import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
 	import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
+	import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
@@ -246,6 +248,7 @@
 	const trainingData = $derived(payloadFor<TrainingDashboardPayload>('training'));
 	const sleepData = $derived(payloadFor<SleepDashboardPayload>('sleep'));
 	const screenTimeData = $derived(payloadFor<ScreenTimeDashboardPayload>('screentime'));
+	const weightData = $derived(payloadFor<WeightDashboardPayload>('weight'));
 	const nutritionData = $derived(payloadFor<NutritionDashboardPayload>('nutrition'));
 
 	/* ── Goal helpers (for non-dashboard themes) ───────── */
@@ -623,6 +626,10 @@
 
 	{#if screenTimeData}
 		<ScreenTimeDashboard data={screenTimeData} />
+	{/if}
+
+	{#if weightData}
+		<WeightDashboard data={weightData} />
 	{/if}
 
 	{#if nutritionData}

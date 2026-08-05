@@ -14,6 +14,9 @@
 	import HrRecoveryCard from '$lib/components/domain/training/HrRecoveryCard.svelte';
 	import HrvCard from '$lib/components/domain/sleep/HrvCard.svelte';
 	import MacroSplitBar from '$lib/components/domain/nutrition/MacroSplitBar.svelte';
+	import WeightStatusCard from '$lib/components/domain/weight/WeightStatusCard.svelte';
+	import WeightMilestonesCard from '$lib/components/domain/weight/WeightMilestonesCard.svelte';
+	import WeightTrendChart from '$lib/components/domain/weight/WeightTrendChart.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -34,6 +37,13 @@
 		macroSplitTypical,
 		macroSplitHighProtein,
 		macroSplitUnaccounted,
+		weightDays,
+		weightLatest,
+		weightComposition,
+		weightCompositionMuscleGain,
+		weightMilestones,
+		weightMilestonesQualified,
+		weightMilestonesStale,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -248,6 +258,86 @@
 	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitTypical} /></div>
 	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitHighProtein} /></div>
 	<div class="demo-card demo-card--wide"><MacroSplitBar split={macroSplitUnaccounted} /></div>
+
+	<h3 class="subsection">WeightStatusCard — hvor vekta står nå</h3>
+	<p class="section-desc">
+		Nivået er overskriften, ikke endringen: «82,4» sier hvor du er, «−0,6» sier bare at noe
+		skjedde. Kortet leder med den <em>målte</em> vekta og setter trenden ved siden av — et
+		hovedtall brukeren ikke kjenner igjen fra badet er et hovedtall hun ikke stoler på.
+		Fettandelen står der fordi vekta alene ikke kan skille et vekttap du vil ha fra et du ikke
+		vil ha.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightStatusCard
+			latest={weightLatest}
+			trendKg={81.9}
+			composition={weightComposition}
+			today="2026-08-05"
+		/>
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightStatusCard
+			latest={weightLatest}
+			trendKg={81.9}
+			composition={weightCompositionMuscleGain}
+			today="2026-08-05"
+		/>
+	</div>
+
+	<h3 class="subsection">WeightMilestonesCard — setningene historikken bærer</h3>
+	<p class="section-desc">
+		Alle setningene kommer ferdig formulert fra <code>buildWeightMilestones</code>; kortet setter
+		ikke sammen tall selv, for da ville vaktene ligget et sted uten tester. Tonen bæres av prikk
+		<em>og</em> ordlyd, aldri av farge alene. Andre eksempel viser den viktigste vakta: er over
+		halve nedgangen muskel, avlyses feiringen og setningen sier det. Tredje viser at kortet
+		heller forklarer stillheten enn å skjule seg — en seksjon som forsvinner ser ut som en
+		funksjon som ikke finnes.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightMilestonesCard
+			milestones={weightMilestones}
+			historyDays={517}
+			weighIns={402}
+			enoughHistory={true}
+		/>
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightMilestonesCard
+			milestones={weightMilestonesQualified}
+			historyDays={517}
+			weighIns={402}
+			enoughHistory={true}
+			milestonesReachBeyondChart={true}
+		/>
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightMilestonesCard
+			milestones={weightMilestonesStale}
+			historyDays={517}
+			weighIns={402}
+			enoughHistory={true}
+		/>
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightMilestonesCard milestones={[]} historyDays={12} weighIns={9} enoughHistory={false} />
+	</div>
+
+	<h3 class="subsection">WeightTrendChart — rå målinger og glidende trend</h3>
+	<p class="section-desc">
+		Punktene er sannheten, linja er signalet. Å vise bare trenden skjuler at målingene spriker et
+		helt kilo på væske alene; å vise bare punktene gir et støybilde man ikke kan lese en retning
+		ut av. Sammen lærer de hva som <em>er</em> støy. Én måling, altså én akse: trenden bærer
+		appens vektfarge og de rå punktene samme farge dempet, mens mållinja er blå og stiplet fordi
+		den er en referanse og ikke en måling. Aksen har et gulv, så en rolig måned ikke tegnes som
+		et stup — samme lærdom som vektaksen i ernæringshistorikken. x-aksen er tidsproporsjonal, så
+		et hull i veiingene blir et tomrom og ikke to punkter ved siden av hverandre.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightTrendChart days={weightDays} goalKg={80} />
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightTrendChart days={weightDays.slice(-24)} initialRange="30d" />
+	</div>
 
 </section>
 
