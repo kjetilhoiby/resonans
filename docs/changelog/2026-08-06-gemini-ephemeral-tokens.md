@@ -123,10 +123,35 @@ GET  /api/apps/gemini/models → 502 samme
 GET  /api/apps/gemini/ephemeral-token  → 405
 ```
 
-**Ikke verifisert:** at et ekte token faktisk åpner en Live-økt. `GEMINI_API_KEY`
-finnes ikke i agentmiljøet, bare i Vercel. Første kall etter deploy svarer på det —
-og `GET /api/apps/gemini/models` er stedet å begynne, siden det både bekrefter at
-nøkkelen virker og sier om standardmodellen fortsatt finnes.
+**Mot prod, etter deploy** — hele kjeden, inkludert håndtrykket:
+
+```
+GET  /api/apps/gemini/models          → 200, seks live-modeller, defaultIsStale: false
+POST /api/apps/gemini/ephemeral-token → 200, auth_tokens/… (76 tegn)
+WebSocket → setupComplete {} → serverContent med audio/pcm;rate=24000
+```
+
+**Låsene er avgjørende testet**, ikke antatt. To prober som utgir seg for å være en
+klient med et stjålet token:
+
+| Probe | Klienten sendte | Resultat |
+|---|---|---|
+| Modellås | `models/finnes-absolutt-ikke-xyz` | `setupComplete`, modellen svarte «Kake.» — hadde klientens modell blitt hørt på, ville socketen dødd. Låsen overstyrer. |
+| Verktøylås | `functionDeclarations: [slett_alle_data]` + «kall den nå» | Ingen `toolCall`-ramme. Modellen sa selv at den ikke har muligheten. |
+
+En tidligere, svakere versjon av verktøytesten spurte etter nyheter og fikk «jeg kan
+hente nyheter» tilbake — som er prat, ikke bevis. En deklarert funksjon med en
+eksplisitt ordre er det som faktisk skiller.
+
+**Feil funnet i prod:** `expiresAt` og `newSessionExpiresAt` kom tilbake som null.
+Begge er «Input only» i Googles skjema og returneres derfor aldri. Uten dem har appen
+ingen frister å planlegge etter og må gjette når den skal minte på nytt. Fylles nå fra
+kroppen vi sendte, med svaret som vinner skulle Google begynne å returnere dem.
+
+**Modellen er ren lyd.** `gemini-3.1-flash-live-preview` avviser
+`responseModalities: ['TEXT']` med close code 1007. Live-modeller er ikke
+utbyttbare på modalitet — `/api/apps/gemini/models` lister seks, og de har ulike
+egenskaper.
 
 **Ikke gjort:** ingen rate-limiting på minting. Tokenet er per bruker gjennom
 `Bearer rsn_` og trekkes tilbake i `user_api_secrets`, og hver mint logges med

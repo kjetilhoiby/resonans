@@ -261,3 +261,22 @@ describe('selectLiveModels', () => {
 		expect(katalog([null, {}, { supportedGenerationMethods: ['bidiGenerateContent'] }])).toEqual([]);
 	});
 });
+
+describe('utløpstider som Google ikke returnerer', () => {
+	it('dokumenterer at feltene er input-only', () => {
+		/**
+		 * Verifisert mot prod: et ekte token kom tilbake uten `expireTime` og
+		 * `newSessionExpireTime`, fordi begge er «Input only» i Googles skjema.
+		 * Parseren gir null, og `mintLiveToken` fyller inn det vi ba om — uten det
+		 * får appen ingen frister å planlegge etter.
+		 */
+		const parsed = parseAuthTokenResponse({ name: 'auth_tokens/abc' });
+		expect(parsed.expiresAt).toBeNull();
+		expect(parsed.newSessionExpiresAt).toBeNull();
+
+		// Verdiene finnes i kroppen vi sendte, og det er kilden fallbacken bruker.
+		const body = buildAuthTokenRequest({ now: NOW });
+		expect(body.expireTime).toBeTruthy();
+		expect(body.newSessionExpireTime).toBeTruthy();
+	});
+});

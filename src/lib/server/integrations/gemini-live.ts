@@ -128,8 +128,20 @@ export async function mintLiveToken(
 
 	const parsed = parseAuthTokenResponse(payload);
 
+	/**
+	 * Utløpstidene fylles fra det VI ba om, ikke fra svaret.
+	 *
+	 * `expireTime` og `newSessionExpireTime` er «Input only» hos Google og kommer
+	 * derfor aldri tilbake — verifisert mot prod: et ekte token ga `expiresAt: null`.
+	 * Vi vet likevel hva de er, siden vi satte dem. Uten dette får appen ingen
+	 * frister å planlegge etter og må gjette når den skal minte på nytt.
+	 *
+	 * Svaret vinner hvis Google en dag begynner å returnere dem.
+	 */
 	return {
 		...parsed,
+		expiresAt: parsed.expiresAt ?? body.expireTime,
+		newSessionExpiresAt: parsed.newSessionExpiresAt ?? body.newSessionExpireTime,
 		model: body.bidiGenerateContentSetup.model,
 		uses: body.uses,
 		websocketUrl: liveWebSocketUrl(parsed.token)
