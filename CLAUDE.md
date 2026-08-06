@@ -176,7 +176,11 @@ Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
 `/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
-`/api/apps/assistant`, `/api/apps/day` og `/api/apps/strava/*`.
+`/api/apps/assistant`, `/api/apps/day`, `/api/apps/strava/*`, `/api/apps/tesla/*` og
+`/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
+
+**NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
+AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
@@ -219,6 +223,43 @@ der. To feller:
   ikke prefiks — så nye endepunkter under `/api/health/` får normal auth. Det var motsatt
   fram til 2026-08 og kostet tre bugs. Nye helse-endepunkter hører uansett under
   `/api/helse/` eller `/api/tema/`.
+
+### Gemini realtime (Ekko)
+
+Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
+`$lib/domain/ai/gemini-live-token.ts`, kallet i
+`$lib/server/integrations/gemini-live.ts`.
+
+- **Ekko får aldri `GEMINI_API_KEY`.** En app-binær er offentlig, og nøkkelen kan ikke
+  roteres uten en App Store-utgivelse. `POST /api/apps/gemini/token` minter et kortlevd
+  token hos Google i stedet. Samme arbeidsdeling som `/api/apps/tesla/state`.
+- **`bidiGenerateContentSetup` + `fieldMask` er sikkerhetsgrensa, ikke `expireTime`.** Et
+  token uten låst setup lar den som holder det bestemme modell, systeminstruksjon og
+  `tools` — altså en generell Gemini-nøkkel på vår kvote, med kodekjøring gjennom verktøy
+  som verste utfall. Vi låser `model` og `tools: []`.
+- **`fieldMask` er lett å ta feil av.** Tom maske *med* en setup betyr at klientens
+  setup-melding ignoreres **i sin helhet** — også stemme og modaliteter. Vi vil bare
+  overskrive to felt, og da må begge stå i masken. Feilen ser ut som «Gemini svarer rart»,
+  ikke som en tilgangsfeil.
+- **Dokumentasjonssida stemmer ikke med wire-formatet.** `ai.google.dev` beskriver
+  `liveConnectConstraints` med nøstet `model`/`config`; det er Python-SDK-ens navn, og
+  API-et avviser det («Unknown name "liveConnectConstraints" at 'auth_token'»). Sjekk
+  `https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta` framfor å
+  skrive kroppen fra hukommelsen.
+- **WebSocket-metoden er en annen for tokens:** `BidiGenerateContentConstrained` med
+  `?access_token=`, ikke `BidiGenerateContent` med `?key=`. Endepunktet returnerer hele
+  URL-en nettopp fordi feilen gir en 4xx uten forklaring.
+- **Modellnavn hardkodes ikke som en påstand.** De skifter fra uke til uke.
+  `GEMINI_LIVE_MODEL` overstyrer defaulten, og `GET /api/apps/gemini/models` lister hva
+  Google tilbyr nå — filtrert på `supportedGenerationMethods`, ikke på om navnet
+  inneholder «live». `defaultIsStale` flagger at defaulten er forsvunnet fra katalogen;
+  det er tilstanden der minting fortsetter å virke helt til noen prøver å koble til.
+- **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
+  bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
+  appen mistet resumption-handtaket.
+- Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
+  ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
+  Vercel-logg eller i et JSON-svar.
 
 ### Ernæringslogg
 
@@ -648,6 +689,10 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
+
+**Gemini realtime (Ekko):** `GEMINI_API_KEY` (påkrevd for `/api/apps/gemini/*`; uten den
+svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og appen skal
+ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 
