@@ -231,7 +231,7 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
 `$lib/server/integrations/gemini-live.ts`.
 
 - **Ekko får aldri `GEMINI_API_KEY`.** En app-binær er offentlig, og nøkkelen kan ikke
-  roteres uten en App Store-utgivelse. `POST /api/apps/gemini/token` minter et kortlevd
+  roteres uten en App Store-utgivelse. `POST /api/apps/gemini/ephemeral-token` minter et kortlevd
   token hos Google i stedet. Samme arbeidsdeling som `/api/apps/tesla/state`.
 - **`bidiGenerateContentSetup` + `fieldMask` er sikkerhetsgrensa, ikke `expireTime`.** Et
   token uten låst setup lar den som holder det bestemme modell, systeminstruksjon og

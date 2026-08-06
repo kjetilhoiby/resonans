@@ -8,7 +8,7 @@ import {
 import { GeminiTokenShapeError } from '$lib/domain/ai/gemini-live-token';
 
 /**
- * POST /api/apps/gemini/token  (Bearer rsn_)
+ * POST /api/apps/gemini/ephemeral-token  (Bearer rsn_)
  *
  * Minter et kortlevd Gemini Live-token til Ekko, slik at appen kan koble direkte
  * til Googles WebSocket uten å ha `GEMINI_API_KEY` i bundelen. Samme arbeidsdeling

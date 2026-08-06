@@ -18,7 +18,7 @@ arbeidsdeling som `/api/apps/tesla/state`: credentials bor på serveren.
 
 ## Endepunktene
 
-`POST /api/apps/gemini/token` minter et token. Kroppen er valgfri; `ttlSeconds`,
+`POST /api/apps/gemini/ephemeral-token` minter et token. Kroppen er valgfri; `ttlSeconds`,
 `newSessionSeconds` og `uses` kan justeres innenfor grensene, og verdier utenfor
 klippes framfor å avvises — en app som ber om 45 minutter er bedre tjent med 30 enn
 med en 400.
@@ -118,9 +118,9 @@ bidiGenerateContentSetup + fieldMask → 400 API key not valid   ← formen godt
 **Lokalt mot endepunktene:**
 
 ```
-POST /api/apps/gemini/token  → 502 {"error":"Google svarte 400: API key not valid…"}
+POST /api/apps/gemini/ephemeral-token  → 502 {"error":"Google svarte 400: API key not valid…"}
 GET  /api/apps/gemini/models → 502 samme
-GET  /api/apps/gemini/token  → 405
+GET  /api/apps/gemini/ephemeral-token  → 405
 ```
 
 **Ikke verifisert:** at et ekte token faktisk åpner en Live-økt. `GEMINI_API_KEY`
