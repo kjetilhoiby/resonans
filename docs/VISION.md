@@ -38,6 +38,49 @@ Hvert tema har en kanonisk samtale, mål, sjekklister, filer og et valgfritt das
 
 Generell "snakk med AI"-chat konkurrerer med ChatGPT og taper. Resonans-chatten vinner når den har *smal, rik kontekst* — bok-chat med kuratert kontekst (boken, klipp, leselogg, forfatter) har vært den beste opplevelsen. Mønsteret: hvert domene bør ha sin "bok-chat-opplevelse" der AI-en vet mye om akkurat dette emnet, ikke litt om alt.
 
+### Stemme skriver, skjermen forklarer
+
+Innskrivingsfriksjon er den bindende begrensningen i Resonans, ikke mangel på
+analyse. Det står i koden: `checkAgainstWeight` nekter å svare under 70 % loggdekning,
+`repeatableMeals` finnes fordi «favoritter man har glemt å opprette hjelper ingen», og
+`intake-pacing.ts` ble skrevet etter en dag med 304 kcal logget kl. 15 og reell sult i
+15–17-tida. De mest verdifulle analysene er gatet på dekning, og dekning er gatet på
+hvor knotete det er å føre noe inn.
+
+Stemme angriper nettopp det. Et skjema krever at du finner riktig felt, velger enhet og
+trykker lagre; å si «to knekkebrød med egg» krever ingenting. Fire innskrivingsflater
+bygget i august (`NutritionLogger`, `BodyProfileCard`, `NutritionTargetsCard`,
+duppredigering) er hver for seg små, men til sammen er de mye overflate — og den ene
+feilen som veltet en side i prod var `bind:value`-koersjonen på `/settings/profile`,
+altså et artefakt av å ha et skjema i det hele tatt.
+
+**Men stemme er sterk på skriving og svak på lesing.** `EnergyHistoryChart`
+sammenligner *formen* på to kurver; det kan ikke leses opp. En skjerm viser fjorten
+dager i ett blikk, lyd er sekvensielt og kan ikke skannes. Retningen er derfor ikke
+stemme *i stedet for* paneler, men stemme som skriver og flaten som forklarer — på
+samme data, gjennom samme skrivevei. «Tre innganger, én skrivevei» blir fire.
+
+Tre avveiinger som følger av dette, og som bør avgjøres før stemmeflaten vokser:
+
+- **Angre, ikke bekrefte.** I et panel ser du hva du committer. I stemme skjer
+  skrivingen først og du hører om den etterpå. Et bekreftelsessteg koster en full runde
+  dødtid og vil føles tregt nok til at folk slutter å bruke det. Mekanismen må være at
+  «nei, det var tre skiver» retter forrige oppføring — angre må være stemme-adresserbart.
+  Ingenting sånt finnes i dag.
+- **Lavkonfidens i volum er ikke data.** Stemme gir mer input, og vagere: «litt
+  havregrøt» framfor «to dl havregryn». En dag full av gjetninger *ser ut* som data og
+  forplanter seg rett inn i `energyBalance`, `evaluateMacroTargets` og vektoppgjøret.
+  `confidence`-feltet er kroken som alt finnes; beslutningen er om lavkonfidens-
+  oppføringer skal merkes og holdes utenfor tallene som krever presisjon.
+- **Verktøyantall er ikke det som gjør stemme stort.** Deklarasjoner koster kontekst
+  (våre 48 chat-verktøy er ≈7 000 tokens; 100 ville vært ≈14 600) og treffsikkerheten
+  faller med antallet — vår egen `query_food` mot `query_nutrition`-forvirring er
+  vanskelig med tre verktøy og håpløs med hundre. Det kvalitative spranget er at
+  modellen kjenner konteksten: en meny kan ikke spørre «hvor sulten er du?» i riktig
+  øyeblikk. `sendFuelNudge` prøver på det alt, og svakheten er at den er en enveis-push
+  med et fast beslutningstre. I stemme blir den en samtale. Det er en prompt- og
+  kontekstgevinst mer enn en verktøygevinst.
+
 ### Frontstage enkel, backstage kompleks
 
 Appen skal oppleves enkel og "magisk". Under overflaten:
@@ -135,6 +178,13 @@ Ekko er en iOS-app for live treningsoppfølging. Resonans fungerer som backend:
 - Hybride treningsprogrammer: LLM-generert, validert programmatisk, levert som JSON
 - Live session tracking med readiness-assessment
 - Test-økter (Cooper, 5k, 10k, styrketester) for rekalibrering
+- Gemini realtime: Resonans minter kortlevde tokens (`/api/apps/gemini/ephemeral-token`)
+  så nøkkelen aldri shippes i app-binæren. Se
+  `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`.
+
+Stemmeflaten er Ekkos, men skriveveien er Resonans'. Verktøydeklarasjonene bor derfor
+server-side i tokenet: et nytt verktøy skal være en Resonans-deploy, ikke en App
+Store-utgivelse.
 
 ## Retning fremover
 
@@ -146,6 +196,16 @@ Pågående migrasjon fra ad hoc-styling til et komponentbasert designsystem. Lev
 
 ### Forenkling
 Schema-konsolidering planlagt: `activities`/`sensor_events` overlapper, tre klassifiseringsmekanismer gjør samme jobb. Målbilde: færre tabeller, tydeligere domene-eierskap, enklere parsing.
+
+### Stemme som primær inngang
+Hypotesen er at stemme blir den viktigste innskrivingskanalen, ikke en tilleggsflate —
+se «Stemme skriver, skjermen forklarer». Rekkefølgen er bevisst forsiktig: tre kurerte
+verktøy gjennom en proxy først, for å måle om verktøy i stemme er verdt noe med den
+pessimistiske latensen (en mobil rundtur i den kritiske stien). Gemini støtter MCP
+nativt (`Tool.mcpServers`), som fjerner mobilrunden og hele verktøylaget fra appen —
+men det bygges når gevinsten er målt, ikke antatt. MCP løser forresten *ikke*
+kontekstkostnaden: `tools/list` legger deklarasjonene i modellens kontekst uansett
+transport.
 
 ### Overvåking og robusthet
 Nylig innført: cron-tracking, daglig helsesjekk med Google Chat-varsling, sensor-ferskhetskontroll. Mål: ingen stille feil — integrasjoner som bryter skal varsle samme kveld.
