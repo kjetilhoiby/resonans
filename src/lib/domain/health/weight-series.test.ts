@@ -9,6 +9,7 @@ import {
 	seriesForRange,
 	daysBetween,
 	axisForSeries,
+	WEIGHT_RANGES,
 	MIN_AXIS_SPAN,
 	MIN_TREND_SAMPLES,
 	MAX_TREND_GAP_DAYS,
@@ -254,5 +255,25 @@ describe('seriesForRange', () => {
 		const ranged = seriesForRange(days, 'weight', '30d');
 		expect(ranged.nadir!.value).toBeLessThan(80);
 		expect(daysBetween(ranged.nadir!.date, ranged.points[0].date)).toBeGreaterThan(100);
+	});
+});
+
+describe('periodevalgene', () => {
+	it('har et trinn mellom ett år og alt', () => {
+		// Nesten ni år med veiinger hoppet fra «1 år» rett til «Alt», og det er to
+		// helt ulike grafer.
+		const ids = WEIGHT_RANGES.map((r) => r.id);
+		expect(ids).toContain('3y');
+		expect(ids.indexOf('3y')).toBeGreaterThan(ids.indexOf('1y'));
+		expect(ids.indexOf('3y')).toBeLessThan(ids.indexOf('alt'));
+	});
+
+	it('stiger monotont, med «Alt» ubundet', () => {
+		const days = WEIGHT_RANGES.map((r) => r.days);
+		expect(days.at(-1)).toBeNull();
+		const bounded = days.slice(0, -1) as number[];
+		for (let i = 1; i < bounded.length; i++) {
+			expect(bounded[i]).toBeGreaterThan(bounded[i - 1]);
+		}
 	});
 });

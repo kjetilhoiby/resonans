@@ -94,8 +94,8 @@
 
 		{#if milestonesReachBeyondChart}
 			<p class="note">
-				Én av datoene ligger lenger tilbake enn grafen under rekker. Milepælene leser hele
-				historikken; grafen viser de siste årene.
+				Grafen under rekker ikke like langt tilbake som milepælene. De leser hele historikken;
+				grafen er kuttet fordi den har svært mange målepunkter.
 			</p>
 		{/if}
 	{/if}

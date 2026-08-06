@@ -446,9 +446,11 @@ ble flyttet ut da det ble et eget fokusområde.
   faller tonen og setningen sier det. Bruker `describeCompositionChange`.
 - **Atferdsmilepælene er ikke pynt.** En motor som bare feirer synkende vekt er stum i
   alle ukene vekta stiger. Streak og dekning er sanne uansett retning.
-- **Milepælene ser ti år bakover, grafen tre** (`weight-dashboard.ts`). Dagene caches i
-  localStorage. En setning kan derfor peke utenfor grafen — `milestonesReachBeyondChart`
-  sier det, framfor at setningen gjøres dårligere.
+- **Grafen og milepælene ser like langt.** Grafen var kuttet til tre år for å spare
+  payload; det skar bort 730 av 1204 veiinger, siden tettheten er høyest i de eldste
+  årene. Taket er nå på **rader** (`MAX_CHART_POINTS`), ikke på år — det er rader som
+  koster bytes. Kappet var basert på et anslag av datavolum framfor en måling, og ett
+  kall mot prod ville avslørt det.
 - **Grafen viser rå målinger OG trend.** Bare trenden skjuler at målingene spriker et
   kilo på væske; bare punktene gir støy uten retning. `MIN_AXIS_SPAN` er gulvet som
   hindrer at tre hundre gram tegnes som et stup, og x-aksen er tidsproporsjonal så et

@@ -352,7 +352,7 @@ export function axisForSeries(
 	return { min, max, ticks, spanFloored: padded < minSpan };
 }
 
-export type WeightRangeId = '30d' | '90d' | '6m' | '1y' | 'alt';
+export type WeightRangeId = '30d' | '90d' | '6m' | '1y' | '3y' | 'alt';
 
 export interface WeightRangeOption {
 	id: WeightRangeId;
@@ -366,6 +366,9 @@ export const WEIGHT_RANGES: readonly WeightRangeOption[] = [
 	{ id: '90d', label: '90 d', days: 90 },
 	{ id: '6m', label: '6 mnd', days: 182 },
 	{ id: '1y', label: '1 år', days: 365 },
+	// Trinnet mellom «1 år» og «Alt» var for stort: en konto med nesten ni år med
+	// veiinger hoppet fra ett til alle, og det er to helt ulike grafer.
+	{ id: '3y', label: '3 år', days: 1095 },
 	{ id: 'alt', label: 'Alt', days: null }
 ] as const;
 
