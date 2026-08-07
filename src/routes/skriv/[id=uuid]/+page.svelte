@@ -11,6 +11,8 @@
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { WRITING_CHAT_MODE_DEFS, type WritingChatMode } from '$lib/domain/writing/coach-prompt';
 	import { WRITING_DOC_KIND_DEFS } from '$lib/domain/writing/doc-kinds';
+	import ManuscriptTab from '$lib/components/domain/writing/ManuscriptTab.svelte';
+	import type { NotebookHit } from '$lib/domain/writing/notebook-results';
 	import { invalidateAll } from '$app/navigation';
 
 	let { data } = $props();
@@ -98,6 +100,46 @@
 			return;
 		}
 		editor = null;
+		await invalidateAll();
+	}
+
+	/* ── Hente inn fra notatblokka ───────────────────────── */
+	// Å flytte et notat inn i et prosjekt er å sette projectId — samme skrivevei
+	// som all annen dokumentendring, ikke en egen kopi.
+	let importing = $state(false);
+	let freeDocs = $state<NotebookHit[] | null>(null);
+	let importError = $state<string | null>(null);
+
+	async function startImport() {
+		importing = true;
+		freeDocs = null;
+		importError = null;
+		try {
+			const res = await fetch('/api/notater?kilde=dokument&limit=100');
+			if (!res.ok) {
+				importError = extractApiErrorMessage(res.status, await res.text());
+				freeDocs = [];
+				return;
+			}
+			freeDocs = (await res.json()).hits;
+		} catch (err) {
+			importError = `Kunne ikke hente notater: ${err instanceof Error ? err.message : String(err)}`;
+			freeDocs = [];
+		}
+	}
+
+	async function importDoc(id: string) {
+		importError = null;
+		const res = await fetch(`/api/notater/${id}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ projectId: data.project.id })
+		});
+		if (!res.ok) {
+			importError = extractApiErrorMessage(res.status, await res.text());
+			return;
+		}
+		importing = false;
 		await invalidateAll();
 	}
 
@@ -198,31 +240,41 @@
 					{#if editor.id}<Button variant="ghost" onClick={deleteDoc}>Slett</Button>{/if}
 				</div>
 			</div>
-		{:else if tab === 'manus'}
-			<div class="toolbar">
-				<Button onClick={() => newDoc('scene')}>Ny scene</Button>
-				<Button variant="ghost" onClick={() => newDoc('kapittel')}>Nytt kapittel</Button>
+		{:else if importing}
+			<div class="import">
+				<div class="editor-top">
+					<strong>Hent inn fra notatblokka</strong>
+					<button class="link" onclick={() => (importing = false)} aria-label="Lukk henting">Lukk</button>
+				</div>
+				{#if importError}<p class="error" role="alert">{importError}</p>{/if}
+				{#if freeDocs === null}
+					<p class="hint">Henter…</p>
+				{:else if freeDocs.length === 0}
+					<p class="empty">Ingen frie dokumenter i notatblokka.</p>
+				{:else}
+					<ul class="list">
+						{#each freeDocs as hit (hit.id)}
+							<li>
+								<button class="row" onclick={() => importDoc(hit.id)} data-track="skriv:hent-inn-notat">
+									<span class="row-main">
+										<span class="row-title">{hit.title}</span>
+										<span class="row-sub">{hit.excerpt}</span>
+									</span>
+									<span class="row-meta"><span>{hit.kindLabel}</span></span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			</div>
-			{#if data.manuscript.length === 0}
-				<p class="empty">Manuset er tomt. En scene er et godt sted å begynne.</p>
-			{:else}
-				<ul class="list">
-					{#each data.manuscript as doc (doc.id)}
-						<li>
-							<button class="row" onclick={() => openDoc(doc)} data-track="skriv:apne-manusdel">
-								<span class="row-main">
-									<span class="row-title">{doc.title || '(uten tittel)'}</span>
-									<span class="row-sub">{doc.body.slice(0, 140)}</span>
-								</span>
-								<span class="row-meta">
-									<span>{doc.words} ord</span>
-									<span>{doc.status}</span>
-								</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+		{:else if tab === 'manus'}
+			<ManuscriptTab
+				projectId={data.project.id}
+				docs={data.manuscript}
+				onOpen={openDoc}
+				onNew={newDoc}
+				onImport={startImport}
+			/>
 		{:else if tab === 'materiale'}
 			<div class="toolbar">
 				<Button onClick={() => newDoc('karakter')}>Ny karakter</Button>

@@ -1,7 +1,7 @@
 # Skriveprosjekt, kompislesing og notatblokk
 
 Dato: 2026-08-07
-Status: pågår (fase 1 ferdig)
+Status: pågår (fase 1, 2 og 2b ferdig; fase 3–4 gjenstår)
 
 ## Kontekst
 
@@ -295,6 +295,38 @@ To følger av det:
 dokumentene faller tilbake til notatblokka. Å slette et prosjekt skal ikke slette
 månedene som ligger i det.
 
+### Fase 2b: Rekkefølge, sammenhengende lesing og henting — FERDIG
+
+Fase 2 leverte et rom man kunne skrive *i*, men ikke skrive *sammen*: `sortOrder`
+fantes i basen uten noen måte å endre den på, så manuset var en liste sortert på
+opprettelsestidspunkt.
+
+**Rekkefølgen sendes som hele lista**, ikke som «flytt denne opp». Det gjør
+operasjonen idempotent, og to raske trykk kan ikke bytte plass med hverandre — den
+siste vinner og bærer hele sannheten. `applyOrder` beholder deler klienten ikke
+nevnte, så en utdatert klient ikke kan miste et kapittel ut av manuset ved å
+utelate det.
+
+**Alle rader starter på `sortOrder = 0`**, og det er grunnen til at
+`normalizeOrder` finnes: uten tetting ville «flytt opp» sammenlignet nuller og
+ikke gjort noe. Serveren skriver bare radene som faktisk flyttet seg — en full
+omskriving ville rørt `updatedAt` på hele manuset og fått alt til å se nylig
+endret ut.
+
+**Sammenhengende lesing** (`compileManuscript`) setter delene sammen i rekkefølge
+med ordtelling. Tomme deler tas med i oversikten — en scene uten tekst er en scene
+du ikke har skrevet ennå — men bidrar ikke med tekst, ellers ville lesingen fått
+hull av blanke overskrifter.
+
+**Henting fra notatblokka** setter `projectId` på et fritt dokument gjennom
+`/api/notater`. Ingen kopi, ingen ny skrivevei.
+
+Manus-fanen er en egen domenekomponent (`components/domain/writing/ManuscriptTab`)
+framfor mer markup i ruta. Flyttingen er optimistisk med rulling tilbake ved feil;
+pilene ville ellers føltes trege nok til at man trykker to ganger.
+
+20 nye tester.
+
 ### Fase 3: Transkripsjon inn
 
 `kind='transkripsjon'` via `transcribeAudioWithWords`. Whisper-stien og
@@ -310,10 +342,9 @@ enhetstester, nudge gatet på én per dag og stille timer.
 - **Desktop-editoren er uspesifisert.** «Rolig langtekst-modus» er en retning, ikke et
   krav. Begge flatene bruker foreløpig samme `Textarea`; det er ærlig, men det er ikke
   «likeverdig på desktop» ennå.
-- **Rekkefølgen i manuset kan ikke endres fra flaten.** `sortOrder` finnes i basen og
-  brukes til sortering, men det er ingen dra-og-slipp. Nye scener får 0 og sorteres
-  sekundært på `createdAt`. Dette er det som mangler mest for å «skrive det hele
-  sammen».
+- **Løst i fase 2b:** rekkefølgen kan endres. Det er piler, ikke dra-og-slipp —
+  dra-og-slipp på tvers av mobil og desktop er en egen jobb, og piler er dessuten
+  det eneste som fungerer med tastatur og skjermleser.
 - **Modellnavn er hardkodet 52 steder i repoet** (`gpt-4o-mini` 31, `gpt-4o` 21),
   uten noe register. `ChatModel` i `api/chat` kjenner `gpt-4.1` og `gpt-5.4`, men
   den typen er lokal til den fila, og `chat-stream-messages` sin direct-modus
@@ -325,9 +356,9 @@ enhetstester, nudge gatet på én per dag og stille timer.
 
 ## Verifisering
 
-Fase 1 og 2:
+Fase 1, 2 og 2b:
 
-- `npm test` — 2 659 tester i 201 filer passerer, hvorav 53 nye i
+- `npm test` — 2 679 tester i 202 filer passerer, hvorav 73 nye i
   `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
   `query_reflections`.
 - `npm run check` — 0 feil, 0 advarsler.

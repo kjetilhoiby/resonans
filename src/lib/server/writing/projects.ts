@@ -10,6 +10,7 @@ import { writingDocs, writingProjects } from '$lib/db/schema';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { createConversation } from '$lib/server/conversations';
 import { countWords, resolveDocKind } from '$lib/domain/writing/doc-kinds';
+import { applyOrder } from '$lib/domain/writing/manuscript';
 import type { PromptDoc } from '$lib/domain/writing/coach-prompt';
 
 export type WritingProject = typeof writingProjects.$inferSelect;
@@ -86,6 +87,42 @@ export async function deleteProject(userId: string, id: string): Promise<boolean
 		.where(and(eq(writingProjects.id, id), eq(writingProjects.userId, userId)))
 		.returning({ id: writingProjects.id });
 	return rows.length > 0;
+}
+
+/**
+ * Skriver ny rekkefølge for manusets deler.
+ *
+ * Klienten sender hele den ønskede rekkefølgen som id-liste; `applyOrder` tetter
+ * den og beholder deler klienten ikke nevnte, så en utdatert klient ikke kan
+ * miste et kapittel ut av manuset. Bare ordnede typer (kapittel, scene) berøres
+ * — materialet har ingen meningsfull rekkefølge.
+ */
+export async function reorderManuscript(
+	userId: string,
+	projectId: string,
+	order: string[]
+): Promise<Array<typeof writingDocs.$inferSelect>> {
+	const { manuscript } = await getProjectContents(userId, projectId);
+	if (manuscript.length === 0) return [];
+
+	const reordered = applyOrder(
+		manuscript.map((d) => ({ id: d.id, sortOrder: d.sortOrder })),
+		order
+	);
+
+	// Bare radene som faktisk flyttet seg — en full omskriving ville rørt
+	// updatedAt på hele manuset og fått alt til å se nylig endret ut.
+	const current = new Map(manuscript.map((d) => [d.id, d.sortOrder]));
+	const changed = reordered.filter((d) => current.get(d.id) !== d.sortOrder);
+
+	for (const doc of changed) {
+		await db
+			.update(writingDocs)
+			.set({ sortOrder: doc.sortOrder })
+			.where(and(eq(writingDocs.id, doc.id), eq(writingDocs.userId, userId)));
+	}
+
+	return (await getProjectContents(userId, projectId)).manuscript;
 }
 
 export interface ProjectContents {
