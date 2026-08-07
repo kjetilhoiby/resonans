@@ -1,0 +1,244 @@
+# Skriveprosjekt, kompislesing og notatblokk
+
+Dato: 2026-08-07
+Status: planlagt
+
+## Kontekst
+
+Bestillingen kom som et spørsmål — «hadde det gitt mening med en god notatblokk med
+semantisk søk?» — og vokste over tre runder til noe større: starte et skriveprosjekt,
+bygge karakterer og scener og skrive det hele sammen; få feedback og *kompislesing*;
+få tips til skriveøvelser som gjør at man setter seg ned med notatblokka framfor
+telefonen på kvelden; og et alternativ til notes-appen på telefonen som er lett
+søkbart og fleksibelt (dokumenter, lister, frie notater, transkripsjoner).
+
+To funn snudde utformingen.
+
+**Semantisk søk er ikke et prosjekt — det er i drift.** pgvector er installert
+(`0037_pgvector_embeddings.sql`), `embedding-service.ts` gir
+`text-embedding-3-small` med 1536 dimensjoner og feiler aldri blokkerende,
+`reflections.embedding` fylles ved hver skriving (`server/reflections.ts:50`), og
+`query_reflections` gjør cosine-søk på tvers av alle kinds. `backfill-embeddings.mjs`
+finnes for gamle rader. Det som mangler er ikke søket, men **leseflaten**: et grep
+etter hvilke sider som leser `reflections` gir to treff, og ingen av dem viser
+notater. Notatblokken er write-only i dag — et notat dikterte i mars kan bare hentes
+ved å spørre chatten, og da må man huske at det finnes.
+
+**Bok-domenet er dette systemet, speilvendt.** Der leser man andres bok med kuratert
+kontekst; her skriver man sin egen. Nesten hver mekanisme finnes:
+
+| Ønsket | Finnes som |
+|---|---|
+| Skriveprosjekt m/ karakterer og scener | `books` + `book_clips`, eid av et tema |
+| Kompislesing | `buildBookSystemPrompt` + egen `conversationId` per bok |
+| Transkripsjoner | `transcribeAudioWithWords` (Whisper, ord-nivå tidsstempler) |
+| Skriveøvelser som vane | 9 nudge-moduler, cron hver time, `nudge-time.ts` |
+| Søkbar notatblokk | pgvector + `reflections` + `create_note` |
+
+Kompislesings-prompten er allerede skrevet. `BookChatTab.svelte:119`: «Du er en
+oppmerksom og reflektert leser … bygg videre på deres observasjoner, vær konkret
+(referer til scener og detaljer), tør å formulere hva som kan være ubehagelig eller
+uklart», med eksplisitt forbud mot «sterk historie» og «interessant». Den peker bare
+på feil bok.
+
+## Beslutninger
+
+### `reflections` holder ikke for dokumenter — men skal beholde fangsten
+
+Kolonnene (`schema.ts:1179`) er `kind`, `periodKey`, `content`, `scores`,
+`flowRunId`, `embedding`, `createdAt`. **Ingen tittel, ingen `updatedAt`, ingen
+status.** Det er semantikken, ikke en forglemmelse: en refleksjon er et øyeblikksbilde
+identifisert av (kind, periodKey) — `plan_artifacts` har en unik indeks på nettopp den
+trippelen. Log-naturen er gjort bokstavelig i `create_note`, som legger dagens notat
+til forrige ved **konkatenering** (`appendDiaryNote`, create-note.ts:74).
+
+Et dikt er det motsatte: det har tittel, det finnes i utkast 7 som erstatter utkast 6,
+og identiteten er ikke en dato. Legges det i `reflections`, skrives `content` over ved
+hver redigering (og embeddingen regenereres, `reflections.ts:86`), og lista viser
+førstelinjer uten titler.
+
+**Arbeidsdelingen: `reflections` eier fangst og tidsstemplede refleksjoner,
+`writing_docs` eier dokumenter man kommer tilbake til.**
+
+### Én dokumenttabell med `kind`, ikke fire tabeller
+
+`writing_projects` (tittel, sjanger, status, `conversationId`, temakobling) eier
+`writing_docs` med `kind`: `scene` | `kapittel` | `karakter` | `sted` | `notat` |
+`dikt` | `liste` | `transkripsjon`. Pluss `body`, `sortOrder`, `status`, `embedding`,
+`updatedAt`.
+
+Dette er repoets eget idiom. `streak_definitions` dekker tre semantikker i én tabell
+«så alle streaks kan vises med samme visuelle språk i stedet for hver sin widget», og
+`cut_lists` holder materialer i JSONB framfor egne tabeller. Karakterer og scener er
+ikke ulike nok til å fortjene hver sin tabell — de er dokumenter med ulik rolle.
+`sortOrder` er det som lar en «skrive det hele sammen».
+
+### Karakterer skal ikke inn i `persons`
+
+Fristende, siden `persons` har relasjoner ferdig modellert. Det er en felle:
+`persons.birthDate` mater kroppsprofilen for self-personen
+(`metricSettings.profile.birthYear` er bare en overstyring), og
+`manage_relation`/familie-domenet leser samme tabell. Fiktive folk der forurenser
+ekte data. Karakterer er `writing_docs` med `kind='karakter'`.
+
+### Skrive-chatten bygger prompt server-side, og legger ikke til globale verktøy
+
+Bok-prompten bygges i dag i en Svelte-komponent (`BookChatTab.svelte:85`). Det går
+når konteksten er en ferdig `contextPack`; et manus er større og må hentes selektivt
+(denne scenen, disse karakterene).
+
+CLAUDE.md advarer presist her: 48 verktøy ≈ 7 000 tokens, og treffsikkerheten faller
+med antallet — `query_food` mot `query_nutrition` forvirrer alt i dag. Løsningen er
+den bok-chatten allerede bruker, og som VISION peker på («hvert domene bør ha sin
+bok-chat-opplevelse»): et **smalt kontekstmodus** med egen systemprompt, ikke flere
+globale verktøy.
+
+**Forbudslista beholdes ordrett.** En modell som alltid finner noe klokt å si om
+diktet ditt er en smigermaskin. Guarden mot «sterk historie»/«interessant» er
+forskjellen mellom kompislesing og smiger.
+
+### Kveldsnudgen bærer øvelsen, den minner ikke om den
+
+Konkurrenten er telefonen i det øyeblikket man har ledig tid. `sendFuelNudge` lærte
+to ting som gjelder her: den gater på **én per dag** fordi «en nudge som fyrer hver
+dag blir bakgrunnsstøy, og bakgrunnsstøy blir slått av», og `repeatableMeals` finnes
+fordi «favoritter man har glemt å opprette hjelper ingen» — friksjon i
+handlingsøyeblikket dreper alt.
+
+Varselet skal derfor inneholde en konkret femminutters øvelse generert fra eget
+materiale («skriv 200 ord der Ida lyver til broren»), ikke «husk å skrive». Det er
+også det som skiller dette fra en generisk skriveprompt-app: øvelsen kjenner
+prosjektet.
+
+### Streaken måler dager skrevet, ikke ord
+
+Samme lærdom som atferdsmilepælene i vektdomenet: «en motor som bare feirer synkende
+vekt er stum i alle ukene vekta stiger». En dag med tung redigering gir negativ
+ordproduksjon. Dager skrevet er sant uansett retning; ord er sekundært tall.
+
+`streak_definitions` dekker regelen (`consecutive_days`) og har **ingen lagret
+teller** — streaks beregnes on-demand fra hendelser. Eneste utvidelse: `source`
+støtter i dag `workout` | `sensor_event` | `manual`, og trenger en `writing`-kilde.
+
+### Notatblokka eier ikke oppgaver
+
+Resonans har ukeplan, handleliste og innboks fra før. En liste som skal *gjøre* noe
+hører dit. Mønsteret for overlevering finnes i drift: `find-triage.ts` promoterer
+oppskrifter fra `finds` til `meals`. Samme grep her — en jotting som viser seg å være
+en oppgave, flyttes ut. Det er også svaret på «parses over i strukturerte data
+senere»: ikke en ny parser, men triage-mønsteret som allerede kjører.
+
+## Brukssituasjoner (fra intervju 2026-08-07)
+
+### To flater, tre lagringssteder — og søket som binder dem
+
+Notatblokka og skriveprosjektet skal være **to flater**: notatblokka er den frie,
+raske innboksen; skriveprosjektet er et eget rom med karakterer, scener og egen chat.
+Notater skal kunne flyttes inn i et prosjekt.
+
+Det gir en seam som må avgjøres nå, ikke oppdages: `create_note` skriver i dag til
+`reflections` (dagsnotat eller feriedagbok), mens notatblokka trenger dokumenter med
+tittel og `updatedAt`. Skal et stemmenotat fra Ekko og et notat skrevet i
+notatblokka havne to steder?
+
+**Ja — og det er riktig, fordi søket er unifiseringen, ikke tabellen.** Et dagsnotat
+fra bilen *er* et tidsstemplet øyeblikksbilde og hører i `reflections` med sin
+`periodKey`; det ville mistet mening som redigerbart dokument. Et notat man kommer
+tilbake til og endrer hører i `writing_docs` med `projectId = null`.
+
+Konsekvensen for fase 1: den delte søkefunksjonen må søke **på tvers av begge
+tabellene** og returnere en samlet, rangert liste. Det er billig — begge har
+`embedding vector(1536)` fra samme modell, så cosine-avstandene er sammenlignbare.
+Notatblokk-flaten viser dem i to seksjoner (dokumenter / fangst), ett søkefelt.
+
+Å flytte et notat inn i et prosjekt er da to ting: `writing_docs` får `projectId` og
+`kind` satt, og en `reflections`-fangst *kopieres* inn som dokument (originalen blir
+stående — den er en logg-rad, og logger redigeres ikke). Samme grep som
+`find-triage.ts` bruker når en oppskrift promoteres fra `finds` til `meals`.
+
+### Mobil og desktop skal være like gode
+
+Dette er det dyre svaret, og det bør stå at det er dyrt: to redigeringsopplevelser mot
+samme dokument. Dokumentmodellen forblir én; det er editorene som skiller lag —
+tommelvennlig fangst og autolagring på mobil, rolig langtekst-modus på desktop.
+
+**Fellen er samtidig redigering, og den er reell selv for én bruker:** et dokument
+åpent på telefonen hele kvelden, endret på desktop i mellomtiden, lagrer over ved
+neste tastetrykk. Siste-skriv-vinner er feil default her fordi taperen er den lengste
+teksten. Tiltaket er billig: klienten sender `updatedAt` den lastet, og skrivingen
+avvises med en tydelig melding hvis raden er nyere. Ingen merge, bare en ærlig
+kollisjon — og den skal *vises*, ikke svelges i en `catch {}` (jf. CLAUDE.md om
+`extractApiErrorMessage`).
+
+### Kompislesing har fire moduser, alle på forespørsel
+
+Alle fire ble valgt: **leser** (reagerer, foreslår ikke), **redaktør** (konkrete
+forbedringer), **sparring** (prosjektet som helhet, ikke linje for linje), og alt
+**på forespørsel** — ingenting skjer uoppfordret. Det er en lettelse for
+arkitekturen: ingen proaktiv feedback-flate, ingen nudge på tekst.
+
+**Modusen skal være eksplisitt UI-tilstand, ikke noe modellen utleder.** Glir den
+mellom leser og redaktør, blir tilbakemeldingen mush — man vet ikke om «denne
+replikken bærer ikke» er en observasjon eller en instruks. Moduset velges i flaten og
+sendes til den serverbygde prompten. Fire prompter som deler den samme forbudslista
+mot «sterk historie»/«interessant».
+
+Sparring-modus er den som trenger bredest kontekst (hele prosjektet), leser-modus den
+smaleste (teksten som deles). Det er et argument for serverbygging i seg selv.
+
+### Øvelsene blandes, og appen velger
+
+Beslutningen skal bo rent og testet i et domenemodul, slik `decideFuelNudge` gjør —
+ikke inne i cron-endepunktet. Foreslått rangering, som speiler fuel-nudgens tre
+varianter:
+
+1. **Prosjektbundet** når et aktivt prosjekt har noe åpent (en scene i utkast, en
+   karakter uten beskrivelse). Flytter manuset framover.
+2. **Fri øvelse** når det ikke finnes aktivt prosjekt, eller når prosjektbundet har
+   fyrt flere ganger på rad — variasjon er poenget, og en fri øvelse er ofte veien
+   tilbake inn når man står fast.
+3. **Ingenting** når dagens skriving alt er gjort. En nudge som gratulerer med noe du
+   nettopp gjorde er støy.
+
+Gates arves fra `sendFuelNudge`: én per dag, stille timer, og et tidsvindu som treffer
+kvelden.
+
+## Faser
+
+### Fase 1: Tabeller, notatblokk og søk på tvers
+
+`writing_projects` + `writing_docs` (`projectId` nullable) med SQL-migrasjon
+(`IF NOT EXISTS`) og matchende `schema.ts`. Delt søkefunksjon som dekker både
+`writing_docs` og `reflections` — løftet ut av `query-reflections.ts`, ikke duplisert
+(samme mønster som «tre innganger, én skrivevei»). Notatblokk-flate med ett søkefelt
+og to seksjoner. Optimistisk låsing på `updatedAt`.
+
+Dekker notes-app-erstatningen alene.
+
+### Fase 2: Prosjektrommet og skrive-chat med fire moduser
+
+Prosjektflate med karakterer, scener og rekkefølge. Serverbygget systemprompt per
+modus, egen `conversationId` per prosjekt, forbudslista gjenbrukt. Flytting av notat
+inn i prosjekt.
+
+### Fase 3: Transkripsjon inn
+
+`kind='transkripsjon'` via `transcribeAudioWithWords`. Whisper-stien og
+Cloudinary-opplastingen finnes i `/books/[bookId]/transcribe`.
+
+### Fase 4: Skrivestreak og kveldsnudge
+
+`writing`-kilde i `streak_definitions`, ren beslutningsmodul for øvelsesvalg med
+enhetstester, nudge gatet på én per dag og stille timer.
+
+## Åpne spørsmål
+
+- **Desktop-editoren er uspesifisert.** «Rolig langtekst-modus» er en retning, ikke et
+  krav. Avklares før fase 1-flaten tegnes.
+- **Hvor bor prosjektrommet i navigasjonen?** Som eget tema (temaet er «brukerkomponert
+  linse»), eller som egen toppnivå-rute? Bok-domenet bor under tema; det taler for
+  samme plassering.
+
+## Verifisering
+
+Ikke startet.
