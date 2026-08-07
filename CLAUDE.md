@@ -476,6 +476,27 @@ datainnhentingen.
 - `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
   tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
 
+### Withings-backfill
+
+Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
+
+- **`fullSync = true` sletter Withings-radene, ikke alle radene.** Fram til august 2026
+  var det `where(eq(sensorEvents.userId, userId))` — altså også ernæringsloggen,
+  sultmeldingene, manuelle søvnlogger, Strava og Tesla, som ikke kan hentes inn igjen.
+  Utløseren var en radioknapp i `/settings/sources`. Slettingen er nødvendig (`ignore`
+  oppdaterer ikke eksisterende rader, så en reparse krever at de gamle er borte), men
+  den skal scopes til `sensorId`.
+- **Den trygge veien til gammel historikk er batch-jobben**, ikke full sync:
+  `withings_backfill` går dag for dag, skriver additivt og sletter ingenting. Den tar et
+  vilkårlig `fromDate`. `prefetch` kjører én gang for hele spennet, så **kjør i
+  års-store biter** — tolv år i én jobb blir en stor payload-blob.
+- **Gulvet er ikke hardkodet lenger.** Det lå som `'2017-09-01'` i fem synkfunksjoner og
+  i navnet på query-parameteren. Nå: `$lib/domain/health/withings-sync-window.ts` med
+  `?from=YYYY-MM-DD`, og `?from` krever `full=true` — ellers ser det ut som gulvet
+  virket mens synken bare hentet siste uke.
+- Hever du gulvet, sjekk `MILESTONE_HISTORY_DAYS` i `weight-dashboard.ts`. Data som
+  hentes inn men ikke leses er samme feil i et annet lag.
+
 ### Withings-felter
 
 Se `docs/changelog/2026-08-03-withings-flere-felt.md`.

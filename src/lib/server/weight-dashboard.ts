@@ -29,8 +29,16 @@ import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/m
  * fyrer — flaten skal aldri kalle noe «Alt» uten at det er alt.
  */
 
-/** Ti år. Praktisk talt «alt» for en Withings-konto. */
-export const MILESTONE_HISTORY_DAYS = 3650;
+/**
+ * Leservinduet. Femten år dekker en Withings-konto fra da de første vektene kom.
+ *
+ * Var ti år, som virket som «praktisk talt alt» — men et tak i årstall er en påstand
+ * om når brukeren begynte, og den blir feil. Med backfill til 2014 ville ti år fra
+ * 2026 kuttet de tre første årene på nytt, i et annet lag enn det forrige kappet.
+ * Femten år er ikke prinsipielt bedre, bare romsligere enn noen konto rekker;
+ * kostnaden er en `timestamp >=`-grense som Postgres bruker indeksen på uansett.
+ */
+export const MILESTONE_HISTORY_DAYS = 5475;
 
 /**
  * Tak på antall punkter grafen får — ikke på hvor langt tilbake den ser.

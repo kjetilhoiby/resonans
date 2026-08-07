@@ -12,7 +12,9 @@
 	let loadingWithings = $state(true);
 	let syncingWithings = $state(false);
 	let withingsResult = $state<{ success: boolean; message: string } | null>(null);
-	let withingsImportMode = $state<'days' | 'from2017'>('days');
+	let withingsImportMode = $state<'days' | 'allt'>('days');
+	/** Gulvet for en full reimport. Var låst til 2017; kontoen kan ha eldre data. */
+	let withingsFloor = $state('2017-09-01');
 	let withingsImportDays = $state(30);
 
 	type WithingsDebugWorkout = {
@@ -126,15 +128,19 @@
 
 	onMount(() => { loadStatus(); });
 
-	async function syncWithings(mode: 'default' | 'days' | 'from2017' = 'default') {
+	async function syncWithings(mode: 'default' | 'days' | 'full' = 'default') {
 		syncingWithings = true;
 		withingsResult = null;
 		try {
 			let url = '/api/sensors/withings/sync';
-			if (mode === 'from2017') {
-				const ok = confirm('Dette sletter all eksisterende Withings-data og reimporterer hele historikken fra 2017. Fortsette?');
+			if (mode === 'full') {
+				const ok = confirm(
+					`Dette sletter Withings-radene og reimporterer alt fra ${withingsFloor}.\n\n` +
+						'Manuelt loggede data (måltider, sult, søvnlogger, dupper) og andre kilder ' +
+						'berøres ikke. Fortsette?'
+				);
 				if (!ok) { syncingWithings = false; return; }
-				url = '/api/sensors/withings/sync?from2017=true';
+				url = `/api/sensors/withings/sync?full=true&from=${encodeURIComponent(withingsFloor)}`;
 			} else if (mode === 'days') {
 				const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 1)));
 				withingsImportDays = safeDays;
@@ -146,7 +152,11 @@
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
 			withingsResult = {
 				success: true,
-				message: payload.message || (mode === 'from2017' ? 'Withings historikk importert fra 2017.' : 'Withings synkronisert.')
+				message:
+					payload.message ||
+					(mode === 'full'
+						? `Withings-historikk reimportert fra ${payload.floor ?? withingsFloor}.`
+						: 'Withings synkronisert.')
 			};
 			await loadStatus();
 		} catch (error) {
@@ -160,8 +170,8 @@
 		const today = new Date().toISOString().split('T')[0];
 		let fromDate: string;
 
-		if (withingsImportMode === 'from2017') {
-			fromDate = '2017-09-01';
+		if (withingsImportMode === 'allt') {
+			fromDate = withingsFloor;
 		} else {
 			const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 30)));
 			withingsImportDays = safeDays;
@@ -341,8 +351,17 @@
 					<span>dager</span>
 				</label>
 				<label class="option-pill">
-					<Radio name="withings-import-mode" value="from2017" bind:group={withingsImportMode} />
-					<span>Fra 2017 (uten begrensning)</span>
+					<Radio name="withings-import-mode" value="allt" bind:group={withingsImportMode} />
+					<span>Fra</span>
+					<!-- Var låst til 2017. Datoen var hardkodet i fem synkfunksjoner og i
+					     navnet på query-parameteren, så en konto med eldre historikk fikk
+					     de første årene stille kuttet. -->
+					<Input
+						type="date"
+						bind:value={withingsFloor}
+						disabled={withingsImportMode !== 'allt'}
+						dataTrack="withings:import-gulv"
+					/>
 				</label>
 			</div>
 		</div>
