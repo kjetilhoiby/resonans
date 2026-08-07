@@ -87,6 +87,40 @@ ville blitt hentet inn men ikke lest, i et annet lag enn det forrige kappet. Hev
 femten år. Et tak i årstall er en påstand om når brukeren begynte, og den blir feil;
 femten år er ikke prinsipielt bedre, bare romsligere enn noen konto rekker.
 
+## Korreksjon: gulvet kuttet ingenting for denne kontoen
+
+Jeg skrev over at prod-dataene «startet rett på gulvet». Det var feil, og regnestykket
+viser det: siste måling 2026-08-06 minus `historyDays: 3219` gir **2017-10-13** — seks
+uker *etter* 2017-09-01. Gulvet lå altså under den første målingen og kuttet ingenting.
+
+At gulvet var hardkodet var likevel en reell begrensning verdt å fjerne — men for
+*denne* kontoen var den ikke årsaken til at historikken var kort. Kontoen ser rett og
+slett ut til å ikke ha data før midten av oktober 2017.
+
+En importkjøring av 1. jan → 7. sep 2017 bekreftet det: 33 av 250 dager behandlet, og
+`Vekt: 0 · Aktivitet: 0 · Søvn: 0 · Treninger: 0`. Fire uavhengige API-kall som alle
+returnerer ingenting er langt mer forenlig med en tom konto enn med fire separate feil.
+
+## Bug funnet av den kjøringen: batchen droppet kroppssammensetning
+
+Kjøringen avdekket noe annet, som ikke handlet om tomhet:
+
+```ts
+// prefetchWithingsEventsForRange
+{ action: 'getmeas', meastype: 1, ... }                          // ← bare vekttallet
+// syncWeightData
+{ action: 'getmeas', meastypes: WITHINGS_BODY_MEASTYPES, ... }   // ← hele settet
+```
+
+Batch-importen ba om måletype 1 alene, mens hovedsynken ber om fettprosent, fettmasse,
+muskel, bein, hydrering og punktpuls i tillegg. En dag importert gjennom batchen kom
+derfor inn **uten** kroppssammensetning — og siden `conflictMode: 'ignore'` ikke
+oppdaterer eksisterende rader, ble den stående vekt-bare for alltid.
+
+Ingen la merke til det fordi hovedsynken dekker de ferske dagene. Feilen viser seg først
+ved en backfill av gamle år, altså nøyaktig når man bruker batchen til det den er for.
+Rettet til `meastypes`.
+
 ## Beslutninger
 
 **Slettingen scopes, ikke fjernes.** Å fjerne den ville gjort reparse etter en

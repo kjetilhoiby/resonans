@@ -1123,7 +1123,26 @@ export async function prefetchWithingsEventsForRange(
 	const toUnix = Math.floor(new Date(`${toDate}T23:59:59Z`).getTime() / 1000);
 
 	const [rawWeight, rawActivity, rawWorkouts] = await Promise.all([
-		fetchAllWithingsData(accessToken, { action: 'getmeas', meastype: 1, category: 1, startdate: fromUnix, enddate: toUnix }),
+		/**
+		 * `meastypes` (flertall), ikke `meastype: 1`.
+		 *
+		 * Batch-importen ba bare om måletype 1 — vekttallet — mens hovedsynken ber om
+		 * hele settet (fettprosent, fettmasse, muskel, bein, hydrering, punktpuls). En
+		 * dag importert gjennom batchen kom derfor inn UTEN kroppssammensetning, og
+		 * siden `conflictMode: 'ignore'` ikke oppdaterer eksisterende rader, ble den
+		 * stående vekt-bare for alltid.
+		 *
+		 * Ingen la merke til det fordi hovedsynken dekker de ferske dagene. Feilen
+		 * viser seg først ved en backfill av gamle år — altså nøyaktig når man bruker
+		 * batchen til det den er for.
+		 */
+		fetchAllWithingsData(accessToken, {
+			action: 'getmeas',
+			meastypes: WITHINGS_BODY_MEASTYPES,
+			category: 1,
+			startdate: fromUnix,
+			enddate: toUnix
+		}),
 		fetchAllWithingsData(accessToken, { action: 'getactivity', startdateymd: fromDate, enddateymd: toDate }),
 		fetchAllWithingsData(accessToken, { action: 'getworkouts', startdateymd: fromDate, enddateymd: toDate, data_fields: WITHINGS_WORKOUT_DATA_FIELDS })
 	]);
