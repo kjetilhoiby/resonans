@@ -170,12 +170,13 @@ avvises med en tydelig melding hvis raden er nyere. Ingen merge, bare en ærlig
 kollisjon — og den skal *vises*, ikke svelges i en `catch {}` (jf. CLAUDE.md om
 `extractApiErrorMessage`).
 
-### Kompislesing har fire moduser, alle på forespørsel
+### Kompislesing har tre moduser, alle på forespørsel
 
-Alle fire ble valgt: **leser** (reagerer, foreslår ikke), **redaktør** (konkrete
-forbedringer), **sparring** (prosjektet som helhet, ikke linje for linje), og alt
-**på forespørsel** — ingenting skjer uoppfordret. Det er en lettelse for
-arkitekturen: ingen proaktiv feedback-flate, ingen nudge på tekst.
+**leser** (reagerer, foreslår ikke), **redaktør** (konkrete forbedringer) og
+**sparring** (prosjektet som helhet, ikke linje for linje) — og alt **på
+forespørsel**, som er et *tidspunkt*, ikke en fjerde modus. Ingenting skjer
+uoppfordret. Det er en lettelse for arkitekturen: ingen proaktiv feedback-flate,
+ingen nudge på tekst.
 
 **Modusen skal være eksplisitt UI-tilstand, ikke noe modellen utleder.** Glir den
 mellom leser og redaktør, blir tilbakemeldingen mush — man vet ikke om «denne
@@ -243,11 +244,38 @@ tekstfelt uten `data-track` ender som anonym `input[text]` i bruksstatistikken.
 
 Dekker notes-app-erstatningen alene.
 
-### Fase 2: Prosjektrommet og skrive-chat med fire moduser
+### Fase 2: Prosjektrommet og kompislesing — FERDIG
 
-Prosjektflate med karakterer, scener og rekkefølge. Serverbygget systemprompt per
-modus, egen `conversationId` per prosjekt, forbudslista gjenbrukt. Flytting av notat
-inn i prosjekt.
+**Plasseringen ble toppnivå, ikke tema.** Det åpne spørsmålet fra fase 1 lente mot
+tema, siden bok-domenet bor der. Det snudde ved nærmere ettersyn:
+`resolveThemeDashboardKind` utleder dashboardtypen fra temanavnet med
+delstreng-matching for termer ≥5 tegn, og «skriv» er akkurat 5. En ny
+`DashboardKind` ville lagt en ny felle i `THEME_DASHBOARD_MATCHERS` for å oppnå noe
+`/notater` allerede løser uten. `/skriv` og `/notater` er dessuten søsken —
+å nøste den ene under tema og ikke den andre ville vært vilkårlig.
+`writing_projects.themeId` står igjen, så et prosjekt kan knyttes til et tema uten
+at ruta bor der.
+
+**`/skriv`** lister prosjekter og oppretter nye. **`/skriv/[id=uuid]`** er rommet:
+tre faner (Manus, Materiale, Kompislesing). Manuset er de ordnede typene sortert på
+`sortOrder`; materialet er karakterer, steder og notater. Dokumentredigering
+gjenbruker `/api/notater` med `projectId` satt — én skrivevei, som lovet.
+
+**Prompten** (`domain/writing/coach-prompt.ts`, 17 tester) er ren og testet.
+Modusens `scope` styrer bredden: `leser` ser bare teksten, `redaktor` ser tekst og
+materiale, `sparring` ser prosjektet og manusets deler — men ikke fokusteksten,
+siden sparring ikke handler om linjer. Tester låser nettopp de grensene: at
+karakterer *ikke* lekker inn i leser-modus, og at fokusteksten *ikke* lekker inn i
+sparring.
+
+**Endepunktet** `/api/skriveprosjekt/[id]/lesing` er en egen SSE-rute, ikke
+`/api/chat-stream-messages`. Grunnen er beslutningen over: prompten skal bygges på
+serveren. Den bruker ingen verktøy — dette er et smalt kontekstmodus, ikke et
+agent-løp.
+
+**Sletting av prosjekt sletter ikke skrivingen.** `ON DELETE SET NULL` gjør at
+dokumentene faller tilbake til notatblokka. Å slette et prosjekt skal ikke slette
+månedene som ligger i det.
 
 ### Fase 3: Transkripsjon inn
 
@@ -262,16 +290,19 @@ enhetstester, nudge gatet på én per dag og stille timer.
 ## Åpne spørsmål
 
 - **Desktop-editoren er uspesifisert.** «Rolig langtekst-modus» er en retning, ikke et
-  krav. Avklares før fase 1-flaten tegnes.
-- **Hvor bor prosjektrommet i navigasjonen?** Som eget tema (temaet er «brukerkomponert
-  linse»), eller som egen toppnivå-rute? Bok-domenet bor under tema; det taler for
-  samme plassering.
+  krav. Begge flatene bruker foreløpig samme `Textarea`; det er ærlig, men det er ikke
+  «likeverdig på desktop» ennå.
+- **Rekkefølgen i manuset kan ikke endres fra flaten.** `sortOrder` finnes i basen og
+  brukes til sortering, men det er ingen dra-og-slipp. Nye scener får 0 og sorteres
+  sekundært på `createdAt`. Dette er det som mangler mest for å «skrive det hele
+  sammen».
+- **Avklart i fase 2:** plasseringen ble toppnivå-rute — se fase 2 over.
 
 ## Verifisering
 
-Fase 1:
+Fase 1 og 2:
 
-- `npm test` — 2 642 tester i 200 filer passerer, hvorav 36 nye i
+- `npm test` — 2 659 tester i 201 filer passerer, hvorav 53 nye i
   `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
   `query_reflections`.
 - `npm run check` — 0 feil, 0 advarsler.
@@ -289,3 +320,10 @@ Fase 1:
 - **Kollisjonshåndteringen er enhetstestet, ikke ende-til-ende.** `checkNotStale`
   er dekket av åtte tester, men selve 409-runden (to enheter, samme dokument) er
   ikke prøvd mot en levende base.
+- **Kompislesingen har aldri snakket med OpenAI herfra.** Prompten er testet som
+  ren funksjon — inkludert at materialet ikke lekker inn i leser-modus — men
+  SSE-runden mot `gpt-4o` er ikke kjørt. Det som mest sannsynlig røyner først er
+  historikken: `getConversationHistory` henter de 20 siste meldingene *før*
+  brukermeldingen skrives, og en lang tråd i én modus vil farge svaret i en annen.
+  Om det blir et problem, er svaret trolig å filtrere historikken på
+  `metadata.mode`.

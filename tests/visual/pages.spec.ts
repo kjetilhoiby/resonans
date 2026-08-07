@@ -157,3 +157,15 @@ test.describe('Notatblokk', () => {
 		await expect(page).toHaveScreenshot('notatblokk.png', { fullPage: true });
 	});
 });
+
+/**
+ * Skriveprosjekter. Baseline mangler til denne er kjørt én gang med DB
+ * tilgjengelig — se docs/changelog/2026-08-07-skriveprosjekt.md.
+ */
+test.describe('Skriving', () => {
+	test('prosjektlista rendres', async ({ page }) => {
+		await page.goto('/skriv');
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveScreenshot('skriv.png', { fullPage: true });
+	});
+});
