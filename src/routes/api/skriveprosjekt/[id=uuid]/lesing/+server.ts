@@ -14,7 +14,9 @@
 
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
+import { completionTuning } from '$lib/server/assistant/model-tuning';
 import { addMessage, getConversationHistory } from '$lib/server/conversations';
 import { getProject, getPromptMaterial } from '$lib/server/writing/projects';
 import { getDoc } from '$lib/server/writing/docs';
@@ -23,6 +25,27 @@ import { resolveDocKind } from '$lib/domain/writing/doc-kinds';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 const HISTORY_LIMIT = 20;
+
+/**
+ * Modellen kompislesingen bruker.
+ *
+ * `gpt-5.4`, ikke `gpt-4o`. Hovedchatten tar allerede det valget for akkurat
+ * denne typen samtale: i `api/chat` gjør et satt `systemPromptPrefix`
+ * samtalen «conversational», og da blir modellen `gpt-5.4` — kommentaren der
+ * sier «skip tools for conversational/literary contexts, use stronger model».
+ * Bok-chatten kjører derfor på gpt-5.4 i praksis. Denne ruta bygger prompten
+ * selv og går utenom den ruteren, så valget må tas eksplisitt her — ellers
+ * ville kompislesingen kjørt på en svakere modell enn mønsteret den kopierer.
+ *
+ * `WRITING_CHAT_MODEL` overstyrer, som `EKKO_ASSISTANT_MODEL` gjør for
+ * assistenten. Modellnavn skifter, og et hardkodet navn er en påstand med
+ * utløpsdato.
+ */
+const DEFAULT_WRITING_CHAT_MODEL = 'gpt-5.4';
+const WRITING_CHAT_MODEL = env.WRITING_CHAT_MODEL?.trim() || DEFAULT_WRITING_CHAT_MODEL;
+
+/** Tilbakemelding på en scene, ikke et kapittel — taket er romslig, ikke fritt. */
+const MAX_RESPONSE_TOKENS = 2000;
 
 function sse(type: string, data: unknown, encoder: TextEncoder): Uint8Array {
 	return encoder.encode(`data: ${JSON.stringify({ type, data })}\n\n`);
@@ -95,10 +118,13 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				controller.enqueue(sse('stream_start', { mode: mode.key }, encoder));
 
 				const completion = await openai.chat.completions.create({
-					model: 'gpt-4o',
+					model: WRITING_CHAT_MODEL,
 					messages: openaiMessages,
-					temperature: 0.7,
-					stream: true
+					stream: true,
+					// gpt-5-serien er en reasoning-modell: `max_completion_tokens` i
+					// stedet for `max_tokens`, og ingen egendefinert temperatur. Feil
+					// parameter gir 400 fra OpenAI. Se model-tuning.ts.
+					...completionTuning(WRITING_CHAT_MODEL, MAX_RESPONSE_TOKENS, 0.7)
 				});
 
 				for await (const chunk of completion) {

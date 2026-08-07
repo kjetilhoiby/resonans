@@ -273,6 +273,24 @@ sparring.
 serveren. Den bruker ingen verktøy — dette er et smalt kontekstmodus, ikke et
 agent-løp.
 
+**Modellen er `gpt-5.4`, ikke `gpt-4o`.** Første utgave hardkodet `gpt-4o`, kopiert
+fra `chat-stream-messages`. Det var feil, og på en måte som var lett å overse:
+hovedchatten tar allerede motsatt valg for akkurat denne samtaletypen. I
+`api/chat` gjør et satt `systemPromptPrefix` samtalen «conversational», og da blir
+modellen `gpt-5.4` — kommentaren der sier «skip tools for conversational/literary
+contexts, use stronger model». Bok-chatten, mønsteret denne ruta kopierer, kjører
+altså på gpt-5.4. Ved å bygge prompten selv går ruta utenom den ruteren, og arvet
+dermed ikke valget.
+
+To følger av det:
+
+- **Parameterformen er en annen.** `gpt-5.4` matcher `isReasoningModel`, som krever
+  `max_completion_tokens` og **ingen** egendefinert temperatur. Den opprinnelige
+  `temperature: 0.7` ville gitt 400 fra OpenAI. Ruta bruker nå `completionTuning`
+  fra `model-tuning.ts`, som allerede er testet for gpt-5.4.
+- **`WRITING_CHAT_MODEL` overstyrer**, som `EKKO_ASSISTANT_MODEL` gjør for
+  assistenten. Et hardkodet modellnavn er en påstand med utløpsdato.
+
 **Sletting av prosjekt sletter ikke skrivingen.** `ON DELETE SET NULL` gjør at
 dokumentene faller tilbake til notatblokka. Å slette et prosjekt skal ikke slette
 månedene som ligger i det.
@@ -296,6 +314,13 @@ enhetstester, nudge gatet på én per dag og stille timer.
   brukes til sortering, men det er ingen dra-og-slipp. Nye scener får 0 og sorteres
   sekundært på `createdAt`. Dette er det som mangler mest for å «skrive det hele
   sammen».
+- **Modellnavn er hardkodet 52 steder i repoet** (`gpt-4o-mini` 31, `gpt-4o` 21),
+  uten noe register. `ChatModel` i `api/chat` kjenner `gpt-4.1` og `gpt-5.4`, men
+  den typen er lokal til den fila, og `chat-stream-messages` sin direct-modus
+  ligger fortsatt på `gpt-4o`. Konsekvensen er den som traff denne ruta: en ny
+  kallsted arver ikke et valg som alt er tatt et annet sted. Et delt
+  modellregister ville løst det, men det er en egen opprydding — ikke en del av
+  dette prosjektet.
 - **Avklart i fase 2:** plasseringen ble toppnivå-rute — se fase 2 over.
 
 ## Verifisering
