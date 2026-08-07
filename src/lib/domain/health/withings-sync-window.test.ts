@@ -3,6 +3,7 @@ import {
 	resolveFullSyncFloor,
 	fullSyncFloorSeconds,
 	isValidFloor,
+	validateBackfillRange,
 	WITHINGS_FULL_SYNC_DEFAULT_FLOOR,
 	WITHINGS_EARLIEST_PLAUSIBLE_FLOOR
 } from './withings-sync-window';
@@ -53,5 +54,48 @@ describe('fullSyncFloorSeconds', () => {
 		expect(fullSyncFloorSeconds('1990-01-01')).toBe(
 			fullSyncFloorSeconds(WITHINGS_EARLIEST_PLAUSIBLE_FLOOR)
 		);
+	});
+});
+
+describe('validateBackfillRange', () => {
+	const TODAY = '2026-08-07';
+
+	it('godtar et spenn i fortiden', () => {
+		const r = validateBackfillRange('2014-01-01', '2017-10-01', TODAY);
+		expect(r.error).toBeNull();
+		expect(r.days).toBe(1370);
+	});
+
+	it('regner dagene inklusive begge endepunkter', () => {
+		expect(validateBackfillRange('2026-08-01', '2026-08-01', TODAY).days).toBe(1);
+		expect(validateBackfillRange('2026-08-01', '2026-08-02', TODAY).days).toBe(2);
+	});
+
+	it('avviser omvendt rekkefølge', () => {
+		expect(validateBackfillRange('2017-01-01', '2014-01-01', TODAY).error).toMatch(/før til-dato/);
+	});
+
+	it('avviser en til-dato i framtiden', () => {
+		expect(validateBackfillRange('2026-01-01', '2027-01-01', TODAY).error).toMatch(/framtiden/);
+	});
+
+	it('godtar i dag som til-dato', () => {
+		expect(validateBackfillRange('2026-01-01', TODAY, TODAY).error).toBeNull();
+	});
+
+	it('avviser ugyldige datoer med hvilken av dem det gjelder', () => {
+		expect(validateBackfillRange('tull', TODAY, TODAY).error).toMatch(/Fra-dato/);
+		expect(validateBackfillRange('2014-01-01', 'tull', TODAY).error).toMatch(/Til-dato/);
+	});
+
+	it('advarer om et langt spenn uten å blokkere', () => {
+		// Prefetch kjører én gang for hele spennet og lagres i jobbens payload.
+		const r = validateBackfillRange('2014-01-01', '2026-08-07', TODAY);
+		expect(r.error).toBeNull();
+		expect(r.warning).toMatch(/dele i år/);
+	});
+
+	it('tier om et spenn på under halvannet år', () => {
+		expect(validateBackfillRange('2025-08-07', '2026-08-07', TODAY).warning).toBeNull();
 	});
 });

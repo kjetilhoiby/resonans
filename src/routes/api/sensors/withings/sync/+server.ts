@@ -26,6 +26,15 @@ import { aggregateCurrentPeriods, aggregateAllPeriods, aggregatePeriodsFrom } fr
  *
  * Aggregatene slettes fortsatt i sin helhet og bygges opp igjen under, fordi en
  * aggregatrad bærer metrikker fra alle kilder og ikke kan scopes til én.
+ *
+ * ## Det finnes bevisst ingen `?to` her
+ *
+ * `full=true&from=2014-01-01&to=2017-01-01` ville slettet ALT og reimportert bare de
+ * tre årene — altså mistet 2017–2026. En sletting og et bundet vindu hører ikke sammen.
+ *
+ * Vil du hente et avgrenset spenn, er `withings_backfill`-batchen riktig vei: den går
+ * dag for dag, skriver additivt og sletter ingenting. Den har både fra og til, og er
+ * det UI-et i `/settings/sources` bruker.
  */
 export const POST: RequestHandler = async ({ locals, url }) => {
 	try {

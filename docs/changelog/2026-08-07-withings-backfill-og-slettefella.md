@@ -66,8 +66,19 @@ Radioknappen er derfor byttet til et datofelt, som binder til samme `fromDate`. 
 hele endringen som trengs for å nå 2014, og den går ikke gjennom slettestien i det hele
 tatt.
 
+Kortet har nå **både fra og til**. Det var ikke bare kosmetikk: uten et til-felt måtte
+den som ville hente 2014–2017 importere 2017–2026 på nytt i samme jobb. Batch-jobben
+skriver additivt, så et avgrenset spenn er trygt, og overlapp mot data man alt har er
+gratis.
+
 **NB om vindusstørrelse:** `prefetch` kjører én gang for hele spennet og lagres i
-jobbens payload. Tolv år i én jobb er en stor blob. Kjør i års-store biter.
+jobbens payload. Tolv år i én jobb er en stor blob. `validateBackfillRange` sier det nå
+selv over `BACKFILL_CHUNK_WARN_DAYS` (atten måneder) — som en advarsel man kan
+overstyre, ikke en sperre.
+
+**Ingen `?to` på den destruktive stien.** `full=true&from=2014&to=2017` ville slettet
+alt og reimportert bare tre år, altså mistet 2017–2026. En sletting og et bundet vindu
+hører ikke sammen, og det står nå i docstringen så ingen legger det til i god tro.
 
 ## Leservinduet fulgte etter
 
