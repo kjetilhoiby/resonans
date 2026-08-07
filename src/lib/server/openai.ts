@@ -282,7 +282,16 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
 
    // `\bsov` dekker «sov», «sover», «sovet», «sovnet» — «hvor mye sov jeg i natt»
    // traff ellers ingen modul, fordi mønsteret krevde substantivet «søvn».
-   if (/sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time/.test(text)) modules.add('health');
+   // «belastning», «restitusjon», «pulsfall» og «effort» er trenings-undertemaets
+   // egne ord, og traff ingen modul: «ser du belastningen min denne uka?» kom
+   // gjennom bare fordi den også sa «trening». Uten health-blokka vet ikke
+   // modellen at query_training finnes, og faller tilbake på råtallene.
+   if (
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren/.test(
+         text
+      )
+   )
+      modules.add('health');
    if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
    // Sult og inntak treffer BEGGE: loggen bor under Helse (Ernæring er undertema),

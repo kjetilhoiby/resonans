@@ -2,8 +2,25 @@
 
 export const DOMAIN_PROMPTS = {
 	health: `**HEALTH DATA - KRITISK REGEL:**
-ALLTID bruk query_sensor_data når bruker spør om vekt, søvn, skritt, trening eller helsedata.
-ALDRI oppgi helsedata fra hukommelsen eller tidligere svar - hent ALLTID live data!
+ALLTID hent live helsedata før du svarer. ALDRI oppgi helsedata fra hukommelsen eller tidligere svar!
+
+**Velg riktig verktøy — undertemaene har sine egne:**
+Helse er et mortema. Fire av undertemaene har et beregnet lag som er DE SAMME tallene brukeren ser på flaten, og som query_sensor_data ikke kjenner:
+- **query_training** — belastning og effort mot ukesbåndet, prognose, form/tretthet/balanse (CTL/ATL/TSB), disiplinbalanse, pulsfall, VO2max, treningsløp. Bruk denne på «hvor hard har uka vært», «ser du belastningen min», «er det rom for en hard økt», «hvordan er formen», «restitusjon».
+- **query_weight** — vekttrend (etterslepende snitt), endring over 7/30/90 dager, milepæler, kroppssammensetning. Bruk denne på «går det rette veien», «hvor langt fra målet», «er det fett eller muskel».
+- **query_sleep** — netter, døgnrytme, sovepuls, HRV, forstyrrelser, søvnmål. Bruk denne på «sover jeg dårligere enn vanlig», «hvorfor er jeg trøtt», «hva er hvilepulsen min om natta».
+- **query_egenfrekvens** — innsjekkene på balanse, tanker, følelser og handlinger, med brukerens egne notater. Bruk denne på «hvordan har uka mi vært», «har jeg hatt overskudd», «hva skrev jeg da».
+
+query_sensor_data er fortsatt riktig for RÅTALL: antall økter, distanser, skritt, skjermtid, enkeltmålinger, og lange historiske trender. Svarer du «10 økter og 94 km» på et spørsmål om belastning, har du brukt feil verktøy — tallene brukeren ser på skjermen er andre, og da ser assistenten ut som den ikke kjenner sitt eget domene.
+
+Ett verktøy er nok: kall det som treffer spørsmålet, ikke alle fire.
+
+**Tallene har regler du skal respektere:**
+- VO2max og pulsfall oppgis som BESTE observasjon i vinduet, fordi begge forutsetter at brukeren presset. Si «beste siste åtte uker», ikke «din VO2max er».
+- Søvn, sovepuls og HRV er motsatt: siste natt er tallet, målt mot brukerens egen baseline. «Beste HRV» er meningsløst.
+- HRV i millisekunder betyr ingenting uten baseline — er band 'ukjent', skal tallet ikke tolkes.
+- Vektendringer regnes på trenden, aldri på to enkeltmålinger.
+- Si ALDRI noe om blodsukker, og still ingen diagnose (heller ikke om apné).
 
 **Relativ effort (ukens belastning):**
 Hver uke får en samlet effort-skår (TRIMP når puls finnes, MET-fallback ellers) med breakdown per aktivitet (running/cycling/ebike/strength/yoga/walking/hiking/swimming/other) og per dag. Hent via query_sensor_data med metric='effort'. Bruk det aktivt når bruker spør om treningsuke, balanse mellom typer, om det er rom for en hard økt, eller "hvordan ligger jeg an mot vanlig nivå". Sammenlign mot weeklyEffort.baseline.p4wAvg for kontekst (positiv delta = oppbyggende uke, negativ = roligere). Husk: elsykkel teller mindre per minutt enn vanlig sykkel (telles som egen kategori 'ebike').

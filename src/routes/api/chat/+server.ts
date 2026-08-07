@@ -28,6 +28,10 @@ import { logParentTimeTool } from '$lib/ai/tools/log-parent-time';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
+import { queryTrainingTool } from '$lib/ai/tools/query-training';
+import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { querySleepTool } from '$lib/ai/tools/query-sleep';
+import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { queryFamilyTool } from '$lib/ai/tools/query-family';
@@ -578,7 +582,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'query_sensor_data',
-			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger. Hvis bruker spør "fra 2017", "siden 2017" eller annet startår: send periodKey med startåret (f.eks. "2017") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.',
+			description: 'Rå helsedata og aggregater fra Withings — antall økter, distanser, skritt, enkeltmålinger. ALDRI oppgi data fra hukommelsen; hent live. VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger. Hvis bruker spør "fra 2017", "siden 2017" eller annet startår: send periodKey med startåret (f.eks. "2017") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.\n\nMEN — for undertemaenes egne beregnede tall finnes egne verktøy, og de svarer på et annet spørsmål enn dette: BELASTNING/effort/form/restitusjon/pulsfall/VO2max → query_training. VEKTTREND/milepæler/kroppssammensetning → query_weight. SØVNKVALITET/sovepuls/HRV/forstyrrelser → query_sleep. Hvordan brukeren HAR HATT DET (balanse, overskudd, stress, innsjekk) → query_egenfrekvens. De fire gir de samme tallene brukeren ser på flatene; dette verktøyet gir råmaterialet under dem.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -615,6 +619,81 @@ const tools = [
 					}
 				},
 				required: ['queryType']
+			}
+		}
+	},
+	/**
+	 * Undertemaenes beregnede lag. Beskrivelsene bor på verktøymodulene, så chatten og
+	 * Ekko-assistenten (shared-tools.ts) presenterer dem likt — de har drevet fra
+	 * hverandre før, og en modell som får ulike instrukser på to flater oppfører seg
+	 * ulikt uten at noen ser hvorfor.
+	 */
+	{
+		type: 'function' as const,
+		function: {
+			name: queryTrainingTool.name,
+			description: queryTrainingTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						enum: ['load', 'balance', 'capacity', 'sessions', 'plan'],
+						description: 'Hvilket utsnitt. Default load.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: queryWeightTool.name,
+			description: queryWeightTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						enum: ['trend', 'milestones', 'composition'],
+						description: 'Hvilket utsnitt. Default trend.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: querySleepTool.name,
+			description: querySleepTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						enum: ['recent', 'physiology', 'disturbances'],
+						description: 'Hvilket utsnitt. Default recent.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: queryEgenfrekvensTool.name,
+			description: queryEgenfrekvensTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						enum: ['recent', 'trend', 'latest'],
+						description: 'Hvilket utsnitt. Default recent.'
+					},
+					days: { type: 'number', description: 'Dager tilbake (default 30, maks 90)' }
+				}
 			}
 		}
 	},
@@ -1940,6 +2019,10 @@ function getToolProgressMessage(toolName: string) {
 		create_memory: 'Lagrer hukommelse...',
 		manage_theme: 'Oppdaterer tema...',
 		query_sensor_data: 'Henter sensordata...',
+		query_training: 'Leser treningsbelastning...',
+		query_weight: 'Leser vekttrend...',
+		query_sleep: 'Leser søvndata...',
+		query_egenfrekvens: 'Leser innsjekk...',
 		query_tesla_vehicle: 'Sjekker bilen...',
 		query_economics: 'Henter økonomidata...',
 		query_reflections: 'Leser refleksjoner...',
@@ -2829,6 +2912,26 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_training') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  🏃 Query training:', args.queryType ?? 'load');
+					const result = await queryTrainingTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_weight') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  ⚖️ Query weight:', args.queryType ?? 'trend');
+					const result = await queryWeightTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_sleep') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  😴 Query sleep:', args.queryType ?? 'recent');
+					const result = await querySleepTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_egenfrekvens') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  🧭 Query egenfrekvens:', args.queryType ?? 'recent');
+					const result = await queryEgenfrekvensTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_tesla_vehicle') {
 					const args = JSON.parse(toolCall.function.arguments || '{}');
 					const { queryTeslaVehicleTool } = await import('$lib/ai/tools/query-tesla-vehicle');

@@ -9,6 +9,10 @@ import { queryFamilyTool } from '$lib/ai/tools/query-family';
 import { queryHomeTool } from '$lib/ai/tools/query-home';
 import { queryProjectsTool } from '$lib/ai/tools/query-projects';
 import { querySensorDataTool } from '$lib/ai/tools/query-sensor-data';
+import { queryTrainingTool } from '$lib/ai/tools/query-training';
+import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { querySleepTool } from '$lib/ai/tools/query-sleep';
+import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
 import { queryTeslaVehicleTool } from '$lib/ai/tools/query-tesla-vehicle';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
@@ -161,6 +165,15 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(queryHomeTool),
 	adaptSharedTool(queryProjectsTool),
 	adaptSharedTool(querySensorDataTool),
+	/**
+	 * Undertemaenes beregnede lag — samme moduler chatten bruker, så stemmen og
+	 * skjermen sier de samme tallene. `athleteContext` (tools.ts) dekker volum, tempo
+	 * og VDOT; belastning, ukesbånd, balanse og pulsfall bor bare i `query_training`.
+	 */
+	adaptSharedTool(queryTrainingTool),
+	adaptSharedTool(queryWeightTool),
+	adaptSharedTool(querySleepTool),
+	adaptSharedTool(queryEgenfrekvensTool),
 	adaptSharedTool(queryTeslaVehicleTool),
 	// Mat
 	adaptSharedTool(manageRecipeTool),

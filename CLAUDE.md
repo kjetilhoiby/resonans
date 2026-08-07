@@ -208,6 +208,40 @@ Ernæring, Vekt, Egenfrekvens, Søvn, Skjermtid).
 - Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra —
   gjennom `readHealthMetricSettings` i `$lib/server/health/metric-settings.ts`.
 
+### Et dashboard uten verktøy er data assistenten ikke har
+
+Se `docs/changelog/2026-08-07-domenedata-til-assistenten.md`.
+
+Fram til august 2026 hadde `loadTrainingDashboardData`, `loadWeightDashboardData`,
+`loadSleepDashboardData` og `loadEgenfrekvensDashboardData` **én kaller hver** — sitt eget
+API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 94,2 km» på
+«ser du belastningen denne uka?» mens fanen ved siden av viste «426 av 232–278» og
+«−14, Sliten». Ikke en hallusinasjon: `query_sensor_data` er alt den hadde.
+
+- **Regner du noe for en flate, spør om chatten skal kunne svare på det.** Er svaret ja,
+  hører beregningen i `$lib/domain/` og et `query_*`-verktøy over den. `computeTrainingLoad`
+  ble kalt bare fra en `.svelte`-fil i et halvt år — belastningsmodellen var et rent
+  visningsfenomen.
+- **Verktøyene gjenbruker dashboard-lasteren**, ikke en egen spørring. To veier inn til de
+  samme tallene driver fra hverandre, og en assistent som sier noe annet enn skjermen er
+  verre enn en som ikke svarer. Sammendragene i `$lib/domain/ai/*-summary.ts` er derfor
+  bare *utsnitt*: payloaden har opptil 2000 aktiviteter, og et verktøysvar skal ikke bære dem.
+- **Grenseverdier som gir ord til et tall skal deles.** `classifyTsb` lå inni
+  `LoadBalanceCard.svelte`; nå bor den i `$lib/util/training-load.ts` fordi chatten må si
+  «Sliten» der flaten sier «Sliten».
+- **Nye verktøy registreres på BEGGE flater:** `routes/api/chat/+server.ts` og
+  `server/assistant/shared-tools.ts` (Ekko). Beskrivelsen bor på verktøymodulen og gjenbrukes,
+  ellers får de to flatene ulike instrukser uten at noen ser hvorfor.
+- **Et verktøy som ikke velges, endrer ingenting.** Legger du til et, må du også si i
+  `query_sensor_data`-beskrivelsen hva den *ikke* er til, oppdatere `DOMAIN_PROMPTS.health`,
+  og sjekke at ordene brukeren faktisk skriver treffer `detectPromptFocusModules`
+  («belastning», «pulsfall», «restitusjon» og «effort» gjorde det ikke).
+- Retningene er motsatte og må stå i beskrivelsen: VO2max og pulsfall oppsummeres av **beste**
+  observasjon (begge forutsetter maksimal innsats), søvn/HRV/sovepuls av **siste natt** mot
+  brukerens egen baseline. Vektendringer regnes alltid på trenden, aldri på to målinger.
+- De øvrige dashboardene er ikke kartlagt for samme mønster — `books`, `film`, `travel`,
+  `ferie` og helse-mortemaet står igjen.
+
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
 `THEME_DASHBOARD_MATCHERS` — termer ≥5 tegn matcher som delstreng. Se `// NB:`-kommentarene
