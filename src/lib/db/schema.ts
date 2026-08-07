@@ -4089,3 +4089,70 @@ export const monitoringAlerts = pgTable('monitoring_alerts', {
 	fireCount: integer('fire_count').notNull().default(1),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
+
+// ─── Skriveprosjekt og notatblokk ────────────────────────────────────────────
+// Se docs/changelog/2026-08-07-skriveprosjekt.md.
+//
+// Arbeidsdelingen mot `reflections` er poenget: reflections eier FANGST
+// (tidsstemplede øyeblikksbilder med periodKey — dagsnotatet fra bilen,
+// feriedagboka), writing_docs eier DOKUMENTER man kommer tilbake til og endrer.
+// Derfor har writing_docs tittel og updatedAt, som reflections bevisst mangler.
+// Søket går på tvers av begge ($lib/server/writing/search.ts) — det er søket som
+// binder de to flatene sammen, ikke tabellen.
+
+export const writingProjects = pgTable('writing_projects', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	title: text('title').notNull(),
+	genre: text('genre'), // fritekst: 'roman' | 'diktsamling' | 'noveller' | …
+	summary: text('summary'), // kort premiss — mates inn i sparring-modus
+	status: text('status').notNull().default('active'), // 'active'|'paused'|'done'|'archived'
+	// Egen samtale per prosjekt, som books.conversationId. Kompislesingen lever her.
+	conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxWritingProjectsUser: index('writing_projects_user_idx').on(table.userId, table.status)
+}));
+
+// Ett dokument, uansett rolle. `kind` skiller scene fra karakter fra fritt notat —
+// samme grep som streak_definitions, der én tabell dekker tre semantikker «så alle
+// streaks kan vises med samme visuelle språk i stedet for hver sin widget».
+// projectId = null betyr fritt dokument i notatblokka.
+export const writingDocs = pgTable('writing_docs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	projectId: uuid('project_id').references(() => writingProjects.id, { onDelete: 'set null' }),
+	kind: text('kind').notNull().default('notat'), // se $lib/domain/writing/doc-kinds.ts
+	title: text('title').notNull().default(''),
+	body: text('body').notNull().default(''),
+	status: text('status').notNull().default('utkast'), // 'utkast'|'pagar'|'ferdig'
+	sortOrder: integer('sort_order').notNull().default(0),
+	// Samme modell som memories/reflections (text-embedding-3-small), derfor er
+	// cosine-avstandene sammenlignbare på tvers av tabellene.
+	embedding: vector('embedding', { dimensions: 1536 }),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxWritingDocsUserUpdated: index('writing_docs_user_updated_idx').on(table.userId, table.updatedAt),
+	idxWritingDocsProject: index('writing_docs_project_idx').on(table.projectId, table.kind, table.sortOrder)
+}));
+
+export const writingProjectsRelations = relations(writingProjects, ({ one, many }) => ({
+	user: one(users, { fields: [writingProjects.userId], references: [users.id] }),
+	theme: one(themes, { fields: [writingProjects.themeId], references: [themes.id] }),
+	conversation: one(conversations, {
+		fields: [writingProjects.conversationId],
+		references: [conversations.id]
+	}),
+	docs: many(writingDocs)
+}));
+
+export const writingDocsRelations = relations(writingDocs, ({ one }) => ({
+	user: one(users, { fields: [writingDocs.userId], references: [users.id] }),
+	project: one(writingProjects, {
+		fields: [writingDocs.projectId],
+		references: [writingProjects.id]
+	})
+}));

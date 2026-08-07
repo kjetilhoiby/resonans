@@ -1,7 +1,7 @@
 # Skriveprosjekt, kompislesing og notatblokk
 
 Dato: 2026-08-07
-Status: planlagt
+Status: pågår (fase 1 ferdig)
 
 ## Kontekst
 
@@ -205,13 +205,41 @@ kvelden.
 
 ## Faser
 
-### Fase 1: Tabeller, notatblokk og søk på tvers
+### Fase 1: Tabeller, notatblokk og søk på tvers — FERDIG
 
-`writing_projects` + `writing_docs` (`projectId` nullable) med SQL-migrasjon
-(`IF NOT EXISTS`) og matchende `schema.ts`. Delt søkefunksjon som dekker både
-`writing_docs` og `reflections` — løftet ut av `query-reflections.ts`, ikke duplisert
-(samme mønster som «tre innganger, én skrivevei»). Notatblokk-flate med ett søkefelt
-og to seksjoner. Optimistisk låsing på `updatedAt`.
+`0050_skriveprosjekt.sql` oppretter `writing_projects` og `writing_docs`
+(`project_id` nullable), med matchende definisjoner og relasjoner i `schema.ts`.
+
+**Domenelaget** (rent og testet, 36 tester):
+- `domain/writing/doc-kinds.ts` — de åtte typene, `ordered`-flagget som skiller
+  manusets egne typer (scene, kapittel) fra materialet rundt, `displayTitle` og
+  `countWords`.
+- `domain/writing/concurrency.ts` — `checkNotStale`.
+- `domain/writing/notebook-results.ts` — normalisering og fletting av treff.
+
+**Søket** (`server/writing/search.ts`) genererer embeddingen **én gang** og
+gjenbruker den mot begge tabellene. Det er ikke bare en besparelse: to kall kunne
+gitt to ulike vektorer, og da ville rangeringen på tvers vært meningsløs.
+`query_reflections` er skrevet om til å bruke `searchReflections`, så chatten og
+flaten søker likt — verktøyet er nå 40 linjer kortere.
+
+**Skriveveien** (`server/writing/docs.ts`) er én vei inn for API, chat-verktøy
+(fase 2) og transkripsjon (fase 3). Den regenererer embeddingen når teksten endres
+— uten det står likheten mot den gamle teksten og søket lyver.
+
+**Versjonssjekken gjelder bare tekstendringer.** Å flytte et dokument inn i et
+prosjekt eller endre status kan ikke ødelegge noens skriving, og skal ikke kunne
+blokkeres av at en annen enhet skrev ett tegn. PATCH svarer **409** med en melding
+som sier hvor gammel versjonen din er — to sekunder er en dobbeltlagring, to timer
+er den andre enheten — og flaten viser den i en innrammet boks framfor å lagre over.
+
+**Forfremmelse av fangst** (`promoteReflectionToDoc`) kopierer en `reflections`-rad
+inn som dokument og lar originalen stå. Samme grep som `find-triage.ts`.
+
+Endringer i delte komponenter: `Textarea` fikk `dataTrack` og `onInput`, `Input`
+fikk `ariaLabel` og `onInput`, `Select` fikk `dataTrack` og `ariaLabel`. Alle tre
+manglet felt de to andre hadde — en placeholder er ikke et tilgjengelig navn, og et
+tekstfelt uten `data-track` ender som anonym `input[text]` i bruksstatistikken.
 
 Dekker notes-app-erstatningen alene.
 
@@ -241,4 +269,23 @@ enhetstester, nudge gatet på én per dag og stille timer.
 
 ## Verifisering
 
-Ikke startet.
+Fase 1:
+
+- `npm test` — 2 642 tester i 200 filer passerer, hvorav 36 nye i
+  `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
+  `query_reflections`.
+- `npm run check` — 0 feil, 0 advarsler.
+- `npm run build` — fullfører (med dummy `DATABASE_URL`; containeren har ingen base).
+
+**Ikke verifisert, og det bør gjøres før flaten regnes som ferdig:**
+
+- **Visuell regresjon mangler baseline.** `/notater` er lagt til i
+  `tests/visual/pages.spec.ts`, men baselinen kan ikke genereres uten en base å
+  laste fra. Kjør `npm run test:visual:update` lokalt én gang.
+- **Ingen kjøring mot ekte base.** Migrasjonen er ikke kjørt, så
+  `db.query.writingDocs` og cosine-spørringene mot `writing_docs` er verifisert av
+  typesjekk og build, ikke av en faktisk spørring. Kjør `npm run db:sql-migrate`
+  først.
+- **Kollisjonshåndteringen er enhetstestet, ikke ende-til-ende.** `checkNotStale`
+  er dekket av åtte tester, men selve 409-runden (to enheter, samme dokument) er
+  ikke prøvd mot en levende base.

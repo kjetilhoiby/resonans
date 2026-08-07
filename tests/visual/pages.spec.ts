@@ -144,3 +144,16 @@ test.describe('Bottom sheets', () => {
 		await expect(sheet).toHaveScreenshot('sheet-metrikk-innstillinger.png');
 	});
 });
+
+/**
+ * Notatblokka — dokumenter og fangst i én søkbar liste.
+ * NB: baseline mangler til denne er kjørt én gang med DB tilgjengelig
+ * (`npm run test:visual:update`). Se docs/changelog/2026-08-07-skriveprosjekt.md.
+ */
+test.describe('Notatblokk', () => {
+	test('notatblokka rendres', async ({ page }) => {
+		await page.goto('/notater');
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveScreenshot('notatblokk.png', { fullPage: true });
+	});
+});

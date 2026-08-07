@@ -25,8 +25,14 @@
 		 * `input[text]` i statistikken, og da er den ulesbar.
 		 */
 		dataTrack?: string;
+		/**
+		 * Tilgjengelig navn når feltet ikke har en synlig `<label>`. En placeholder
+		 * er ikke et navn — den forsvinner så snart man begynner å skrive.
+		 */
+		ariaLabel?: string;
 		className?: string;
 		onChange?: (event: Event) => void;
+		onInput?: (event: Event) => void;
 	}
 
 	let {
@@ -43,8 +49,10 @@
 		autocomplete,
 		inputmode,
 		dataTrack,
+		ariaLabel,
 		className = '',
 		onChange,
+		onInput,
 		value = $bindable()
 	}: Props = $props();
 </script>
@@ -63,7 +71,9 @@
 	{autocomplete}
 	{inputmode}
 	data-track={dataTrack}
+	aria-label={ariaLabel}
 	bind:value
 	onchange={onChange}
+	oninput={onInput}
 	class={`ds-input ${className}`.trim()}
 />
