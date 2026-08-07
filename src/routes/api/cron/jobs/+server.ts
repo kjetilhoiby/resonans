@@ -102,6 +102,14 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/writing-nudge',
+		// Hver time; nudgen gater selv på 19–22 Oslo. Timesplan framfor et fast
+		// UTC-slot fordi Oslo-vinduet flytter seg med sommertid.
+		schedule: '0 * * * *',
+		description: 'Kveldens skriveøvelse (19–22 Oslo, én per dag, øvelse fra eget materiale)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/notifications/egenfrekvens-checkin',
 		schedule: '*/5 * * * *',
 		description: 'Egenfrekvens daglig sjekkin-nudge (lokal tid per bruker, 5-min vindu)',

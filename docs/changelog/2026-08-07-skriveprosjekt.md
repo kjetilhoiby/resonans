@@ -1,7 +1,7 @@
 # Skriveprosjekt, kompislesing og notatblokk
 
 Dato: 2026-08-07
-Status: pågår (fase 1, 2 og 2b ferdig; fase 3–4 gjenstår)
+Status: pågår (fase 1, 2, 2b og 4 ferdig; fase 3 utsatt)
 
 ## Kontekst
 
@@ -117,8 +117,11 @@ vekt er stum i alle ukene vekta stiger». En dag med tung redigering gir negativ
 ordproduksjon. Dager skrevet er sant uansett retning; ord er sekundært tall.
 
 `streak_definitions` dekker regelen (`consecutive_days`) og har **ingen lagret
-teller** — streaks beregnes on-demand fra hendelser. Eneste utvidelse: `source`
-støtter i dag `workout` | `sensor_event` | `manual`, og trenger en `writing`-kilde.
+teller** — streaks beregnes on-demand fra hendelser.
+
+*Rettet i fase 4:* planen sa at `source` trengte en ny `writing`-kilde. Det
+stemte ikke — `sensor_event` dekker det. Det som faktisk manglet var
+hendelsesloggen selv, som streaken ikke kan være sann uten. Se fase 4.
 
 ### Notatblokka eier ikke oppgaver
 
@@ -327,15 +330,55 @@ pilene ville ellers føltes trege nok til at man trykker to ganger.
 
 20 nye tester.
 
-### Fase 3: Transkripsjon inn
+### Fase 3: Transkripsjon inn — UTSATT
 
 `kind='transkripsjon'` via `transcribeAudioWithWords`. Whisper-stien og
-Cloudinary-opplastingen finnes i `/books/[bookId]/transcribe`.
+Cloudinary-opplastingen finnes i `/books/[bookId]/transcribe`. Nedprioritert av
+brukeren: det er en inngang til noe man allerede kan skrive inn.
 
-### Fase 4: Skrivestreak og kveldsnudge
+### Fase 4: Skrivestreak og kveldsnudge — FERDIG
 
-`writing`-kilde i `streak_definitions`, ren beslutningsmodul for øvelsesvalg med
-enhetstester, nudge gatet på én per dag og stille timer.
+**Planen sa at `streak_definitions.source` trengte en ny `writing`-kilde. Det var
+feil** — `sensor_event` dekker det allerede. Men forutsetningen var oversett: uten
+en hendelseslogg kan ingen skrivestreak være sann. `writing_docs.updatedAt` er
+mutabel og husker bare *siste* dag et dokument ble rørt, så redigerer man samme
+scene mandag, tirsdag og onsdag, forsvinner mandag og tirsdag ut av streaken.
+
+Derfor logger skriveveien nå en hendelse i `sensor_events`
+(`dataType: 'writing'`, egen `manual`/`writing_log`-sensor) hver gang teksten
+faktisk endres. Å flytte et dokument inn i et prosjekt eller endre status teller
+ikke — det er ikke en skrivekveld. Loggingen er best-effort: den skal aldri velte
+lagringen av teksten.
+
+Fordi hendelsene ligger der, virker eksisterende streak-maskineri uten endring:
+en definisjon med `source: { kind: 'sensor_event', dataType: 'writing' }` gir
+flisen blant de andre streakene.
+
+**Streaken på `/skriv` krever likevel ikke oppsett.** `writingStreakDays` regner
+dager på rad direkte fra dagsnøklene, fordi en streak som først blir sann når
+brukeren har opprettet en definisjon ikke ville vært sann den kvelden det gjaldt.
+**I dag teller ikke som brudd** — kvelden er ikke over, og en streak som viste 0
+hele formiddagen ville vært feil hver eneste dag.
+
+**Nudgen** (`domain/writing/exercise.ts`, 20 tester) rangerer som planlagt:
+prosjektbundet → fri → ingenting. `MAX_PROJECT_RUN` tvinger variasjon etter tre
+prosjektbundne på rad, og bare den *ledende* serien teller — en fri øvelse i
+mellomtiden nullstiller den.
+
+To ting testene låser, fordi de er lette å brekke senere:
+
+- **Ingen plassholder slipper ut.** Et prosjekt uten karakterer må ikke gi «skriv
+  200 ord der {karakter} lyver». Malene velges i deterministisk rekkefølge, og en
+  mal hoppes over når materialet den trenger mangler.
+- **Øvelsen er deterministisk per dag** (seed = dagsnummer). Det gjør en
+  `?force=1`-kjøring til en ekte verifisering: den gir samme øvelse som den ekte.
+
+Nudgen holder også kjeft for brukere uten skriving og uten prosjekt
+(`not-in-use`) — en kveldspush om en funksjon man ikke har tatt i bruk er spam.
+
+**Cron-jobben er registrert i `JOBS`** (`api/cron/jobs`), hver time, med
+gating på Oslo-tid i nudgen selv framfor et fast UTC-slot, siden kveldsvinduet
+flytter seg med sommertid.
 
 ## Åpne spørsmål
 
@@ -345,6 +388,12 @@ enhetstester, nudge gatet på én per dag og stille timer.
 - **Løst i fase 2b:** rekkefølgen kan endres. Det er piler, ikke dra-og-slipp —
   dra-og-slipp på tvers av mobil og desktop er en egen jobb, og piler er dessuten
   det eneste som fungerer med tastatur og skjermleser.
+- **`/api/cron/fuel-nudge` er ikke registrert noe sted.** Oppdaget mens
+  writing-nudge skulle registreres: endepunktet finnes og er instrumentert med
+  `withCronTracking`, men står verken i `JOBS` (`api/cron/jobs`) eller i
+  in-app-scheduleren. Da fyrer den aldri i prod — sultnudgen fra august er død
+  kode. Ligger utenfor dette prosjektet, men bør fikses: det er én linje i
+  `JOBS`.
 - **Modellnavn er hardkodet 52 steder i repoet** (`gpt-4o-mini` 31, `gpt-4o` 21),
   uten noe register. `ChatModel` i `api/chat` kjenner `gpt-4.1` og `gpt-5.4`, men
   den typen er lokal til den fila, og `chat-stream-messages` sin direct-modus
@@ -356,9 +405,9 @@ enhetstester, nudge gatet på én per dag og stille timer.
 
 ## Verifisering
 
-Fase 1, 2 og 2b:
+Fase 1, 2, 2b og 4:
 
-- `npm test` — 2 679 tester i 202 filer passerer, hvorav 73 nye i
+- `npm test` — 2 699 tester i 203 filer passerer, hvorav 93 nye i
   `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
   `query_reflections`.
 - `npm run check` — 0 feil, 0 advarsler.

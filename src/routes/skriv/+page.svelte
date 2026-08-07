@@ -57,6 +57,13 @@
 	<PageSection>
 		<PageHeader title="Skriving" titleHref="/" />
 
+		<!-- Streaken teller dager skrevet, ikke ord: en kveld med tung redigering
+		     gir negativ ordproduksjon og er likevel en kveld du skrev. -->
+		<p class="streak">
+			{#if data.streak.days > 0}🔥 {/if}{data.streak.label}
+			{#if data.streak.wroteToday}<span class="today">Skrevet i dag.</span>{/if}
+		</p>
+
 		{#if creating}
 			<div class="form">
 				<Input bind:value={title} placeholder="Tittel" dataTrack="skriv:nytt-prosjekt-tittel" ariaLabel="Tittel" />
@@ -108,6 +115,14 @@
 		align-items: center;
 		gap: 12px;
 		margin-bottom: 16px;
+	}
+	.streak {
+		color: var(--text-secondary);
+		font-size: var(--text-sm);
+		margin: 0 0 16px;
+	}
+	.today {
+		color: var(--text-tertiary);
 	}
 	.form {
 		display: flex;

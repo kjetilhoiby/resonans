@@ -9,6 +9,8 @@ export async function createNudgeEvent(params: {
 		| 'close_day'
 		/** Inntaket ligger bak — se $lib/server/fuel-nudge. */
 		| 'fuel_snack'
+		/** Kveldens skriveøvelse — se $lib/server/writing-nudge. */
+		| 'writing_exercise'
 		| 'digest_day'
 		| 'relationship_checkin_morning'
 		| 'salary_received'

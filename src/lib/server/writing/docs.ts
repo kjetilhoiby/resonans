@@ -13,11 +13,13 @@
  */
 
 import { db, rowsOf } from '$lib/db';
-import { writingDocs } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { sensorEvents, sensors, writingDocs } from '$lib/db/schema';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { generateEmbedding } from '$lib/server/services/embedding-service';
+import { osloDayKey } from '$lib/server/trip-geo';
 import { checkNotStale } from '$lib/domain/writing/concurrency';
 import {
+	countWords,
 	DEFAULT_DOC_KIND,
 	isWritingDocKind,
 	isWritingDocStatus,
@@ -38,6 +40,95 @@ export class StaleWriteError extends Error {
 /** Teksten som embeddes: tittel + kropp, siden tittelen ofte bærer temaet. */
 function embeddableText(title: string, body: string): string {
 	return [title.trim(), body.trim()].filter(Boolean).join('\n\n');
+}
+
+/** `dataType` skriveøktene logges under. Streak-definisjoner kan peke hit. */
+export const WRITING_EVENT_DATA_TYPE = 'writing';
+export const WRITING_PROVIDER = 'manual';
+export const WRITING_SENSOR_TYPE = 'writing_log';
+
+/** Egen sensor per bruker, opprettet ved første skriving. Som ensureNutritionSensor. */
+export async function ensureWritingSensor(userId: string): Promise<string> {
+	const existing = await db.query.sensors.findFirst({
+		columns: { id: true },
+		where: and(
+			eq(sensors.userId, userId),
+			eq(sensors.provider, WRITING_PROVIDER),
+			eq(sensors.type, WRITING_SENSOR_TYPE)
+		)
+	});
+	if (existing) return existing.id;
+
+	const [created] = await db
+		.insert(sensors)
+		.values({
+			userId,
+			provider: WRITING_PROVIDER,
+			type: WRITING_SENSOR_TYPE,
+			subtype: 'session',
+			name: 'Skrivelogg',
+			isActive: true
+		})
+		.returning({ id: sensors.id });
+
+	return created.id;
+}
+
+/**
+ * Logger at det ble skrevet.
+ *
+ * **Uten dette kan ingen skrivestreak være sann.** `writing_docs.updatedAt` er
+ * mutabel og husker bare *siste* dag et dokument ble rørt: redigerer man samme
+ * scene mandag, tirsdag og onsdag, står det bare onsdag igjen, og mandag og
+ * tirsdag forsvinner ut av streaken. En streak trenger en hendelseslogg, ikke et
+ * tidsstempel.
+ *
+ * `sensor_events` er den loggen — «unified event stream» — og fordi hendelsene
+ * ligger der, virker eksisterende streak-maskineri uten en ny kildetype:
+ * `{ kind: 'sensor_event', dataType: 'writing' }`.
+ *
+ * Best-effort: en feilet logging skal aldri velte lagringen av teksten.
+ */
+async function logWritingEvent(params: {
+	userId: string;
+	docId: string;
+	projectId: string | null;
+	words: number;
+	wordsDelta: number;
+}): Promise<void> {
+	try {
+		const sensorId = await ensureWritingSensor(params.userId);
+		await db.insert(sensorEvents).values({
+			userId: params.userId,
+			sensorId,
+			eventType: 'activity',
+			dataType: WRITING_EVENT_DATA_TYPE,
+			timestamp: new Date(),
+			data: {
+				docId: params.docId,
+				projectId: params.projectId,
+				words: params.words,
+				wordsDelta: params.wordsDelta
+			}
+		});
+	} catch (err) {
+		console.warn('[writing] kunne ikke logge skrivehendelse:', err);
+	}
+}
+
+/** Oslo-dagsnøkler for skrivehendelser, til streak-beregningen. */
+export async function listWritingDayKeys(userId: string, since: Date): Promise<string[]> {
+	const rows = await db
+		.select({ at: sensorEvents.timestamp })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, WRITING_EVENT_DATA_TYPE),
+				gte(sensorEvents.timestamp, since)
+			)
+		);
+	return rows.map((r) => osloDayKey(r.at));
 }
 
 export interface CreateDocInput {
@@ -73,6 +164,16 @@ export async function createDoc(input: CreateDocInput): Promise<WritingDoc> {
 			embedding
 		})
 		.returning();
+
+	if (body) {
+		await logWritingEvent({
+			userId: input.userId,
+			docId: row.id,
+			projectId: row.projectId,
+			words: countWords(body),
+			wordsDelta: countWords(body)
+		});
+	}
 
 	return row;
 }
@@ -138,6 +239,18 @@ export async function updateDoc(input: UpdateDocInput): Promise<WritingDoc | nul
 		.set(patch)
 		.where(and(eq(writingDocs.id, input.id), eq(writingDocs.userId, input.userId)))
 		.returning();
+
+	// Bare tekstendringer teller som skriving. Å flytte et dokument inn i et
+	// prosjekt eller endre status er ikke en skrivekveld.
+	if (row && textChanged && body !== existing.body) {
+		await logWritingEvent({
+			userId: input.userId,
+			docId: row.id,
+			projectId: row.projectId,
+			words: countWords(body),
+			wordsDelta: countWords(body) - countWords(existing.body)
+		});
+	}
 
 	return row ?? null;
 }

@@ -16,6 +16,8 @@ export type NotificationRouteKey =
 	| 'groceryWeekly'
 	/** Inntaket ligger bak — se $lib/server/fuel-nudge. */
 	| 'fuelSnack'
+	/** Kveldens skriveøvelse — se $lib/server/writing-nudge. */
+	| 'writingExercise'
 	| 'projectFollowUp';
 
 export type GoogleChatChannel = {
