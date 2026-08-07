@@ -232,6 +232,9 @@
 				/>
 				<Button onClick={newDoc}>Nytt notat</Button>
 			</div>
+			<!-- Veien videre til prosjektene. Notatblokka er inngangen fra hjem, så
+			     dette er eneste lenke til /skriv. -->
+			<p class="hint"><a class="link-inline" href="/skriv">Skriveprosjekter →</a></p>
 
 			{#if searchMode === 'semantic' && query.trim()}
 				<p class="hint">Semantisk søk — treffene trenger ikke inneholde ordene du skrev.</p>
@@ -418,6 +421,9 @@
 		cursor: pointer;
 		font-size: var(--text-sm);
 		padding: 4px;
+	}
+	.link-inline {
+		color: var(--accent-primary);
 	}
 
 	.hint,

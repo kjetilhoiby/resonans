@@ -403,6 +403,18 @@ flytter seg med sommertid.
   dette prosjektet.
 - **Avklart i fase 2:** plasseringen ble toppnivå-rute — se fase 2 over.
 
+### Inngangen fra hjem
+
+Begge rutene var i praksis uåpnelige fram til nå: Resonans har ingen global
+navigasjon, og toppnivå-ruter nås fra ikonlenkene i `HomeTitleZone`. `/skriv` og
+`/notater` sto ikke der, så de kunne bare nås ved å skrive URL-en.
+
+**Én inngang, og den peker på notatblokka.** Fangst er høyfrekvent og skjer med
+tjue sekunder ledig; et skriveprosjekt er noe man setter seg ned med. Det er
+fangst-øyeblikket hele prosjektet er bygget for å vinne — «heller notatblokka enn
+telefonen» — og da skal det være det som er ett trykk unna. Veien videre til
+`/skriv` ligger på `/notater`, og `/skriv` lenker tilbake.
+
 ## Verifisering
 
 Fase 1, 2, 2b og 4:

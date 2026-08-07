@@ -32,6 +32,11 @@
 						onclick={() => startNavMetric('home', 'tema')}
 					>{ferie.emoji}</a>
 				{/each}
+				<!-- Notatblokka, ikke /skriv: fangst er høyfrekvent og skjer med tjue
+				     sekunder ledig, mens et skriveprosjekt er noe man setter seg ned
+				     med. Det er fangst-øyeblikket denne funksjonen skal vinne. Veien
+				     videre til prosjektene ligger på /notater. -->
+				<a href="/notater" class="icon-link" aria-label="Notatblokk"><Icon name="file" size={18} /></a>
 				<a href="/funn" class="icon-link" aria-label="Funn"><Icon name="star" size={18} /></a>
 				<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
