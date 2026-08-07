@@ -27,7 +27,9 @@ import { mealSlotForTime, mealSlotMeta } from '$lib/domain/nutrition/meal-slots'
 import { evaluateMacroTargets } from '$lib/domain/nutrition/macro-targets';
 import { describeIntakePacing, osloHourNow } from '$lib/domain/nutrition/intake-pacing';
 import { computeEnergyBalance } from '$lib/domain/nutrition/energy-balance';
-import { loadTodayExpenditure } from '$lib/server/nutrition/expenditure';
+import { HISTORY_DAYS, loadEnergyContext } from '$lib/server/nutrition/energy-context';
+import { buildDailyBalances } from '$lib/domain/nutrition/daily-balances';
+import { checkAgainstWeight } from '$lib/domain/nutrition/weight-reality-check';
 import { loadIntradayEnergy } from '$lib/server/nutrition/intraday';
 import { listHunger } from '$lib/server/nutrition/hunger-log';
 import { predictHunger } from '$lib/domain/nutrition/hunger';
@@ -39,10 +41,14 @@ export const queryNutritionTool = {
 Bruk denne FØR du gir råd om mat, sult eller kaloribudsjett. Uten den gjetter du på tall som finnes.
 
 queryType:
-- 'today': dagens logg gruppert i frokost/lunsj/middag/kvelds/snacks, summer, mål, hva som er igjen, og spist mot forbrent fra Withings. Inkluderer hvilken måltidsslot klokka er i nå.
-- 'recent': siste N dager (default 7) med kcal og protein per dag, **måltidene med navn og klokkeslett**, og snitt per logget dag. Bruk denne på «hva spiste jeg i går».
+- 'today': dagens logg gruppert i frokost/lunsj/middag/kvelds/snacks, summer, mål, hva som er igjen, forbruket med kilde og komponenter, og vektkontrollen. Inkluderer hvilken måltidsslot klokka er i nå.
+- 'recent': siste N dager (default 7) med kcal, protein OG forbruk per dag, **måltidene med navn og klokkeslett**, snitt per logget dag, og vektkontrollen. Bruk denne på «hva spiste jeg i går» og «går inntaket opp eller ned mot forbruket».
 
 Om tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.
+
+**Forbruket har en kilde, og den skal du kunne oppgi.** expenditure.source er 'own' når vi regner selv (Mifflin-St Jeor x kontorfaktor + øktene) og 'withings' ellers. Dette er samme tall og samme kilde som Ernæring-flaten leder med — sier du noe annet enn skjermen, er én av dere feil. Spør brukeren «hvorfor mener du at jeg har forbrent 2 700?», er svaret i expenditure: kilde, vårt anslag, Withings' tall, og withingsBreakdown med hvile/aktivitet. missingForOwn sier hva som mangler i kroppsprofilen når vi ikke kan regne selv — det er en konfigurasjonsmangel brukeren kan fikse i /settings/profile, ikke en datamangel. withingsBreakdown.activityFieldSuspect betyr at Withings' calories-felt spriker fra øktenes egne tall; si det framfor å bruke feltet som fasit.
+
+**realityCheck er vekta som dommer over regnestykket.** Et underskudd som ikke gir vektnedgang er feil, og feilen kan ligge på begge sider — forbruket for høyt ELLER inntaket underlogget. Ikke velg side uten grunn. conclusive: false betyr at de loggede dagene ikke dekker nok av vinduet: da skal du si at grunnlaget er for tynt, ikke rapportere avviket som et funn. impliedDailyErrorKcal positivt = det reelle inntaket var høyere enn logget, eller forbruket lavere.
 
 macroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan handle på. pacing sier hvor langt på dagen inntaket ligger — det er der sultkriser forklares.
 
@@ -62,17 +68,29 @@ Si ALDRI noe om blodsukker. Appen måler det ikke.`,
 		if (queryType === 'recent') {
 			const days = Math.min(30, Math.max(1, args.days ?? 7));
 			const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-			const entries = await listIntake(userId, { since });
-			const targets = await loadNutritionTargets(userId);
+			const today = osloDateKey(new Date());
+			const [entries, targets, energy] = await Promise.all([
+				listIntake(userId, { since }),
+				loadNutritionTargets(userId),
+				// Samme kontekst flaten bruker, så inn og ut kan stilles opp mot hverandre.
+				// Uten forbruket per dag kunne «går inntaket opp eller ned mot forbruket?»
+				// ikke besvares i det hele tatt.
+				loadEnergyContext(userId, today, days)
+			]);
 
 			return {
 				days,
+				/** Hvilken forbrukskilde tallene under kommer fra. Aldri blandet. */
+				expenditureSource: energy.source,
 				byDay: groupByDay(entries).map((day) => {
 					const summary = summarizeDay(day.date, day.entries, targets);
+					const expenditureKcal = energy.expenditureByDate[day.date] ?? null;
 					return {
 						date: day.date,
 						kcal: Math.round(summary.totals.kcal),
 						proteinG: Math.round(summary.totals.proteinG),
+						/** Null betyr at dagen ikke har forbrukstall — ikke at forbruket var 0. */
+						expenditureKcal: expenditureKcal === null ? null : Math.round(expenditureKcal),
 						meals: day.entries.length,
 						/**
 						 * Hva som ble spist, ikke bare hvor mye. «Hva spiste jeg i går?»
@@ -90,19 +108,42 @@ Si ALDRI noe om blodsukker. Appen måler det ikke.`,
 					};
 				}),
 				averagePerLoggedDay: averagePerLoggedDay(entries),
-				targets
+				targets,
+				/**
+				 * Vekta som dommer over regnestykket over. Et underskudd som ikke gir
+				 * vektnedgang er feil, og feilen kan ligge på begge sider — forbruket for
+				 * høyt eller inntaket underlogget.
+				 */
+				realityCheck: checkAgainstWeight({
+					balances: buildDailyBalances({
+						entries,
+						targets,
+						expenditureByDate: energy.withingsExpenditureByDate,
+						today
+					}),
+					weights: energy.weightPoints
+				})
 			};
 		}
 
 		const today = osloDateKey(new Date());
-		const since = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-		const [entries, targets, expenditureKcal, intraday, hungerHistory] = await Promise.all([
+		/**
+		 * Hele historikkvinduet, ikke bare i dag og i går. Vektkontrollen under måler
+		 * balansen over fjorten dager, og en to-dagers logg ville aldri nådd
+		 * dekningskravet — den ville sagt «ikke nok data» på en bruker som logger hver dag.
+		 */
+		const since = new Date(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000);
+		const [entries, targets, energy, intraday, hungerHistory] = await Promise.all([
 			listIntake(userId, { since }),
 			loadNutritionTargets(userId),
-			loadTodayExpenditure(userId, today),
+			// Forbruket OG kilden. Fram til august 2026 leste verktøyet Withings alene
+			// gjennom `loadTodayExpenditure`, mens flaten ledet med vårt eget anslag —
+			// to plausible tall for «forbrent» på samme dag.
+			loadEnergyContext(userId, today, HISTORY_DAYS),
 			loadIntradayEnergy(userId),
 			listHunger(userId)
 		]);
+		const expenditureKcal = energy.todayExpenditureKcal;
 		const hungerPrediction = predictHunger({
 			history: hungerHistory,
 			gapNowKcal: intraday?.gapNow ?? null
@@ -169,6 +210,42 @@ Si ALDRI noe om blodsukker. Appen måler det ikke.`,
 				intakeKcal: summary.totals.kcal,
 				expenditureKcal,
 				partialDay: true
+			}),
+			/**
+			 * Hvor «forbrent» kommer fra, og hva det består av. Brukeren spurte «hvorfor
+			 * mener den at jeg har forbrent 2,7k?», og det spørsmålet kunne chatten ikke
+			 * svare på: den hadde ett tall uten komponenter.
+			 *
+			 * `source: 'own'` betyr vårt eget anslag (Mifflin-St Jeor × kontorfaktor +
+			 * øktene med MET − 1), som er tallet flaten leder med. Withings er kryssjekk.
+			 */
+			expenditure: {
+				totalKcal: expenditureKcal,
+				source: energy.source,
+				ownKcal: energy.ownToday?.totalKcal ?? null,
+				withingsKcal: energy.withingsTodayKcal,
+				/** Hva som mangler for at vi kan regne selv. Tom liste = alt på plass. */
+				missingForOwn: energy.missingForOwn,
+				/**
+				 * Withings' egen splitt. `activityFieldSuspect` betyr at `calories`-feltet
+				 * spriker fra øktenes egne tall — si det framfor å bruke det som fasit.
+				 */
+				withingsBreakdown: energy.breakdown,
+				note: 'Forbruket vokser fram til midnatt. Et underskudd midt på dagen er strengere enn det blir om kvelden.'
+			},
+			/**
+			 * Vekta som dommer over energibalansen. Går regnestykket ikke opp mot målt
+			 * vektendring, er noe feil — og feilen kan ligge på begge sider. Krever at de
+			 * loggede dagene dekker nok av vinduet; `conclusive` sier om den holder.
+			 */
+			realityCheck: checkAgainstWeight({
+				balances: buildDailyBalances({
+					entries,
+					targets,
+					expenditureByDate: energy.withingsExpenditureByDate,
+					today
+				}),
+				weights: energy.weightPoints
 			}),
 			bySlot: groupBySlot(todayEntries).map((group) => ({
 				slot: group.slot ? mealSlotMeta(group.slot).label : 'uten måltid',

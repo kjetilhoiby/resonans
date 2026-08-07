@@ -1472,9 +1472,11 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
-					name: 'query_nutrition',
-					description:
-						'Les ernæringsloggen — hva brukeren FAKTISK har spist, ikke oppskrifter eller lager (det er query_food). Kall denne før du gir råd om mat, sult eller kaloribudsjett; uten den gjetter du på tall som finnes. queryType today gir dagens logg per måltidsslot, summer, mål, hva som er igjen, og spist mot forbrent fra Withings. recent gir siste N dager. Forbrent-tallet vokser fram til midnatt, så et underskudd midt på dagen er strengere enn det blir om kvelden — si det hvis du bruker det.',
+					name: queryNutritionTool.name,
+					// Beskrivelsen bor på verktøymodulen. Den var duplisert her, og hadde
+					// alt drevet fra originalen: kopien nevnte ikke forbrukskilden,
+					// vektkontrollen eller forbruk per dag.
+					description: queryNutritionTool.description,
 					parameters: {
 						type: 'object',
 						properties: {

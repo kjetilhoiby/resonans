@@ -31,7 +31,8 @@ Fire dashboard-lastere hadde **én kaller hver** — sitt eget API-endepunkt:
 Belastningsmodellen var altså et rent visningsfenomen.
 
 Ernæring hadde `query_nutrition` og er nettopp derfor det undertemaet som svarte godt —
-det er samme grep, gjort én gang før, for én gren.
+samme grep, gjort én gang før, for én gren. Men verktøyet var ikke ferdig: det leste en
+annen forbrukskilde enn flaten, og manglet vektkontrollen. Se fase 5.
 
 ## Faser
 
@@ -98,6 +99,49 @@ Et verktøy som finnes men ikke velges, endrer ingenting. Tre grep:
 Ekkos systemprompt fikk samme punkt, med den viktigste regelen med: beste observasjon for
 kapasitet, siste natt for søvn.
 
+### Fase 5: Ernæring hadde et verktøy, men det motsa flaten
+
+Ernæring ble ikke rørt i fasene over, fordi `query_nutrition` fantes fra før og er
+grunnen til at *det* undertemaet svarte godt. En gjennomgang viste at det ikke holdt:
+
+**Forbrukskilden spriket.** Flaten ledet med `ownExpenditure?.totalKcal ?? withings`
+— vårt eget anslag når kroppsprofilen holder. Verktøyet leste `loadTodayExpenditure`,
+altså Withings' `totalCalories` alene. På en dag der profilen holdt, oppgav skjermen og
+assistenten dermed **ulike tall** for «forbrent», og dermed ulikt underskudd. Ingen av
+dem så feil ut. Verktøyet hadde til og med vår egen modell inne allerede
+(`loadIntradayEnergy` → `cumulativeSoFar`) og brukte den svakere kilden til
+`energyBalance`.
+
+Valget bor nå i `$lib/server/nutrition/energy-context.ts`, som begge kaller.
+`loadExpenditureContext` ble en gang trukket ut for å samle valget mellom `calories` og
+`totalCalories` på ett sted; dette er samme grep ett nivå opp — valget mellom *kildene*.
+`loadTodayExpenditure` er **slettet**, ikke bare forbigått: den var snarveien tilbake til
+samme feil.
+
+**Tre ting flaten hadde og chatten ikke:**
+
+- `expenditure` — kilde, vårt anslag, Withings' tall, `missingForOwn` og
+  `withingsBreakdown` med hvile/aktivitet og `activityFieldSuspect`. «Hvorfor mener den
+  at jeg har forbrent 2,7k?» var ikke besvarbart før.
+- `realityCheck` — vekta som dommer over energibalansen, på begge `queryType`-er.
+  Regnestykket som ikke stemmer med målt vektendring er feil, og feilen kan ligge på
+  begge sider.
+- Forbruk per dag i `recent`, med `expenditureSource`. «Går inntaket opp eller ned mot
+  forbruket?» hadde ingen data.
+
+Inngangen til vektkontrollen (`buildDailyBalances`) er trukket ut som en ren, testet
+funksjon framfor å skrives to ganger over de samme radene. To detaljer som er lette å
+miste i en kopi står i testene: dager uten forbrukstall **droppes** (en 0 der ville gjort
+hele inntaket til et overskudd), og bare i dag er `partialDay`.
+
+`today`-grenen henter nå hele historikkvinduet framfor to dager: vektkontrollen måler
+balansen over fjorten dager, og en to-dagers logg ville aldri nådd dekningskravet — den
+ville sagt «ikke nok data» til en bruker som logger hver dag.
+
+**Beskrivelsen var duplisert i chat-endepunktet**, og kopien hadde alt drevet: den nevnte
+verken forbrukskilde, vektkontroll eller forbruk per dag. Den leser nå
+`queryNutritionTool.description`, som CLAUDE.md sier.
+
 ## Beslutninger
 
 **Samme kilde som flaten, ikke en egen spørring.** Verktøyene kaller dashboard-lasterne.
@@ -124,15 +168,27 @@ svaret uleselig for både modell og kallsted.
 fritekstmaterialet i basen. `MAX_NOTE_CHARS` (280) med `noteTruncated` satt lar modellen vite
 at det står mer og spørre, framfor å oppsummere som om den leste alt.
 
+**Vektkontrollen beholder Withings som kilde per dag**, som flaten alltid har brukt —
+selv om `energyBalance` nå leder med vårt eget anslag når profilen holder. Det betyr at
+kontrollen validerer en litt annen balanse enn den brukeren ser først. Å rette det endrer
+tall på skjermen, og hører i en egen endring; her var poenget at chatten og flaten sier
+det *samme*. Avviket står dokumentert på feltet i `energy-context.ts`.
+
 **Balansetallet får brukerens egen merkelapp med.** «−3» betyr ingenting; brukeren valgte på
 en slider merket «Underskudd». Uten `BALANCE_LABELS` i svaret ville modellen laget sin egen
 tolkning av tallet, i det domenet der ordvalget er hele poenget.
 
 ## Verifisering
 
-- `npm test` — 2680 tester i 203 filer, alle grønne. 56 nye: 16 + 12 + 9 + 11 på de fire
-  sammendragene, 6 på `classifyTsb`/`computeTrainingLoad`, og 2 i `registry.test.ts` som
-  fanger at Ekko-settet mister et av verktøyene eller begynner å eksponere `userId`.
+- `npm test` — 2686 tester i 204 filer, alle grønne. 62 nye: 16 + 12 + 9 + 11 på de fire
+  sammendragene, 6 på `classifyTsb`/`computeTrainingLoad`, 6 på `buildDailyBalances`, og 2 i
+  `registry.test.ts` som fanger at Ekko-settet mister et av verktøyene eller begynner å
+  eksponere `userId`.
+- Ernærings-refaktoreringen er **payload-identisk** for flaten: hvert felt
+  `loadNutritionDashboardData` returnerte, returnerer det fortsatt, med samme kilde.
+  `svelte-check` er verifikasjonen — `NutritionDashboard.svelte` og `EnergyBalanceCard`
+  leser `ownExpenditure` som et helt `DailyExpenditureEstimate`, ikke bare totalen, og det
+  ville brutt typesjekken om konteksten bare hadde båret tallet.
 - `npm run check` — 0 feil, 0 advarsler. Det er også verifikasjonen av at de smale
   input-typene faktisk passer laster-payloadene: kallstedene i de fire verktøyene typesjekkes
   mot de ekte returtypene.
@@ -145,7 +201,9 @@ tolkning av tallet, i det domenet der ordvalget er hele poenget.
   merkelapper, samme `tone-*`-klasser — så pikslene er uendret for samme input, men det er
   utledet, ikke målt.
 - Ikke verifisert mot prod-data: at modellen nå *velger* det nye verktøyet på den opprinnelige
-  meldingen. Det avgjøres av beskrivelsene og domeneblokka, og kan bare måles i bruk.
+  meldingen. Det avgjøres av beskrivelsene og domeneblokka, og kan bare måles i bruk. Det
+  samme gjelder ernæring: at forbrukstallet nå er identisk på de to flatene følger av at de
+  kaller samme funksjon, men det er ikke observert side om side i prod.
 
 ## Videre
 

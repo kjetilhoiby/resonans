@@ -239,6 +239,11 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
 - Retningene er motsatte og må stå i beskrivelsen: VO2max og pulsfall oppsummeres av **beste**
   observasjon (begge forutsetter maksimal innsats), søvn/HRV/sovepuls av **siste natt** mot
   brukerens egen baseline. Vektendringer regnes alltid på trenden, aldri på to målinger.
+- **Et verktøy som finnes er ikke det samme som et verktøy som stemmer.** Ernæring hadde
+  `query_nutrition` hele tiden og var likevel ikke i orden: det leste en annen
+  forbrukskilde enn flaten, og manglet vektkontrollen og forbruk per dag. Sjekk hva
+  flaten *regner* mot hva verktøyet *returnerer*, felt for felt — ikke bare om et verktøy
+  finnes for domenet.
 - De øvrige dashboardene er ikke kartlagt for samme mønster — `books`, `film`, `travel`,
   `ferie` og helse-mortemaet står igjen.
 
@@ -413,8 +418,16 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   midnatt, målt mot dagsmålet når det finnes, ellers mot forbruksanslaget.
 - **Chatten leser loggen med `query_nutrition`** (`$lib/ai/tools/query-nutrition.ts`),
   skriver med `log_nutrition`. `query_food` er noe annet — den dekker oppskrifter, ukemeny
-  og lager. Dagsmål og forbruk leses gjennom `server/nutrition/targets.ts` og
-  `expenditure.ts`, så valget mellom `calories` og `totalCalories` bor på ett sted.
+  og lager. Dagsmål leses gjennom `server/nutrition/targets.ts`.
+- **Forbruket leses ALLTID gjennom `loadEnergyContext`** (`server/nutrition/energy-context.ts`),
+  aldri fra `expenditure.ts` direkte. Der bor valget mellom vårt eget anslag og Withings, og
+  `source` sier hvilken kilde tallet kom fra. Fram til august 2026 gjorde flaten det ene og
+  `query_nutrition` det andre: skjermen sa 2 396 og chatten sa noe annet på samme dag, og
+  begge så plausible ut. `loadTodayExpenditure` er slettet nettopp fordi den var snarveien
+  tilbake dit. Samme modul eier historikkvinduet (`HISTORY_DAYS`) og vektpunktene.
+- **`checkAgainstWeight` mates av `buildDailyBalances`** (`$lib/domain/nutrition/daily-balances.ts`),
+  som er delt mellom flaten og verktøyet. Dager uten forbrukstall **droppes** der — en 0
+  ville gjort hele inntaket til et overskudd — og bare i dag er `partialDay`.
 - Sult-ord (`sulten`, `kalori`, `protein`, `spist`, …) ruter til **både** `health` og
   `food` i `detectPromptFocusModules`. NB: mønsteret må si «sulten», ikke «sult» — den
   substrengen ligger inni «resultat».
