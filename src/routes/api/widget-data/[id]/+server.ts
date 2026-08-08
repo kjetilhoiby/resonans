@@ -21,6 +21,8 @@ import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-def
 import { minutesInWindow, normalizeHourWindow, type HourBucket, type HourWindow } from '$lib/server/services/screen-time-window';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
+import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
+import { workoutMetricRows } from '$lib/domain/health/workout-metric-rows';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -33,6 +35,7 @@ const METRIC_CONFIG: Record<string, { dataType: string; field: string; countStar
 	steps:         { dataType: 'activity',          field: "data->>'steps'", bucketAggregation: 'MAX', outerAggregation: 'AVG' },
 	// intense + moderate er i sekunder fra Withings → divider på 60 for minutter
 	activeMinutes: { dataType: 'activity',          field: "(COALESCE((data->>'intense')::numeric, 0) + COALESCE((data->>'moderate')::numeric, 0)) / 60", bucketAggregation: 'MAX', outerAggregation: 'AVG' },
+	// Workout-metrikker leses aldri fra sensor_events direkte — se workoutMetricRows()
 	distance:      { dataType: 'workout',           field: "data->>'distance'" },
 	workoutCount:  { dataType: 'workout',           field: '1', countStar: true },
 	heartrate:     { dataType: 'heart_rate',        field: "data->>'hr_average'" },
@@ -437,6 +440,12 @@ function bucketRows(
 		}));
 }
 
+/** Aggregerer verdier til ett tall, eller null når ingenting ble målt */
+function aggregateOrNull(values: number[], aggregation: string): number | null {
+	if (values.length === 0) return null;
+	return aggregateValues(values, aggregation);
+}
+
 /** Henter tidsseriedata gruppert per periode */
 async function fetchTimeSeries(
 	userId: string,
@@ -467,50 +476,20 @@ async function fetchTimeSeries(
 	const nullCheck = metricConf.countStar ? '' : `AND (${metricConf.field})::numeric IS NOT NULL`;
 	const amountFilter = metricConf.dataType === 'bank_transaction' ? `AND (data->>'amount')::numeric < 0` : '';
 	const categoryFilter = buildCategoryFilter(metricConf.dataType, filterCategory);
-	const sportTypeFilter = metricConf.dataType === 'workout' && filterSubcategory
-		? `AND data->>'sportType' = '${filterSubcategory.replace(/'/g, "''")}'`
-		: '';
 
-	// Workout-data kan lagres fra flere sensorer (Withings + e-post/GPX) med litt ulike tidsstempler.
-	// Grupper events innen 5 minutter av hverandre og ta MAX(distance) per cluster for å unngå dobbelttelling.
-	const isWorkout = metricConf.dataType === 'workout';
-	let query: string;
-	if (isWorkout) {
-		query = `
-			SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${aggFn}(best_val) AS value
-			FROM (
-				SELECT
-					date_trunc('hour', timestamp) + INTERVAL '5 minutes' * FLOOR(EXTRACT(EPOCH FROM (timestamp - date_trunc('hour', timestamp))) / 300) AS cluster,
-					MAX((${metricConf.field})::numeric) AS best_val,
-					MIN(timestamp) AS timestamp
-				FROM sensor_events
-				WHERE user_id = $1
-				  AND data_type = $2
-				  AND timestamp >= $3
-				  AND timestamp <= $4
-				  ${nullCheck}
-				  ${sportTypeFilter}
-				GROUP BY cluster
-			) deduped
-			GROUP BY 1
-			ORDER BY 1 ASC
-		`;
-	} else {
-		query = `
-			SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${valueExpr} AS value
-			FROM sensor_events
-			WHERE user_id = $1
-			  AND data_type = $2
-			  AND timestamp >= $3
-			  AND timestamp <= $4
-			  ${nullCheck}
-			  ${amountFilter}
-			  ${categoryFilter}
-			  ${sportTypeFilter}
-			GROUP BY 1
-			ORDER BY 1 ASC
-		`;
-	}
+	const query = `
+		SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${valueExpr} AS value
+		FROM sensor_events
+		WHERE user_id = $1
+		  AND data_type = $2
+		  AND timestamp >= $3
+		  AND timestamp <= $4
+		  ${nullCheck}
+		  ${amountFilter}
+		  ${categoryFilter}
+		GROUP BY 1
+		ORDER BY 1 ASC
+	`;
 
 	const rows = await sql(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
 	return (rows as unknown as { bucket: string; value: string }[]).map((r) => ({
@@ -567,31 +546,9 @@ async function fetchSingleValue(
 	const nullCheck = metricConf.countStar ? '' : `AND (${metricConf.field})::numeric IS NOT NULL`;
 	const amountFilter = metricConf.dataType === 'bank_transaction' ? `AND (data->>'amount')::numeric < 0` : '';
 	const categoryFilter = buildCategoryFilter(metricConf.dataType, filterCategory);
-	const sportTypeFilter = metricConf.dataType === 'workout' && filterSubcategory
-		? `AND data->>'sportType' = '${filterSubcategory.replace(/'/g, "''")}'`
-		: '';
 
-	const isWorkout = metricConf.dataType === 'workout';
 	let query: string;
-	if (isWorkout) {
-		// Workout-data kan lagres fra flere sensorer (Withings + e-post/GPX) med litt ulike tidsstempler.
-		// Grupper events innen 5 minutter og ta MAX(distance) per cluster for å unngå dobbelttelling.
-		const valueExpr = metricConf.countStar ? 'COUNT(*)' : `${userAggFn}(best_val)`;
-		query = `
-			SELECT ${valueExpr} AS value
-			FROM (
-				SELECT MAX((${metricConf.field})::numeric) AS best_val
-				FROM sensor_events
-				WHERE user_id = $1
-				  AND data_type = $2
-				  AND timestamp >= $3
-				  AND timestamp <= $4
-				  ${nullCheck}
-				  ${sportTypeFilter}
-				GROUP BY date_trunc('hour', timestamp) + INTERVAL '5 minutes' * FLOOR(EXTRACT(EPOCH FROM (timestamp - date_trunc('hour', timestamp))) / 300)
-			) deduped
-		`;
-	} else if (metricConf.bucketAggregation && !metricConf.countStar) {
+	if (metricConf.bucketAggregation && !metricConf.countStar) {
 		// For metrics med bucketAggregation (f.eks. steps): aggreger per dag først, deretter over dagene
 		// outerAggregation overstyrer widget.aggregation (steps skal alltid vises som daglig snitt, ikke sum)
 		const outerAggFn = metricConf.outerAggregation ?? userAggFn;
@@ -607,7 +564,6 @@ async function fetchSingleValue(
 				  ${nullCheck}
 				  ${amountFilter}
 				  ${categoryFilter}
-				  ${sportTypeFilter}
 				GROUP BY date_trunc('day', timestamp)
 			) t
 		`;
@@ -623,7 +579,6 @@ async function fetchSingleValue(
 			  ${nullCheck}
 			  ${amountFilter}
 			  ${categoryFilter}
-			  ${sportTypeFilter}
 		`;
 	}
 
@@ -1046,15 +1001,35 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const hourWindow = widget.metricType === 'screenTime'
 		? normalizeHourWindow(widget.filterHourFrom, widget.filterHourTo)
 		: null;
-	let [series, currentValue, prevValue] = await Promise.all([
-		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory, filterSubcategory, hourWindow),
-		// For avg/sum: bruk periodeaggregat som current (mer representativt enn kun siste dag)
-		// For latest: siste bøtteverdi er riktigst (peker på nyeste måling)
-		widget.aggregation !== 'latest'
-			? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory, filterSubcategory, hourWindow)
-			: Promise.resolve(null),
-		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory, filterSubcategory, hourWindow),
-	]);
+	// Treningsøkter leses deduplisert én gang for både nåværende og forrige periode
+	const workouts = metricConf.dataType === 'workout'
+		? await readDeduplicatedWorkouts(userId, prev.from, to)
+		: null;
+
+	let series: { bucket: string; value: number }[];
+	let currentValue: number | null;
+	let prevValue: number | null;
+
+	if (workouts) {
+		const currentRows = workoutMetricRows(workouts, widget.metricType, from, to, filterSubcategory);
+		const prevRows = workoutMetricRows(workouts, widget.metricType, prev.from, prev.to, filterSubcategory);
+		series = bucketRows(currentRows, widget.period, widget.aggregation);
+		// For latest brukes siste bøtteverdi lenger ned, som for de andre metrikkene
+		currentValue = widget.aggregation !== 'latest'
+			? aggregateOrNull(currentRows.map((row) => row.value), widget.aggregation)
+			: null;
+		prevValue = aggregateOrNull(prevRows.map((row) => row.value), widget.aggregation);
+	} else {
+		[series, currentValue, prevValue] = await Promise.all([
+			fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory, filterSubcategory, hourWindow),
+			// For avg/sum: bruk periodeaggregat som current (mer representativt enn kun siste dag)
+			// For latest: siste bøtteverdi er riktigst (peker på nyeste måling)
+			widget.aggregation !== 'latest'
+				? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory, filterSubcategory, hourWindow)
+				: Promise.resolve(null),
+			fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory, filterSubcategory, hourWindow),
+		]);
+	}
 
 	if (
 		widget.metricType === 'amount' &&
@@ -1168,6 +1143,17 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					debugTo: debugTo.toISOString(),
 					seriesBuckets: series.length,
 					amountFilter: amountFilterDebug,
+					// Deduplikerte økter i vinduet — sammenlign med sensor_events-antallet
+					// når et treningstall ikke stemmer med Perioder-tabellen
+					workouts: workouts
+						? {
+							deduplicatedInWindow: workouts.filter(
+								(w) => w.timestamp >= from && w.timestamp <= to
+							).length,
+							matchingFilter: workoutMetricRows(workouts, widget.metricType, from, to, filterSubcategory).length,
+							sportTypes: [...new Set(workouts.map((w) => w.sportType))],
+						}
+						: null,
 				}
 			}
 			: {})

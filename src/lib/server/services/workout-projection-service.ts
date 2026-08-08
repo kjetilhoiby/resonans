@@ -6,6 +6,7 @@ import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-
 import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
 import { getTrailAttributedEventIds } from '$lib/server/tracks/routes-repository';
 import { analyzeWorkout, type TrackPoint, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
+import { workoutSportFamily } from '$lib/domain/health/workout-sport';
 
 export type WorkoutProjectionRefreshResult = {
 	canonicalCount: number;
@@ -35,13 +36,9 @@ export type RunningDailyProjectionRow = {
 	km: number;
 };
 
-function sportFamily(value: string): string {
-	if (value.includes('running') || value === 'løp' || value === 'run') return 'running';
-	if (value.includes('cycling') || value === 'e_bike' || value.includes('ebik')) return 'cycling';
-	if (value.includes('walking') || value === 'hiking') return 'walking';
-	if (value.includes('swimming')) return 'swimming';
-	return value || 'workout';
-}
+// Mappingen bor i $lib/domain/health/workout-sport — samme familie må gjelde
+// her og i widget-lesingen, ellers teller flatene ulike økter som «løping».
+const sportFamily = workoutSportFamily;
 
 type EvidenceRow = { eventId: string };
 type UnifiedRow = { sportType: string; evidence: EvidenceRow[] };
