@@ -1,6 +1,6 @@
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
-	import type { TrainingLoadPoint } from '$lib/util/training-load';
+	import { classifyTsb, type TrainingLoadPoint } from '$lib/util/training-load';
 
 	interface Props {
 		series: TrainingLoadPoint[];
@@ -11,14 +11,8 @@
 	const latest = $derived(series.length > 0 ? series[series.length - 1] : null);
 	const tsb = $derived(latest?.tsb ?? 0);
 
-	const status = $derived.by(() => {
-		if (!latest) return { label: 'Ingen data', tone: 'neutral' as const, hint: '' };
-		if (tsb >= 15) return { label: 'Veldig fersk', tone: 'fresh' as const, hint: 'Du har bygd ned belastningen mye — bra for et hardt løp eller en testdag.' };
-		if (tsb >= 5) return { label: 'Fersk', tone: 'fresh' as const, hint: 'Lett restituert. Greit å trene hardt.' };
-		if (tsb >= -10) return { label: 'I balanse', tone: 'balanced' as const, hint: 'Belastning og form trekker likt — produktiv treningsstatus.' };
-		if (tsb >= -25) return { label: 'Sliten', tone: 'tired' as const, hint: 'Akutt belastning over form. Vurder en lett dag snart.' };
-		return { label: 'Veldig sliten', tone: 'tired' as const, hint: 'Akutt belastning langt over form — skarpt behov for hvile.' };
-	});
+	// Grensene deles med chatten (query_training) — se classifyTsb.
+	const status = $derived(classifyTsb(latest ? tsb : null));
 
 	const visible = $derived(series.slice(-90));
 	const tsbMax = $derived(Math.max(20, ...visible.map((p) => Math.abs(p.tsb))));

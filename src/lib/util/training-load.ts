@@ -22,6 +22,51 @@ export interface TrainingLoadPoint {
 	tsb: number;
 }
 
+export type TsbTone = 'fresh' | 'balanced' | 'tired' | 'neutral';
+
+export interface TsbStatus {
+	label: string;
+	tone: TsbTone;
+	/** Hva tallet betyr for neste økt. Tom for «ingen data». */
+	hint: string;
+}
+
+/**
+ * TSB oversatt til ord.
+ *
+ * Bodde inni `LoadBalanceCard.svelte` fram til august 2026, og var derfor usynlig
+ * for alt annet enn kortet. Da chatten fikk lese belastningen, måtte den ha samme
+ * grenser — en assistent som kaller −14 «i balanse» mens flaten rett ved siden av
+ * sier «sliten» er verre enn en assistent som ikke svarer.
+ */
+export function classifyTsb(tsb: number | null): TsbStatus {
+	if (tsb === null) return { label: 'Ingen data', tone: 'neutral', hint: '' };
+	if (tsb >= 15)
+		return {
+			label: 'Veldig fersk',
+			tone: 'fresh',
+			hint: 'Du har bygd ned belastningen mye — bra for et hardt løp eller en testdag.'
+		};
+	if (tsb >= 5) return { label: 'Fersk', tone: 'fresh', hint: 'Lett restituert. Greit å trene hardt.' };
+	if (tsb >= -10)
+		return {
+			label: 'I balanse',
+			tone: 'balanced',
+			hint: 'Belastning og form trekker likt — produktiv treningsstatus.'
+		};
+	if (tsb >= -25)
+		return {
+			label: 'Sliten',
+			tone: 'tired',
+			hint: 'Akutt belastning over form. Vurder en lett dag snart.'
+		};
+	return {
+		label: 'Veldig sliten',
+		tone: 'tired',
+		hint: 'Akutt belastning langt over form — skarpt behov for hvile.'
+	};
+}
+
 export function computeTrainingLoad(
 	series: DailyEffort[],
 	{ ctlTimeConstant = 42, atlTimeConstant = 7 }: { ctlTimeConstant?: number; atlTimeConstant?: number } = {}

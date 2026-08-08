@@ -208,6 +208,45 @@ Ernæring, Vekt, Egenfrekvens, Søvn, Skjermtid).
 - Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra —
   gjennom `readHealthMetricSettings` i `$lib/server/health/metric-settings.ts`.
 
+### Et dashboard uten verktøy er data assistenten ikke har
+
+Se `docs/changelog/2026-08-07-domenedata-til-assistenten.md`.
+
+Fram til august 2026 hadde `loadTrainingDashboardData`, `loadWeightDashboardData`,
+`loadSleepDashboardData` og `loadEgenfrekvensDashboardData` **én kaller hver** — sitt eget
+API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 94,2 km» på
+«ser du belastningen denne uka?» mens fanen ved siden av viste «426 av 232–278» og
+«−14, Sliten». Ikke en hallusinasjon: `query_sensor_data` er alt den hadde.
+
+- **Regner du noe for en flate, spør om chatten skal kunne svare på det.** Er svaret ja,
+  hører beregningen i `$lib/domain/` og et `query_*`-verktøy over den. `computeTrainingLoad`
+  ble kalt bare fra en `.svelte`-fil i et halvt år — belastningsmodellen var et rent
+  visningsfenomen.
+- **Verktøyene gjenbruker dashboard-lasteren**, ikke en egen spørring. To veier inn til de
+  samme tallene driver fra hverandre, og en assistent som sier noe annet enn skjermen er
+  verre enn en som ikke svarer. Sammendragene i `$lib/domain/ai/*-summary.ts` er derfor
+  bare *utsnitt*: payloaden har opptil 2000 aktiviteter, og et verktøysvar skal ikke bære dem.
+- **Grenseverdier som gir ord til et tall skal deles.** `classifyTsb` lå inni
+  `LoadBalanceCard.svelte`; nå bor den i `$lib/util/training-load.ts` fordi chatten må si
+  «Sliten» der flaten sier «Sliten».
+- **Nye verktøy registreres på BEGGE flater:** `routes/api/chat/+server.ts` og
+  `server/assistant/shared-tools.ts` (Ekko). Beskrivelsen bor på verktøymodulen og gjenbrukes,
+  ellers får de to flatene ulike instrukser uten at noen ser hvorfor.
+- **Et verktøy som ikke velges, endrer ingenting.** Legger du til et, må du også si i
+  `query_sensor_data`-beskrivelsen hva den *ikke* er til, oppdatere `DOMAIN_PROMPTS.health`,
+  og sjekke at ordene brukeren faktisk skriver treffer `detectPromptFocusModules`
+  («belastning», «pulsfall», «restitusjon» og «effort» gjorde det ikke).
+- Retningene er motsatte og må stå i beskrivelsen: VO2max og pulsfall oppsummeres av **beste**
+  observasjon (begge forutsetter maksimal innsats), søvn/HRV/sovepuls av **siste natt** mot
+  brukerens egen baseline. Vektendringer regnes alltid på trenden, aldri på to målinger.
+- **Et verktøy som finnes er ikke det samme som et verktøy som stemmer.** Ernæring hadde
+  `query_nutrition` hele tiden og var likevel ikke i orden: det leste en annen
+  forbrukskilde enn flaten, og manglet vektkontrollen og forbruk per dag. Sjekk hva
+  flaten *regner* mot hva verktøyet *returnerer*, felt for felt — ikke bare om et verktøy
+  finnes for domenet.
+- De øvrige dashboardene er ikke kartlagt for samme mønster — `books`, `film`, `travel`,
+  `ferie` og helse-mortemaet står igjen.
+
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
 `THEME_DASHBOARD_MATCHERS` — termer ≥5 tegn matcher som delstreng. Se `// NB:`-kommentarene
@@ -379,8 +418,16 @@ Selvrapportert inntak går gjennom `sensor_events` (`dataType: 'nutrition'`, sen
   midnatt, målt mot dagsmålet når det finnes, ellers mot forbruksanslaget.
 - **Chatten leser loggen med `query_nutrition`** (`$lib/ai/tools/query-nutrition.ts`),
   skriver med `log_nutrition`. `query_food` er noe annet — den dekker oppskrifter, ukemeny
-  og lager. Dagsmål og forbruk leses gjennom `server/nutrition/targets.ts` og
-  `expenditure.ts`, så valget mellom `calories` og `totalCalories` bor på ett sted.
+  og lager. Dagsmål leses gjennom `server/nutrition/targets.ts`.
+- **Forbruket leses ALLTID gjennom `loadEnergyContext`** (`server/nutrition/energy-context.ts`),
+  aldri fra `expenditure.ts` direkte. Der bor valget mellom vårt eget anslag og Withings, og
+  `source` sier hvilken kilde tallet kom fra. Fram til august 2026 gjorde flaten det ene og
+  `query_nutrition` det andre: skjermen sa 2 396 og chatten sa noe annet på samme dag, og
+  begge så plausible ut. `loadTodayExpenditure` er slettet nettopp fordi den var snarveien
+  tilbake dit. Samme modul eier historikkvinduet (`HISTORY_DAYS`) og vektpunktene.
+- **`checkAgainstWeight` mates av `buildDailyBalances`** (`$lib/domain/nutrition/daily-balances.ts`),
+  som er delt mellom flaten og verktøyet. Dager uten forbrukstall **droppes** der — en 0
+  ville gjort hele inntaket til et overskudd — og bare i dag er `partialDay`.
 - Sult-ord (`sulten`, `kalori`, `protein`, `spist`, …) ruter til **både** `health` og
   `food` i `detectPromptFocusModules`. NB: mønsteret må si «sulten», ikke «sult» — den
   substrengen ligger inni «resultat».
@@ -446,9 +493,11 @@ ble flyttet ut da det ble et eget fokusområde.
   faller tonen og setningen sier det. Bruker `describeCompositionChange`.
 - **Atferdsmilepælene er ikke pynt.** En motor som bare feirer synkende vekt er stum i
   alle ukene vekta stiger. Streak og dekning er sanne uansett retning.
-- **Milepælene ser ti år bakover, grafen tre** (`weight-dashboard.ts`). Dagene caches i
-  localStorage. En setning kan derfor peke utenfor grafen — `milestonesReachBeyondChart`
-  sier det, framfor at setningen gjøres dårligere.
+- **Grafen og milepælene ser like langt.** Grafen var kuttet til tre år for å spare
+  payload; det skar bort 730 av 1204 veiinger, siden tettheten er høyest i de eldste
+  årene. Taket er nå på **rader** (`MAX_CHART_POINTS`), ikke på år — det er rader som
+  koster bytes. Kappet var basert på et anslag av datavolum framfor en måling, og ett
+  kall mot prod ville avslørt det.
 - **Grafen viser rå målinger OG trend.** Bare trenden skjuler at målingene spriker et
   kilo på væske; bare punktene gir støy uten retning. `MIN_AXIS_SPAN` er gulvet som
   hindrer at tre hundre gram tegnes som et stup, og x-aksen er tidsproporsjonal så et
@@ -473,6 +522,32 @@ datainnhentingen.
   30 dager).
 - `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
   tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
+
+### Withings-backfill
+
+Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
+
+- **`fullSync = true` sletter Withings-radene, ikke alle radene.** Fram til august 2026
+  var det `where(eq(sensorEvents.userId, userId))` — altså også ernæringsloggen,
+  sultmeldingene, manuelle søvnlogger, Strava og Tesla, som ikke kan hentes inn igjen.
+  Utløseren var en radioknapp i `/settings/sources`. Slettingen er nødvendig (`ignore`
+  oppdaterer ikke eksisterende rader, så en reparse krever at de gamle er borte), men
+  den skal scopes til `sensorId`.
+- **Den trygge veien til gammel historikk er batch-jobben**, ikke full sync:
+  `withings_backfill` går dag for dag, skriver additivt og sletter ingenting. Den tar et
+  vilkårlig `fromDate`. `prefetch` kjører én gang for hele spennet, så **kjør i
+  års-store biter** — tolv år i én jobb blir en stor payload-blob.
+- **Gulvet er ikke hardkodet lenger.** Det lå som `'2017-09-01'` i fem synkfunksjoner og
+  i navnet på query-parameteren. Nå: `$lib/domain/health/withings-sync-window.ts` med
+  `?from=YYYY-MM-DD`, og `?from` krever `full=true` — ellers ser det ut som gulvet
+  virket mens synken bare hentet siste uke.
+- Hever du gulvet, sjekk `MILESTONE_HISTORY_DAYS` i `weight-dashboard.ts`. Data som
+  hentes inn men ikke leses er samme feil i et annet lag.
+- **Batch-prefetchen må be om `meastypes`, ikke `meastype: 1`.** Den ba lenge bare om
+  vekttallet, mens hovedsynken ber om fettprosent, fettmasse, muskel, bein, hydrering og
+  punktpuls. En dag importert gjennom batchen kom inn vekt-bare, og `ignore` gjør at den
+  blir stående sånn. Feilen er usynlig i fersk drift og viser seg først ved en backfill
+  av gamle år.
 
 ### Withings-felter
 

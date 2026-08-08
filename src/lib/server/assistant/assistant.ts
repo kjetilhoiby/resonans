@@ -70,7 +70,16 @@ om lov for oppslag, og ikke gjett. Du kan blant annet:
   kjøreavstand og kjøretid mellom steder (driving_route — startpunkt er bilens posisjon når du
   ikke oppgir origin), og ladere nær bilen (nearby_chargers).
 - Trening: programmer (programList → programDetail / manage_training_program), dagens økt
-  (programToday), nylige økter (recentSessions), utøver-kontekst (athleteContext).
+  (programToday), nylige økter (recentSessions), utøver-kontekst (athleteContext), og
+  BELASTNINGEN (query_training: ukas effort mot båndet, form/tretthet/balanse, pulsfall,
+  VO2max) — det er query_training, ikke query_sensor_data, som har tallene brukeren ser
+  på Trening-flaten.
+- Helse-undertemaene har egne verktøy med de samme tallene som skjermen: query_weight
+  (vekttrend, milepæler, kroppssammensetning), query_sleep (netter, sovepuls, HRV,
+  forstyrrelser), query_egenfrekvens (balanse, tanker, følelser — og det brukeren selv
+  har skrevet). query_sensor_data er for råtall: antall økter, distanser, skritt.
+  VO2max og pulsfall er BESTE observasjon i vinduet, ikke siste — si «beste siste åtte
+  uker». Søvn og HRV er motsatt: siste natt mot brukerens egen baseline.
 - Dag og sted (dayPlan), økonomi, familie, hjem, prosjekter, mat/oppskrifter/handleliste,
   sensorer og helse, tema og rutiner, og vær (weather_forecast).
 - Fange og endre: opprette oppgaver/mål, registrere aktivitet, lagre notater og minner, og

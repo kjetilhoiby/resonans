@@ -8,20 +8,19 @@
  * Trukket ut av `nutrition-dashboard.ts` slik at chat-verktøyet leser samme tall
  * gjennom samme valg. Duplisert ville dette vært nøyaktig den typen forskjell som
  * ikke oppdages: begge sider ser plausible ut.
+ *
+ * **Dette er Withings-siden alene.** Skal du ha forbruket for en flate eller et
+ * verktøy, bruk `loadEnergyContext` — den velger mellom vårt eget anslag og
+ * Withings, og bærer kilden med. Det fantes en `loadTodayExpenditure` her som ga
+ * Withings-tallet rått, og `query_nutrition` brukte den mens Ernæring-flaten ledet
+ * med vårt eget anslag: to plausible tall for «forbrent» på samme dag. Den er
+ * fjernet framfor å stå igjen som en snarvei tilbake til samme feil.
  */
 
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { deriveBasalMetabolism } from '$lib/domain/nutrition/expenditure-breakdown';
-
-/** Null når dagen ikke har en aktivitetsrad ennå. */
-export async function loadTodayExpenditure(
-	userId: string,
-	todayKey: string
-): Promise<number | null> {
-	return (await loadExpenditureContext(userId, todayKey)).totalKcal;
-}
 
 /**
  * Dagens forbruk med komponentene, og hvileforbrenningen utledet av nabodagene.

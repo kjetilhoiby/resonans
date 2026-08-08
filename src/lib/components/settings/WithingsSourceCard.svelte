@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button, DateInput, Input, Radio } from '$lib/components/ui';
+	import { validateBackfillRange } from '$lib/domain/health/withings-sync-window';
 	import { onMount } from 'svelte';
 	import { formatDuration } from './sources-utils';
 
@@ -12,7 +13,14 @@
 	let loadingWithings = $state(true);
 	let syncingWithings = $state(false);
 	let withingsResult = $state<{ success: boolean; message: string } | null>(null);
-	let withingsImportMode = $state<'days' | 'from2017'>('days');
+	let withingsImportMode = $state<'days' | 'range'>('days');
+	/**
+	 * Fra–til for en periodeimport. Var låst til «2017 → i dag»; kontoen kan ha eldre
+	 * data, og man skal kunne hente 2014–2017 uten å importere 2017–2026 på nytt.
+	 * Batch-jobben skriver additivt, så et spenn kan velges fritt.
+	 */
+	let withingsFrom = $state('2017-09-01');
+	let withingsTo = $state(new Date().toISOString().split('T')[0]);
 	let withingsImportDays = $state(30);
 
 	type WithingsDebugWorkout = {
@@ -126,15 +134,19 @@
 
 	onMount(() => { loadStatus(); });
 
-	async function syncWithings(mode: 'default' | 'days' | 'from2017' = 'default') {
+	async function syncWithings(mode: 'default' | 'days' | 'full' = 'default') {
 		syncingWithings = true;
 		withingsResult = null;
 		try {
 			let url = '/api/sensors/withings/sync';
-			if (mode === 'from2017') {
-				const ok = confirm('Dette sletter all eksisterende Withings-data og reimporterer hele historikken fra 2017. Fortsette?');
+			if (mode === 'full') {
+				const ok = confirm(
+					`Dette sletter Withings-radene og reimporterer alt fra ${withingsFrom}.\n\n` +
+						'Manuelt loggede data (måltider, sult, søvnlogger, dupper) og andre kilder ' +
+						'berøres ikke. Fortsette?'
+				);
 				if (!ok) { syncingWithings = false; return; }
-				url = '/api/sensors/withings/sync?from2017=true';
+				url = `/api/sensors/withings/sync?full=true&from=${encodeURIComponent(withingsFrom)}`;
 			} else if (mode === 'days') {
 				const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 1)));
 				withingsImportDays = safeDays;
@@ -146,7 +158,11 @@
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
 			withingsResult = {
 				success: true,
-				message: payload.message || (mode === 'from2017' ? 'Withings historikk importert fra 2017.' : 'Withings synkronisert.')
+				message:
+					payload.message ||
+					(mode === 'full'
+						? `Withings-historikk reimportert fra ${payload.floor ?? withingsFrom}.`
+						: 'Withings synkronisert.')
 			};
 			await loadStatus();
 		} catch (error) {
@@ -160,8 +176,11 @@
 		const today = new Date().toISOString().split('T')[0];
 		let fromDate: string;
 
-		if (withingsImportMode === 'from2017') {
-			fromDate = '2017-09-01';
+		let toDate = today;
+
+		if (withingsImportMode === 'range') {
+			fromDate = withingsFrom;
+			toDate = withingsTo;
 		} else {
 			const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 30)));
 			withingsImportDays = safeDays;
@@ -169,6 +188,15 @@
 			d.setDate(d.getDate() - safeDays);
 			fromDate = d.toISOString().split('T')[0];
 		}
+
+		// Valideringen bor i domenelaget, der den er testet. Advarselen blokkerer ikke
+		// — den sier bare at spennet er tungt nok til å deles.
+		const check = validateBackfillRange(fromDate, toDate, today);
+		if (check.error) {
+			withingsResult = { success: false, message: check.error };
+			return;
+		}
+		if (check.warning && !confirm(`${check.warning}\n\nKjøre likevel?`)) return;
 
 		withingsBatchRunning = true;
 		withingsBatchProgress = null;
@@ -179,7 +207,7 @@
 			const res = await fetch('/api/admin/batch/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ type: 'withings_backfill', fromDate, toDate: today })
+				body: JSON.stringify({ type: 'withings_backfill', fromDate, toDate })
 			});
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Klarte ikke starte import');
@@ -341,8 +369,26 @@
 					<span>dager</span>
 				</label>
 				<label class="option-pill">
-					<Radio name="withings-import-mode" value="from2017" bind:group={withingsImportMode} />
-					<span>Fra 2017 (uten begrensning)</span>
+					<Radio name="withings-import-mode" value="range" bind:group={withingsImportMode} />
+					<span>Fra</span>
+					<!-- Var låst til «2017 → i dag». Datoen var hardkodet i fem
+					     synkfunksjoner og i navnet på query-parameteren, så en konto med
+					     eldre historikk fikk de første årene stille kuttet. Til-feltet
+					     finnes for at 2014–2017 kan hentes uten å importere resten på nytt
+					     — batch-jobben skriver additivt, så overlapp er ufarlig. -->
+					<Input
+						type="date"
+						bind:value={withingsFrom}
+						disabled={withingsImportMode !== 'range'}
+						dataTrack="withings:import-fra"
+					/>
+					<span>til</span>
+					<Input
+						type="date"
+						bind:value={withingsTo}
+						disabled={withingsImportMode !== 'range'}
+						dataTrack="withings:import-til"
+					/>
 				</label>
 			</div>
 		</div>

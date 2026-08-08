@@ -1,4 +1,9 @@
 import { db } from '$lib/db';
+import {
+	fullSyncFloorSeconds,
+	resolveFullSyncFloor,
+	WITHINGS_FULL_SYNC_DEFAULT_FLOOR
+} from '$lib/domain/health/withings-sync-window';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
@@ -424,11 +429,13 @@ export async function syncWeightData(
 	sensorId: string,
 	lastSync?: Date,
 	fullSync = false,
-	toDate?: Date
+	toDate?: Date,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
+
 ) {
-	// Full sync starts from September 1, 2017
 	const startdate = fullSync
-		? Math.floor(new Date('2017-09-01').getTime() / 1000)
+		? fullSyncFloorSeconds(floor)
 		: lastSync
 			? Math.floor(lastSync.getTime() / 1000)
 			: undefined;
@@ -500,10 +507,12 @@ export async function syncVo2maxData(
 	sensorId: string,
 	lastSync?: Date | null,
 	fullSync = false,
-	toDate?: Date | null
+	toDate?: Date | null,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
 ): Promise<number> {
 	const startdate = fullSync
-		? Math.floor(new Date('2017-09-01').getTime() / 1000)
+		? fullSyncFloorSeconds(floor)
 		: lastSync
 			? Math.floor(lastSync.getTime() / 1000)
 			: undefined;
@@ -576,12 +585,14 @@ export async function syncActivityData(
 	sensorId: string,
 	lastSync?: Date,
 	fullSync = false,
-	toDate?: Date
+	toDate?: Date,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
+
 ) {
-	// Full sync starts from September 1, 2017
 	// Incremental sync: always fetch last 7 days to catch retroactive updates
 	const startdateymd = fullSync
-		? '2017-09-01'
+		? resolveFullSyncFloor(floor)
 		: (() => {
 			const overlapDate = new Date();
 			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
@@ -686,11 +697,13 @@ export async function syncSleepData(
 	sensorId: string,
 	lastSync?: Date,
 	fullSync = false,
-	toDate?: Date
+	toDate?: Date,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
+
 ) {
-	// Full sync starts from September 1, 2017
 	const startdateymd = fullSync
-		? '2017-09-01'
+		? resolveFullSyncFloor(floor)
 		: lastSync
 			? lastSync.toISOString().split('T')[0]
 			: undefined;
@@ -831,12 +844,14 @@ export async function syncWorkoutData(
 	sensorId: string,
 	lastSync?: Date,
 	fullSync = false,
-	toDate?: Date
+	toDate?: Date,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
+
 ) {
-	// Full sync starts from September 1, 2017
 	// Incremental sync: always fetch last 7 days to catch retroactive updates
 	const startdateymd = fullSync
-		? '2017-09-01'
+		? resolveFullSyncFloor(floor)
 		: (() => {
 			const overlapDate = new Date();
 			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
@@ -886,7 +901,18 @@ export async function syncWorkoutData(
 /**
  * Full sync of all Withings data
  */
-export async function syncAllWithingsData(userId: string, fullSync = false, overrideLastSync?: Date, overrideToDate?: Date): Promise<{
+export async function syncAllWithingsData(
+	userId: string,
+	fullSync = false,
+	overrideLastSync?: Date,
+	overrideToDate?: Date,
+	/**
+	 * Gulv for full sync, `YYYY-MM-DD`. Uten dette brukes
+	 * `WITHINGS_FULL_SYNC_DEFAULT_FLOOR` — se den for hvorfor datoen ikke lenger er
+	 * hardkodet i fem funksjoner.
+	 */
+	floor?: string | null
+): Promise<{
 	weight: number;
 	activity: number;
 	sleep: number;
@@ -901,27 +927,51 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	const accessToken = await getValidAccessToken(sensor);
 	const lastSync = fullSync ? undefined : (overrideLastSync ?? sensor.lastSync ?? undefined);
 
-	// If full sync, delete all existing data first
+	/**
+	 * Full sync sletter Withings' egne rader før reimport.
+	 *
+	 * ## Feilen dette retter
+	 *
+	 * Slettingen var `where(eq(sensorEvents.userId, userId))` — altså ALLE
+	 * sensorhendelser for brukeren, uansett kilde. Den tok med seg hele
+	 * ernæringsloggen, sultmeldingene, manuelle søvnlogger, dupper, Strava, Tesla og
+	 * skjermtid. Ingenting av det manuelt loggede kan hentes inn igjen: det finnes
+	 * ikke hos noen leverandør, bare hos oss.
+	 *
+	 * Og knappen som utløste det står i `/settings/sources`, ett trykk unna, merket
+	 * som en importvalgmulighet. Den som ville ha lengre historikk mistet i stedet
+	 * all historikk som ikke kunne hentes på nytt.
+	 *
+	 * Slettingen er nødvendig — `conflictMode: 'ignore'` oppdaterer ikke
+	 * eksisterende rader, så en reparse etter en parserfiks krever at de gamle er
+	 * borte. Men den skal ramme kilden vi reimporterer, og ingenting annet.
+	 */
 	if (fullSync) {
-		console.log('🗑️  Full sync: Deleting existing sensor data...');
-		await db.delete(sensorEvents).where(eq(sensorEvents.userId, userId));
-		console.log('   ✓ Deleted sensor events');
-		
+		const deleted = await db
+			.delete(sensorEvents)
+			.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.sensorId, sensor.id)))
+			.returning({ id: sensorEvents.id });
+		console.log(`🗑️  Full sync: slettet ${deleted.length} Withings-hendelser før reimport`);
+
+		/**
+		 * Aggregatene slettes i sin helhet, og det er greit: de er utledet, og
+		 * kallstedet kjører `aggregateAllPeriods` etterpå. En rad der kan ikke
+		 * scopes til én kilde — den bærer metrikker fra alle.
+		 */
 		await db.delete(sensorAggregates).where(eq(sensorAggregates.userId, userId));
-		console.log('   ✓ Deleted aggregates');
-		console.log('🔄 Starting data sync from September 1, 2017...');
+		console.log('   ✓ Aggregater slettet, bygges opp igjen av kallstedet');
 	}
 
 	// Sync all data types
 	console.log('📊 Syncing weight data...');
-	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
 	console.log(`   ✓ Synced ${weight} weight measurements`);
 
 	// VO2max er best-effort: bare noen Withings-enheter produserer det, og
 	// målingsnummeret er ikke bekreftet. En feil her skal ikke stoppe synken.
 	let vo2max = 0;
 	try {
-		vo2max = await syncVo2maxData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+		vo2max = await syncVo2maxData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
 		if (vo2max > 0) console.log(`   ✓ Synced ${vo2max} VO2max measurements`);
 	} catch (err) {
 		console.warn(
@@ -930,15 +980,15 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	}
 
 	console.log('🏃 Syncing activity data...');
-	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
 	console.log(`   ✓ Synced ${activity} activity records`);
 
 	console.log('😴 Syncing sleep data...');
-	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
 	console.log(`   ✓ Synced ${sleep} sleep sessions`);
 
 	console.log('💪 Syncing workout data...');
-	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
+	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
 	console.log(`   ✓ Synced ${workouts} workouts`);
 
 	// After workout sync, run immediate auto-updates so the UI reflects new workouts quickly.
@@ -1073,7 +1123,26 @@ export async function prefetchWithingsEventsForRange(
 	const toUnix = Math.floor(new Date(`${toDate}T23:59:59Z`).getTime() / 1000);
 
 	const [rawWeight, rawActivity, rawWorkouts] = await Promise.all([
-		fetchAllWithingsData(accessToken, { action: 'getmeas', meastype: 1, category: 1, startdate: fromUnix, enddate: toUnix }),
+		/**
+		 * `meastypes` (flertall), ikke `meastype: 1`.
+		 *
+		 * Batch-importen ba bare om måletype 1 — vekttallet — mens hovedsynken ber om
+		 * hele settet (fettprosent, fettmasse, muskel, bein, hydrering, punktpuls). En
+		 * dag importert gjennom batchen kom derfor inn UTEN kroppssammensetning, og
+		 * siden `conflictMode: 'ignore'` ikke oppdaterer eksisterende rader, ble den
+		 * stående vekt-bare for alltid.
+		 *
+		 * Ingen la merke til det fordi hovedsynken dekker de ferske dagene. Feilen
+		 * viser seg først ved en backfill av gamle år — altså nøyaktig når man bruker
+		 * batchen til det den er for.
+		 */
+		fetchAllWithingsData(accessToken, {
+			action: 'getmeas',
+			meastypes: WITHINGS_BODY_MEASTYPES,
+			category: 1,
+			startdate: fromUnix,
+			enddate: toUnix
+		}),
 		fetchAllWithingsData(accessToken, { action: 'getactivity', startdateymd: fromDate, enddateymd: toDate }),
 		fetchAllWithingsData(accessToken, { action: 'getworkouts', startdateymd: fromDate, enddateymd: toDate, data_fields: WITHINGS_WORKOUT_DATA_FIELDS })
 	]);

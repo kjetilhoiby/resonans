@@ -178,6 +178,39 @@ venstre ende), lavpunktsmerket kolliderte med sluttpunktet når du står på lav
 (ytterste datoetiketter ankres innover). Etikettene har nå også halo i flatefargen,
 samme prinsipp som ringen rundt sluttpunktet.
 
+## Etterspill: grafen skjulte flertallet av historikken
+
+Brukeren spurte hvorfor Vekt ikke viste ti år. Diagnosen mot prod:
+
+```
+Full historikk:  1204 veiinger over 3219 dager ≈ 8,8 år
+Grafen fikk:      474 dager, fra 2023-08-07
+```
+
+Dataene var der. `CHART_HISTORY_DAYS = 1095` kuttet grafen til tre år, med
+begrunnelsen at «ti år med daglige veiinger er nesten en megabyte JSON». Anslaget var
+feil — 474 dager er 62 KB, så hele historikken er ~158 KB, samme størrelsesorden som
+helse-payloaden alt hadde.
+
+Og kappet skar ikke bort en tynn hale: **730 av 1204 veiinger er eldre enn tre år.**
+Tettheten er høyest i de eldste årene, så tidsvinduet fjernet flertallet av
+historikken for å spare noe som ikke trengte spares.
+
+Tre rettelser:
+
+- **Radtak i stedet for tidsvindu** (`MAX_CHART_POINTS = 4000`). Det er rader som
+  koster bytes, ikke år. Med typisk veiefrekvens biter det aldri.
+- **`milestonesReachBeyondChart` dekket bare halve tilfellet.** Den fyrte når en
+  *setning* pekte utenfor grafen, men ikke når *historikken* gjorde det — og her var
+  milepælsdatoene ferske, så flaget var `false` og flaten sa ingenting om hvorfor
+  «Alt» ikke var alt. Nå fyrer den på begge, og `chartTruncated` skiller årsakene.
+- **Et «3 år»-trinn i periodevalgene.** Spranget fra «1 år» til «Alt» er to helt
+  ulike grafer når historikken er nesten ni år.
+
+Lærdommen er billig å skrive og dyr å hoppe over: **kappet var basert på et anslag av
+datavolum, ikke på en måling.** Ett kall mot prod hadde avslørt det før det ble
+skrevet.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.

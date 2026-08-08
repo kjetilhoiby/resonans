@@ -1,0 +1,422 @@
+/**
+ * Trenings-dashboardet oversatt til noe en modell kan svare ut fra.
+ *
+ * ## Hvorfor denne finnes
+ *
+ * Oversikt-fanen viste «426 av 232–278», «Belastningsbalanse −14, Sliten» og
+ * «Balanse 36/100» mens chatten i fanen ved siden av svarte «10 treningsøkter,
+ * 94,2 km» på «ser du belastning denne uka?». Ikke fordi modellen fant på noe,
+ * men fordi det eneste treningsverktøyet den hadde var `query_sensor_data` —
+ * rå ukesaggregater. Hele det beregnede laget (ukesbånd, prognose, CTL/ATL/TSB,
+ * disiplinbalanse, pulsfall, VO2max) fantes bare i `loadTrainingDashboardData`
+ * og i Svelte-komponentene over den.
+ *
+ * ## Hvorfor et sammendrag, ikke payloaden
+ *
+ * `loadTrainingDashboardData` returnerer opptil 2000 aktiviteter og 100 rå
+ * sensorhendelser med jsonb. Det er riktig for en flate som tegner grafer, og
+ * feil for et verktøysvar: konteksten fylles med rader modellen ikke leser, og
+ * det viktige tallet drukner. Derfor er hver `queryType` her et smalt utsnitt.
+ *
+ * ## Hvorfor TSB regnes her
+ *
+ * `computeTrainingLoad` ble fram til nå bare kalt fra `TrainingDashboard.svelte`.
+ * Sender vi `dailyEffort` rått til modellen, må den regne eksponentielle snitt
+ * selv — altså gjette. Regnestykket hører på vår side av grensa, og
+ * `classifyTsb` er delt med kortet så ordene blir de samme.
+ */
+
+import { classifyTsb, computeTrainingLoad, type TsbStatus } from '$lib/util/training-load';
+
+/* ── Input: bare det sammendraget faktisk leser ──────────────────────────── */
+
+export interface TrainingSummaryInput {
+	plan: { name: string; startDate: string; durationWeeks: number } | null;
+	dailyEffort: Array<{ date: string; effort: number }>;
+	vo2max: {
+		best: number;
+		latest: number;
+		source: string;
+		confidence: number;
+		samples: number;
+		bestAt: string;
+		sourceDistance?: string;
+	} | null;
+	hrRecovery: {
+		best: number;
+		latest: number;
+		band: string;
+		samples: number;
+		bestAt: string;
+		bestEndBpm: number;
+		bestPeakBpm: number;
+		wellAnchored: boolean;
+		sportFamily?: string;
+	} | null;
+	states: {
+		todaySuggestion?: { kind: string; name: string; notes?: string } | null;
+		restReason?: string | null;
+		todayCompleted?: { name: string; kind: string } | null;
+		budget?: {
+			bandMin: number;
+			bandMax: number;
+			spentThisWeek: number;
+			remainingMin: number;
+			remainingMax: number;
+			acuteChronicRatio: number | null;
+			restRecommended: boolean;
+			deload: boolean;
+			anchor: string;
+			maintenance: boolean;
+		} | null;
+		balance?: {
+			disciplines: Array<{ family: string; effort: number; sessions: number; pct: number }>;
+			totalEffort: number;
+			strengthSessionsThisWeek: number;
+			runSessionsThisWeek: number;
+			intensity: { rolig: number; moderat: number; hard: number } | null;
+			score: number;
+			nudge: { kind: string; message: string; severity: string } | null;
+		} | null;
+		projection?: { expectedRemaining: number; projectedTotal: number; remainingDays: number } | null;
+		weekRecipe?: { label: string; totalEffort: number; sessions: string[] } | null;
+		weightThreshold?: { thresholdEffort: number } | null;
+		weekSessions?: Array<{ date: string; family: string; effort: number }> | null;
+		endurance?: {
+			week: { weekTargetKm: number; runKm: number; remainingKm: number; deload: boolean };
+			forventetPaceSekPerKm: number;
+			sistePaceSekPerKm: number | null;
+			lengsteLopKmSiste6Uker: number;
+		} | null;
+		strength?: {
+			armhevinger: { siste: number | null; forventet: number; nesteTarget: number; stall: boolean };
+			planke: { sisteSek: number | null; forventetSek: number; nesteTargetSek: number; stall: boolean };
+		} | null;
+		recentEnduranceWorkouts?: Array<{
+			date: string;
+			family: string;
+			effortScore: number | null;
+			distanceMeters: number | null;
+			durationSeconds: number | null;
+		}> | null;
+	} | null;
+	milestones: Array<{ name: string; achievedAt: string | null }>;
+}
+
+export type TrainingQueryType = 'load' | 'balance' | 'capacity' | 'sessions' | 'plan';
+
+/** Hvor mange dager tilbake CTL sammenlignes med for å si om formen stiger. */
+export const CTL_TREND_DAYS = 14;
+
+/** Økter i `sessions` — nok til å se en uke, ikke nok til å fylle konteksten. */
+export const MAX_RECENT_SESSIONS = 12;
+
+/* ── Delformer ───────────────────────────────────────────────────────────── */
+
+export interface LoadSummary {
+	/** Null når serien er tom — da er det ingen belastning å tolke. */
+	ctl: number | null;
+	atl: number | null;
+	tsb: number | null;
+	status: TsbStatus;
+	/** CTL nå minus CTL for 14 dager siden. Positiv = formen bygger seg opp. */
+	ctlChange: number | null;
+	ctlChangeDays: number;
+	/** Dager serien dekker. Under ~42 har CTL ikke svingt inn ennå. */
+	seriesDays: number;
+	ctlSettled: boolean;
+}
+
+export interface WeekSummary {
+	spentEffort: number;
+	bandMin: number;
+	bandMax: number;
+	/** «under» = under bandMin, «over» = over bandMax. */
+	standing: 'under' | 'i_band' | 'over';
+	remainingMin: number;
+	remainingMax: number;
+	projectedTotal: number | null;
+	expectedRemaining: number | null;
+	remainingDays: number | null;
+	/** Sann når prognosen lander under båndet — det er da et råd har effekt. */
+	projectionBelowBand: boolean | null;
+	acuteChronicRatio: number | null;
+	restRecommended: boolean;
+	deload: boolean;
+	maintenance: boolean;
+	anchor: string;
+	weightThresholdEffort: number | null;
+	runKm: number | null;
+	weekTargetKm: number | null;
+	remainingKm: number | null;
+	sessions: Array<{ date: string; family: string; effort: number }>;
+	recipe: { label: string; totalEffort: number; sessions: string[] } | null;
+}
+
+/* ── Sammendraget ────────────────────────────────────────────────────────── */
+
+/**
+ * Én deklarert form med valgfrie seksjoner, framfor en union per `queryType`.
+ *
+ * Formen på JSON-en er den samme — `JSON.stringify` dropper `undefined` — men
+ * kallstedet slipper å smalne typen med en `queryType`-sjekk før det kan lese
+ * `summary.week`. Seksjonstypene hentes fra hjelpefunksjonene, så de kan ikke
+ * drive fra hva som faktisk returneres.
+ */
+export interface TrainingSummary {
+	queryType: TrainingQueryType;
+	hasPlan: boolean;
+	note?: string;
+	week?: WeekSummary | null;
+	load?: LoadSummary;
+	balance?: ReturnType<typeof summarizeBalance>;
+	capacity?: ReturnType<typeof summarizeCapacity>;
+	sessions?: ReturnType<typeof summarizeSessions>;
+	plan?: ReturnType<typeof summarizePlan>;
+}
+
+export function summarizeTrainingForChat(
+	input: TrainingSummaryInput,
+	queryType: TrainingQueryType = 'load'
+): TrainingSummary {
+	const base = {
+		queryType,
+		hasPlan: input.plan !== null,
+		/**
+		 * Uten treningsløp finnes verken ukesbånd eller balanse — bare belastningsserien.
+		 * Modellen skal si det framfor å påstå at tallene mangler.
+		 */
+		note:
+			input.plan === null
+				? 'Ingen aktivt treningsløp. Belastning (CTL/ATL/TSB) og kapasitet finnes likevel; ukesbånd, balanse og øktforslag krever et løp.'
+				: undefined
+	};
+
+	if (queryType === 'capacity') {
+		return { ...base, capacity: summarizeCapacity(input) };
+	}
+
+	if (queryType === 'balance') {
+		return { ...base, balance: summarizeBalance(input) };
+	}
+
+	if (queryType === 'sessions') {
+		return { ...base, sessions: summarizeSessions(input) };
+	}
+
+	if (queryType === 'plan') {
+		return { ...base, plan: summarizePlan(input) };
+	}
+
+	// 'load' — standardsvaret: uka mot båndet, og belastningen bak den.
+	return {
+		...base,
+		week: summarizeWeek(input),
+		load: summarizeLoad(input.dailyEffort)
+	};
+}
+
+export function summarizeLoad(series: Array<{ date: string; effort: number }>): LoadSummary {
+	const points = computeTrainingLoad(series);
+	const latest = points.at(-1) ?? null;
+
+	if (!latest) {
+		return {
+			ctl: null,
+			atl: null,
+			tsb: null,
+			status: classifyTsb(null),
+			ctlChange: null,
+			ctlChangeDays: CTL_TREND_DAYS,
+			seriesDays: 0,
+			ctlSettled: false
+		};
+	}
+
+	/**
+	 * Referansepunktet plukkes på indeks, ikke på dato. `computeTrainingLoad`
+	 * fyller hull med 0 før den regner, så serien er sammenhengende dag for dag —
+	 * indeks −14 ER for fjorten dager siden.
+	 */
+	const earlier = points.length > CTL_TREND_DAYS ? points[points.length - 1 - CTL_TREND_DAYS] : null;
+
+	return {
+		ctl: latest.ctl,
+		atl: latest.atl,
+		tsb: latest.tsb,
+		status: classifyTsb(latest.tsb),
+		ctlChange: earlier ? Math.round((latest.ctl - earlier.ctl) * 10) / 10 : null,
+		ctlChangeDays: CTL_TREND_DAYS,
+		seriesDays: points.length,
+		// CTL har 42-dagers tidskonstant: kortere serie er fortsatt på vei opp fra 0.
+		ctlSettled: points.length >= 42
+	};
+}
+
+function summarizeWeek(input: TrainingSummaryInput): WeekSummary | null {
+	const budget = input.states?.budget;
+	if (!budget) return null;
+
+	const projection = input.states?.projection ?? null;
+	const endurance = input.states?.endurance ?? null;
+
+	const standing: WeekSummary['standing'] =
+		budget.spentThisWeek < budget.bandMin
+			? 'under'
+			: budget.spentThisWeek > budget.bandMax
+				? 'over'
+				: 'i_band';
+
+	return {
+		spentEffort: Math.round(budget.spentThisWeek),
+		bandMin: budget.bandMin,
+		bandMax: budget.bandMax,
+		standing,
+		remainingMin: budget.remainingMin,
+		remainingMax: budget.remainingMax,
+		projectedTotal: projection?.projectedTotal ?? null,
+		expectedRemaining: projection?.expectedRemaining ?? null,
+		remainingDays: projection?.remainingDays ?? null,
+		projectionBelowBand: projection ? projection.projectedTotal < budget.bandMin : null,
+		acuteChronicRatio: budget.acuteChronicRatio,
+		restRecommended: budget.restRecommended,
+		deload: budget.deload,
+		maintenance: budget.maintenance,
+		anchor: budget.anchor,
+		weightThresholdEffort: input.states?.weightThreshold?.thresholdEffort ?? null,
+		runKm: endurance ? Math.round(endurance.week.runKm * 10) / 10 : null,
+		weekTargetKm: endurance ? Math.round(endurance.week.weekTargetKm * 10) / 10 : null,
+		remainingKm: endurance ? Math.round(endurance.week.remainingKm * 10) / 10 : null,
+		sessions: input.states?.weekSessions ?? [],
+		recipe: input.states?.weekRecipe ?? null
+	};
+}
+
+function summarizeBalance(input: TrainingSummaryInput) {
+	const balance = input.states?.balance;
+	if (!balance) return null;
+
+	return {
+		score: balance.score,
+		totalEffort: Math.round(balance.totalEffort),
+		/** Sortert synkende på effort av `computeBalance` — rekkefølgen er informasjon. */
+		disciplines: balance.disciplines.map((d) => ({
+			family: d.family,
+			pct: d.pct,
+			sessions: d.sessions,
+			effort: Math.round(d.effort)
+		})),
+		intensity: balance.intensity,
+		strengthSessionsThisWeek: balance.strengthSessionsThisWeek,
+		runSessionsThisWeek: balance.runSessionsThisWeek,
+		/**
+		 * Én nudge om gangen, det største avviket — samme setning flaten viser.
+		 * `score` alene sier at noe er skjevt, aldri hva.
+		 */
+		nudge: balance.nudge
+	};
+}
+
+function summarizeCapacity(input: TrainingSummaryInput) {
+	return {
+		/**
+		 * VO2max: **beste** observasjon i vinduet, ikke siste. VDOT antar maksimal
+		 * innsats, så en rolig 10k gir et lavt tall som bare sier at du løp rolig.
+		 */
+		vo2max: input.vo2max
+			? {
+					best: Math.round(input.vo2max.best * 10) / 10,
+					latest: Math.round(input.vo2max.latest * 10) / 10,
+					source: input.vo2max.source,
+					sourceDistance: input.vo2max.sourceDistance,
+					confidence: input.vo2max.confidence,
+					samples: input.vo2max.samples,
+					bestAt: input.vo2max.bestAt,
+					window: 'siste åtte uker'
+				}
+			: null,
+		/** Pulsfall: også beste, av samme grunn — et fall forutsetter at du presset. */
+		hrRecovery: input.hrRecovery
+			? {
+					bestDropBpm: input.hrRecovery.best,
+					latestDropBpm: input.hrRecovery.latest,
+					band: input.hrRecovery.band,
+					fromBpm: input.hrRecovery.bestPeakBpm,
+					toBpm: input.hrRecovery.bestEndBpm,
+					samples: input.hrRecovery.samples,
+					bestAt: input.hrRecovery.bestAt,
+					sportFamily: input.hrRecovery.sportFamily,
+					/**
+					 * Lå ankeret langt under toppen, startet fallet før målingen begynte,
+					 * og tallet er et gulv. Ikke en feil, men det skal sies.
+					 */
+					wellAnchored: input.hrRecovery.wellAnchored,
+					window: 'siste fire uker'
+				}
+			: null,
+		missing: [
+			input.vo2max ? null : 'vo2max',
+			input.hrRecovery ? null : 'pulsfall'
+		].filter((v): v is string => v !== null)
+	};
+}
+
+function summarizeSessions(input: TrainingSummaryInput) {
+	const workouts = input.states?.recentEnduranceWorkouts ?? [];
+	return {
+		count: workouts.length,
+		workouts: workouts.slice(0, MAX_RECENT_SESSIONS).map((w) => ({
+			date: w.date,
+			family: w.family,
+			effort: w.effortScore === null ? null : Math.round(w.effortScore),
+			km: w.distanceMeters === null ? null : Math.round((w.distanceMeters / 1000) * 10) / 10,
+			minutes: w.durationSeconds === null ? null : Math.round(w.durationSeconds / 60)
+		})),
+		truncated: workouts.length > MAX_RECENT_SESSIONS
+	};
+}
+
+function summarizePlan(input: TrainingSummaryInput) {
+	if (!input.plan) return null;
+	const states = input.states;
+	const achieved = input.milestones.filter((m) => m.achievedAt !== null);
+
+	return {
+		name: input.plan.name,
+		startDate: input.plan.startDate,
+		durationWeeks: input.plan.durationWeeks,
+		todaySuggestion: states?.todaySuggestion
+			? {
+					kind: states.todaySuggestion.kind,
+					name: states.todaySuggestion.name,
+					notes: states.todaySuggestion.notes
+				}
+			: null,
+		restReason: states?.restReason ?? null,
+		todayCompleted: states?.todayCompleted ?? null,
+		endurance: states?.endurance
+			? {
+					expectedPaceSecPerKm: states.endurance.forventetPaceSekPerKm,
+					recentPaceSecPerKm: states.endurance.sistePaceSekPerKm,
+					longestRunKmLast6Weeks: states.endurance.lengsteLopKmSiste6Uker
+				}
+			: null,
+		strength: states?.strength
+			? {
+					pushups: states.strength.armhevinger,
+					plank: states.strength.planke
+				}
+			: null,
+		milestones: {
+			achieved: achieved.length,
+			total: input.milestones.length,
+			// De sist nådde er de som er verdt å nevne; navnene alene er korte.
+			recentlyAchieved: achieved
+				.slice()
+				.sort((a, b) => (a.achievedAt! < b.achievedAt! ? 1 : -1))
+				.slice(0, 3)
+				.map((m) => ({ name: m.name, achievedAt: m.achievedAt })),
+			pending: input.milestones.filter((m) => m.achievedAt === null).map((m) => m.name).slice(0, 5)
+		}
+	};
+}
