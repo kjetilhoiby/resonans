@@ -39,7 +39,40 @@ interface TypeCoverage {
 	latest: string | null;
 	/** Rader per kalenderår, så et hull er synlig uten å lese hver rad. */
 	byYear: Record<string, number>;
+	/**
+	 * Hvor mange målinger som inneholder hver Withings-måletype.
+	 *
+	 * Dette er feltet som skiller «vi mister felt» fra «enheten måler dem ikke».
+	 * Uten det ser de to identiske ut fra basen: begge gir vekt uten fett. Bare
+	 * typenummer og antall — ingen verdier.
+	 */
+	measureTypes?: Record<string, number>;
 	error?: string;
+}
+
+/** Withings' måletyper, med navn så svaret kan leses uten oppslagstabell. */
+const MEASTYPE_NAMES: Record<number, string> = {
+	1: 'vekt',
+	5: 'fettfri masse',
+	6: 'fettprosent',
+	8: 'fettmasse kg',
+	11: 'puls',
+	76: 'muskelmasse',
+	77: 'hydrering',
+	88: 'beinmasse',
+	123: 'vo2max'
+};
+
+function countMeasureTypes(groups: Array<{ measures?: Array<{ type?: number }> }>): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const grp of groups) {
+		for (const m of grp.measures ?? []) {
+			if (typeof m.type !== 'number') continue;
+			const label = `${m.type} (${MEASTYPE_NAMES[m.type] ?? 'ukjent'})`;
+			counts[label] = (counts[label] ?? 0) + 1;
+		}
+	}
+	return counts;
 }
 
 function summarize(dates: Array<Date | null>): TypeCoverage {
@@ -94,7 +127,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 					startdate: fromUnix,
 					enddate: toUnix
 				});
-				coverage.weight = summarize(rows.map((r) => new Date((r.date ?? 0) * 1000)));
+				coverage.weight = {
+					...summarize(rows.map((r) => new Date((r.date ?? 0) * 1000))),
+					measureTypes: countMeasureTypes(rows)
+				};
 			} else if (type === 'activity') {
 				const rows = await fetchAllWithingsData(accessToken, {
 					action: 'getactivity',
@@ -146,6 +182,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		window: { from, to },
 		sensorConnectedAt: sensor.createdAt ?? null,
 		coverage,
-		hint: 'raw = rader Withings ga oss. Er den 0, har kontoen ingenting i perioden — det er ikke importen som mister noe.'
+		hint:
+			'raw = rader Withings ga oss, før tolkning. Er den 0, har kontoen ingenting i perioden. ' +
+			'measureTypes skiller «vi mister felt» fra «enheten måler dem ikke».'
 	});
 };
