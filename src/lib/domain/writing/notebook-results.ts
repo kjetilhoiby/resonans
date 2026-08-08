@@ -11,6 +11,7 @@
  */
 
 import { displayTitle, resolveDocKind } from './doc-kinds';
+import { parseChecklist } from './checklist';
 
 export type NotebookSource = 'dokument' | 'fangst';
 
@@ -28,6 +29,10 @@ export interface NotebookHit {
 	timestamp: string;
 	/** 0–1 cosine-likhet, eller null når søket falt tilbake til tekstmatch. */
 	similarity: number | null;
+	/** Tom for fangst — reflections har ingen tags. */
+	tags: string[];
+	/** «4 av 11 brukt», eller null når dokumentet ikke har en avkryssingsliste. */
+	checklist: { done: number; total: number } | null;
 }
 
 export interface DocRow {
@@ -37,6 +42,7 @@ export interface DocRow {
 	body: string | null;
 	projectId: string | null;
 	updatedAt: Date | string;
+	tags?: string[] | null;
 }
 
 export interface ReflectionRow {
@@ -95,7 +101,12 @@ export function docToHit(row: DocRow, similarity: number | null): NotebookHit {
 		emoji: def.emoji,
 		projectId: row.projectId,
 		timestamp: iso(row.updatedAt),
-		similarity
+		similarity,
+		tags: row.tags ?? [],
+		checklist: (() => {
+			const parsed = parseChecklist(row.body);
+			return parsed.total > 0 ? { done: parsed.done, total: parsed.total } : null;
+		})()
 	};
 }
 
@@ -111,7 +122,9 @@ export function reflectionToHit(row: ReflectionRow, similarity: number | null): 
 		emoji: '🕘',
 		projectId: null,
 		timestamp: iso(row.createdAt),
-		similarity
+		similarity,
+		tags: [],
+		checklist: null
 	};
 }
 

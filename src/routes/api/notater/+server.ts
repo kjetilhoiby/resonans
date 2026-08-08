@@ -10,6 +10,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { searchNotebook } from '$lib/server/writing/search';
+import { hasTag } from '$lib/domain/writing/tags';
 import { createDoc } from '$lib/server/writing/docs';
 import { promoteReflectionToDoc } from '$lib/server/writing/docs';
 
@@ -27,11 +28,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		projectId: projectParam ? projectParam : null
 	});
 
-	return json({
-		hits: kilde === 'fangst' ? result.hits.filter((h) => h.source === 'fangst') : result.hits,
-		mode: result.mode,
-		counts: result.counts
-	});
+	const tag = url.searchParams.get('tag')?.trim();
+	let hits = kilde === 'fangst' ? result.hits.filter((h) => h.source === 'fangst') : result.hits;
+	if (tag) hits = hits.filter((h) => hasTag(h.tags, tag));
+
+	return json({ hits, mode: result.mode, counts: result.counts });
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -65,7 +66,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		kind: typeof payload.kind === 'string' ? payload.kind : null,
 		status: typeof payload.status === 'string' ? payload.status : null,
 		projectId: typeof payload.projectId === 'string' ? payload.projectId : null,
-		sortOrder: typeof payload.sortOrder === 'number' ? payload.sortOrder : undefined
+		sortOrder: typeof payload.sortOrder === 'number' ? payload.sortOrder : undefined,
+		tags: payload.tags
 	});
 
 	return json(doc, { status: 201 });

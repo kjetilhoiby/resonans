@@ -174,7 +174,8 @@ export async function searchNotebook(
 					title: row.title,
 					body: row.body,
 					projectId: row.projectId,
-					updatedAt: row.updatedAt
+					updatedAt: row.updatedAt,
+					tags: row.tags
 				},
 				similarity
 			)

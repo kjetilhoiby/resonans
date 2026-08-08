@@ -3,6 +3,7 @@ import type { PageServerLoad } from './$types';
 import { getProject, getProjectContents } from '$lib/server/writing/projects';
 import { getConversationHistory } from '$lib/server/conversations';
 import { countWords } from '$lib/domain/writing/doc-kinds';
+import { parseChecklist } from '$lib/domain/writing/checklist';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const project = await getProject(locals.userId, params.id);
@@ -18,6 +19,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		status: d.status,
 		sortOrder: d.sortOrder,
 		words: countWords(d.body),
+		tags: d.tags,
+		checklist: (() => {
+			const parsed = parseChecklist(d.body);
+			return parsed.total > 0 ? { done: parsed.done, total: parsed.total } : null;
+		})(),
 		updatedAt: d.updatedAt.toISOString()
 	});
 

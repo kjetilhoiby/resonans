@@ -11,6 +11,8 @@
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { WRITING_CHAT_MODE_DEFS, type WritingChatMode } from '$lib/domain/writing/coach-prompt';
 	import { WRITING_DOC_KIND_DEFS } from '$lib/domain/writing/doc-kinds';
+	import { countTags, hasTag } from '$lib/domain/writing/tags';
+	import { parseChecklist } from '$lib/domain/writing/checklist';
 	import ManuscriptTab from '$lib/components/domain/writing/ManuscriptTab.svelte';
 	import type { NotebookHit } from '$lib/domain/writing/notebook-results';
 	import { invalidateAll } from '$app/navigation';
@@ -28,6 +30,7 @@
 		title: string;
 		body: string;
 		kind: string;
+		tags: string;
 		expectedUpdatedAt: string | null;
 	} | null>(null);
 	let saving = $state(false);
@@ -37,7 +40,7 @@
 	function newDoc(kind: string) {
 		conflict = false;
 		editorError = null;
-		editor = { id: null, title: '', body: '', kind, expectedUpdatedAt: null };
+		editor = { id: null, title: '', body: '', kind, tags: '', expectedUpdatedAt: null };
 	}
 
 	function openDoc(doc: Doc) {
@@ -48,6 +51,7 @@
 			title: doc.title,
 			body: doc.body,
 			kind: doc.kind,
+			tags: (doc.tags ?? []).join(', '),
 			expectedUpdatedAt: doc.updatedAt
 		};
 	}
@@ -70,6 +74,7 @@
 					title: editor.title,
 					body: editor.body,
 					kind: editor.kind,
+					tags: editor.tags.split(',').map((t) => t.trim()).filter(Boolean),
 					projectId: data.project.id,
 					...(isNew ? {} : { expectedUpdatedAt: editor.expectedUpdatedAt })
 				})
@@ -153,6 +158,14 @@
 	let chatError = $state<string | null>(null);
 
 	const allDocs = $derived([...data.manuscript, ...data.material]);
+	const knownTags = $derived(countTags(allDocs));
+	const editorChecklist = $derived(editor ? parseChecklist(editor.body) : null);
+	// Tag-filteret gjelder materiale-fanen; manuset har sin egen rekkefølge og
+	// skal ikke omorganiseres av et filter.
+	let tagFilter = $state('');
+	const filteredMaterial = $derived(
+		tagFilter ? data.material.filter((d) => hasTag(d.tags, tagFilter)) : data.material
+	);
 	const currentMode = $derived(
 		WRITING_CHAT_MODE_DEFS.find((m) => m.key === mode) ?? WRITING_CHAT_MODE_DEFS[0]
 	);
@@ -234,6 +247,19 @@
 				</div>
 				<Input bind:value={editor.title} placeholder="Tittel" dataTrack="skriv:dokument-tittel" ariaLabel="Tittel" />
 				<Textarea bind:value={editor.body} rows={18} placeholder="Skriv…" dataTrack="skriv:dokument-tekst" ariaLabel="Tekst" />
+				<Input
+					bind:value={editor.tags}
+					placeholder="Tags (Ida, Idas bue, forsinket avsløring)"
+					dataTrack="skriv:dokument-tags"
+					ariaLabel="Tags"
+					list="skriv-tags"
+				/>
+				<datalist id="skriv-tags">
+					{#each knownTags as t (t.tag)}<option value={t.tag}></option>{/each}
+				</datalist>
+				{#if editorChecklist && editorChecklist.total > 0}
+					<p class="hint">Avkryssing: {editorChecklist.done} av {editorChecklist.total} brukt.</p>
+				{/if}
 				{#if editorError}<p class="error" class:conflict role="alert">{editorError}</p>{/if}
 				<div class="actions">
 					<Button onClick={saveDoc} disabled={saving}>{saving ? 'Lagrer…' : 'Lagre'}</Button>
@@ -279,20 +305,40 @@
 			<div class="toolbar">
 				<Button onClick={() => newDoc('karakter')}>Ny karakter</Button>
 				<Button variant="ghost" onClick={() => newDoc('sted')}>Nytt sted</Button>
+				<Button variant="ghost" onClick={() => newDoc('grep')}>Nytt fortellergrep</Button>
 				<Button variant="ghost" onClick={() => newDoc('notat')}>Nytt notat</Button>
 			</div>
-			{#if data.material.length === 0}
-				<p class="empty">Ingen karakterer eller steder ennå.</p>
+			{#if knownTags.length > 0}
+				<div class="tagbar">
+					<button class="tagchip" class:active={tagFilter === ''} onclick={() => (tagFilter = '')}>Alle</button>
+					{#each knownTags as t (t.tag)}
+						<button
+							class="tagchip"
+							class:active={tagFilter === t.tag}
+							onclick={() => (tagFilter = tagFilter === t.tag ? '' : t.tag)}
+							data-track="skriv:filtrer-tag"
+						>{t.tag} <span class="tagcount">{t.count}</span></button>
+					{/each}
+				</div>
+			{/if}
+			{#if filteredMaterial.length === 0}
+				<p class="empty">
+					{tagFilter ? `Ingenting merket «${tagFilter}».` : 'Ingen karakterer eller steder ennå.'}
+				</p>
 			{:else}
 				<ul class="list">
-					{#each data.material as doc (doc.id)}
+					{#each filteredMaterial as doc (doc.id)}
 						<li>
 							<button class="row" onclick={() => openDoc(doc)} data-track="skriv:apne-materiale">
 								<span class="row-main">
 									<span class="row-title">{doc.title || '(uten tittel)'}</span>
 									<span class="row-sub">{doc.body.slice(0, 140)}</span>
 								</span>
-								<span class="row-meta"><span>{doc.kind}</span></span>
+								<span class="row-meta">
+									<span>{doc.kind}</span>
+									{#if doc.checklist}<span>{doc.checklist.done}/{doc.checklist.total}</span>{/if}
+									{#if doc.tags.length > 0}<span class="tags">{doc.tags.join(' · ')}</span>{/if}
+								</span>
 							</button>
 						</li>
 					{/each}
@@ -458,6 +504,32 @@
 	}
 	.chat-input :global(.ds-input) {
 		flex: 1;
+	}
+
+	.tagbar {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-bottom: 10px;
+	}
+	.tagchip {
+		background: var(--card-bg);
+		border: 1px solid var(--card-border);
+		border-radius: 999px;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: var(--text-xs);
+		padding: 4px 10px;
+	}
+	.tagchip.active {
+		border-color: var(--accent-primary);
+		color: var(--accent-primary);
+	}
+	.tagcount {
+		color: var(--text-tertiary);
+	}
+	.tags {
+		color: var(--text-tertiary);
 	}
 
 	.hint,

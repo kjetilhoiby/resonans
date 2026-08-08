@@ -4129,6 +4129,9 @@ export const writingDocs = pgTable('writing_docs', {
 	body: text('body').notNull().default(''),
 	status: text('status').notNull().default('utkast'), // 'utkast'|'pagar'|'ferdig'
 	sortOrder: integer('sort_order').notNull().default(0),
+	// Den andre aksen: `kind` er hva dokumentet ER, tags er hva det HANDLER OM.
+	// Buer og fortellergrep går på tvers av scener — se $lib/domain/writing/tags.ts.
+	tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
 	// Samme modell som memories/reflections (text-embedding-3-small), derfor er
 	// cosine-avstandene sammenlignbare på tvers av tabellene.
 	embedding: vector('embedding', { dimensions: 1536 }),
@@ -4137,6 +4140,8 @@ export const writingDocs = pgTable('writing_docs', {
 }, (table) => ({
 	idxWritingDocsUserUpdated: index('writing_docs_user_updated_idx').on(table.userId, table.updatedAt),
 	idxWritingDocsProject: index('writing_docs_project_idx').on(table.projectId, table.kind, table.sortOrder)
+	// NB: GIN-indeksen på tags ligger i 0051_writing_tags.sql — drizzle-kit
+	// modellerer ikke GIN, og en btree her ville ikke hjulpet `tags && ARRAY[...]`.
 }));
 
 export const writingProjectsRelations = relations(writingProjects, ({ one, many }) => ({

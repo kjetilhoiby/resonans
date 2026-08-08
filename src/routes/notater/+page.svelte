@@ -14,6 +14,8 @@
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { WRITING_DOC_KIND_DEFS } from '$lib/domain/writing/doc-kinds';
 	import type { NotebookHit } from '$lib/domain/writing/notebook-results';
+	import { countTags } from '$lib/domain/writing/tags';
+	import { parseChecklist } from '$lib/domain/writing/checklist';
 
 	let { data } = $props();
 
@@ -29,6 +31,7 @@
 		title: string;
 		body: string;
 		kind: string;
+		tags: string;
 		expectedUpdatedAt: string | null;
 	};
 
@@ -38,6 +41,9 @@
 	let conflict = $state(false);
 
 	const documents = $derived(hits.filter((h) => h.source === 'dokument'));
+	// Autofullføring er motgiften mot at «Idas bue» og «bue-ida» blir to tags.
+	const knownTags = $derived(countTags(hits));
+	const checklist = $derived(editor ? parseChecklist(editor.body) : null);
 	const capture = $derived(hits.filter((h) => h.source === 'fangst'));
 
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -73,7 +79,7 @@
 	function newDoc() {
 		conflict = false;
 		editorError = null;
-		editor = { id: null, title: '', body: '', kind: 'notat', expectedUpdatedAt: null };
+		editor = { id: null, title: '', body: '', kind: 'notat', tags: '', expectedUpdatedAt: null };
 	}
 
 	async function openDoc(hit: NotebookHit) {
@@ -91,6 +97,7 @@
 			title: doc.title,
 			body: doc.body,
 			kind: doc.kind,
+			tags: (doc.tags ?? []).join(', '),
 			expectedUpdatedAt: doc.updatedAt
 		};
 	}
@@ -113,6 +120,9 @@
 					title: editor.title,
 					body: editor.body,
 					kind: editor.kind,
+					// Komma er skilletegnet. normalizeTags på serveren trimmer og
+					// fjerner duplikater, så et slurvete «Ida,  ida» blir én tag.
+					tags: editor.tags.split(',').map((t) => t.trim()).filter(Boolean),
 					...(isNew ? {} : { expectedUpdatedAt: editor.expectedUpdatedAt })
 				})
 			});
@@ -207,6 +217,19 @@
 					dataTrack="notatblokk:tekst"
 					ariaLabel="Tekst"
 				/>
+				<Input
+					bind:value={editor.tags}
+					placeholder="Tags, komma-separert (Ida, Idas bue, spenning)"
+					dataTrack="notatblokk:tags"
+					ariaLabel="Tags"
+					list="notatblokk-tags"
+				/>
+				<datalist id="notatblokk-tags">
+					{#each knownTags as t (t.tag)}<option value={t.tag}></option>{/each}
+				</datalist>
+				{#if checklist && checklist.total > 0}
+					<p class="hint">Avkryssing: {checklist.done} av {checklist.total} brukt.</p>
+				{/if}
 
 				{#if editorError}
 					<p class="error" class:conflict role="alert">{editorError}</p>
@@ -265,7 +288,9 @@
 								</span>
 								<span class="row-meta">
 									{#if hit.similarity !== null}<span class="sim">{Math.round(hit.similarity * 100)} %</span>{/if}
+									{#if hit.checklist}<span>{hit.checklist.done}/{hit.checklist.total}</span>{/if}
 									<span>{fmt(hit.timestamp)}</span>
+									{#if hit.tags.length > 0}<span class="tags">{hit.tags.join(' · ')}</span>{/if}
 								</span>
 							</button>
 						</li>

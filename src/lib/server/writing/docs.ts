@@ -18,6 +18,7 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import { generateEmbedding } from '$lib/server/services/embedding-service';
 import { osloDayKey } from '$lib/server/trip-geo';
 import { checkNotStale } from '$lib/domain/writing/concurrency';
+import { normalizeTags } from '$lib/domain/writing/tags';
 import {
 	countWords,
 	DEFAULT_DOC_KIND,
@@ -139,6 +140,7 @@ export interface CreateDocInput {
 	status?: string | null;
 	projectId?: string | null;
 	sortOrder?: number;
+	tags?: unknown;
 }
 
 export async function createDoc(input: CreateDocInput): Promise<WritingDoc> {
@@ -161,6 +163,7 @@ export async function createDoc(input: CreateDocInput): Promise<WritingDoc> {
 			body,
 			status,
 			sortOrder: input.sortOrder ?? 0,
+			tags: normalizeTags(input.tags),
 			embedding
 		})
 		.returning();
@@ -189,6 +192,8 @@ export interface UpdateDocInput {
 	status?: string | null;
 	projectId?: string | null;
 	sortOrder?: number;
+	/** Utelat for å la tags stå. Send en liste (også tom) for å erstatte dem. */
+	tags?: unknown;
 }
 
 /**
@@ -228,6 +233,9 @@ export async function updateDoc(input: UpdateDocInput): Promise<WritingDoc | nul
 	if (input.status !== undefined && isWritingDocStatus(input.status)) patch.status = input.status;
 	if (input.projectId !== undefined) patch.projectId = input.projectId;
 	if (typeof input.sortOrder === 'number') patch.sortOrder = input.sortOrder;
+	// Utelatt = uendret. En tom liste er en gyldig verdi (fjern alle tags), så
+	// vi kan ikke bruke falsy-sjekk her.
+	if (input.tags !== undefined) patch.tags = normalizeTags(input.tags);
 
 	// Ny tekst → ny embedding, ellers står likheten mot den gamle teksten.
 	if (textChanged) {

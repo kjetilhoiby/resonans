@@ -19,6 +19,8 @@
 		status: string;
 		sortOrder: number;
 		words: number;
+		tags: string[];
+		checklist: { done: number; total: number } | null;
 		updatedAt: string;
 	}
 
@@ -122,6 +124,7 @@
 				<span class="row-meta">
 					<span>{doc.words} ord</span>
 					<span>{doc.kind}</span>
+					{#if doc.tags.length > 0}<span class="tags">{doc.tags.join(' · ')}</span>{/if}
 				</span>
 			</li>
 		{/each}
@@ -226,6 +229,9 @@
 		line-height: 1.65;
 	}
 
+	.tags {
+		color: var(--text-tertiary);
+	}
 	.empty {
 		color: var(--text-tertiary);
 		font-size: var(--text-sm);

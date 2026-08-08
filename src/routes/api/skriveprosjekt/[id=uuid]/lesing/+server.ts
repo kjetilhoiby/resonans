@@ -68,6 +68,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	// Fokusdokumentet er teksten samtalen handler om. Sparring trenger det ikke,
 	// og leser trenger ikke noe annet.
 	let focusDoc = null;
+	let focusTags: string[] = [];
 	if (mode.scope !== 'prosjekt' && typeof payload.focusDocId === 'string') {
 		const doc = await getDoc(locals.userId, payload.focusDocId);
 		if (doc) {
@@ -76,13 +77,16 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				title: doc.title,
 				body: doc.body
 			};
+			// Tags på scenen styrer hvilket materiale som løftes fram — se
+			// getPromptMaterial.
+			focusTags = doc.tags ?? [];
 		}
 	}
 
 	const { material, outline } =
 		mode.scope === 'tekst'
 			? { material: [], outline: [] }
-			: await getPromptMaterial(locals.userId, params.id);
+			: await getPromptMaterial(locals.userId, params.id, focusTags);
 
 	const systemPrompt = buildWritingChatPrompt({
 		project: { title: project.title, genre: project.genre, summary: project.summary },

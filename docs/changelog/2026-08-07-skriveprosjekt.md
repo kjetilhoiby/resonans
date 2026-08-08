@@ -1,7 +1,7 @@
 # Skriveprosjekt, kompislesing og notatblokk
 
 Dato: 2026-08-07
-Status: pågår (fase 1, 2, 2b, 4 og 5 ferdig; fase 3 utsatt)
+Status: pågår (fase 1, 2, 2b, 4, 5 og 6 ferdig; fase 3 utsatt)
 
 ## Kontekst
 
@@ -366,6 +366,62 @@ sender videre til `/skriv` og `/notater`, som eier redigeringen. Å duplisere
 prosjektrommet inn i temaet ville gitt to steder å vedlikeholde samme liste —
 samme arbeidsdeling som mortema mot undertema.
 
+### Fase 6: Fortellergrep, avkryssing og tags — FERDIG
+
+Brukeren spurte om arcs/buer, scener, karakterer og fortellergrep burde bli tags.
+Svaret ble **begge deler**, fordi de fire tingene ikke hører i samme kategori.
+
+**To akser blandes.** `kind` sier hva et dokument ER; det nye sier hva det HANDLER
+OM eller DELTAR I. En bue er et *spenn* gjennom scene 3, 7 og 12 — som `kind`
+ville den blitt et dokument uten forbindelse til scenene den spenner over. Det er
+nettopp det tags løser.
+
+**Men et fortellergrep ER et dokument.** Første utkast av dette svaret avviste det
+som «bare en etikett». Feil: brukeren beskrev et arbeidsdokument om håndverk — hvordan
+skape spenning med et gitt oppsett — med en idéliste man krysser av etter hvert som
+idéene brukes. Det er samme mønster som karakterene allerede har: «Ida» er både et
+dokument (profilen) og en tag (hvilke scener hun er i). Dokumentet holder
+tenkningen, taggen registrerer hvor det landet.
+
+`kind: 'grep'` fortjener plassen fordi den endrer oppførsel: et håndverksnotat er
+**intensjon**, og det er det redaktør-modus skal måle mot («får jeg til det jeg
+prøver på?»). En scene sier ikke hva den forsøker. Derfor sorteres grep først i
+`getPromptMaterial`.
+
+**Avkryssing bor i `body`, ikke i en tabell.** `- [ ]` / `- [x]` parses av
+`checklist.ts`. Skrivingen skjer i ett tekstfelt; et eget avkryssings-UI ville
+krevd modusbytte, og innskrivingsfriksjon er den bindende begrensningen. Samme
+grep som `repeatableMeals` og streaks: oppførselen utledes av det som står der.
+
+*«Brukt» kan ikke utledes fra tags.* Taggen sier at du brukte **grepet**, haken at
+du brukte **den bestemte idéen** — granulariteten er finere enn taggen. Haken settes
+for hånd og vil drifte litt; det er greit fordi ingenting avhenger av den.
+
+**Tags er fritekst, ikke referanser.** Typede referanser til karakter-dokumenter
+ville krevd koblingstabell og vedlikeholds-UI. Motgiften mot drift er autofullføring
+fra eksisterende tags (`countTags` → `<datalist>`), som er det som hindrer at «Idas
+bue» og «bue-ida» blir to. Forskjellen fra `themes.parentTheme`-arret er at en tag
+ikke styrer navigasjon: treffer den ingenting, får du et tomt filter, ikke en side
+som ikke virker.
+
+**Tre forbrukere, som avtalt** — en tag ingen leser er ren friksjon:
+
+1. `/skriv` — tag-chips filtrerer materialet (ikke manuset, som har egen rekkefølge)
+2. `query_writing` — `tag`-parameter på alle spørsmålsformer, pluss ny
+   `queryType: 'ideas'` som svarer på «hvilke grep har jeg notert, men ikke brukt?»
+3. **`getPromptMaterial`** — den viktigste. Deler et materialdokument tag med
+   scenen som leses, løftes det fram. Fram til nå sendte redaktør-modus *alle*
+   karakterer i prosjektet, også de som ikke er i scenen.
+
+`Input` fikk `list`-prop, så nettleseren gjør autofullføringen selv — ingen egen
+dropdown, og den virker med tastatur.
+
+Migrasjon `0051_writing_tags.sql`: `tags text[]` med GIN-indeks. Indeksen ligger
+bare i SQL — drizzle-kit modellerer ikke GIN, og en btree ville ikke hjulpet
+`tags && ARRAY[...]`.
+
+47 nye tester.
+
 ### Fase 3: Transkripsjon inn — UTSATT
 
 `kind='transkripsjon'` via `transcribeAudioWithWords`. Whisper-stien og
@@ -453,11 +509,10 @@ telefonen» — og da skal det være det som er ett trykk unna. Veien videre til
 
 ## Verifisering
 
-Fase 1, 2, 2b, 4 og 5:
+Fase 1, 2, 2b, 4, 5 og 6:
 
-- `npm test` — 2 702 tester i 203 filer passerer, hvorav 93 nye i
-  `src/lib/domain/writing/`
-  pluss tre nye i `theme-dashboard-registry.test.ts`. Ingen eksisterende tester brøt av omskrivingen av
+- `npm test` — 2 817 tester i 212 filer passerer, hvorav 128 i
+  `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
   `query_reflections`.
 - `npm run check` — 0 feil, 0 advarsler.
 - `npm run build` — fullfører (med dummy `DATABASE_URL`; containeren har ingen base).

@@ -30,6 +30,11 @@
 		 * er ikke et navn — den forsvinner så snart man begynner å skrive.
 		 */
 		ariaLabel?: string;
+		/**
+		 * Id-en til en `<datalist>` med forslag. Nettleseren gjør autofullføringen
+		 * selv — ingen egen dropdown å vedlikeholde, og den virker med tastatur.
+		 */
+		list?: string;
 		className?: string;
 		onChange?: (event: Event) => void;
 		onInput?: (event: Event) => void;
@@ -50,6 +55,7 @@
 		inputmode,
 		dataTrack,
 		ariaLabel,
+		list,
 		className = '',
 		onChange,
 		onInput,
@@ -72,6 +78,7 @@
 	{inputmode}
 	data-track={dataTrack}
 	aria-label={ariaLabel}
+	{list}
 	bind:value
 	onchange={onChange}
 	oninput={onInput}

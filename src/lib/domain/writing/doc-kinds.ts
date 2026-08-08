@@ -17,6 +17,7 @@ export const WRITING_DOC_KINDS = [
 	'kapittel',
 	'karakter',
 	'sted',
+	'grep',
 	'notat',
 	'dikt',
 	'liste',
@@ -40,6 +41,11 @@ export const WRITING_DOC_KIND_DEFS: WritingDocKindDef[] = [
 	{ key: 'scene', label: 'Scene', emoji: '🎬', ordered: true },
 	{ key: 'karakter', label: 'Karakter', emoji: '🧍', ordered: false },
 	{ key: 'sted', label: 'Sted', emoji: '🗺️', ordered: false },
+	// Fortellergrep: refleksjon over håndverk, med idéer man krysser av når de er
+	// brukt. Egen kind fordi den endrer oppførsel — den er INTENSJON, og det er
+	// nettopp det redaktør-modus skal se («får jeg til det jeg prøver på?»).
+	// En scene sier ikke hva den forsøker.
+	{ key: 'grep', label: 'Fortellergrep', emoji: '🎭', ordered: false },
 	{ key: 'dikt', label: 'Dikt', emoji: '🕊️', ordered: false },
 	{ key: 'notat', label: 'Notat', emoji: '📝', ordered: false },
 	{ key: 'liste', label: 'Liste', emoji: '☑️', ordered: false },

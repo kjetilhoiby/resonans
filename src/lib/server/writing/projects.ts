@@ -11,6 +11,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { createConversation } from '$lib/server/conversations';
 import { countWords, resolveDocKind } from '$lib/domain/writing/doc-kinds';
 import { applyOrder } from '$lib/domain/writing/manuscript';
+import { sharesTag } from '$lib/domain/writing/tags';
 import type { PromptDoc } from '$lib/domain/writing/coach-prompt';
 
 export type WritingProject = typeof writingProjects.$inferSelect;
@@ -148,21 +149,38 @@ export async function getProjectContents(
 }
 
 /**
- * Materialet chat-prompten skal se. Karakterer og steder først — de er det en
- * redaktør og en sparringpartner faktisk trenger; frie notater tas med sist og
- * kuttes av prompt-byggeren om de er lange.
+ * Materialet chat-prompten skal se.
+ *
+ * **Tags avgjør relevans.** Deler et materialdokument minst én tag med teksten
+ * som leses, løftes det fram; resten følger etter. Fram til tags fantes sendte
+ * denne alle karakterer i prosjektet inn i redaktør-modus — også de som ikke er
+ * i scenen. Det er både dårligere svar og unødvendig kontekst.
+ *
+ * Rekkefølgen ellers: fortellergrep først (de bærer *intensjonen* med teksten,
+ * som er det redaktøren skal måle mot), så karakterer og steder, så frie notater.
+ * Prompt-byggeren kutter lange dokumenter, så rekkefølgen avgjør hva som
+ * overlever.
  */
 export async function getPromptMaterial(
 	userId: string,
-	projectId: string
+	projectId: string,
+	/** Tags på teksten samtalen handler om. Utelat for å ta med alt likt vektet. */
+	focusTags: string[] = []
 ): Promise<{ material: PromptDoc[]; outline: Array<{ kind: string; title: string; words: number }> }> {
 	const { manuscript, material } = await getProjectContents(userId, projectId);
 
-	const priority = (kind: string) => (kind === 'karakter' ? 0 : kind === 'sted' ? 1 : 2);
+	const priority = (kind: string) =>
+		kind === 'grep' ? 0 : kind === 'karakter' ? 1 : kind === 'sted' ? 2 : 3;
+
+	const relevance = (docTags: string[] | null) =>
+		focusTags.length > 0 && sharesTag(docTags, focusTags) ? 0 : 1;
 
 	return {
 		material: [...material]
-			.sort((a, b) => priority(a.kind) - priority(b.kind))
+			.sort(
+				(a, b) =>
+					relevance(a.tags) - relevance(b.tags) || priority(a.kind) - priority(b.kind)
+			)
 			.map((d) => ({
 				kind: resolveDocKind(d.kind).label.toLowerCase(),
 				title: d.title,

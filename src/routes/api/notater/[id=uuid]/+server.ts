@@ -45,7 +45,9 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				payload.projectId === null || typeof payload.projectId === 'string'
 					? (payload.projectId as string | null)
 					: undefined,
-			sortOrder: typeof payload.sortOrder === 'number' ? payload.sortOrder : undefined
+			sortOrder: typeof payload.sortOrder === 'number' ? payload.sortOrder : undefined,
+			// Utelatt = uendret; tom liste = fjern alle. Derfor `in`, ikke truthiness.
+			tags: 'tags' in payload ? payload.tags : undefined
 		});
 		if (!doc) throw error(404, 'Fant ikke dokumentet.');
 		return json(doc);
