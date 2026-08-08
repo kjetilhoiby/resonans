@@ -182,3 +182,52 @@ i en query-param skal ikke kunne velte en synk. Endepunktet validerer separat og
 
 **Ikke gjort:** backfillen er ikke kjørt. Det er brukerens valg — den skriver til prod,
 og en tolv års import bør deles i biter. `docs/changelog` sier hvordan.
+
+## Etterspill: årene før oktober 2017 ligger ikke hos Withings
+
+Backfillen ble kjørt for 2014–2017 og ga `Vekt: 0 · Aktivitet: 0 · Søvn: 0 · Treninger: 0`
+for hver eneste dag. `coverage` bekreftet at Withings ikke ga oss noe: `raw` var 0 for
+2014, 2015 og 2016, også når vinduet var ett år av gangen — altså uten
+pagineringspress som forklaring.
+
+Jeg konkluderte da at kontoen var tom, og at kurven brukeren så lenger tilbake i
+Health Mate var grafaksen. **Det var feil.** Appen viste 8. des. 2013 – 7. des. 2017
+med en ekte trend på −11,7 kg og et merket punkt på 107,5 kg 1. juli 2014.
+
+To påstander som ikke kunne stemme samtidig, og begge sider av uenigheten lå hos
+Withings — ikke i vår kode. Derfor `debug/probe`, som stiller samme spørsmål på seks
+måter mot samme vindu og varierer én parameter av gangen:
+
+```
+som synken: meastypes + category=1 + datovindu   n=    0
+meastype=1 (entall) + category=1 + datovindu     n=    0
+meastypes + datovindu, UTEN category             n=    0
+category=2 (mål/objectives) + datovindu          n=    0
+lastupdate=0, hele historikken (paginert)        n= 1337   2017-10-13 .. 2026-08-08
+ingen dato, ingen lastupdate (paginert)          n= 1337   2017-10-13 .. 2026-08-08
+```
+
+De to siste avgjør: **uten datofilter i det hele tatt**, paginert helt ut, er eldste
+måling bak dette OAuth-tilsagnet 13. oktober 2017. Det er ikke et vindu vi ba feil om.
+
+Forklaringen kom fra brukeren: Health Mate **leser** fra Apple Health og tegner det inn
+i sine egne grafer, men laster det ikke opp til Withings. Withings-vekta kom i oktober
+2017; alt før det er en annen app, synlig i Health Mate og usynlig for `getmeas`.
+Signaturen passer — en hard kant framfor en uttynning, kanten på datoen enheten kom, og
+en sammenhengende kurve i appen tvers over kanten.
+
+**Konsekvens:** de årene kan ikke hentes gjennom Withings-API-et, uansett parametere.
+De ligger i Apple Health på telefonen. Veien inn er enten en Apple Health-eksport
+(`export.xml`, `HKQuantityTypeIdentifierBodyMass`) eller at Ekko leser HealthKit
+direkte. En slik import må la Withings-radene vinne fra oktober 2017 og bare fylle
+hullene foran dem — Health Mate skriver *til* Apple Health også, så eksporten
+inneholder de 1205 veiingene vi allerede har.
+
+**Lærdommen om diagnosen:** `coverage` svarte sant på spørsmålet den fikk, og jeg leste
+svaret som mer enn det var. «`raw` er 0 for dette vinduet» er ikke det samme som
+«kontoen er tom» — det siste krever et kall uten vindu. `probe` finnes fordi den
+forskjellen kostet en gal konklusjon som ble sagt til brukeren med selvtillit.
+
+**1337 mot 1377:** `probe` ber bare om `meastype=1`, `coverage` om hele
+`WITHINGS_BODY_MEASTYPES`. Differansen på 40 er grupper med en kroppsmåling men ingen
+vekt — samme 40 som forklarte gapet mellom 1377 hentede og 1335 lagrede.

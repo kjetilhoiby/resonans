@@ -569,7 +569,21 @@ Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
 - **«Er kontoen tom, eller mister vi data?» besvares av
   `GET /api/sensors/withings/debug/coverage?from=…&types=weight`**, ikke av å lese
   koden. Den returnerer `raw` (rader Withings ga oss, før tolkning) og `byYear`. Er
-  `raw` 0, er kontoen tom for perioden.
+  `raw` 0, ga Withings ingenting **for det vinduet**.
+- **«Tomt vindu» er ikke «tom konto», og forskjellen kostet en gal konklusjon.** Bare et
+  kall UTEN datofilter finner den eldste målingen som finnes bak tilsagnet.
+  `GET /api/sensors/withings/debug/probe?from=…&to=…` stiller samme spørsmål på seks
+  måter og varierer én parameter av gangen (`meastypes` mot `meastype`, med og uten
+  `category`, `category=2`, og `lastupdate=0` paginert helt ut). Withings sorterer
+  synkende, så eldste måling ligger på siste side.
+- **Withings-kontoen begynner 13. oktober 2017 for denne brukeren, og det er ekte.**
+  Health Mate **leser** fra Apple Health og tegner det inn i sine egne grafer uten å
+  laste det opp; kurven appen viser fra 2013 finnes derfor ikke i noe API-svar. Ser du
+  en hard kant framfor en uttynning, og kanten ligger på datoen enheten kom, er det
+  denne mekanismen — ikke et hull i synken. Veien til de årene går gjennom en Apple
+  Health-eksport eller HealthKit i Ekko, og en slik import må la Withings-radene vinne
+  fra oktober 2017 og bare fylle hullene foran dem. Se
+  `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
 - **Batch-prefetchen må be om `meastypes`, ikke `meastype: 1`.** Den ba lenge bare om
   vekttallet, mens hovedsynken ber om fettprosent, fettmasse, muskel, bein, hydrering og
   punktpuls. En dag importert gjennom batchen kom inn vekt-bare, og `ignore` gjør at den
