@@ -116,7 +116,11 @@ const MEASTYPE = {
  * — men å be om dem eksplisitt gjør det uavhengig av om Withings filtrerer
  * innenfor gruppene. `meastypes` (flertall) er kommaseparert.
  */
-const WITHINGS_BODY_MEASTYPES = [
+/**
+ * Hele kroppssettet i ett kall. Eksportert fordi diagnoseendepunktet må spørre om
+ * NØYAKTIG det synken spør om — ellers svarer det på et annet spørsmål enn det stilte.
+ */
+export const WITHINGS_BODY_MEASTYPES = [
 	MEASTYPE.weight,
 	MEASTYPE.fatFreeMass,
 	MEASTYPE.fatRatio,

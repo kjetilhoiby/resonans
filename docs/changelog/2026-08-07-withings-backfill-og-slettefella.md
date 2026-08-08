@@ -121,6 +121,43 @@ Ingen la merke til det fordi hovedsynken dekker de ferske dagene. Feilen viser s
 ved en backfill av gamle år, altså nøyaktig når man bruker batchen til det den er for.
 Rettet til `meastypes`.
 
+## Grundig gjennomgang av batch-jobben
+
+Brukeren fikk 0 gjennom en importkjøring og ba om en grundig sjekk. Hele kjeden lest
+ledd for ledd:
+
+| Ledd | Sjekket | Funn |
+|---|---|---|
+| `fetchWithingsMeasurements` | params, endepunktvalg | OK — `meastypes`, `startdate`/`enddate` sendes videre |
+| `fetchAllWithingsData` | paginering, respons-nøkkel | OK — `getmeas` → `measuregrps`, `more`/`offset` håndtert |
+| `parseWeightData` | filtrering | OK — filtrerer **ikke** på `attrib`, så manuelt innlagte målinger slipper gjennom |
+| `stepBatchJob` | payload til `processDay` | OK |
+| `writeWithingsDayFromPrefetch` | telleren | Returnerer antall **forsøkte** skrivinger, så 0 kan ikke skyldes at alt var duplikater |
+
+Konklusjonen fra lesingen er at jobben gjør det den skal. Men det er en slutning, ikke
+et bevis — og jeg hadde alt tatt feil én gang i samme tråd (se korreksjonen over).
+
+## `debug/coverage`: spør framfor å slutte
+
+`GET /api/sensors/withings/debug/coverage?from=2009-01-01&types=weight` returnerer hva
+Withings **faktisk** gir for et vindu, rått og uten skriving:
+
+```json
+{ "coverage": { "weight": { "raw": 1204, "earliest": "2017-10-13",
+                            "byYear": { "2017": 41, "2018": 180 } } } }
+```
+
+`raw` er tallet som avgjør: er den 0, er kontoen tom for perioden og importen gjorde
+jobben sin. Er den over 0 mens vi ikke skrev noe, er feilen vår. `byYear` viser hvilke
+år som finnes uten at man må lese hver rad.
+
+Kallene går sekvensielt, ikke parallelt — et diagnoseverktøy skal ikke kunne rate-limite
+den ekte synken ut av drift mens noen feilsøker.
+
+`WITHINGS_BODY_MEASTYPES` er eksportert for anledningen, slik at diagnosen spør om
+nøyaktig det synken spør om. Spurte den om noe annet, ville den svart på et annet
+spørsmål enn det stilte.
+
 ## Beslutninger
 
 **Slettingen scopes, ikke fjernes.** Å fjerne den ville gjort reparse etter en

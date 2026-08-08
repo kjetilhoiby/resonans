@@ -543,6 +543,10 @@ Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
   virket mens synken bare hentet siste uke.
 - Hever du gulvet, sjekk `MILESTONE_HISTORY_DAYS` i `weight-dashboard.ts`. Data som
   hentes inn men ikke leses er samme feil i et annet lag.
+- **«Er kontoen tom, eller mister vi data?» besvares av
+  `GET /api/sensors/withings/debug/coverage?from=…&types=weight`**, ikke av å lese
+  koden. Den returnerer `raw` (rader Withings ga oss, før tolkning) og `byYear`. Er
+  `raw` 0, er kontoen tom for perioden.
 - **Batch-prefetchen må be om `meastypes`, ikke `meastype: 1`.** Den ba lenge bare om
   vekttallet, mens hovedsynken ber om fettprosent, fettmasse, muskel, bein, hydrering og
   punktpuls. En dag importert gjennom batchen kom inn vekt-bare, og `ignore` gjør at den
