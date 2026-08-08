@@ -13,7 +13,6 @@
  *   rather than sessions)
  */
 
-import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
 import {
@@ -21,6 +20,7 @@ import {
 	TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
 	TaskExecutionService
 } from '$lib/server/services/task-execution-service';
+import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
 
 /** Maps our activity type strings to Withings sportType substrings (lowercase). */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<string, string[]> = {
@@ -102,20 +102,9 @@ export async function syncSensorProgressForTasks(params: {
 
 	if (taskRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
-	// Workouts in the week window
-	const workoutRows = rowsOf<{ id: string; timestamp: string; sport_type: string | null }>(
-		await db.execute(sql`
-			SELECT
-				id,
-				timestamp,
-				data->>'sportType' AS sport_type
-			FROM sensor_events
-			WHERE user_id = ${userId}
-			  AND data_type = 'workout'
-			  AND timestamp >= ${weekStart}
-			  AND timestamp < ${weekEnd}
-		`)
-	);
+	// Deduplikerte økter i uka. Samme løpetur skrives av opptil tre kilder, og
+	// én progress-rad per RÅ event ga tre økter av én tur på et «5 økter»-mål.
+	const workoutRows = await readDeduplicatedWorkouts(userId, weekStart, new Date(weekEnd.getTime() - 1));
 
 	if (workoutRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
@@ -128,17 +117,19 @@ export async function syncSensorProgressForTasks(params: {
 		if (!task.activity_type) continue;
 
 		for (const workout of workoutRows) {
-			if (!workout.sport_type) continue;
-			if (!activityMatchesSportType(task.activity_type, workout.sport_type)) continue;
+			if (!workout.sportType) continue;
+			if (!activityMatchesSportType(task.activity_type, workout.sportType)) continue;
 
 			const titleLower = (task.title ?? '').toLowerCase();
 			const weeklyCountsDistinctDays = task.frequency === 'weekly' && /\bdag(er)?\b/.test(titleLower);
 
 			// Weekly tasks that mention "dager" count distinct days. Session-based
 			// tasks like "5 økter" can count multiple workouts on the same day.
+			// `activityId` er klyngens eldste sensor_event — nøkkelen matcher derfor
+			// rader skrevet før dedupliseringen, så en re-kjøring ikke lager nye duplikater.
 			const dedupeNote = weeklyCountsDistinctDays
-				? `sensor:day:${new Date(workout.timestamp).toISOString().split('T')[0]}:${task.activity_type}`
-				: `sensor:${workout.id}`;
+				? `sensor:day:${workout.timestamp.toISOString().split('T')[0]}:${task.activity_type}`
+				: `sensor:${workout.activityId}`;
 
 			const ensured = await TaskExecutionService.ensureTaskProgress({
 				taskId: task.id,
@@ -146,7 +137,7 @@ export async function syncSensorProgressForTasks(params: {
 				value: 1,
 				dedupeNote,
 				enforcePeriodTarget: true,
-				completedAt: new Date(workout.timestamp)
+				completedAt: workout.timestamp
 			});
 
 			if (!ensured.created) {

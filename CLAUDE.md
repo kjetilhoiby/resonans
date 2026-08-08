@@ -542,9 +542,17 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
 - **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
   kilometer. Les den aldri rå fra `data->>'distance'`.
-- Rå telling av `data_type = 'workout'` finnes fortsatt i `signal-service.ts`,
-  `sensor-progress-sync.ts` og `checklist-autocheck.ts` — de teller forekomster for mål
-  og avkryssing, og har den samme skjevheten.
+- **Autohaking og progresjon teller økter, ikke forekomster.** Se
+  `docs/changelog/2026-08-08-ivrig-autohaking.md`. `checklist-autocheck.ts`,
+  `sensor-progress-sync.ts` og `signal-service.ts` (`activity_run_pr_week`) leser alle
+  gjennom `readDeduplicatedWorkouts`; før august 2026 haket én løpetur av tre uke-slots.
+- **Dedupe-nøkkelen er `sensor:<activityId>`**, og `activityId` er klyngens *eldste*
+  evidence-event — altså en ekte `sensor_events.id`. Rader skrevet før dedupliseringen
+  (én per kilde) matcher derfor fortsatt, så en re-kjøring lager ikke nye duplikater av
+  gammel historikk. Bytter du nøkkelform, skriver du hele historikken på nytt.
+- **Vi haker aldri AV automatisk.** To reelle økter innenfor klyngevinduet på to timer
+  ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
+  hake for mye er trygt; å fjerne opptjent framgang er det ikke.
 
 ### Withings-backfill
 

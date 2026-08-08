@@ -21,6 +21,7 @@ import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { TaskExecutionService, type TaskProgressSkipReason } from '$lib/server/services/task-execution-service';
+import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
 import type { ActivityType } from './task-intent-parser';
 
 const THRESHOLD = 0.8; // 80% of target duration is sufficient
@@ -104,25 +105,8 @@ export async function autocheckChecklistItemsForDay(params: {
 
 	if (candidateItems.length === 0) return [];
 
-	// Fetch workout sensor events for this day
-	const workoutRows = rowsOf<{
-		id: string;
-		sport_type: string;
-		duration_seconds: number | null;
-		distance_meters: number | null;
-	}>(await db.execute(sql`
-		SELECT
-			id,
-			data->>'sportType' AS sport_type,
-			(data->>'duration')::float AS duration_seconds,
-			(data->>'distance')::float AS distance_meters
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'workout'
-		  AND timestamp >= ${dayStart}
-		  AND timestamp <= ${dayEnd}
-		ORDER BY timestamp DESC
-	`));
+	// Deduplikerte økter for dagen — én løpetur skrevet av klokke, GPX og app er én økt
+	const workoutRows = await readDeduplicatedWorkouts(userId, dayStart, dayEnd);
 
 	const results: AutoCheckResult[] = [];
 
@@ -135,18 +119,18 @@ export async function autocheckChecklistItemsForDay(params: {
 
 		// Find a matching workout
 		const matchingWorkout = workoutRows.find((w) => {
-			if (!w.sport_type) return false;
-			if (!activityMatchesSport(activityType, w.sport_type)) return false;
+			if (!w.sportType) return false;
+			if (!activityMatchesSport(activityType, w.sportType)) return false;
 
 			// Check duration threshold
-			if (targetDurationMin !== null && w.duration_seconds !== null) {
-				const workoutDurationMin = w.duration_seconds / 60;
+			if (targetDurationMin !== null && w.durationSeconds !== null) {
+				const workoutDurationMin = w.durationSeconds / 60;
 				if (workoutDurationMin < targetDurationMin * THRESHOLD) return false;
 			}
 
 			// Check distance threshold
-			if (targetDistanceKm !== null && w.distance_meters !== null) {
-				const workoutDistanceKm = w.distance_meters / 1000;
+			if (targetDistanceKm !== null && w.distanceMeters !== null) {
+				const workoutDistanceKm = w.distanceMeters / 1000;
 				if (workoutDistanceKm < targetDistanceKm * THRESHOLD) return false;
 			}
 
@@ -155,7 +139,7 @@ export async function autocheckChecklistItemsForDay(params: {
 
 		if (!matchingWorkout) {
 			const hasWorkoutForActivity = workoutRows.some(
-				(w) => w.sport_type && activityMatchesSport(activityType, w.sport_type)
+				(w) => w.sportType && activityMatchesSport(activityType, w.sportType)
 			);
 			results.push({
 				itemId: item.id,
@@ -176,7 +160,7 @@ export async function autocheckChecklistItemsForDay(params: {
 
 		// Log progress for linked task using sensor event id as dedup key
 		if (linkedTaskId && !meta.progressRecordId) {
-			const sensorRef = `sensor:${matchingWorkout.id}`;
+			const sensorRef = `sensor:${matchingWorkout.activityId}`;
 			const progressResult = await TaskExecutionService.ensureTaskProgress({
 				taskId: linkedTaskId,
 				userId,
@@ -251,45 +235,26 @@ export async function findMatchingWorkoutForItem(params: {
 	const dayStart = new Date(`${date}T00:00:00.000Z`);
 	const dayEnd = new Date(`${date}T23:59:59.999Z`);
 
-	const workoutRows = rowsOf<{
-		id: string;
-		sport_type: string;
-		duration_seconds: number | null;
-		distance_meters: number | null;
-		ts: string;
-	}>(await db.execute(sql`
-		SELECT
-			id,
-			data->>'sportType' AS sport_type,
-			(data->>'duration')::float AS duration_seconds,
-			(data->>'distance')::float AS distance_meters,
-			timestamp AS ts
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'workout'
-		  AND timestamp >= ${dayStart}
-		  AND timestamp <= ${dayEnd}
-		ORDER BY timestamp DESC
-	`));
+	const workoutRows = await readDeduplicatedWorkouts(userId, dayStart, dayEnd);
 
 	const match = workoutRows.find((w) => {
-		if (!w.sport_type) return false;
-		if (!activityMatchesSport(activityType, w.sport_type)) return false;
-		if (targetDurationMin != null && w.duration_seconds != null) {
-			if (w.duration_seconds / 60 < targetDurationMin * THRESHOLD) return false;
+		if (!w.sportType) return false;
+		if (!activityMatchesSport(activityType, w.sportType)) return false;
+		if (targetDurationMin != null && w.durationSeconds != null) {
+			if (w.durationSeconds / 60 < targetDurationMin * THRESHOLD) return false;
 		}
-		if (targetDistanceKm != null && w.distance_meters != null) {
-			if (w.distance_meters / 1000 < targetDistanceKm * THRESHOLD) return false;
+		if (targetDistanceKm != null && w.distanceMeters != null) {
+			if (w.distanceMeters / 1000 < targetDistanceKm * THRESHOLD) return false;
 		}
 		return true;
 	});
 
 	if (!match) return null;
 	return {
-		workoutId: match.id,
-		sportType: match.sport_type,
-		durationMinutes: match.duration_seconds != null ? Math.round(match.duration_seconds / 60) : null,
-		startTimeIso: match.ts ?? null
+		workoutId: match.activityId,
+		sportType: match.sportType,
+		durationMinutes: match.durationSeconds != null ? Math.round(match.durationSeconds / 60) : null,
+		startTimeIso: match.timestamp.toISOString()
 	};
 }
 
@@ -546,25 +511,13 @@ export async function autocheckWeekChecklistItems(params: {
 	if (groups.size === 0) return [];
 
 	const { weekStart, weekEnd } = isoWeekRange(date);
-	const workouts = rowsOf<{
-		id: string;
-		sport_type: string;
-		duration_seconds: number | null;
-		distance_meters: number | null;
-		day: string;
-	}>(await db.execute(sql`
-		SELECT
-			id,
-			data->>'sportType' AS sport_type,
-			(data->>'duration')::float AS duration_seconds,
-			(data->>'distance')::float AS distance_meters,
-			timestamp::date::text AS day
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'workout'
-		  AND timestamp >= ${weekStart}
-		  AND timestamp < ${weekEnd}
-	`));
+	// Deduplikerte økter: én løpetur skrevet av klokke, GPX og app haket tidligere
+	// av tre uke-slots. Dette er den «ivrige» autohakingen.
+	const workouts = await readDeduplicatedWorkouts(
+		userId,
+		weekStart,
+		new Date(weekEnd.getTime() - 1)
+	);
 
 	// Dag-liste-bevis: MANUELT avhukede dag-punkter i uka med en activityType.
 	// Auto-hakede dag-punkter ekskluderes — de ER allerede en treningsøkt (som
@@ -599,10 +552,10 @@ export async function autocheckWeekChecklistItems(params: {
 			slots: g.slots.map((s) => ({ id: s.id, checked: s.checked, sortOrder: s.sortOrder }))
 		})),
 		workouts: workouts.map((w) => ({
-			sportType: w.sport_type,
-			distanceKm: w.distance_meters != null ? w.distance_meters / 1000 : null,
-			durationMin: w.duration_seconds != null ? w.duration_seconds / 60 : null,
-			day: w.day
+			sportType: w.sportType,
+			distanceKm: w.distanceMeters != null ? w.distanceMeters / 1000 : null,
+			durationMin: w.durationSeconds != null ? w.durationSeconds / 60 : null,
+			day: w.timestamp.toISOString().slice(0, 10)
 		})),
 		manualDaysByActivity: dayEvidenceByActivity,
 		onlyBaseLabel

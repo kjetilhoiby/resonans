@@ -9,6 +9,8 @@ import { computeBalanceState } from '$lib/server/tracks/balance';
 import { evaluateProteinVsLoad } from '$lib/domain/nutrition/protein-vs-load';
 import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
+import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
+import { matchesWorkoutSportFilter } from '$lib/domain/health/workout-sport';
 import {
 	collectFlokeStatus,
 	collectFollowThrough7d,
@@ -202,16 +204,10 @@ async function produceActivityRunPrWeekSignal(userId: string, now: Date) {
 		description: 'Number of running workouts this ISO week, used for weekly running-goal tracking.'
 	});
 
-	const runCountRows = await db.execute(sql`
-		SELECT COUNT(*)::int AS value
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'workout'
-		  AND timestamp >= ${windowStart}
-		  AND timestamp < ${now}
-		  AND LOWER(COALESCE(data->>'sportType', '')) LIKE '%running%'
-	`);
-	const runCount = toNumber(rowsOf<{ value: number }>(runCountRows)[0]?.value);
+	// Deduplikerte økter: én løpetur skrives av opptil tre kilder (klokke, GPX,
+	// app), og en rå COUNT(*) gjorde uka til tre løpeturer på et «tre ganger»-mål.
+	const workouts = await readDeduplicatedWorkouts(userId, windowStart, new Date(now.getTime() - 1));
+	const runCount = workouts.filter((w) => matchesWorkoutSportFilter(w.sportType, 'running')).length;
 
 	const goalRows = await db.execute(sql`
 		SELECT id, metadata
