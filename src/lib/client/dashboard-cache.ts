@@ -7,6 +7,7 @@ import type { SleepDashboardPayload } from '$lib/server/sleep-dashboard';
 import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
 import type { NutritionDashboardPayload } from '$lib/server/nutrition-dashboard';
 import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
+import type { WritingDashboardPayload } from '$lib/server/writing-dashboard';
 
 export interface HealthDashboardData {
 	weekly: unknown[];
@@ -441,6 +442,7 @@ type DashboardPayloadMap = {
 	screentime: ScreenTimeDashboardPayload;
 	nutrition: NutritionDashboardPayload;
 	weight: WeightDashboardPayload;
+	writing: WritingDashboardPayload;
 	economics: EconomicsDashboardData;
 	food: FoodDashboardData;
 	travel: TravelDashboardData;

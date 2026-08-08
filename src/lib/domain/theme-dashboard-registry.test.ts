@@ -130,3 +130,25 @@ describe('resolveThemeDashboardKind — helse-mortemaet og undertemaene', () => 
 		expect(resolveThemeDashboardKind('Litteratur')).toBe('books');
 	});
 });
+
+describe('skrivetema', () => {
+	it('gjenkjenner temanavnet', () => {
+		expect(resolveThemeDashboardKind('Skriving')).toBe('writing');
+		expect(resolveThemeDashboardKind('skriveprosjekt')).toBe('writing');
+		expect(resolveThemeDashboardKind('Forfatterskap')).toBe('writing');
+	});
+
+	it('kaprer ikke temaer som bare inneholder «skriv» som delstreng', () => {
+		// «skriv» er 5 tegn og ville matchet som delstreng — derfor er termene
+		// bevisst lange. Dette er regelen som gjorde at tema ble valgt bort i
+		// fase 2 på feil grunnlag.
+		expect(resolveThemeDashboardKind('Beskrivelse av huset')).not.toBe('writing');
+		expect(resolveThemeDashboardKind('Jobbeskrivelse')).not.toBe('writing');
+	});
+
+	it('stjeler ikke fra eksisterende temaer', () => {
+		expect(resolveThemeDashboardKind('Helse')).toBe('health');
+		expect(resolveThemeDashboardKind('Vekt')).toBe('weight');
+		expect(resolveThemeDashboardKind('Bøker')).toBe('books');
+	});
+});

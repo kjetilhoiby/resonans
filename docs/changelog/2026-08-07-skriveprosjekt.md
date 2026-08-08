@@ -1,7 +1,7 @@
 # Skriveprosjekt, kompislesing og notatblokk
 
 Dato: 2026-08-07
-Status: pågår (fase 1, 2, 2b og 4 ferdig; fase 3 utsatt)
+Status: pågår (fase 1, 2, 2b, 4 og 5 ferdig; fase 3 utsatt)
 
 ## Kontekst
 
@@ -330,6 +330,42 @@ pilene ville ellers føltes trege nok til at man trykker to ganger.
 
 20 nye tester.
 
+### Fase 5: Chat-verktøy og «Skriving» som tema — FERDIG
+
+To hull ble synlige da brukeren spurte «blir dette et tema?».
+
+**Chatten var blind for hele domenet.** Det smale kontekstmodus i
+`/api/skriveprosjekt/[id]/lesing` dekker samtalen *om* en tekst, men ingen verktøy
+så `writing_docs` eller `writing_projects` — «hva skrev jeg i går», «hvem er Ida»
+og «hvor langt har jeg kommet» hadde ingen kilde fra vanlig chat.
+
+`query_writing` dekker tre spørsmålsformer: `projects` (ordtelling og streak),
+`documents` (nyeste først) og `search` (semantisk, gjenbruker `searchDocs`).
+Beskrivelsen avgrenser eksplisitt mot naboene, siden `query_food` mot
+`query_nutrition` er repoets kjente eksempel på to verktøy modellen blander:
+dette dekker tekst man **redigerer**, `query_reflections` dekker tidsstemplet
+**fangst**. Samme skille som tabellene.
+
+**Begrunnelsen for å velge bort tema i fase 2 var feil.** Jeg avviste det fordi
+`resolveThemeDashboardKind` gjør delstreng-matching på termer ≥5 tegn og «skriv»
+er akkurat 5. Men regelen (`theme-dashboard-registry.ts:368`) er
+`words.some((w) => w === t) || (t.length >= 5 && normalized.includes(t))` —
+**eksakt ordmatch gjelder alltid**, delstreng er et tillegg. Et tema som heter
+«Skriving» treffer uansett. Risikoen gjaldt bare hvilken term jeg valgte, ikke om
+tema var mulig.
+
+Den ekte kostnaden ved å stå utenfor var navigasjon: temaer er hjemskjermens
+fliser, mens en toppnivå-rute bare fikk et ikon i tittellinja.
+
+`DashboardKind: 'writing'` med termene `skriving`, `skriveprosjekt`,
+`forfatterskap` og `notatblokk` — alle ≥8 tegn, så «Beskrivelse» ikke kapres.
+Tester låser begge retninger.
+
+**Dashboardet er bevisst tynt.** Det viser streak, ordtelling og prosjektliste, og
+sender videre til `/skriv` og `/notater`, som eier redigeringen. Å duplisere
+prosjektrommet inn i temaet ville gitt to steder å vedlikeholde samme liste —
+samme arbeidsdeling som mortema mot undertema.
+
 ### Fase 3: Transkripsjon inn — UTSATT
 
 `kind='transkripsjon'` via `transcribeAudioWithWords`. Whisper-stien og
@@ -417,10 +453,11 @@ telefonen» — og da skal det være det som er ett trykk unna. Veien videre til
 
 ## Verifisering
 
-Fase 1, 2, 2b og 4:
+Fase 1, 2, 2b, 4 og 5:
 
-- `npm test` — 2 699 tester i 203 filer passerer, hvorav 93 nye i
-  `src/lib/domain/writing/`. Ingen eksisterende tester brøt av omskrivingen av
+- `npm test` — 2 702 tester i 203 filer passerer, hvorav 93 nye i
+  `src/lib/domain/writing/`
+  pluss tre nye i `theme-dashboard-registry.test.ts`. Ingen eksisterende tester brøt av omskrivingen av
   `query_reflections`.
 - `npm run check` — 0 feil, 0 advarsler.
 - `npm run build` — fullfører (med dummy `DATABASE_URL`; containeren har ingen base).

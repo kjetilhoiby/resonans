@@ -28,6 +28,7 @@ import { logParentTimeTool } from '$lib/ai/tools/log-parent-time';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
+import { queryWritingTool } from '$lib/ai/tools/query-writing';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { queryFamilyTool } from '$lib/ai/tools/query-family';
@@ -779,6 +780,39 @@ const tools = [
 					}
 				},
 				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'query_writing',
+			description:
+				"Les brukerens skriveprosjekter og dokumenter (skjønnlitteratur, dikt, notatblokk). queryType 'projects' = oversikt med ordtelling og skrivestreak («hvor langt har jeg kommet»). 'documents' = dokumentliste nyeste først («hva skrev jeg sist»). 'search' = semantisk søk i teksten («hvem er Ida», «hva har jeg om havna»). AVGRENSNING: dette dekker tekst brukeren REDIGERER og kommer tilbake til. Dagsnotater, feriedagbok, livsintervju og refleksjoner er query_reflections. Oppskrifter, ukemeny og lager er query_food.",
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						enum: ['projects', 'documents', 'search'],
+						description: "'projects' | 'documents' | 'search'"
+					},
+					query: {
+						type: 'string',
+						description: "Søketekst for queryType 'search'. Treffer også omskrivinger."
+					},
+					projectId: {
+						type: 'string',
+						description: 'Avgrens til ett prosjekt. Utelat for frie notater i notatblokka.'
+					},
+					kind: {
+						type: 'string',
+						description:
+							'Dokumenttype: scene, kapittel, karakter, sted, notat, dikt, liste, transkripsjon.'
+					},
+					limit: { type: 'number', description: 'Antall (default 5, maks 20)' }
+				},
+				required: ['queryType']
 			}
 		}
 	},
@@ -1943,6 +1977,7 @@ function getToolProgressMessage(toolName: string) {
 		query_tesla_vehicle: 'Sjekker bilen...',
 		query_economics: 'Henter økonomidata...',
 		query_reflections: 'Leser refleksjoner...',
+		query_writing: 'Leser skriveprosjektet...',
 		query_food: 'Henter mat-data...',
 		manage_procedure: 'Lagrer fremgangsmåte...',
 		manage_recipe: 'Oppdaterer oppskrift...',
@@ -2845,6 +2880,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  📖 Querying reflections:', args);
 					const result = await queryReflectionsTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_writing') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  ✍️ Querying writing:', args);
+					const result = await queryWritingTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_economics') {
 					const args = JSON.parse(toolCall.function.arguments);

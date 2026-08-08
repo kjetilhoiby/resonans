@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'training' | 'sleep' | 'screentime' | 'nutrition' | 'weight' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
+export type DashboardKind = 'health' | 'training' | 'sleep' | 'screentime' | 'nutrition' | 'weight' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle' | 'writing';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -45,6 +45,17 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'aktivitet',
 			'vitalitet'
 		]
+	},
+	{
+		/**
+		 * Termene er bevisst LANGE. Regelen under er «eksakt ordmatch alltid,
+		 * delstreng bare for termer ≥5 tegn» — og «skriv» er akkurat 5, altså en
+		 * delstreng av «beskrivelse». «skriving» og «skriveprosjekt» er trygge:
+		 * eksakt ordmatch dekker temanavnet «Skriving», og delstrengen treffer
+		 * bare sammensetninger som faktisk handler om skriving.
+		 */
+		kind: 'writing',
+		terms: ['skriving', 'skriveprosjekt', 'forfatterskap', 'notatblokk']
 	},
 	{
 		/**
@@ -294,6 +305,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'weight',
 		label: 'Vekt',
 		icon: '⚖️'
+	},
+	writing: {
+		kind: 'writing',
+		label: 'Skriving',
+		icon: '✍️'
 	},
 	economics: {
 		kind: 'economics',
