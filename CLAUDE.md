@@ -523,6 +523,29 @@ datainnhentingen.
 - `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
   tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
 
+### Treningsøkter teller én gang, aldri per kilde
+
+Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
+
+- **Samme løpetur skrives av opptil tre sensorer** — Withings-klokka, GPX-fila fra
+  Dropbox og Ekko-opplastingen — med startpunkter som spriker minutter. Alt som teller
+  kilometer eller økter må derfor lese gjennom `buildUnifiedWorkoutActivities`
+  (`readDeduplicatedWorkouts` i `$lib/server/workouts/deduplicated-workouts.ts`), som
+  klynger på **to timer** per sportsfamilie og velger distansen fra kilden med høyest
+  prioritet. `canonical_workouts` er den lagrede utgaven av samme funksjon.
+- **En «dedup» på tidsbøtter er ikke en dedup.** Widget-endepunktet grupperte på
+  5-minutters bøtter på et fast rutenett, som splitter to registreringer 40 sekunder
+  fra hverandre når de ligger på hver sin side av et skille. Widgeten viste 80,9 km
+  der brukeren hadde løpt drøyt 40.
+- **Sportsfamilien bor i `$lib/domain/health/workout-sport.ts`.** `running` skal ta med
+  `trail_running` og `indoor_running`; et rått `data->>'sportType' = 'running'` gjør det
+  ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
+- **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
+  kilometer. Les den aldri rå fra `data->>'distance'`.
+- Rå telling av `data_type = 'workout'` finnes fortsatt i `signal-service.ts`,
+  `sensor-progress-sync.ts` og `checklist-autocheck.ts` — de teller forekomster for mål
+  og avkryssing, og har den samme skjevheten.
+
 ### Withings-backfill
 
 Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
