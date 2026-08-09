@@ -1,7 +1,7 @@
 # Brief til Ekko: vektbackfill fra Apple Health
 
 Dato: 2026-08-09
-Status: endepunktet er bygget og deployet. Ekko-siden gjenstår.
+Status: bygget på begge sider. Ikke kjørt mot ekte HealthKit-data ennå.
 
 ## Kort sagt
 
@@ -195,7 +195,10 @@ dagnivå-dedup mot eksisterende vektrader, validering og enhetskonvertering, og 
 de rene delene.
 
 **Ekko bygger:** HealthKit-tillatelse, spørringen, lokal dedup, bolking og opplasting, og
-statusvisningen til brukeren.
+statusvisningen til brukeren. **Bygget** — `ekko/Ekko/Ekko/Services/WeightBackfillPlan.swift`
+(ren logikk, med tester), `HealthKitWeightBackfill.swift` (spørring og opplasting),
+`Views/WeightBackfillSettingsSection.swift` (knappen i Innstillinger). Oppsummeringen på
+appsiden: `ekko/HEALTHKIT_VEKT_BACKFILL.md`.
 
 **Avklares sammen:** ingenting kritisk. Si fra hvis 500 per bolk er upraktisk fra
 appsiden — taket er vårt valg og kan justeres.

@@ -105,8 +105,22 @@ Endepunktet er ikke kjørt mot ekte HealthKit-data ennå — det krever Ekko-sid
 importen skal `/tema/vekt` vise `historyStart` i 2013, og milepælkortet kunne referere
 til perioder før 2017. Det tallet ser vi på fra vår side og bekrefter.
 
+## Ekko-siden
+
+Bygget i `resonans-lab` på samme branch. `WeightBackfillPlan` eier den rene delen
+(enhetskonvertering, sammenkobling av kroppssammensetning, lokal dedup, bolking og
+statusteksten) med tester; `HealthKitWeightBackfill` gjør spørringen og opplastingen;
+knappen ligger i Innstillinger. Detaljene i `ekko/HEALTHKIT_VEKT_BACKFILL.md`.
+
+To valg der er verdt å kjenne fra denne siden:
+
+- **Lokal dedup før opplasting.** Apple Helse har en kopi av samme veiing per app som
+  har skrevet den. De ville alle blitt sendt, og alle bortsett fra den første ville
+  truffet dagnivå-dedupen her — riktig utfall, men gjennom fire tusen unødvendige rader.
+- **Statusen rapporterer funnet *etter* lokal dedup.** Rå-tallet inkluderer kopiene, og
+  «sendte 431 av 4 000» ville sett ut som at 3 500 gikk tapt.
+
 ## Gjenstår
 
-Ekko-siden: HealthKit-tillatelse, spørringen, lokal dedup, bolking og opplasting, og
-statusvisningen til brukeren. Se arbeidsdelingen i
-`docs/ekko-healthkit-vekt-backfill.md`.
+En kjøring mot ekte HealthKit-data. Den krever en telefon med historikken — simulatoren
+har tom Helse-database, så verken vår side eller Ekkos kan verifiseres uten den.
