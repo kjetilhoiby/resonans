@@ -36,7 +36,8 @@ const budget = {
 	acuteChronicRatio: 1.48,
 	restRecommended: false,
 	deload: false,
-	anchor: 'forrige_uke',
+	anchor: 'snitt_uker',
+	anchorWeeks: 4,
 	maintenance: false
 };
 

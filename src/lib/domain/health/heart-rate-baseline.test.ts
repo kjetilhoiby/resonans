@@ -96,6 +96,41 @@ describe('resolveMaxHr', () => {
 		expect(resolveMaxHr({ manual: null, observedMaxes: [188] }).source).toBe('observed');
 	});
 
+	it('bruker alderen framfor observerte topper når brukeren ikke har satt noe', () => {
+		// Kjernen i august 2026-rettelsen: observerte topper er bare en makspuls
+		// hvis man har vært på maks. En bruker som ikke racer får en for lav
+		// «maks», og en for lav maks blåser opp HRR — og dermed effort.
+		const result = resolveMaxHr({ age: 45, observedMaxes: [172, 170, 169, 168, 167, 166] });
+		expect(result.source).toBe('age');
+		expect(result.maxHr).toBe(177); // Tanaka: 208 − 0,7 × 45
+	});
+
+	it('lar brukerens egen verdi vinne over alderen', () => {
+		expect(resolveMaxHr({ manual: 186, age: 45, observedMaxes: [] }).source).toBe('manual');
+		expect(resolveMaxHr({ manual: 186, age: 45, observedMaxes: [] }).maxHr).toBe(186);
+	});
+
+	it('lar en observert topp OVER aldersanslaget vinne — den er en måling', () => {
+		// Formelen er et populasjonssnitt med reell spredning. Har man faktisk
+		// registrert 192 mens formelen sier 177, er formelen for lav — og en for
+		// lav makspuls er nettopp feilen vi retter.
+		const result = resolveMaxHr({ age: 45, observedMaxes: [195, 192, 191, 190, 189, 188] });
+		expect(result.source).toBe('observed');
+		expect(result.maxHr).toBe(192); // persentil-trimmet, så spiken på 195 faller
+	});
+
+	it('faller tilbake til observerte topper når alderen mangler', () => {
+		const result = resolveMaxHr({ age: null, observedMaxes: [215, 188, 186, 185, 184, 183] });
+		expect(result.source).toBe('observed');
+		expect(result.maxHr).toBe(188);
+	});
+
+	it('ignorerer en alder som gir en utroverdig makspuls', () => {
+		// 108 år → 132, under MAX_HR_MIN. Da er observasjonene bedre enn formelen.
+		const result = resolveMaxHr({ age: 108, observedMaxes: [175] });
+		expect(result.source).toBe('observed');
+	});
+
 	it('forkaster den høyeste observasjonen som artefakt når det er nok av dem', () => {
 		// Math.max var den gamle regelen, og én pulsspike satte makspulsen for 30
 		// dager — som gir for lav VDOT og for lave soner.

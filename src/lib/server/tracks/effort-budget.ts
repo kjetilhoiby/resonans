@@ -2,33 +2,51 @@ import type { EffortBudget, EnduranceConfig, EnduranceWorkout } from './types';
 import { countsTowardEndurance, effortPerRunKm } from './endurance-engine';
 import { mondayOfDate, weekNumberAt } from './curve';
 import { fmtMinutter } from '$lib/util/duration';
+// Samme tall som skåringen bruker. Lå duplisert her fram til august 2026, så
+// planleggerens «Sykkeltur 40 min ~85» kunne drifte fra hva en sykkeltur faktisk
+// ga — se `$lib/domain/health/effort-model`.
+import { MET_CALIBRATION, MET_FACTOR_BY_FAMILY } from '$lib/domain/health/effort-model';
 
 /**
  * Effort-budsjettet: et ukesintervall for samlet utholdenhetsbelastning
- * (løp + sykkel + el-sykkel) forankret i forrige ukes FAKTISKE effort —
- * effort 200 én uke gir anbefalt 200–240 uka etter (progressiv overload
- * uten å jage en teoretisk kurve).
+ * (løp + sykkel + el-sykkel) forankret i de siste ukenes FAKTISKE effort —
+ * snitt 200 gir anbefalt 200–240 uka etter (progressiv overload uten å jage en
+ * teoretisk kurve).
  *
- *  - Anker: forrige ukes total; hvis 0 → snitt av siste 4 uker; hvis fortsatt
- *    0 → gulv på 100 (forsiktig oppstart).
+ *  - Anker: snitt av siste `ANCHOR_WEEKS` hele uker; ellers gulv på 100.
  *  - Deload hver N-te uke: band × 0.8.
  *  - Hvileanbefaling: akutt (sum siste 3 dager) mot kronisk (dagsnitt siste
  *    30 × 3) — ratio over terskelen betyr «ta en rolig dag».
  *  - En hardere økt enn planlagt øker spentThisWeek → gjenstående krymper →
- *    neste forslag mindre/hvile, og neste ukes band ankres på faktisk total.
+ *    neste forslag mindre/hvile, og neste ukes band ankres på faktisk historikk.
+ *
+ * ## Hvorfor ankeret er glattet, og ikke forrige uke alene
+ *
+ * Fram til august 2026 var ankeret `forrige ukes total`, uglattet. Det gir en
+ * leash på 20 %: enhver uke mer enn `growthFactor` over den forrige leses som
+ * utenfor budsjettet. Målt i praksis 9. august 2026 — seks løp mot forrige ukes
+ * fire ga 513 mot et bånd på 235–282, altså «82 % over», mens Strava kalte samme
+ * uke «du har trappet opp litt». Og feilen har en tvilling i motsatt retning:
+ * uka etter ville ankeret ha vært 513, så flaten ville krevd 513 for å være «på
+ * plan». Én stor uke ble den nye normalen på sju dager.
+ *
+ * Snittet over fire uker demper begge ender. Det er samme vindu som den kroniske
+ * siden av akutt/kronisk-ratioen bruker, og det er med vilje: to mål på «hva er
+ * normalt for deg» som svarer ulikt er verre enn ett.
  */
 
 const DEFAULT_GROWTH_FACTOR = 1.2;
 const DEFAULT_REST_RATIO = 1.5;
 const DELOAD_FACTOR = 0.8;
 const FLOOR_EFFORT = 100;
+/** Antall hele uker ankeret midles over. Overstyres av `config.effortAnkerUker`. */
+const DEFAULT_ANCHOR_WEEKS = 4;
 // Vedlikeholdsmodus (aktiv reise/ferie): båndet senkes til «hold litt ved like»
 // framfor progressiv overload — en lett uke på reise skal ikke leses som svikt.
 const MAINTENANCE_MIN_FACTOR = 0.5;
 const MAINTENANCE_MAX_FACTOR = 0.8;
 const MIN_HISTORY_DAYS_FOR_RATIO = 14;
-const CYCLING_MET = 0.85;
-const MET_CALIBRATION = 2.5;
+const CYCLING_MET = MET_FACTOR_BY_FAMILY.cycling;
 
 function addDays(iso: string, days: number): string {
 	const d = new Date(`${iso}T00:00:00Z`);
@@ -57,29 +75,37 @@ export function computeEffortBudget(
 	const restRatio = config.hvileRatioTerskel ?? DEFAULT_REST_RATIO;
 
 	const thisMonday = mondayOfDate(today);
-	const prevMonday = addDays(thisMonday, -7);
+	const anchorWeeks = Math.max(1, Math.round(config.effortAnkerUker ?? DEFAULT_ANCHOR_WEEKS));
 
-	// Anker: forrige uke → snitt siste 4 hele uker → gulv
-	const prevWeek = counted.filter((w) => w.date >= prevMonday && w.date < thisMonday);
-	const prevWeekEffort = Math.round(sumEffort(prevWeek));
+	// Anker: snitt av de siste hele ukene → gulv.
+	//
+	// Bare uker som ligger på eller etter den FØRSTE registrerte økta teller med.
+	// Uten den vakta drar uker fra før historikken begynte snittet mot null, og en
+	// fersk bruker får et kunstig lavt bånd som ser ut som en beregning.
+	const firstCountedDate = counted.reduce<string | null>(
+		(earliest, w) => (earliest === null || w.date < earliest ? w.date : earliest),
+		null
+	);
+	const historyStartMonday = firstCountedDate ? mondayOfDate(firstCountedDate) : null;
 
-	let anchor: EffortBudget['anchor'];
-	let anchorEffort: number;
-	if (prevWeekEffort > 0) {
-		anchor = 'forrige_uke';
-		anchorEffort = prevWeekEffort;
-	} else {
-		const fourWeeksAgo = addDays(thisMonday, -28);
-		const p4w = counted.filter((w) => w.date >= fourWeeksAgo && w.date < thisMonday);
-		const p4wAvg = Math.round(sumEffort(p4w) / 4);
-		if (p4wAvg > 0) {
-			anchor = 'p4w_snitt';
-			anchorEffort = p4wAvg;
-		} else {
-			anchor = 'gulv';
-			anchorEffort = FLOOR_EFFORT;
-		}
+	const weekTotals: number[] = [];
+	for (let i = 1; i <= anchorWeeks; i++) {
+		const weekStart = addDays(thisMonday, -7 * i);
+		if (historyStartMonday === null || weekStart < historyStartMonday) continue;
+		const weekEnd = addDays(weekStart, 7);
+		weekTotals.push(sumEffort(counted.filter((w) => w.date >= weekStart && w.date < weekEnd)));
 	}
+
+	const smoothedEffort =
+		weekTotals.length > 0
+			? Math.round(weekTotals.reduce((sum, v) => sum + v, 0) / weekTotals.length)
+			: 0;
+
+	// Et snitt på 0 er en reell hvileperiode, men det gir ikke et brukbart bånd —
+	// da er gulvet den ærlige oppstarten.
+	const anchor: EffortBudget['anchor'] = smoothedEffort > 0 ? 'snitt_uker' : 'gulv';
+	const anchorEffort = smoothedEffort > 0 ? smoothedEffort : FLOOR_EFFORT;
+	const anchorWeeksUsed = smoothedEffort > 0 ? weekTotals.length : 0;
 
 	// Deload følger planens ukerytme
 	const weekNumber = weekNumberAt(planStartDate, thisMonday);
@@ -128,6 +154,7 @@ export function computeEffortBudget(
 		restRecommended,
 		deload,
 		anchor,
+		anchorWeeks: anchorWeeksUsed,
 		maintenance: maintenanceMode
 	};
 }
@@ -350,8 +377,8 @@ export interface WeekPlanExample {
 	pctOfBand: number;
 }
 
-const CYCLING_FAKTOR = 0.85;
-const EBIKE_FAKTOR = 0.4;
+const CYCLING_FAKTOR = MET_FACTOR_BY_FAMILY.cycling;
+const EBIKE_FAKTOR = MET_FACTOR_BY_FAMILY.ebike;
 
 /**
  * «Sånn blir uka»-planleggeren: hva typiske økter gir i effort og som andel

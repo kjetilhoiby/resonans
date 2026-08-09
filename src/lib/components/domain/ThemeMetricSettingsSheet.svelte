@@ -44,7 +44,7 @@
 			higherIsBetter: true,
 			defaultGoal: 190,
 			singleField: 'Din makspuls',
-			hint: 'Største feilkilden i effort-skåringen. Utledes fra treningsdata når den står tom.'
+			hint: 'Største feilkilden i effort-skåringen. Utledes fra alderen din når den står tom.'
 		}
 	];
 

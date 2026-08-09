@@ -541,11 +541,67 @@ datainnhentingen.
 - Punktpuls måles **stående** og ligger 5–15 slag over ekte hvilepuls — derfor under
   søvn i prioriteten, men over dagsminimum fordi den er daglig.
 - **Makspuls er den store feilkilden**: 10 slag feil flytter VDOT 3,6 poeng mot 1,6
-  for hvilepuls. Brukerens egen verdi i `themes.metricSettings.maxHr.goal` vinner;
-  ellers ~90-persentil av observerte topper, ikke `Math.max` (én spike satte den for
-  30 dager).
+  for hvilepuls, og effort ~20 % (TRIMP-kurven er eksponentiell).
+  Prioriteten er **manuell → alder (Tanaka, `208 − 0,7 × alder`) → observerte topper**.
+- **Observerte topper er et gulv, ikke et tak**, og det var feilen fram til august 2026.
+  ~90-persentilen av toppene er bare en makspuls hvis brukeren har vært på maks — og
+  denne brukeren racer ikke. **Retningen er motsatt av VDOT-fella og derfor lett å
+  overse: for lav makspuls gir for lav VDOT, men for HØY effort.** Målt mot Strava
+  priset vi løpeøkter 1,75× med en utledet maks på ~170 der alderen tilsier ~180. Se
+  `docs/changelog/2026-08-09-effort-kalibrering-og-to-dommer.md`.
+- En observert topp **over** aldersanslaget vinner likevel — formelen er et
+  populasjonssnitt (SD ~7–10 slag), og en registrert 192 er en måling.
+- Alderen leses gjennom `readBodyProfile`, aldri direkte fra `metricSettings`:
+  fødselsåret har to kilder og prioriteringen skal bo ett sted.
 - `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
   tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
+
+### Effort-modellen har to stier, og de må møtes
+
+`$lib/domain/health/effort-model.ts`. Se
+`docs/changelog/2026-08-09-effort-kalibrering-og-to-dommer.md`.
+
+- **TRIMP** når økta har brukbar puls, **MET** når den ikke har det. Faktorene lå
+  duplisert i `services/effort-service.ts` (som skårer) og `tracks/effort-budget.ts`
+  (som viser hva en planlagt økt *ville* gitt). To kopier av et kalibreringstall driver
+  fra hverandre, og da lover planleggeren noe annet enn skåringen leverer.
+  `effort-budget.ts` er ren og kan ikke importere `effort-service.ts` (DB), så tallene
+  bor i domenelaget over begge.
+- **`MET_CALIBRATION` er utledet, ikke valgt**: `trimpPerMinute(CALIBRATION_REFERENCE_HRR)
+  / MET_FACTOR_BY_FAMILY.running` ≈ 2,03. Referansen er oppgitt i HRR nettopp fordi et
+  hardkodet tall stille arver feilen i den makspulsen det en gang ble tunet mot — 2,5
+  svarte til HRR ≈ 0,82, altså langt hardere enn en rolig økt.
+- **Retter du makspulsen, må kalibreringen følge med.** Ellers faller løpene mens
+  syklene står stille, og el-sykkelens andel av uka hopper uten at noe ved syklingen er
+  endret.
+- **El-sykkelens 0,4 er kryssjekket mot `energy-expenditure.ts`**, som er bygget
+  uavhengig: (4,5 − 1) / (10 − 1) ≈ 0,39. Det er grunnen til å tro på tallet.
+- Tester på modellen skal uttrykke **forhold**, ikke nivå. Hardkodet 87,5 låste
+  `effort-service.test.ts` til `MET_CALIBRATION = 2,5`.
+
+### Ukas effort: budsjett og belastning er to dommer
+
+`$lib/domain/health/effort-standing.ts` eier ordene, `tracks/effort-budget.ts` tallene.
+
+- **Ankeret er snittet av siste `effortAnkerUker` (4) hele uker**, ikke forrige uke
+  alene. Uglattet gir det en leash på 20 %: seks løp mot forrige ukes fire ga «513 av
+  235–282». Og feilen har en tvilling motsatt vei — uka etter ville ankeret vært 513,
+  så flaten ville krevd 513 for å være «på plan».
+- Uker **før første registrerte økt** teller ikke (ellers dras snittet mot null av uker
+  som aldri fantes), men en **hvileuke midt i vinduet teller som 0** — den er
+  informasjon om normalen din.
+- **Over båndet er ikke et helsevarsel.** Budsjettet sier om uka følger progresjonsplanen;
+  akutt/kronisk er det eneste restitusjonssignalet, og det eneste som får varselfarge.
+  Flaten viste dem med samme uttrykk fram til august 2026, og da leses «513 av 235–282»
+  som en påstand om kroppen.
+- `describeAcuteChronic` tar **`restRecommended`, ikke terskelen** — `hvileRatioTerskel`
+  er brukerkonfigurerbar og bor på treningsløpet.
+- Ordene deles med chatten (`planText`/`loadText` i `training-summary.ts`). Med bare
+  `standing: 'over'` fant modellen sine egne ord, og «over» ble like gjerne «du har
+  overtrent» som «du gjorde mer enn planen ba om».
+- **Endrer du skåringen, må historikken reberegnes.**
+  `WorkoutProjectionService.refreshForRange` skårer alt i vinduet på nytt fra gjeldende
+  baseline; kjør ≥8 uker. Ellers ligger ankeret og denne ukas økter på hver sin skala.
 
 ### Rå lesing av sensor_events er vaktet
 

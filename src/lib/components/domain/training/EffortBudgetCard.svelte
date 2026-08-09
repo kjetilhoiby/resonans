@@ -1,4 +1,10 @@
 <script lang="ts">
+	import {
+		describeAcuteChronic,
+		describeAnchor,
+		describeBudgetStanding
+	} from '$lib/domain/health/effort-standing';
+
 	interface Budget {
 		bandMin: number;
 		bandMax: number;
@@ -8,7 +14,8 @@
 		acuteChronicRatio: number | null;
 		restRecommended: boolean;
 		deload: boolean;
-		anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
+		anchor: 'snitt_uker' | 'gulv';
+		anchorWeeks?: number;
 		maintenance?: boolean;
 	}
 
@@ -94,20 +101,18 @@
 		});
 	});
 
-	const statusText = $derived.by(() => {
-		if (budget.restRecommended) return 'Høy belastning siste 3 dager — ta en rolig dag.';
-		if (budget.spentThisWeek >= budget.bandMax) return 'Uka er i mål — mer nå er bonus, ikke krav.';
-		if (budget.spentThisWeek >= budget.bandMin) return 'Innenfor intervallet — resten av uka er valgfri.';
-		return composition ?? 'Fortsett å fylle uka.';
-	});
-
-	const anchorText = $derived(
-		budget.anchor === 'forrige_uke'
-			? 'basert på forrige uke'
-			: budget.anchor === 'p4w_snitt'
-				? 'basert på snitt siste 4 uker'
-				: 'forsiktig oppstartsnivå'
+	// To linjer, med vilje. Budsjettet sier om uka følger planen; belastningen er
+	// det eneste restitusjonssignalet, og det eneste som får varselfarge. Ordene
+	// deles med chatten — se $lib/domain/health/effort-standing.
+	const plan = $derived(
+		describeBudgetStanding(budget.spentThisWeek, budget.bandMin, budget.bandMax)
 	);
+	const load = $derived(describeAcuteChronic(budget.acuteChronicRatio, budget.restRecommended));
+
+	// «Fortsett å fylle uka» hjelper ingen når vi kan foreslå noe konkret.
+	const planText = $derived(plan.standing === 'under' ? (composition ?? plan.text) : plan.text);
+
+	const anchorText = $derived(describeAnchor(budget.anchor, budget.anchorWeeks ?? 0));
 
 	// Prognose-setning: se tidlig i uka om den ligger an til å havne i grøfta
 	const projectionText = $derived.by(() => {
@@ -139,7 +144,9 @@
 			<div class="badges">
 				{#if budget.maintenance}<span class="badge">Ferie · vedlikehold</span>{/if}
 				{#if budget.deload}<span class="badge">Deload-uke</span>{/if}
-				{#if budget.restRecommended}<span class="badge warn">Hvil</span>{/if}
+				<!-- Merket gjelder BELASTNING, ikke budsjettet. «Over ukas plan» skal
+				     ikke se ut som et helsevarsel — den står i plan-linja under. -->
+				{#if load?.level === 'høy'}<span class="badge warn">{load.label}</span>{/if}
 			</div>
 		</div>
 		<p class="numbers">
@@ -184,12 +191,16 @@
 		</ul>
 	{/if}
 
-	<p class="status">{statusText}</p>
+	<dl class="verdicts">
+		<dt>Plan</dt>
+		<dd class="status">{planText}</dd>
+		{#if load}
+			<dt>Belastning</dt>
+			<dd class="status" class:warn={load.level === 'høy'}>{load.text}</dd>
+		{/if}
+	</dl>
 	{#if projectionText}
 		<p class="projection">{projectionText}</p>
-	{/if}
-	{#if budget.acuteChronicRatio != null}
-		<p class="ratio">Belastning siste 3 dager mot siste 30: {budget.acuteChronicRatio.toFixed(2).replace('.', ',')}</p>
 	{/if}
 
 	{#if showPlanner}
@@ -376,17 +387,36 @@
 		flex-shrink: 0;
 	}
 
-	.status {
+	/* To dommer, tydelig adskilt: etiketten foran gjør at «over ukas plan» ikke
+	   kan leses som en påstand om restitusjon. */
+	.verdicts {
 		margin: 0;
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.3rem 0.6rem;
+		align-items: baseline;
+	}
+
+	.verdicts dt {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-tertiary, #777);
+		white-space: nowrap;
+	}
+
+	.verdicts dd {
+		margin: 0;
+	}
+
+	.status {
 		font-size: 0.88rem;
 		color: var(--text-primary, #eee);
 		line-height: 1.45;
 	}
 
-	.ratio {
-		margin: 0;
-		font-size: 0.75rem;
-		color: var(--text-tertiary, #777);
+	.status.warn {
+		color: #fbbf24;
 	}
 
 	.planner {

@@ -27,6 +27,8 @@
  */
 
 import { classifyTsb, computeTrainingLoad, type TsbStatus } from '$lib/util/training-load';
+// Samme ord som flaten. To formuleringer av samme dom er verre enn én.
+import { describeAcuteChronic, describeBudgetStanding } from '$lib/domain/health/effort-standing';
 
 /* ── Input: bare det sammendraget faktisk leser ──────────────────────────── */
 
@@ -133,6 +135,17 @@ export interface WeekSummary {
 	bandMax: number;
 	/** «under» = under bandMin, «over» = over bandMax. */
 	standing: 'under' | 'i_band' | 'over';
+	/**
+	 * Ferdig formulert dom over budsjettet, ordrett den samme flaten viser.
+	 *
+	 * Med bare `standing` fant modellen sine egne ord, og «over» ble like gjerne
+	 * «du har overtrent» som «du gjorde mer enn planen ba om». De to er ikke det
+	 * samme, og bare den andre er sann.
+	 */
+	planText: string;
+	/** Dommen over akutt/kronisk — det eneste restitusjonssignalet. Null uten nok historikk. */
+	loadText: string | null;
+	loadLevel: 'rolig' | 'normal' | 'høy' | null;
 	remainingMin: number;
 	remainingMax: number;
 	projectedTotal: number | null;
@@ -267,11 +280,17 @@ function summarizeWeek(input: TrainingSummaryInput): WeekSummary | null {
 				? 'over'
 				: 'i_band';
 
+	const plan = describeBudgetStanding(budget.spentThisWeek, budget.bandMin, budget.bandMax);
+	const load = describeAcuteChronic(budget.acuteChronicRatio, budget.restRecommended);
+
 	return {
 		spentEffort: Math.round(budget.spentThisWeek),
 		bandMin: budget.bandMin,
 		bandMax: budget.bandMax,
 		standing,
+		planText: plan.text,
+		loadText: load?.text ?? null,
+		loadLevel: load?.level ?? null,
 		remainingMin: budget.remainingMin,
 		remainingMax: budget.remainingMax,
 		projectedTotal: projection?.projectedTotal ?? null,
