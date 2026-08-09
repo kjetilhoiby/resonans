@@ -16,6 +16,19 @@
  * Samme idé som `propose_widget` før `create_widget`, men håndhevet av id-en i stedet
  * for av prompten.
  *
+ * ## Hvorfor id-en alene ikke holder
+ *
+ * Begge chat-løkkene kjører opptil fem **verktøyrunder i samme svar**, laget nettopp
+ * for «oppslag → beslutning → endring». Id-kravet hindrer derfor blind sletting, men
+ * ikke ubekreftet sletting: modellen kan kalle `find` i runde 1 og `delete` i runde 2,
+ * og brukeren ser aldri spørsmålet.
+ *
+ * Det eneste signalet en modell ikke kan produsere selv, er at brukeren har sagt noe
+ * i mellomtiden. Derfor injiserer kallstedet hvilke id-er som ble funnet i *denne*
+ * runden, og `delete` nekter på dem. Slettingen må komme fra et senere svar — som
+ * betyr at brukeren rakk å svare. `foundThisTurn` settes av kallstedet ETTER
+ * modellens argumenter, så den kan ikke overstyres fra en verktøyparameter.
+ *
  * ## Hvorfor flere målinger per dag betyr noe
  *
  * Folk veier seg morgen og kveld. «Slett 10. august» er derfor tvetydig i seg selv, og
@@ -30,6 +43,31 @@ import {
 	listWeightMeasurements,
 	SOURCE_CLEANUP_NOTE
 } from '$lib/server/health/weight-measurement-store';
+
+/**
+ * Sant når id-en ble funnet i samme verktøyrunde som slettingen forsøkes i.
+ *
+ * Da har brukeren ikke rukket å si noe mellom oppslaget og slettingen, og
+ * bekreftelsen ville vært modellens egen antakelse framfor et svar.
+ */
+export function needsUserConfirmation(
+	id: string,
+	foundThisTurn: readonly string[] | undefined
+): boolean {
+	return Boolean(foundThisTurn?.includes(id));
+}
+
+/**
+ * Svaret som sendes i stedet for å slette.
+ *
+ * Formulert som en instruksjon til modellen om hva den skal gjøre nå — et bart
+ * «avvist» ville fått den til å prøve igjen med samme argumenter.
+ */
+export const CONFIRMATION_REQUIRED = {
+	ok: false,
+	error: 'Brukeren har ikke bekreftet denne slettingen ennå.',
+	hint: 'Du fant målingen i dette svaret. Si hva du fant — dato, vekt og kilde — og spør om den skal slettes. Kall delete med samme id FØRST etter at brukeren har svart ja.'
+} as const;
 
 export const manageWeightMeasurementTool = {
 	name: 'manage_weight_measurement',
@@ -69,6 +107,8 @@ Etter sletting: videreformidle merknaden om at kilden også må ryddes.`,
 		action: 'find' | 'delete';
 		date?: string;
 		id?: string;
+		/** Injiseres av kallstedet — id-er funnet i denne verktøyrunden. Ikke en modellparameter. */
+		foundThisTurn?: readonly string[];
 	}) => {
 		if (args.action === 'delete') {
 			if (!args.id) {
@@ -76,6 +116,10 @@ Etter sletting: videreformidle merknaden om at kilden også må ryddes.`,
 					ok: false,
 					error: 'delete krever id. Kall find først og bruk id-en derfra.'
 				};
+			}
+
+			if (needsUserConfirmation(args.id, args.foundThisTurn)) {
+				return CONFIRMATION_REQUIRED;
 			}
 
 			const result = await deleteWeightMeasurement(args.userId, args.id);

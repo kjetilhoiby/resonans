@@ -2755,6 +2755,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 		console.log('Direct response:', responseMessage?.content?.substring(0, 100) || 'none');
 
+		/**
+		 * Vektmålinger modellen har slått opp i DETTE svaret.
+		 *
+		 * Verktøyrundene under er laget for «oppslag -> beslutning -> endring», så uten
+		 * dette kunne modellen finne en måling i runde 1 og slette den i runde 2 — uten
+		 * at brukeren rakk å se spørsmålet. En sletting av en sensorrad kan ikke angres
+		 * fra flaten, så den skal komme fra et senere svar, etter at brukeren har svart.
+		 */
+		const weightIdsFoundThisTurn = new Set<string>();
+
 		// Håndter tool calls i flere runder slik at modellen kan gjøre oppslag -> beslutning -> endring.
 		for (let toolRound = 0; toolRound < 5 && responseMessage?.tool_calls?.length; toolRound += 1) {
 			console.log(`\n🔧 Executing tools (round ${toolRound + 1})...`);
@@ -2993,7 +3003,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				) {
 					const args = JSON.parse(toolCall.function.arguments || '{}');
 					console.log('  ⚖️ Manage weight measurement:', args.action, args.date ?? args.id ?? '');
-					const result = await manageWeightMeasurementTool.execute({ userId, ...args });
+					// `foundThisTurn` settes ETTER modellens argumenter, så den kan ikke
+					// overstyres fra en verktøyparameter.
+					const result = await manageWeightMeasurementTool.execute({
+						userId,
+						...args,
+						foundThisTurn: [...weightIdsFoundThisTurn]
+					});
+					for (const found of (result as { maalinger?: Array<{ id?: string }> }).maalinger ?? []) {
+						if (found.id) weightIdsFoundThisTurn.add(found.id);
+					}
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_sleep') {
 					const args = JSON.parse(toolCall.function.arguments || '{}');

@@ -53,6 +53,19 @@ farlige: en modell som mistolker «i går» eller plukker feil årstall sletter 
 veiing, og en sensorrad kan ikke angres fra flaten. Instruksjoner kan overses; en
 manglende id kan ikke.
 
+**Id-kravet alene holdt ikke.** Begge chat-løkkene kjører opptil fem **verktøyrunder i
+samme svar**, laget nettopp for «oppslag → beslutning → endring». Id-en hindrer blind
+sletting, men ikke ubekreftet sletting: modellen kunne kalle `find` i runde 1 og
+`delete` i runde 2, og brukeren så aldri spørsmålet.
+
+Det eneste signalet en modell ikke kan produsere selv er at brukeren har sagt noe i
+mellomtiden. Kallstedet injiserer derfor id-ene som ble funnet i *denne* turen, og
+`delete` nekter på dem — slettingen må komme fra et senere svar. `foundThisTurn` settes
+etter modellens argumenter, så den kan ikke overstyres fra en verktøyparameter. Begge
+flatene fører tilstanden: chat-endepunktet med et `Set` rundt rundeløkka, Ekko gjennom
+`AssistantTurnState` i `runAssistantTool` (som dekker begge løkkene der, også den
+strømmende).
+
 **Flere målinger per dag er normalt** — folk veier seg morgen og kveld. `find` returnerer
 dem alle med en merknad om å spørre hvilken. Å slette alle på datoen ville fjernet en
 riktig måling sammen med den gale.
