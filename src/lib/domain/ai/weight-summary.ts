@@ -25,6 +25,7 @@ import {
 	summarizeMonthlyWeights,
 	type MonthlyWeight
 } from '$lib/domain/health/weight-monthly';
+import { summarizeDeclines, type WeightDecline } from '$lib/domain/health/weight-declines';
 
 export interface WeightSummaryInput {
 	/** Stigende, fra `dailyWeights`. */
@@ -62,7 +63,7 @@ export interface WeightSummaryInput {
 	today: string;
 }
 
-export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly';
+export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly' | 'declines';
 
 /** Vinduene endringen rapporteres over. 7 er støyete alene, 90 er retningen. */
 export const CHANGE_WINDOWS_DAYS = [7, 30, 90] as const;
@@ -95,6 +96,13 @@ export interface WeightSummary {
 		latestWeighIn: string | null;
 		daysSinceLatest: number | null;
 	};
+	/* declines */
+	declines?: WeightDecline[];
+	largestDecline?: WeightDecline | null;
+	fastestDecline?: WeightDecline | null;
+	longestDecline?: WeightDecline | null;
+	/** Snittempo over alle periodene, vektet på varighet. */
+	averageKgPerWeek?: number | null;
 	/* monthly */
 	months?: MonthlyWeight[];
 	/** Første måned med en ekte måling. Svaret på «har du data tilbake til X?». */
@@ -157,6 +165,22 @@ export function summarizeWeightForChat(
 			daysSinceLatest: input.latest ? dayNumber(input.today) - dayNumber(input.latest.date) : null
 		}
 	};
+
+	if (queryType === 'declines') {
+		const summary = summarizeDeclines(series.points);
+		return {
+			...base,
+			declines: summary.declines,
+			largestDecline: summary.largest,
+			fastestDecline: summary.fastest,
+			longestDecline: summary.longest,
+			averageKgPerWeek: summary.averageKgPerWeek,
+			missing:
+				summary.count === 0
+					? 'Ingen nedgangsperioder over terskelen i historikken.'
+					: undefined
+		};
+	}
 
 	if (queryType === 'monthly') {
 		// Serien regnes her, aldri av modellen. Se weight-monthly.ts for hvorfor:

@@ -23,6 +23,7 @@ queryType:
 - 'trend' (standard): siste veiing, trendverdi, endring over 7/30/90 dager, avstand til målvekt, laveste trendverdi i historikken.
 - 'milestones': ferdig formulerte milepælsetninger, rangert. Velg ÉN og si den — ikke regn om tallene.
 - 'composition': fett og muskel bak vektendringen.
+- 'declines': tidligere NEDGANGSPERIODER — start, slutt, varighet, samlet nedgang og snittempo i kg/uke. Bruk denne på «når har jeg gått ned før», «hvor fort klarte jeg det sist», «hvor lenge holdt det».
 - 'monthly': snittvekt per måned gjennom HELE historikken, med hull fylt av interpolasjon. Bruk denne på «list vekta per måned», «hvordan har vekta gått år for år», «snittvekt i 2019».
 
 ALDRI finn på månedstall. Trenger du en serie, hent 'monthly' — den finnes. Et oppdiktet tall merket «interpolert» er verre enn å si at du ikke vet, fordi merkelappen gir oppspinnet en metode.
@@ -31,6 +32,13 @@ Om 'monthly':
 - Hver rad har source: 'measured' (snitt av dagsverdiene den måneden) eller 'interpolated' (regnet lineært mellom nabomånedene). SI hvilke som er anslag — ikke presenter dem som målinger.
 - gapMonths på en interpolert rad sier hvor stort hullet den ligger i er. Et anslag midt i et hull på fjorten måneder skal kvalifiseres, ikke oppgis som et tall.
 - measuredFrom er første måned med en ekte måling. Spør brukeren om data lenger tilbake enn det, er DET svaret — serien er aldri ekstrapolert bakover, og du skal heller ikke gjøre det selv.
+
+Om 'declines':
+- Periodene er avgrenset topp-til-bunn på TRENDEN, med toleranse for tilbakeslag: et platå midt i en nedgang deler den ikke i to. Perioder under 2 kg eller 21 dager er utelatt som støy.
+- kgPerWeek er snittet over hele perioden, ikke tempoet på det bratteste. Si «i snitt».
+- longestGapDays sier lengste strekk uten veiing INNE i perioden. Er den stor, er tempoet regnet over et vindu brukeren ikke målte — kvalifiser det framfor å oppgi tallet bart.
+- averageKgPerWeek er vektet på varighet, så en lang periode teller mer enn en kort. Ikke regn et eget snitt av kgPerWeek-verdiene.
+- Siste periode kan fortsatt pågå: slutter endDate på eller nær siste veiing, er den ikke avsluttet.
 
 Om tallene:
 - ALLE endringstall er regnet på TRENDEN (etterslepende 7-dagerssnitt), ikke på enkeltmålinger. Si «trenden», ikke «du veide».
@@ -42,7 +50,7 @@ Om tallene:
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
 		queryType: z
-			.enum(['trend', 'milestones', 'composition', 'monthly'])
+			.enum(['trend', 'milestones', 'composition', 'monthly', 'declines'])
 			.optional()
 			.describe('Hvilket utsnitt. Default trend.')
 	}),
