@@ -523,6 +523,22 @@ datainnhentingen.
 - `PUT /api/tema/[id]/metric-settings` **bevarer nøkler arket ikke eier**. Det bygget
   tidligere hele objektet fra whitelisten og slettet `nutrition`-målene.
 
+### Rå lesing av sensor_events er vaktet
+
+`src/lib/server/sensor-event-access.ts` + tilhørende test. Se
+`docs/changelog/2026-08-09-vakt-mot-raa-sensorlesing.md`.
+
+- **En ny fil som leser `data_type` `workout`, `weight` eller `sleep` rått feiler
+  testen.** Feilmeldingen sier hvilken delt leser du skal bruke i stedet, og hvorfor.
+- Er rå lesing riktig likevel — én rad hentet på id, en skrivesti, eller en
+  per-kilde-visning der nettopp kildene er poenget — legg fila i `knownRawReaders`
+  **med en kommentar som sier hvorfor**. Det er lov; det skal bare være bevisst.
+- **Lista skal krympe.** Rydder du opp i en fil, eller sletter den, må den ut av
+  lista — en egen test feiler på oppføringer som ikke leser rått lenger.
+- Bakgrunnen for at vakten finnes framfor et nytt lag: 17 filer leste vekt-events,
+  og 2 av dem brukte `normalizeBodyComposition` som denne fila sier at man alltid
+  skal bruke. Problemet var etterlevelse, ikke design.
+
 ### Treningsøkter teller én gang, aldri per kilde
 
 Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
