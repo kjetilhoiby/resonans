@@ -195,15 +195,47 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
 const TOOL_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.definition.function.name, t]));
 
 /** Kjør et verktøykall server-side. Ukjent navn / kastet feil returneres som `{ error }`. */
+/**
+ * Tilstand som lever gjennom ÉN tur, på tvers av verktøyrundene.
+ *
+ * Finnes for slettinger som må bekreftes: verktøyrundene er laget for «oppslag ->
+ * beslutning -> endring», så uten dette kunne modellen finne en vektmåling i runde 1
+ * og slette den i runde 2 — uten at brukeren rakk å se spørsmålet.
+ */
+export interface AssistantTurnState {
+	/** Vektmåling-id-er modellen har slått opp i denne turen. */
+	weightIdsFound: Set<string>;
+}
+
+export function newAssistantTurnState(): AssistantTurnState {
+	return { weightIdsFound: new Set() };
+}
+
 export async function runAssistantTool(
 	userId: string,
 	name: string,
-	args: Record<string, unknown>
+	args: Record<string, unknown>,
+	turnState?: AssistantTurnState
 ): Promise<unknown> {
 	const tool = TOOL_BY_NAME.get(name);
 	if (!tool) return { error: `Ukjent verktøy: ${name}` };
 	try {
-		return await tool.run(userId, args);
+		// `foundThisTurn` settes ETTER modellens argumenter, så den kan ikke
+		// overstyres fra en verktøyparameter.
+		const enriched =
+			turnState && name === 'manage_weight_measurement'
+				? { ...args, foundThisTurn: [...turnState.weightIdsFound] }
+				: args;
+
+		const result = await tool.run(userId, enriched);
+
+		if (turnState && name === 'manage_weight_measurement') {
+			for (const found of (result as { maalinger?: Array<{ id?: string }> })?.maalinger ?? []) {
+				if (found.id) turnState.weightIdsFound.add(found.id);
+			}
+		}
+
+		return result;
 	} catch (error) {
 		console.error(`[assistant] verktøy ${name} feilet:`, error);
 		return { error: 'Verktøykall feilet' };

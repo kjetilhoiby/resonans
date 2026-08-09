@@ -632,7 +632,9 @@
 	{/if}
 
 	{#if weightData}
-		<WeightDashboard data={weightData} />
+		<!-- Sletting av en feilmåling endrer grafen, milepælene og snittet, så
+		     dashboardet må hentes på nytt — ikke bare raden fjernes fra lista. -->
+		<WeightDashboard data={weightData} onDataChanged={() => void refresh()} />
 	{/if}
 
 	{#if writingData}

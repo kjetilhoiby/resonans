@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
-import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
+import { ASSISTANT_TOOL_DEFINITIONS, newAssistantTurnState, runAssistantTool } from './tools';
 import { completionTuning } from './model-tuning';
 import { hasActiveStory } from './story-tools';
 import { hasActiveQuiz } from './quiz-tools';
@@ -300,6 +300,10 @@ export async function runAssistantTurn(
 		hasActiveQuiz(input.userId)
 	]);
 
+	// Lever gjennom hele turen: hindrer at en sletting bekreftes av modellen selv
+	// i runden etter oppslaget. Se AssistantTurnState.
+	const turnState = newAssistantTurnState();
+
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 			// Siste runde: tving et tekstsvar ved å ikke tilby verktøy lenger.
@@ -335,7 +339,7 @@ export async function runAssistantTurn(
 					} catch {
 						args = {};
 					}
-					const result = await runAssistantTool(input.userId, call.function.name, args);
+					const result = await runAssistantTool(input.userId, call.function.name, args, turnState);
 					messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
 				}
 				continue;
@@ -379,6 +383,10 @@ export async function runAssistantTurnStreaming(
 		hasActiveStory(input.userId),
 		hasActiveQuiz(input.userId)
 	]);
+
+	// Lever gjennom hele turen: hindrer at en sletting bekreftes av modellen selv
+	// i runden etter oppslaget. Se AssistantTurnState.
+	const turnState = newAssistantTurnState();
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
@@ -438,7 +446,7 @@ export async function runAssistantTurnStreaming(
 					} catch {
 						args = {};
 					}
-					const result = await runAssistantTool(input.userId, t.name, args);
+					const result = await runAssistantTool(input.userId, t.name, args, turnState);
 					messages.push({ role: 'tool', tool_call_id: t.id, content: JSON.stringify(result) });
 				}
 				continue;

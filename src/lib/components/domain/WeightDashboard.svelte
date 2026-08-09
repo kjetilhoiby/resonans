@@ -13,15 +13,18 @@
 <script lang="ts">
 	import WeightStatusCard from './weight/WeightStatusCard.svelte';
 	import WeightMilestonesCard from './weight/WeightMilestonesCard.svelte';
+	import WeightOutliersCard from './weight/WeightOutliersCard.svelte';
 	import WeightTrendChart from './weight/WeightTrendChart.svelte';
 	import { buildMetricSeries } from '$lib/domain/health/weight-series';
 	import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
 
 	interface Props {
 		data: WeightDashboardPayload;
+		/** Kalles når en måling er slettet, så payloaden kan hentes på nytt. */
+		onDataChanged?: () => void;
 	}
 
-	let { data }: Props = $props();
+	let { data, onDataChanged }: Props = $props();
 
 	/**
 	 * Trendverdien i siste målepunkt.
@@ -54,7 +57,11 @@
 		milestonesReachBeyondChart={data.milestonesReachBeyondChart}
 	/>
 
+	<!-- Under grafen, ikke over: uteliggeren oppdages VED å se grafen, og kortet er
+	     svaret på «hva gjør jeg med den» — ikke noe man leter etter først. -->
 	<WeightTrendChart days={data.days} goalKg={data.goalKg} />
+
+	<WeightOutliersCard onDeleted={onDataChanged} />
 </div>
 
 <style>

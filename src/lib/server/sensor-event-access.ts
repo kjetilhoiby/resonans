@@ -95,7 +95,12 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'routes/ukeplan/+page.server.ts',
 			// Spør om en rad FINNES på en Oslo-dag, ikke hva den måler — dagnivå-
 			// dedupen i HealthKit-backfillen. Normalisering ville ikke endret svaret.
-			'routes/api/apps/healthkit/weight/+server.ts'
+			'routes/api/apps/healthkit/weight/+server.ts',
+			// Trenger `sensor_events.id` for å kunne slette en enkeltmåling, og
+			// `toWeightMeasurements` kaster id-en. Leser bare `data.weight` — ett felt
+			// med én betydning gjennom historikken. Kroppssammensetningen, som er den
+			// tvetydige delen, brukes ikke her.
+			'lib/server/health/weight-measurement-store.ts'
 		]
 	},
 	{

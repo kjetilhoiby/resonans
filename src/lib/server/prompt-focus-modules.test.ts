@@ -47,3 +47,30 @@ describe('detectPromptFocusModules — sult og inntak', () => {
 		expect(detectPromptFocusModules('hva er saldoen')).toContain('economics');
 	});
 });
+
+describe('detectPromptFocusModules — sletting av feilmåling', () => {
+	it('sender «slett målingen fra 10. august 2018» til helse', () => {
+		// Meldingen brukeren faktisk skriver. Den inneholder ikke ordet «vekt», så
+		// den traff ingen modul — og da vet ikke modellen at
+		// manage_weight_measurement finnes.
+		expect(detectPromptFocusModules('slett målingen fra 10. august 2018')).toContain('health');
+	});
+
+	it('fanger de vanlige formene', () => {
+		for (const text of [
+			'slett målingen fra i går',
+			'det er en feilmåling der',
+			'den veiingen kan ikke stemme',
+			'jeg veide meg aldri den dagen',
+			'fjern den målingen'
+		]) {
+			expect(detectPromptFocusModules(text), text).toContain('health');
+		}
+	});
+
+	it('lar maling til veggen være i fred', () => {
+		// «maling» uten ø er et hus-prosjekt, ikke en vektmåling. Uten skillet ville
+		// hver oppussingsmelding dratt inn helse-blokka.
+		expect(detectPromptFocusModules('kjøpe maling til stua')).not.toContain('health');
+	});
+});

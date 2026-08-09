@@ -31,6 +31,7 @@ import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
 import { queryWritingTool } from '$lib/ai/tools/query-writing';
 import { queryTrainingTool } from '$lib/ai/tools/query-training';
 import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { querySleepTool } from '$lib/ai/tools/query-sleep';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
@@ -583,7 +584,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'query_sensor_data',
-			description: 'Rå helsedata og aggregater fra Withings — antall økter, distanser, skritt, enkeltmålinger. ALDRI oppgi data fra hukommelsen; hent live. VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger. Hvis bruker spør "fra 2017", "siden 2017" eller annet startår: send periodKey med startåret (f.eks. "2017") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.\n\nMEN — for undertemaenes egne beregnede tall finnes egne verktøy, og de svarer på et annet spørsmål enn dette: BELASTNING/effort/form/restitusjon/pulsfall/VO2max → query_training. VEKTTREND/milepæler/kroppssammensetning → query_weight. SØVNKVALITET/sovepuls/HRV/forstyrrelser → query_sleep. Hvordan brukeren HAR HATT DET (balanse, overskudd, stress, innsjekk) → query_egenfrekvens. De fire gir de samme tallene brukeren ser på flatene; dette verktøyet gir råmaterialet under dem.',
+			description: 'Rå helsedata og aggregater fra Withings — antall økter, distanser, skritt, enkeltmålinger. ALDRI oppgi data fra hukommelsen; hent live. VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger. Hvis bruker spør "fra 2017", "siden 2017" eller annet startår: send periodKey med startåret (f.eks. "2017") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.\n\nMEN — for undertemaenes egne beregnede tall finnes egne verktøy, og de svarer på et annet spørsmål enn dette: BELASTNING/effort/form/restitusjon/pulsfall/VO2max → query_training. VEKTTREND/milepæler/kroppssammensetning → query_weight. FJERNE/SLETTE en enkelt vektmåling som er feil → manage_weight_measurement (dette verktøyet er kun lesing og kan ikke slette noe). SØVNKVALITET/sovepuls/HRV/forstyrrelser → query_sleep. Hvordan brukeren HAR HATT DET (balanse, overskudd, stress, innsjekk) → query_egenfrekvens. De fire gir de samme tallene brukeren ser på flatene; dette verktøyet gir råmaterialet under dem.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -660,6 +661,32 @@ const tools = [
 						description: 'Hvilket utsnitt. Default trend.'
 					}
 				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: manageWeightMeasurementTool.name,
+			description: manageWeightMeasurementTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					action: {
+						type: 'string',
+						enum: ['find', 'delete'],
+						description: 'find først, alltid. delete krever id fra et find-svar.'
+					},
+					date: {
+						type: 'string',
+						description: 'YYYY-MM-DD. Kun for find. Utelates for de mistenkelige målingene.'
+					},
+					id: {
+						type: 'string',
+						description: 'Målingens id, fra et find-svar. Påkrevd for delete.'
+					}
+				},
+				required: ['action']
 			}
 		}
 	},
@@ -2057,6 +2084,7 @@ function getToolProgressMessage(toolName: string) {
 		query_sensor_data: 'Henter sensordata...',
 		query_training: 'Leser treningsbelastning...',
 		query_weight: 'Leser vekttrend...',
+		manage_weight_measurement: 'Slår opp vektmålinger...',
 		query_sleep: 'Leser søvndata...',
 		query_egenfrekvens: 'Leser innsjekk...',
 		query_tesla_vehicle: 'Sjekker bilen...',
@@ -2727,6 +2755,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 		console.log('Direct response:', responseMessage?.content?.substring(0, 100) || 'none');
 
+		/**
+		 * Vektmålinger modellen har slått opp i DETTE svaret.
+		 *
+		 * Verktøyrundene under er laget for «oppslag -> beslutning -> endring», så uten
+		 * dette kunne modellen finne en måling i runde 1 og slette den i runde 2 — uten
+		 * at brukeren rakk å se spørsmålet. En sletting av en sensorrad kan ikke angres
+		 * fra flaten, så den skal komme fra et senere svar, etter at brukeren har svart.
+		 */
+		const weightIdsFoundThisTurn = new Set<string>();
+
 		// Håndter tool calls i flere runder slik at modellen kan gjøre oppslag -> beslutning -> endring.
 		for (let toolRound = 0; toolRound < 5 && responseMessage?.tool_calls?.length; toolRound += 1) {
 			console.log(`\n🔧 Executing tools (round ${toolRound + 1})...`);
@@ -2958,6 +2996,23 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments || '{}');
 					console.log('  ⚖️ Query weight:', args.queryType ?? 'trend');
 					const result = await queryWeightTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (
+					toolCall.type === 'function' &&
+					toolCall.function.name === 'manage_weight_measurement'
+				) {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  ⚖️ Manage weight measurement:', args.action, args.date ?? args.id ?? '');
+					// `foundThisTurn` settes ETTER modellens argumenter, så den kan ikke
+					// overstyres fra en verktøyparameter.
+					const result = await manageWeightMeasurementTool.execute({
+						userId,
+						...args,
+						foundThisTurn: [...weightIdsFoundThisTurn]
+					});
+					for (const found of (result as { maalinger?: Array<{ id?: string }> }).maalinger ?? []) {
+						if (found.id) weightIdsFoundThisTurn.add(found.id);
+					}
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_sleep') {
 					const args = JSON.parse(toolCall.function.arguments || '{}');
