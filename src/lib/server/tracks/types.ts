@@ -72,14 +72,15 @@ export interface EnduranceConfig {
 	deloadHverNteUke: number; // 0 = aldri
 	/** @deprecated Sykkel teller ikke lenger i km-regnskapet — feltet kan stå i DB. */
 	maksIkkeLopAndel?: number;
-	effortVekstFaktor?: number; // ukesband: forrigeUke × faktor (default 1.2)
+	effortVekstFaktor?: number; // ukesband: anker × faktor (default 1.2)
+	effortAnkerUker?: number; // antall hele uker ankeret midles over (default 4)
 	hvileRatioTerskel?: number; // akutt/kronisk-ratio som utløser hvileanbefaling (default 1.5)
 }
 
 // ─── Effort-budsjett (uke) ───────────────────────────────────────────────────
 
 export interface EffortBudget {
-	/** Intervall for denne uken, forankret i forrige ukes faktiske total. */
+	/** Intervall for denne uken, forankret i snittet av de siste hele ukene. */
 	bandMin: number;
 	bandMax: number;
 	spentThisWeek: number;
@@ -89,7 +90,9 @@ export interface EffortBudget {
 	acuteChronicRatio: number | null;
 	restRecommended: boolean;
 	deload: boolean;
-	anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
+	anchor: 'snitt_uker' | 'gulv';
+	/** Hvor mange hele uker snittet faktisk ble bygget på. 0 når ankeret er gulvet. */
+	anchorWeeks: number;
 	/** Vedlikeholdsmodus (aktiv reise/ferie): båndet senkes så en lett uke ikke straffes. */
 	maintenance: boolean;
 }

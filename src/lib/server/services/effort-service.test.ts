@@ -6,8 +6,17 @@ import {
 	type EffortBaseline,
 	type WorkoutEffortInput
 } from './effort-service';
+import { MET_CALIBRATION, MET_FACTOR_BY_FAMILY } from '$lib/domain/health/effort-model';
 
 const baseline: EffortBaseline = { restHr: 55, maxHr: 190, derived: true };
+
+/**
+ * 35 rolige løpeminutter på MET-stien, uttrykt gjennom konstanten framfor som et
+ * tall. Disse testene handler om FORHOLDET mellom intensiteter, ikke om
+ * kalibreringsnivået — hardkodet 87,5 låste dem til MET_CALIBRATION = 2,5 og
+ * feilet på nivået da makspulsen ble rettet i august 2026.
+ */
+const ROLIG_35_MIN = 35 * MET_FACTOR_BY_FAMILY.running * MET_CALIBRATION;
 
 describe('classifyEffortFamily', () => {
 	it('gjenkjenner running-varianter', () => {
@@ -161,7 +170,7 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			paceBaseline
 		)!;
 		expect(rolig.method).toBe('met_pace');
-		expect(rolig.score).toBeCloseTo(87.5, 0); // faktor 1.0 i egen easy-pace
+		expect(rolig.score).toBeCloseTo(ROLIG_35_MIN, 0); // faktor 1.0 i egen easy-pace
 		expect(terskel.method).toBe('met_pace');
 		expect(terskel.score / rolig.score).toBeCloseTo((400 / 330) ** 2, 1); // ~1.47
 	});
@@ -171,7 +180,7 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 634 },
 			paceBaseline
 		)!;
-		expect(treg.score).toBeCloseTo(87.5 * 0.75, 0);
+		expect(treg.score).toBeCloseTo(ROLIG_35_MIN * 0.75, 0);
 	});
 
 	it('sti (isTrail): sakte løp underskåres ikke — intensiteten gulves på 1.0', () => {
@@ -184,9 +193,9 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 634, isTrail: true },
 			paceBaseline
 		)!;
-		expect(vei.score).toBeCloseTo(87.5 * 0.75, 0);
+		expect(vei.score).toBeCloseTo(ROLIG_35_MIN * 0.75, 0);
 		expect(sti.method).toBe('met_trail');
-		expect(sti.score).toBeCloseTo(87.5, 0); // gulvet på 1.0
+		expect(sti.score).toBeCloseTo(ROLIG_35_MIN, 0); // gulvet på 1.0
 		expect(sti.score).toBeGreaterThan(vei.score);
 	});
 
@@ -195,7 +204,7 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 330, isTrail: true },
 			paceBaseline
 		)!;
-		expect(terskel.score).toBeCloseTo(87.5 * (400 / 330) ** 2, 0);
+		expect(terskel.score).toBeCloseTo(ROLIG_35_MIN * (400 / 330) ** 2, 0);
 	});
 
 	it('faktoren klampes oppad på 1.5', () => {
@@ -203,7 +212,7 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 250 },
 			paceBaseline
 		)!;
-		expect(sprint.score).toBeCloseTo(87.5 * 1.5, 0);
+		expect(sprint.score).toBeCloseTo(ROLIG_35_MIN * 1.5, 0);
 	});
 
 	it('uten easy-pace-referanse: vanlig flat MET som før', () => {
@@ -212,7 +221,7 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 			baseline
 		)!;
 		expect(result.method).toBe('met');
-		expect(result.score).toBeCloseTo(87.5, 0);
+		expect(result.score).toBeCloseTo(ROLIG_35_MIN, 0);
 	});
 
 	it('sykkel påvirkes ikke av pace-justeringen', () => {

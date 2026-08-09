@@ -2,17 +2,6 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
 
-export type EffortFamily =
-	| 'running'
-	| 'cycling'
-	| 'ebike'
-	| 'strength'
-	| 'yoga'
-	| 'walking'
-	| 'hiking'
-	| 'swimming'
-	| 'other';
-
 export type EffortMethod = 'trimp' | 'met' | 'met_pace' | 'met_trail';
 
 import {
@@ -23,6 +12,20 @@ import {
 	type RestingHrCandidate,
 	type RestingHrSource
 } from '$lib/domain/health/heart-rate-baseline';
+// Modellens tall bor i domenelaget fordi effort-budsjettet (rent, uten DB) må
+// prise en planlagt økt likt med det denne fila gir en faktisk økt.
+import {
+	classifyEffortFamily,
+	EFFORT_FAMILIES,
+	MET_CALIBRATION,
+	MET_FACTOR_BY_FAMILY,
+	MIN_WORKOUT_DURATION_SECONDS as MIN_DURATION_SECONDS,
+	trimpPerMinute,
+	type EffortFamily
+} from '$lib/domain/health/effort-model';
+
+export { classifyEffortFamily, EFFORT_FAMILIES };
+export type { EffortFamily };
 
 export interface EffortBaseline {
 	/** Hvileplus i bpm. */
@@ -60,51 +63,6 @@ export interface WorkoutEffortResult {
 	family: EffortFamily;
 }
 
-/** Minste varighet for at en økt teller (sekunder). */
-const MIN_DURATION_SECONDS = 5 * 60;
-
-/** Kalibreringskonstant som bringer MET-skår inn i samme størrelsesorden som TRIMP. */
-const MET_CALIBRATION = 2.5;
-
-/** MET-faktorer per effort-family. Tunes i én fil. */
-const MET_FACTOR_BY_FAMILY: Record<EffortFamily, number> = {
-	running: 1.0,
-	cycling: 0.85,
-	ebike: 0.4,
-	strength: 0.7,
-	yoga: 0.35,
-	walking: 0.3,
-	hiking: 0.55,
-	swimming: 0.95,
-	other: 0.5
-};
-
-/**
- * Klassifiser en økt til en effort-family. sportType prioriteres så vi kan skille
- * e-sykkel fra vanlig sykkel selv om begge har sportFamily='cycling' i canonical_workouts.
- */
-export function classifyEffortFamily(
-	sportType: string | null | undefined,
-	sportFamily?: string | null
-): EffortFamily {
-	const t = (sportType ?? '').trim().toLowerCase();
-	const f = (sportFamily ?? '').trim().toLowerCase();
-
-	if (t === 'e_bike' || t.includes('ebik') || t.includes('e-bike')) return 'ebike';
-	if (t.includes('running') || t === 'løp' || t === 'run' || t === 'løping') return 'running';
-	if (t.includes('cycling') || t === 'sykkel' || t === 'bike') return 'cycling';
-	if (t.includes('strength') || t.includes('styrke') || t === 'gym') return 'strength';
-	if (t.includes('yoga') || t.includes('pilates') || t === 'mikroyoga') return 'yoga';
-	if (t.includes('walking') || t === 'gå' || t === 'gåtur') return 'walking';
-	if (t.includes('hiking') || t.includes('fjelltur')) return 'hiking';
-	if (t.includes('swimming') || t === 'svømming') return 'swimming';
-
-	// sportFamily-fallback
-	if (f === 'running' || f === 'cycling' || f === 'walking' || f === 'swimming') return f;
-
-	return 'other';
-}
-
 /**
  * Beregn relativ effort for én økt. Returnerer null hvis økten er for kort
  * eller mangler varighet.
@@ -130,8 +88,7 @@ export function computeWorkoutEffort(
 	if (hasUsableHr) {
 		const hrrRaw = (avgHr - baseline.restHr) / (baseline.maxHr - baseline.restHr);
 		const hrr = Math.max(0, Math.min(1, hrrRaw));
-		const k = 0.64 * Math.exp(1.92 * hrr);
-		const score = durationMin * hrr * k;
+		const score = durationMin * trimpPerMinute(hrr);
 		// HR kan likevel være useriøs (f.eks. nær hvilepuls under styrke). Hvis TRIMP gir <1,
 		// gå over til MET så aktivitetene fortsatt teller på samme skala.
 		if (score < 1) {
@@ -236,18 +193,21 @@ export function estimatePlannedRunEffort(
  * effort-skåringen — uten at noe sa fra.
  *
  * Makspuls leses fra `themes.metricSettings.maxHr.goal` på Helse-mortemaet når
- * brukeren har satt den. Det er den store feilkilden: 10 slag feil makspuls
- * flytter VDOT 3,6 poeng, mot 1,6 for 10 slag feil hvilepuls.
+ * brukeren har satt den, ellers av **alderen** i kroppsprofilen. Det er den store
+ * feilkilden: 10 slag feil makspuls flytter VDOT 3,6 poeng mot 1,6 for hvilepuls,
+ * og effort ~20 % — se `resolveMaxHr` for hvorfor observerte topper ble degradert
+ * til en nødløsning.
  */
 export async function getEffortBaseline(userId: string): Promise<EffortBaseline> {
 	const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-	const [events, manualMaxHr] = await Promise.all([
+	const [events, manualMaxHr, age] = await Promise.all([
 		db.query.sensorEvents.findMany({
 			where: and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, since)),
 			columns: { dataType: true, data: true }
 		}),
-		readManualMaxHr(userId)
+		readManualMaxHr(userId),
+		readAge(userId)
 	]);
 
 	const restingCandidates: RestingHrCandidate[] = [];
@@ -290,7 +250,7 @@ export async function getEffortBaseline(userId: string): Promise<EffortBaseline>
 
 	const baseline = buildHeartRateBaseline(
 		resolveRestingHr(restingCandidates),
-		resolveMaxHr({ manual: manualMaxHr, observedMaxes, workoutAverages })
+		resolveMaxHr({ manual: manualMaxHr, age, observedMaxes, workoutAverages })
 	);
 
 	const easyPaceSecPerKm = await deriveEasyPace(userId);
@@ -324,6 +284,26 @@ async function readManualMaxHr(userId: string): Promise<number | null> {
 		return typeof goal === 'number' && Number.isFinite(goal) ? goal : null;
 	} catch {
 		// Baseline skal ikke kunne feile på en manglende innstilling.
+		return null;
+	}
+}
+
+/**
+ * Alderen fra kroppsprofilen — grunnlaget for makspulsen når brukeren ikke har
+ * satt sin egen.
+ *
+ * Går gjennom `readBodyProfile` fordi fødselsåret har to kilder (self-personens
+ * `birthDate`, eller en eksplisitt overstyring i `metricSettings.profile`), og den
+ * prioriteringen skal bo ett sted. Null når året mangler — da faller `resolveMaxHr`
+ * tilbake på observerte topper, som før.
+ */
+async function readAge(userId: string): Promise<number | null> {
+	try {
+		const { readBodyProfile, ageFromBirthYear } = await import('$lib/server/health/body-profile');
+		const profile = await readBodyProfile(userId);
+		return ageFromBirthYear(profile.birthYear);
+	} catch {
+		// Baseline skal ikke kunne feile på en manglende profil.
 		return null;
 	}
 }
@@ -373,17 +353,5 @@ function median(values: number[]): number {
 	const mid = Math.floor(sorted.length / 2);
 	return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
-
-export const EFFORT_FAMILIES: EffortFamily[] = [
-	'running',
-	'cycling',
-	'ebike',
-	'strength',
-	'yoga',
-	'walking',
-	'hiking',
-	'swimming',
-	'other'
-];
 
 export const MIN_WORKOUT_DURATION_SECONDS = MIN_DURATION_SECONDS;

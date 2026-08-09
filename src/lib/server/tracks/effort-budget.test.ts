@@ -9,6 +9,7 @@ import {
 	summarizeWeekSessions
 } from './effort-budget';
 import type { EnduranceConfig, EnduranceWorkout } from './types';
+import { MET_CALIBRATION, MET_FACTOR_BY_FAMILY } from '$lib/domain/health/effort-model';
 
 const CONFIG: EnduranceConfig = { deloadHverNteUke: 4 };
 const PLAN_START = '2026-07-06'; // mandag, uke 1
@@ -18,17 +19,64 @@ function okt(date: string, effortScore: number, family = 'running'): EnduranceWo
 }
 
 describe('computeEffortBudget', () => {
-	it('ankrer intervallet på forrige ukes faktiske effort: 200 → 200–240', () => {
-		// Forrige uke (2026-07-06..12): 200 effort. Denne uken (fra 13.): i dag onsdag 15.
+	it('ankrer intervallet på snittet av ukene som finnes: 200 → 200–240', () => {
+		// Forrige uke (2026-07-06..12): 200 effort, og ingen historikk før det.
+		// Uker før første økt teller ikke — ellers ville en fersk bruker fått
+		// snittet dratt mot null av uker som aldri fantes.
 		const budget = computeEffortBudget(
 			[okt('2026-07-07', 120), okt('2026-07-09', 80, 'cycling')],
 			CONFIG,
 			PLAN_START,
 			'2026-07-15'
 		);
-		expect(budget.anchor).toBe('forrige_uke');
+		expect(budget.anchor).toBe('snitt_uker');
+		expect(budget.anchorWeeks).toBe(1);
 		expect(budget.bandMin).toBe(200);
 		expect(budget.bandMax).toBe(240);
+	});
+
+	it('én stor uke flytter ikke båndet alene — den midles mot de tre foregående', () => {
+		// Den konkrete feilen fra 9. august 2026: seks løp mot forrige ukes fire ga
+		// «513 av 235–282», og uka etter ville ankeret vært 513 — altså «du trenger
+		// 513 for å være på plan». Snittet demper begge ender.
+		const uker = [
+			okt('2026-06-15', 200), // uke −4
+			okt('2026-06-22', 240), // uke −3
+			okt('2026-06-29', 200), // uke −2
+			okt('2026-07-06', 520) // uke −1: spissuka
+		];
+		const budget = computeEffortBudget(uker, CONFIG, PLAN_START, '2026-07-15');
+		expect(budget.anchorWeeks).toBe(4);
+		expect(budget.bandMin).toBe(290); // (200+240+200+520)/4
+		expect(budget.bandMax).toBe(348);
+
+		// Uglattet ville ankeret vært 520 → bånd 520–624.
+		expect(budget.bandMin).toBeLessThan(520);
+	});
+
+	it('en hvileuke midt i vinduet teller som 0, ikke som manglende data', () => {
+		// En reell hvileuke ER informasjon om normalen din. Hoppet vi over den,
+		// ville et opphold sett ut som at nivået aldri falt.
+		const budget = computeEffortBudget(
+			[okt('2026-06-15', 200), okt('2026-06-29', 200), okt('2026-07-06', 200)],
+			CONFIG,
+			PLAN_START,
+			'2026-07-15'
+		);
+		expect(budget.anchorWeeks).toBe(4);
+		expect(budget.bandMin).toBe(150); // (200+0+200+200)/4
+	});
+
+	it('respekterer effortAnkerUker fra konfigurasjonen', () => {
+		const uker = [okt('2026-06-29', 100), okt('2026-07-06', 300)];
+		const toUker = computeEffortBudget(
+			uker,
+			{ ...CONFIG, effortAnkerUker: 2 },
+			PLAN_START,
+			'2026-07-15'
+		);
+		expect(toUker.anchorWeeks).toBe(2);
+		expect(toUker.bandMin).toBe(200);
 	});
 
 	it('teller både løp, sykkel og el-sykkel — men ikke styrke', () => {
@@ -59,11 +107,13 @@ describe('computeEffortBudget', () => {
 		expect(budget.remainingMax).toBe(0); // uken er «brukt opp» → forslagene blir hvile
 	});
 
-	it('faller tilbake til 4-ukers snitt når forrige uke var tom', () => {
-		// Aktivitet 3 uker tilbake (uke som starter 2026-06-22), ingenting forrige uke
+	it('holder ankeret oppe når forrige uke var tom', () => {
+		// Aktivitet 3 uker tilbake (uke som starter 2026-06-22), ingenting siden.
+		// Vinduet dekker uke −1 til −3 fra første økt: 400 fordelt på tre uker.
 		const budget = computeEffortBudget([okt('2026-06-24', 400)], CONFIG, PLAN_START, '2026-07-15');
-		expect(budget.anchor).toBe('p4w_snitt');
-		expect(budget.bandMin).toBe(100); // 400 / 4
+		expect(budget.anchor).toBe('snitt_uker');
+		expect(budget.anchorWeeks).toBe(3);
+		expect(budget.bandMin).toBe(133); // 400 / 3
 	});
 
 	it('bruker gulv ved helt tom historikk', () => {
@@ -165,19 +215,31 @@ describe('summarizeWeekSessions', () => {
 
 describe('buildWeekPlanExamples', () => {
 	it('regner økter om til effort og andel av ukas mål', () => {
-		// Pace 400 sek/km, band 200–240 → mid 220
+		// Pace 400 sek/km, band 200–240 → mid 220.
+		// Tallene uttrykkes gjennom MET_CALIBRATION framfor hardkodet, fordi
+		// planleggeren og skåringen nå deler konstanten — en test som låser nivået
+		// her ville feilet hver gang modellen rekalibreres, uten å si noe om at
+		// planleggeren og skåringen er uenige (som er det den skal vokte).
 		const examples = buildWeekPlanExamples(400, 200, 240);
+
 		const lop8 = examples.find((e) => e.label === 'Løp 8 km')!;
-		// 8 × (400/60) × 2.5 ≈ 133 → 61 % av 220
-		expect(lop8.effort).toBe(133);
-		expect(lop8.pctOfBand).toBe(61);
+		const forventetLop8 = Math.round(8 * (400 / 60) * MET_CALIBRATION);
+		expect(lop8.effort).toBe(forventetLop8);
+		expect(lop8.pctOfBand).toBe(Math.round((forventetLop8 / 220) * 100));
 
 		const elsykkel = examples.find((e) => e.label === 'El-sykkel 40 min')!;
-		expect(elsykkel.effort).toBe(40);
-		expect(elsykkel.pctOfBand).toBe(18);
+		expect(elsykkel.effort).toBe(Math.round(40 * MET_FACTOR_BY_FAMILY.ebike * MET_CALIBRATION));
 
 		const sykkel = examples.find((e) => e.label === 'Sykkeltur 40 min')!;
-		expect(sykkel.effort).toBe(85);
+		expect(sykkel.effort).toBe(Math.round(40 * MET_FACTOR_BY_FAMILY.cycling * MET_CALIBRATION));
+	});
+
+	it('sykkel koster mer enn el-sykkel, og løp mer enn begge', () => {
+		// Det som faktisk skal holde uansett kalibrering: rekkefølgen.
+		const examples = buildWeekPlanExamples(400, 200, 240);
+		const effortFor = (label: string) => examples.find((e) => e.label === label)!.effort;
+		expect(effortFor('Løp 8 km')).toBeGreaterThan(effortFor('Sykkeltur 40 min'));
+		expect(effortFor('Sykkeltur 40 min')).toBeGreaterThan(effortFor('El-sykkel 40 min'));
 	});
 
 	it('tåler tomt band uten å dele på null', () => {

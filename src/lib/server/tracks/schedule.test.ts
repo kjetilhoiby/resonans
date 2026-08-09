@@ -27,7 +27,8 @@ function budget(overrides: Partial<EffortBudget> = {}): EffortBudget {
 		acuteChronicRatio: 1.0,
 		restRecommended: false,
 		deload: false,
-		anchor: 'forrige_uke',
+		anchor: 'snitt_uker',
+		anchorWeeks: 4,
 		maintenance: false,
 		...overrides
 	};

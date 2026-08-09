@@ -94,7 +94,7 @@ export function resolveRestingHr(candidates: RestingHrCandidate[]): RestingHrRes
 	return { restHr: DEFAULT_REST_HR, source: 'default', samples: 0 };
 }
 
-export type MaxHrSource = 'manual' | 'observed' | 'avg_proxy' | 'default';
+export type MaxHrSource = 'manual' | 'age' | 'observed' | 'avg_proxy' | 'default';
 
 export interface MaxHrResult {
 	maxHr: number;
@@ -116,9 +116,26 @@ export const MAX_HR_MAX = 220;
  */
 const OUTLIER_FRACTION = 0.1;
 
+/**
+ * Tanaka: makspuls ≈ 208 − 0,7 × alder.
+ *
+ * Valgt framfor «220 − alder», som er en tommelfingerregel uten opphav i data og
+ * bommer systematisk for voksne. Tanaka er utledet av en metaanalyse og er den
+ * varianten som brukes når man ikke har en måling.
+ *
+ * Spredningen mellom individer er reell (SD ~7–10 slag), så formelen er et
+ * *utgangspunkt*, ikke en sannhet — derfor vinner både brukerens egen verdi og en
+ * troverdig observert topp over den.
+ */
+export function maxHrFromAge(age: number): number {
+	return Math.round(208 - 0.7 * age);
+}
+
 export interface MaxHrInput {
 	/** Brukerens egen verdi fra `themes.metricSettings.maxHr.goal`. Vinner alltid. */
 	manual?: number | null;
+	/** Alder i hele år, fra kroppsprofilen. Grunnlaget når brukeren ikke har satt noe. */
+	age?: number | null;
 	/** Maksverdier fra økter (`hr_max`, `maxHeartRate`). */
 	observedMaxes: number[];
 	/**
@@ -129,23 +146,67 @@ export interface MaxHrInput {
 	workoutAverages?: number[];
 }
 
+/**
+ * Persentil-trimmet topp fra observerte maksverdier, eller null.
+ *
+ * Med få observasjoner er persentilen meningsløs; da er maks det vi har. Fra fem
+ * og opp forkastes ALLTID minst den høyeste — det er den som er en pulsspike.
+ * `Math.floor(n * 0.1)` alene når ikke 1 før n = 10.
+ */
+function trimmedObservedMax(observedMaxes: number[]): { value: number; samples: number } | null {
+	const observed = observedMaxes.filter((v) => Number.isFinite(v) && v > 100 && v < 230);
+	if (observed.length === 0) return null;
+	const sorted = [...observed].sort((a, b) => b - a);
+	const index =
+		sorted.length >= 5
+			? Math.min(sorted.length - 1, Math.max(1, Math.floor(sorted.length * OUTLIER_FRACTION)))
+			: 0;
+	return { value: Math.round(sorted[index]), samples: sorted.length };
+}
+
+/**
+ * Makspuls, etter prioritet: brukerens egen verdi → alder → observerte topper.
+ *
+ * ## Hvorfor alder slår observerte topper
+ *
+ * Observerte topper er bare en makspuls hvis man faktisk har vært på maks. Denne
+ * brukeren racer ikke — samme grunn som gjør VDOT-estimatet ~9 poeng for lavt — så
+ * ~90-persentilen av toppene er et *gulv*, ikke et tak. Og et for lavt tak blåser
+ * opp HRR, som blåser opp TRIMP: målt mot Strava priset vi løpeøkter ~1,75× i
+ * august 2026, med en utledet makspuls rundt 170 der alderen tilsier ~180.
+ *
+ * Retningen er verdt å merke seg fordi den er motsatt av VDOT-fella: for LAV
+ * makspuls gir for HØY effort, men for lav VDOT.
+ *
+ * ## Men en observert topp over aldersanslaget vinner likevel
+ *
+ * Formelen er et populasjonssnitt. Har man faktisk registrert 190 mens formelen
+ * sier 178, er 190 et faktum og formelen for lav — og en for lav makspuls er
+ * nettopp feilen vi retter. Toppen er persentil-trimmet, så én spike løfter den
+ * ikke.
+ */
 export function resolveMaxHr(input: MaxHrInput): MaxHrResult {
 	const manual = input.manual;
 	if (typeof manual === 'number' && manual >= MAX_HR_MIN && manual <= MAX_HR_MAX) {
 		return { maxHr: Math.round(manual), source: 'manual', samples: 0 };
 	}
 
-	const observed = input.observedMaxes.filter((v) => Number.isFinite(v) && v > 100 && v < 230);
-	if (observed.length > 0) {
-		const sorted = [...observed].sort((a, b) => b - a);
-		// Med få observasjoner er persentilen meningsløs; da er maks det vi har.
-		// Fra fem og opp forkastes ALLTID minst den høyeste — det er den som er
-		// en pulsspike. `Math.floor(n * 0.1)` alene når ikke 1 før n = 10.
-		const index =
-			sorted.length >= 5
-				? Math.min(sorted.length - 1, Math.max(1, Math.floor(sorted.length * OUTLIER_FRACTION)))
-				: 0;
-		return { maxHr: Math.round(sorted[index]), source: 'observed', samples: sorted.length };
+	const observed = trimmedObservedMax(input.observedMaxes);
+
+	const age = input.age;
+	if (typeof age === 'number' && Number.isFinite(age) && age > 0) {
+		const fromAge = maxHrFromAge(age);
+		if (fromAge >= MAX_HR_MIN && fromAge <= MAX_HR_MAX) {
+			// En troverdig observert topp OVER aldersanslaget er en måling, ikke støy.
+			if (observed && observed.value > fromAge) {
+				return { maxHr: observed.value, source: 'observed', samples: observed.samples };
+			}
+			return { maxHr: fromAge, source: 'age', samples: 0 };
+		}
+	}
+
+	if (observed) {
+		return { maxHr: observed.value, source: 'observed', samples: observed.samples };
 	}
 
 	const averages = (input.workoutAverages ?? []).filter((v) => Number.isFinite(v) && v > 100 && v < 220);
