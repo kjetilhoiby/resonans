@@ -637,6 +637,17 @@ i `$lib/domain/health/healthkit-weight.ts`, kontrakten mot Ekko i
 - **Feltnavnene i `data` er de `WeightEventData` alt kjenner** (`weight`, `fatRatio`,
   `fatFreeMass`), så ingen leser måtte endres. Legger du til et felt, sjekk at
   `normalizeBodyComposition` forstår navnet.
+- **`GET /api/apps/healthkit/coverage` svarer på «hva er nytt?»** — hvilke Oslo-dager vi
+  alt har, per `data_type` (`weight`, `workout`, `sleep`). Ekko trekker det fra sin egen
+  Helse-historikk. Dagen, ikke raden, fordi dagen er regelen importen bruker. Ukjente
+  typenavn gir **400**: en skrivefeil som stille ga tom dekning ville sett ut som
+  «Resonans har ingenting». For `workout` og `sleep` er dagen en tilnærming, og svaret
+  sier det selv i `approximation` — teksten bor på serveren så flatens ord ikke kan gå
+  fra sannheten om tallet.
+- **Vakten i `sensor-event-access.ts` har en blindsone:** den leter etter typenavnet som
+  en literal ved siden av `dataType`, så en fil som legger navnene i en konstant slipper
+  unna. `coverage/+server.ts` er en slik fil, og bærer begrunnelsen i filhodet framfor i
+  `knownRawReaders` (en oppføring der ville feilet «lista skal krympe»-testen).
 
 ### Withings-felter
 

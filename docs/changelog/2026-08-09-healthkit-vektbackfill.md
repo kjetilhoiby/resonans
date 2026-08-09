@@ -120,6 +120,43 @@ To valg der er verdt å kjenne fra denne siden:
 - **Statusen rapporterer funnet *etter* lokal dedup.** Rå-tallet inkluderer kopiene, og
   «sendte 431 av 4 000» ville sett ut som at 3 500 gikk tapt.
 
+## Fase 4: Dekningsendepunktet
+
+`GET /api/apps/healthkit/coverage?types=weight,workout,sleep&from=YYYY-MM-DD` med
+logikken i `$lib/domain/health/healthkit-coverage.ts`.
+
+Vektbackfillen svarte på ett spørsmål for én type, og neste spørsmål kom med én gang:
+*hva mer ligger i Apple Health?* Halvparten av svaret kan Ekko finne selv. Den andre
+halvparten — hvilke dager Resonans allerede dekker — må komme herfra, og uten den er en
+importknapp et sjansespill.
+
+Endepunktet returnerer Oslo-dager, ikke rader: det er dagen vektimporten faktisk hopper
+over, så svaret stemmer med hva importen gjør. `days`-lista er det Ekko trekker fra sin
+egen historikk.
+
+**Ukjente typenavn avvises med 400** framfor å ignoreres. En skrivefeil som stille ga
+tom dekning ville sett ut som «Resonans har ingenting» — nøyaktig den konklusjonen
+endepunktet finnes for å gjøre etterprøvbar.
+
+**Dagen er en tilnærming for `workout` og `sleep`**, og svaret sier det selv gjennom
+feltet `approximation`. Økter dedupliseres på klynger innenfor to timer per
+sportsfamilie; netter nøkles på datoen du våkner. Teksten bor i `APPROXIMATE_TYPES`, på
+serveren, framfor i appen — ellers kan flatens ord og tallets sannhet gå fra hverandre.
+
+### Vakten ser ikke denne fila
+
+`readsRawDataType` leter etter typenavnet som en literal ved siden av `dataType`, og her
+kommer lista fra `COVERAGE_TYPES` gjennom en variabel. Begrunnelsen for den rå lesingen
+står derfor i filhodet framfor i `knownRawReaders` — en oppføring der ville feilet
+«lista skal krympe»-testen, siden fila ikke matcher mønsteret.
+
+Det er en reell blindsone: **en fil som legger typenavnene i en konstant slipper unna
+vakten.** Bare to filer i repoet gjør det i dag (denne og
+`routes/api/sensors/screen-time/data/+server.ts`, som bruker ikke-vaktede typer). Å
+utvide detektoren til å flagge dynamiske lister ville gitt falske treff på screen-time
+for alle tre typene, så det er ikke gjort her — det hører til en egen opprydding i
+vakten, ikke til denne endringen.
+
 ## Gjenstår
 
 En kjøring mot ekte HealthKit-data. Den krever en telefon med historikken — simulatoren
