@@ -504,6 +504,30 @@ ble flyttet ut da det ble et eget fokusområde.
   hull i veiingene blir et tomrom.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Livvidde
+
+Se `docs/changelog/2026-08-09-livvidde.md`. Logikken i `$lib/domain/health/waist.ts`,
+loggen i `$lib/server/health/waist-log.ts`, endepunktene under `/api/helse/livvidde`.
+
+- **Trendvinduet er 28 dager, ikke vektas 7.** Dette er fella. Livvidde måles *ukentlig*,
+  så et 7-dagersvindu gir én observasjon — og `MIN_TREND_SAMPLES = 3` gjør da at trenden
+  **aldri** regnes. Flaten ser ut som den virker og viser aldri en linje. Kopierer du
+  trendoppsettet til et nytt mål, still vinduet etter kadensen først.
+- **Trendmotoren er felles** (`$lib/domain/health/trailing-trend.ts`). Vekt og livvidde
+  må mene det samme med «trend»; to flater som svarer ulikt på «går det riktig vei» er
+  verre enn én.
+- **Støygulv på 1 cm** (`WAIST_NOISE_CM`). Målebåndet spriker 1–2 cm for utrent hånd,
+  altså like mye som to måneders framgang. Under gulvet sier flaten «uendret» og hvorfor.
+  Endring måles alltid **trend mot trend** — rå mot rå er to båndfeil lagt sammen.
+- **Egen `dataType: 'waist'`** under en `manual`/`body_log`-sensor. Alt som leser
+  `'weight'` antar kilogram fra en vekt. Sensoren heter `body_log` for å kunne bære flere
+  manuelle kroppsmål uten en ny sensor per mål.
+- **Protokollen står i kortet**, ikke i et hjelpeavsnitt: to målinger tatt ulikt er ikke
+  sammenlignbare, og en serie av ikke-sammenlignbare tall ser ut som data.
+- **`WHTR_REFERENCE` (0,5) er en tommelfingerregel, ikke en vurdering**, og flaten sier
+  det. Vi måler livvidde og høyde; vi diagnostiserer ingenting. Høyden hentes fra
+  `metricSettings.profile` — mangler den, blir forholdstallet null framfor gjettet.
+
 ### Puls-baseline (HRR)
 
 Se `docs/changelog/2026-08-03-hrr-baseline.md`. Utvelgelsen bor i

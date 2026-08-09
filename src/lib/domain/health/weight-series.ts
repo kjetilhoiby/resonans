@@ -20,6 +20,8 @@
  * ikke vet at ±1 kg er normalt, leser hver svingning som en beskjed.
  */
 
+import { dayNumber, daysBetween, trailingTrend, trendSegmentsOf } from './trailing-trend';
+
 /** En enkelt veiing, som den ligger i sensor_events. */
 export interface WeightMeasurement {
 	/** Dato i Oslo-tid, `YYYY-MM-DD`. Kalleren avgjør tidssonen. */
@@ -104,18 +106,16 @@ function positive(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-/** Dager siden epoken. Trygt på `YYYY-MM-DD` uansett tidssone. */
-export function dayNumber(date: string): number {
-	return Math.round(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
-}
-
-export function daysBetween(from: string, to: string): number {
-	return dayNumber(to) - dayNumber(from);
-}
-
 function mean(values: number[]): number {
 	return values.reduce((a, b) => a + b, 0) / values.length;
 }
+
+/**
+ * Trendmotoren er felles med livvidde — se `trailing-trend.ts` for hvorfor.
+ * Re-eksporteres her fordi et titalls filer importerer dem herfra, og en flytting
+ * som tvinger fram tjue importendringer er endring uten gevinst.
+ */
+export { dayNumber, daysBetween } from './trailing-trend';
 
 /**
  * Flere veiinger samme dag slås sammen til snittet.
@@ -175,30 +175,17 @@ export function withTrend(
 	metric: WeightMetricDefinition,
 	opts: { windowDays?: number; minSamples?: number } = {}
 ): MetricPoint[] {
-	const windowDays = opts.windowDays ?? TREND_WINDOW_DAYS;
-	const minSamples = opts.minSamples ?? MIN_TREND_SAMPLES;
-
-	const observed: Array<{ day: number; value: number; date: string }> = [];
+	const observations: Array<{ date: string; value: number }> = [];
 	for (const day of days) {
 		const value = metric.valueOf(day);
 		if (value === null) continue;
-		observed.push({ day: dayNumber(day.date), value, date: day.date });
+		observations.push({ date: day.date, value });
 	}
 
-	const points: MetricPoint[] = [];
-	let start = 0;
-	for (let i = 0; i < observed.length; i++) {
-		const cutoff = observed[i].day - (windowDays - 1);
-		while (start < i && observed[start].day < cutoff) start++;
-		const window = observed.slice(start, i + 1);
-		points.push({
-			date: observed[i].date,
-			raw: observed[i].value,
-			trend: window.length >= minSamples ? round1(mean(window.map((w) => w.value))) : null
-		});
-	}
-
-	return points;
+	return trailingTrend(observations, {
+		windowDays: opts.windowDays ?? TREND_WINDOW_DAYS,
+		minSamples: opts.minSamples ?? MIN_TREND_SAMPLES
+	});
 }
 
 export interface MetricSeries {
@@ -249,27 +236,7 @@ export function buildMetricSeries(days: WeightDay[], metricId: WeightMetricId): 
  * `MAX_TREND_GAP_DAYS`.
  */
 export function trendSegments(points: MetricPoint[], maxGapDays = MAX_TREND_GAP_DAYS): MetricPoint[][] {
-	const segments: MetricPoint[][] = [];
-	let current: MetricPoint[] = [];
-	let previous: MetricPoint | null = null;
-
-	for (const point of points) {
-		if (point.trend === null) {
-			if (current.length > 0) segments.push(current);
-			current = [];
-			previous = null;
-			continue;
-		}
-		if (previous && daysBetween(previous.date, point.date) > maxGapDays) {
-			if (current.length > 0) segments.push(current);
-			current = [];
-		}
-		current.push(point);
-		previous = point;
-	}
-
-	if (current.length > 0) segments.push(current);
-	return segments;
+	return trendSegmentsOf(points, maxGapDays);
 }
 
 /**

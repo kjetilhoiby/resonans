@@ -15,6 +15,7 @@
 	import WeightMilestonesCard from './weight/WeightMilestonesCard.svelte';
 	import WeightOutliersCard from './weight/WeightOutliersCard.svelte';
 	import WeightTrendChart from './weight/WeightTrendChart.svelte';
+	import WaistCard from './weight/WaistCard.svelte';
 	import { buildMetricSeries } from '$lib/domain/health/weight-series';
 	import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
 
@@ -62,6 +63,10 @@
 	<WeightTrendChart days={data.days} goalKg={data.goalKg} />
 
 	<WeightOutliersCard onDeleted={onDataChanged} />
+
+	<!-- Sist: livvidde er den andre målingen på flaten, ikke den man kom for. Den
+	     som skal logge finner den ved å bla forbi svaret vekta alt har gitt. -->
+	<WaistCard days={data.waistDays} waist={data.waist} onLogged={onDataChanged} />
 </div>
 
 <style>

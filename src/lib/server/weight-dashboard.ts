@@ -14,6 +14,9 @@ import {
 } from '$lib/domain/health/weight-measurements';
 import { buildWeightMilestones, type WeightMilestone } from '$lib/domain/health/weight-milestones';
 import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/metric-settings';
+import { readBodyProfile } from '$lib/server/health/body-profile';
+import { listWaistMeasurements } from '$lib/server/health/waist-log';
+import { dailyWaist, summarizeWaist, type WaistDay, type WaistStatus } from '$lib/domain/health/waist';
 
 /**
  * Vekt-undertemaets dashboard.
@@ -81,12 +84,21 @@ export interface WeightDashboardPayload {
 	chartTruncated: boolean;
 	/** Første veiing i HELE historikken, uansett hva grafen fikk. */
 	historyStart: string | null;
+	/**
+	 * Livvidde — dagsverdier og status.
+	 *
+	 * Ligger på vektflaten framfor i et eget undertema fordi det er samme spørsmål,
+	 * målt annerledes: går det riktig vei. Vekta svarer på hvor mye, livvidda på hva
+	 * slags. Se `$lib/domain/health/waist.ts`.
+	 */
+	waistDays: WaistDay[];
+	waist: WaistStatus;
 }
 
 export async function loadWeightDashboardData(userId: string): Promise<WeightDashboardPayload> {
 	const since = new Date(Date.now() - MILESTONE_HISTORY_DAYS * 86_400_000);
 
-	const [rows, metricSettings] = await Promise.all([
+	const [rows, metricSettings, waistRows, bodyProfile] = await Promise.all([
 		db
 			.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
 			.from(sensorEvents)
@@ -98,7 +110,9 @@ export async function loadWeightDashboardData(userId: string): Promise<WeightDas
 				)
 			)
 			.orderBy(asc(sensorEvents.timestamp)),
-		readHealthMetricSettings(userId)
+		readHealthMetricSettings(userId),
+		listWaistMeasurements(userId),
+		readBodyProfile(userId)
 	]);
 
 	const allDays = dailyWeights(toWeightMeasurements(rows));
@@ -106,6 +120,10 @@ export async function loadWeightDashboardData(userId: string): Promise<WeightDas
 	const goalKg = readMetricNumber(metricSettings, 'weight', 'goal');
 
 	const milestoneResult = buildWeightMilestones({ days: allDays, today, goalKg });
+
+	// Livvidde er få målinger — hele historikken får plass, uten radtak.
+	const waistDays = dailyWaist(waistRows);
+	const waist = summarizeWaist(waistDays, { heightCm: bodyProfile.heightCm, today });
 
 	// Nyeste punkter når taket biter. Med typisk veiefrekvens gjør det aldri det.
 	const days = allDays.length > MAX_CHART_POINTS ? allDays.slice(-MAX_CHART_POINTS) : allDays;
@@ -138,6 +156,8 @@ export async function loadWeightDashboardData(userId: string): Promise<WeightDas
 		today,
 		milestonesReachBeyondChart,
 		chartTruncated,
-		historyStart: allDays[0]?.date ?? null
+		historyStart: allDays[0]?.date ?? null,
+		waistDays,
+		waist
 	};
 }
