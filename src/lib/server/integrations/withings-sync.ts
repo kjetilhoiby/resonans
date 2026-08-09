@@ -136,7 +136,12 @@ function measureValue(grp: any, type: number): number | undefined {
 	return measure ? measure.value * Math.pow(10, measure.unit) : undefined;
 }
 
-function parseWeightData(measuregrps: any[]): any[] {
+/**
+ * Eksportert fordi berikelsesjobben (`withings-weight-enrichment.ts`) må tolke
+ * nøyaktig som synken gjør. En andre måletype-tabell ville drevet fra denne — det
+ * er akkurat feilen batch-prefetchen gjorde da den ba om `meastype: 1` alene.
+ */
+export function parseWeightData(measuregrps: any[]): any[] {
 	return measuregrps
 		.filter((grp) => grp.measures?.some((m: any) => m.type === MEASTYPE.weight))
 		.map((grp) => ({

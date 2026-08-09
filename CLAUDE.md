@@ -612,6 +612,16 @@ Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
   punktpuls. En dag importert gjennom batchen kom inn vekt-bare, og `ignore` gjør at den
   blir stående sånn. Feilen er usynlig i fersk drift og viser seg først ved en backfill
   av gamle år.
+- **`ignore` gjorde at 226 fettprosentmålinger aldri nådde basen.** Synken hentet dem
+  hver gang og kastet dem, fordi tidsstempelet fantes fra før. Rettes med
+  `POST /api/sensors/withings/enrich-weight` (`?dryRun=true` viser planen), som fyller
+  hull uten å slette noe — **ikke** med `?full=true`: den sletter alle Withings-hendelser,
+  og `hr_recovery` ligger under samme sensor med bare 21 dagers selvheling. Regelen er
+  «aldri fjerne, aldri overskrive», så jobben kan kjøres om igjen. Se
+  `docs/changelog/2026-08-09-berik-vekt-med-sammensetning.md`.
+- **Sammensetning er ikke et signal å bygge på.** Andel veiinger med fettprosent hos
+  Withings: 47 % (2017–19), 20 % (2020–22), **3 % (2023–25)**, 21 % (2026). Muskeltap-
+  vakta i `weight-milestones.ts` har derfor aldri fyrt i prod, selv etter berikelsen.
 
 ### HealthKit-vektbackfill (Ekko)
 
