@@ -21,6 +21,10 @@ import {
 	type MetricPoint,
 	type WeightDay
 } from '$lib/domain/health/weight-series';
+import {
+	summarizeMonthlyWeights,
+	type MonthlyWeight
+} from '$lib/domain/health/weight-monthly';
 
 export interface WeightSummaryInput {
 	/** Stigende, fra `dailyWeights`. */
@@ -51,7 +55,7 @@ export interface WeightSummaryInput {
 	today: string;
 }
 
-export type WeightQueryType = 'trend' | 'milestones' | 'composition';
+export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly';
 
 /** Vinduene endringen rapporteres over. 7 er støyete alene, 90 er retningen. */
 export const CHANGE_WINDOWS_DAYS = [7, 30, 90] as const;
@@ -82,6 +86,14 @@ export interface WeightSummary {
 		latestWeighIn: string | null;
 		daysSinceLatest: number | null;
 	};
+	/* monthly */
+	months?: MonthlyWeight[];
+	/** Første måned med en ekte måling. Svaret på «har du data tilbake til X?». */
+	measuredFrom?: string | null;
+	measuredTo?: string | null;
+	measuredMonths?: number;
+	interpolatedMonths?: number;
+	longestGapMonths?: number;
 	/* trend */
 	latest?: { date: string; weightKg: number; weighInCount: number } | null;
 	trendKg?: number | null;
@@ -127,6 +139,14 @@ export function summarizeWeightForChat(
 			daysSinceLatest: input.latest ? dayNumber(input.today) - dayNumber(input.latest.date) : null
 		}
 	};
+
+	if (queryType === 'monthly') {
+		// Serien regnes her, aldri av modellen. Se weight-monthly.ts for hvorfor:
+		// en modell uten vei til svaret finner på et, og et oppdiktet tall merket
+		// «interpolert» er verre enn en åpen gjetning.
+		const monthly = summarizeMonthlyWeights(input.days);
+		return { ...base, ...monthly };
+	}
 
 	if (queryType === 'milestones') {
 		return {
