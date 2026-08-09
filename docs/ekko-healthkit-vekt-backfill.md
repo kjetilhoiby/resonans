@@ -1,7 +1,7 @@
 # Brief til Ekko: vektbackfill fra Apple Health
 
 Dato: 2026-08-09
-Status: forslag — endepunktet er ikke bygget ennå
+Status: bygget på begge sider. Ikke kjørt mot ekte HealthKit-data ennå.
 
 ## Kort sagt
 
@@ -49,9 +49,9 @@ Health på telefonen, og Ekko er det eneste vi har som kan lese dem.
 
 `POST /api/apps/healthkit/weight`
 
-**Finnes ikke ennå.** Resonans bygger det; dette er kontrakten vi forplikter oss på.
-`/api/apps/event` finnes allerede, men tar én hendelse per kall — 4 000 målinger er 4 000
-rundturer, og det er feil verktøy.
+**Bygget.** `src/routes/api/apps/healthkit/weight/+server.ts`, med tolkningen i
+`$lib/domain/health/healthkit-weight.ts`. `/api/apps/event` finnes også, men tar én
+hendelse per kall — 4 000 målinger er 4 000 rundturer, og det er feil verktøy.
 
 ### Autentisering
 
@@ -100,12 +100,24 @@ stående tomme, og det er greit — leseren i Resonans håndterer manglende felt
   "skippedExistingDay": 62,
   "skippedInvalid": 7,
   "oldest": "2013-12-08",
-  "newest": "2017-10-12"
+  "newest": "2017-10-12",
+  "warnings": []
 }
 ```
 
 `skippedExistingDay` er ikke en feil — se dedup-regelen under. `skippedInvalid` skal være
 0 i praksis; er den det ikke, si fra, så ser vi på valideringen sammen.
+
+`inserted` er rader skrevet under `healthkit`-sensoren, ikke «nye rader». Sender dere
+samme bolk to ganger, får dere samme tall begge gangene — radene oppdateres framfor å
+dupliseres, og en 0 ville sett ut som en feil.
+
+`oldest`/`newest` er Oslo-døgnspennet for radene som **faktisk ble skrevet**, ikke for
+bolken som kom inn. Ble alt hoppet over, er begge `null`.
+
+`warnings` er setninger, ikke koder — vis dem til brukeren. Den viktigste er
+prosentfella: kommer det fettprosenter under 1, sier advarselen at verdien må ganges med
+100, og at vekta ble lagret uten den. Tom liste betyr at bolken gikk rent inn.
 
 ### Regler på serversiden
 
@@ -183,7 +195,10 @@ dagnivå-dedup mot eksisterende vektrader, validering og enhetskonvertering, og 
 de rene delene.
 
 **Ekko bygger:** HealthKit-tillatelse, spørringen, lokal dedup, bolking og opplasting, og
-statusvisningen til brukeren.
+statusvisningen til brukeren. **Bygget** — `ekko/Ekko/Ekko/Services/WeightBackfillPlan.swift`
+(ren logikk, med tester), `HealthKitWeightBackfill.swift` (spørring og opplasting),
+`Views/WeightBackfillSettingsSection.swift` (knappen i Innstillinger). Oppsummeringen på
+appsiden: `ekko/HEALTHKIT_VEKT_BACKFILL.md`.
 
 **Avklares sammen:** ingenting kritisk. Si fra hvis 500 per bolk er upraktisk fra
 appsiden — taket er vårt valg og kan justeres.
