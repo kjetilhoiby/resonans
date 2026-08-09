@@ -181,3 +181,50 @@ describe('summarizeWeightForChat — composition', () => {
 		expect(summary.missing).toContain('fettmåling');
 	});
 });
+
+describe('summarizeWeightForChat — «vi har jo alle tallene»', () => {
+	/**
+	 * Regresjonen: på «snittvekt per måned tilbake til 2014» svarte chatten at den
+	 * ikke hadde tilgang til månedsdata, og fant på åtte tall — for måneder som var
+	 * tett målt. Begge halvdelene av feilen låses her.
+	 */
+	it('sier når historikken faktisk begynner', () => {
+		// Uten dette må modellen regne seg fram fra historyDays for å vite om den har
+		// noe — og en modell som må regne for å vite, svarer gjerne at den ikke har.
+		const summary = summarizeWeightForChat(input({ historyStart: '2017-10-13' }));
+
+		expect(summary.coverage.firstWeighIn).toBe('2017-10-13');
+	});
+
+	it('faller tilbake på første dag i serien når historyStart mangler', () => {
+		const summary = summarizeWeightForChat(input());
+
+		expect(summary.coverage.firstWeighIn).toBe(input().days[0].date);
+	});
+
+	it('gir en månedsserie framfor at modellen må finne på en', () => {
+		const summary = summarizeWeightForChat(input(), 'monthly');
+
+		expect(summary.months).toBeDefined();
+		expect(summary.months!.length).toBeGreaterThan(0);
+		expect(summary.measuredFrom).not.toBeNull();
+	});
+
+	it('merker hver månedsrad som målt eller anslått', () => {
+		// Et interpolert og et målt tall ser like ut i et skjermbilde. Provenienser
+		// er hele grunnen til at serien regnes her framfor av modellen.
+		const summary = summarizeWeightForChat(input(), 'monthly');
+
+		for (const month of summary.months!) {
+			expect(['measured', 'interpolated'], month.month).toContain(month.source);
+		}
+	});
+
+	it('teller tett målte måneder som målt, ikke som anslag', () => {
+		// Kjernen i feilen: månedene modellen «interpolerte» var fulle av målinger.
+		const summary = summarizeWeightForChat(input(), 'monthly');
+
+		expect(summary.measuredMonths).toBeGreaterThan(0);
+		expect(summary.months!.some((m) => m.source === 'measured' && m.days > 0)).toBe(true);
+	});
+});

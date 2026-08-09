@@ -25,6 +25,15 @@ en metode. En bruker som tar et skjermbilde av dette har åtte tall som ser mål
 
 Historikken fantes hele tiden — 1 200 veiinger tilbake til oktober 2017.
 
+## Det verste: månedene var tett målt
+
+Januar–juli 2026 har veiinger nesten hver dag — grafen viser en sammenhengende kurve
+gjennom hele året. Modellen «interpolerte» altså ikke over hull. Den fant på tall for
+måneder som var fulle av målinger, og kalte det interpolasjon.
+
+Det flytter diagnosen: dette var ikke tynne data som ble fylt ut. Det var oppspinn over
+tette data, med en merkelapp som skjulte det.
+
 ## Årsaken
 
 `query_weight` returnerer `trend`, `milestones` og `composition`. Ingen av dem er en
@@ -64,6 +73,13 @@ fire ganger skal ikke telle fire ganger så mye som en dag med én veiing.
 siste. Å strekke den til 2014 fordi noen spurte om 2014 ville vært å oppfylle
 spørsmålet framfor å svare på det. `measuredFrom` er derfor det viktigste feltet i
 svaret: er første måling oktober 2017, er *det* svaret på «tilbake til 2014».
+
+**`coverage.firstWeighIn` skrives ut, ikke bare `historyDays`.** Modellen fikk «1 204
+veiinger over 3 222 dager» og skulle svare på «har du tall fra 2014?». Det krever at
+den regner — og en modell som må regne for å vite om den *har* noe, svarer gjerne at
+den ikke har det, og finner så på tallene. Datoen står nå i hvert eneste `query_weight`-
+svar, uansett `queryType`, så påstanden «jeg har ikke tilgang» motsies av payloaden den
+nettopp fikk.
 
 **`gapMonths` på hver interpolert rad.** Et anslag som fyller én måned og ett som
 ligger midt i et hull på fjorten er ikke samme påstand, og beskrivelsen ber modellen

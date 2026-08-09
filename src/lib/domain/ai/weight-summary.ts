@@ -25,6 +25,7 @@ import {
 	summarizeMonthlyWeights,
 	type MonthlyWeight
 } from '$lib/domain/health/weight-monthly';
+import { summarizeDeclines, type WeightDecline } from '$lib/domain/health/weight-declines';
 
 export interface WeightSummaryInput {
 	/** Stigende, fra `dailyWeights`. */
@@ -40,6 +41,13 @@ export interface WeightSummaryInput {
 	historyDays: number;
 	weighIns: number;
 	enoughHistory: boolean;
+	/**
+	 * Første veiing i HELE historikken. Valgfri fordi eldre kallere ikke sendte den.
+	 *
+	 * Den er svaret på «har du data tilbake til X?» — et spørsmål modellen tidligere
+	 * besvarte med «jeg har ikke tilgang», selv om coverage sa 1 204 veiinger.
+	 */
+	historyStart?: string | null;
 	goalKg: number | null;
 	composition: {
 		windowDays: number;
@@ -55,7 +63,7 @@ export interface WeightSummaryInput {
 	today: string;
 }
 
-export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly';
+export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly' | 'declines';
 
 /** Vinduene endringen rapporteres over. 7 er støyete alene, 90 er retningen. */
 export const CHANGE_WINDOWS_DAYS = [7, 30, 90] as const;
@@ -82,10 +90,19 @@ export interface WeightSummary {
 	coverage: {
 		weighIns: number;
 		historyDays: number;
+		/** Første veiing i hele historikken. Svaret på «har du data tilbake til X?». */
+		firstWeighIn: string | null;
 		enoughHistory: boolean;
 		latestWeighIn: string | null;
 		daysSinceLatest: number | null;
 	};
+	/* declines */
+	declines?: WeightDecline[];
+	largestDecline?: WeightDecline | null;
+	fastestDecline?: WeightDecline | null;
+	longestDecline?: WeightDecline | null;
+	/** Snittempo over alle periodene, vektet på varighet. */
+	averageKgPerWeek?: number | null;
 	/* monthly */
 	months?: MonthlyWeight[];
 	/** Første måned med en ekte måling. Svaret på «har du data tilbake til X?». */
@@ -131,6 +148,15 @@ export function summarizeWeightForChat(
 			weighIns: input.weighIns,
 			historyDays: input.historyDays,
 			/**
+			 * Spennet skrevet ut, ikke bare som et antall dager.
+			 *
+			 * «1 204 veiinger over 3 222 dager» krever at modellen regner for å svare
+			 * på «har du tall fra 2014?», og en modell som må regne for å vite om den
+			 * har noe, svarer gjerne at den ikke har det — og finner så på tallene.
+			 * Se docs/changelog/2026-08-09-manedssnitt-vekt-og-oppdiktede-tall.md.
+			 */
+			firstWeighIn: input.historyStart ?? input.days[0]?.date ?? null,
+			/**
 			 * Rekorder krever en historikk å være rekord i. Er denne false, skal
 			 * modellen ikke kalle noe «lavest noensinne».
 			 */
@@ -139,6 +165,22 @@ export function summarizeWeightForChat(
 			daysSinceLatest: input.latest ? dayNumber(input.today) - dayNumber(input.latest.date) : null
 		}
 	};
+
+	if (queryType === 'declines') {
+		const summary = summarizeDeclines(series.points);
+		return {
+			...base,
+			declines: summary.declines,
+			largestDecline: summary.largest,
+			fastestDecline: summary.fastest,
+			longestDecline: summary.longest,
+			averageKgPerWeek: summary.averageKgPerWeek,
+			missing:
+				summary.count === 0
+					? 'Ingen nedgangsperioder over terskelen i historikken.'
+					: undefined
+		};
+	}
 
 	if (queryType === 'monthly') {
 		// Serien regnes her, aldri av modellen. Se weight-monthly.ts for hvorfor:
