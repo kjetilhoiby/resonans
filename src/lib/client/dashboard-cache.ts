@@ -1,4 +1,5 @@
 import { dashboardEndpointForTheme, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { HEALTH_FAMILY_KINDS } from '$lib/domain/health-subthemes';
 import { extractApiErrorMessage } from '$lib/client/api-error';
 import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
 import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
@@ -594,9 +595,17 @@ export function invalidateDashboardKind(kind: DashboardKind): void {
  * endrer både aktivitetslista på Trening og undertema-stripen på mor. Å
  * invalidere bare 'health' ville latt Trening vise den skjulte økta videre —
  * nøyaktig regresjonen invalidateDashboardKind ble innført for å fikse.
+ *
+ * ## Hvorfor lista ikke skrives her
+ *
+ * Den gjorde det, og da gjentok regresjonen seg: da Vekt ble eget undertema i
+ * august 2026, ble 'weight' lagt til i `HEALTH_SUBTHEMES` og glemt her. Alle tre
+ * kallstedene trodde de hadde tømt helse-familien, mens vektflaten fortsatte å
+ * male fra cache. `HEALTH_FAMILY_KINDS` er derivert av det lukkede settet, så et
+ * nytt undertema følger med av seg selv.
  */
 export function invalidateHealthFamily(): void {
-	for (const kind of ['health', 'training', 'sleep', 'screentime', 'nutrition', 'egenfrekvens'] as const) {
+	for (const kind of HEALTH_FAMILY_KINDS) {
 		invalidateDashboardKind(kind);
 	}
 }
