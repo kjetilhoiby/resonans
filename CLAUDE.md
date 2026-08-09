@@ -604,15 +604,39 @@ Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
   Health Mate **leser** fra Apple Health og tegner det inn i sine egne grafer uten å
   laste det opp; kurven appen viser fra 2013 finnes derfor ikke i noe API-svar. Ser du
   en hard kant framfor en uttynning, og kanten ligger på datoen enheten kom, er det
-  denne mekanismen — ikke et hull i synken. Veien til de årene går gjennom en Apple
-  Health-eksport eller HealthKit i Ekko, og en slik import må la Withings-radene vinne
-  fra oktober 2017 og bare fylle hullene foran dem. Se
+  denne mekanismen — ikke et hull i synken. Veien til de årene går gjennom HealthKit i
+  Ekko (se neste avsnitt). Se
   `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
 - **Batch-prefetchen må be om `meastypes`, ikke `meastype: 1`.** Den ba lenge bare om
   vekttallet, mens hovedsynken ber om fettprosent, fettmasse, muskel, bein, hydrering og
   punktpuls. En dag importert gjennom batchen kom inn vekt-bare, og `ignore` gjør at den
   blir stående sånn. Feilen er usynlig i fersk drift og viser seg først ved en backfill
   av gamle år.
+
+### HealthKit-vektbackfill (Ekko)
+
+`POST /api/apps/healthkit/weight` tar årene før oktober 2017 fra Apple Health. Logikken
+i `$lib/domain/health/healthkit-weight.ts`, kontrakten mot Ekko i
+`docs/ekko-healthkit-vekt-backfill.md`. Se
+`docs/changelog/2026-08-09-healthkit-vektbackfill.md`.
+
+- **Engangsjobb, ikke løpende synk.** Withings dekker alt fra 13. oktober 2017 og skal
+  fortsette å gjøre det. En `HKObserverQuery` her ville bare produsert rader dedupen
+  kaster.
+- **Dedupen er på Oslo-DAG, ikke på tidsstempel, og Withings vinner.** Health Mate
+  skriver sine egne målinger til Apple Health også, så eksporten inneholder veiinger vi
+  alt har — med tidsstempler som spriker noen sekunder. En dag som har en vektmåling fra
+  en *annen* sensor hoppes over i sin helhet. Oppslagsvinduet padder ett døgn i hver ende,
+  siden Oslo-døgnet krysser UTC-midnatt. Egne rader blokkerer ikke — ellers ville en
+  gjensendt bolk sett ut som en no-op.
+- **`HKUnit.percent()` gir 0,223 for 22,3 %.** Verdien forkastes, den ganges ikke med
+  100: vi kan ikke skille en brøk fra 0,2 % kroppsfett, og en gjetning ville blitt en
+  måling. Vekta lagres uansett — feltet dropper, raden overlever. `warnings` i svaret
+  sier hvorfor med ord, fordi et HealthKit-avslag er usynlig for appen og ser ut som
+  «ingen data».
+- **Feltnavnene i `data` er de `WeightEventData` alt kjenner** (`weight`, `fatRatio`,
+  `fatFreeMass`), så ingen leser måtte endres. Legger du til et felt, sjekk at
+  `normalizeBodyComposition` forstår navnet.
 
 ### Withings-felter
 

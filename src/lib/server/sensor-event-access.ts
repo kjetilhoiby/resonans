@@ -92,7 +92,10 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'routes/maanedsplan/+page.server.ts',
 			'routes/samtaler/+page.server.ts',
 			'routes/settings/profile/+page.server.ts',
-			'routes/ukeplan/+page.server.ts'
+			'routes/ukeplan/+page.server.ts',
+			// Spør om en rad FINNES på en Oslo-dag, ikke hva den måler — dagnivå-
+			// dedupen i HealthKit-backfillen. Normalisering ville ikke endret svaret.
+			'routes/api/apps/healthkit/weight/+server.ts'
 		]
 	},
 	{

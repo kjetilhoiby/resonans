@@ -23,6 +23,22 @@ const APP_REGISTRY: Record<string, ExternalAppConfig> = {
 		sensorProvider: 'ping',
 		sensorType: 'smart_plug',
 		sensorSubtype: 'appliance_monitor'
+	},
+	/**
+	 * Apple Health, lest av Ekko på telefonen.
+	 *
+	 * Ikke en app for seg — Ekko er transporten, og deler derfor deep link-skjema
+	 * med den. Oppføringen finnes for at sensoren `healthkit` skal defineres ett
+	 * sted: importen skal være synlig som egen kilde i `/settings/sources`, og
+	 * kunne angres ved å slette én sensors hendelser.
+	 */
+	healthkit: {
+		id: 'healthkit',
+		label: 'Apple Health',
+		deepLinkScheme: 'ekko',
+		sensorProvider: 'healthkit',
+		sensorType: 'health_tracker',
+		sensorSubtype: 'iphone'
 	}
 };
 
