@@ -40,6 +40,13 @@ export interface WeightSummaryInput {
 	historyDays: number;
 	weighIns: number;
 	enoughHistory: boolean;
+	/**
+	 * Første veiing i HELE historikken. Valgfri fordi eldre kallere ikke sendte den.
+	 *
+	 * Den er svaret på «har du data tilbake til X?» — et spørsmål modellen tidligere
+	 * besvarte med «jeg har ikke tilgang», selv om coverage sa 1 204 veiinger.
+	 */
+	historyStart?: string | null;
 	goalKg: number | null;
 	composition: {
 		windowDays: number;
@@ -82,6 +89,8 @@ export interface WeightSummary {
 	coverage: {
 		weighIns: number;
 		historyDays: number;
+		/** Første veiing i hele historikken. Svaret på «har du data tilbake til X?». */
+		firstWeighIn: string | null;
 		enoughHistory: boolean;
 		latestWeighIn: string | null;
 		daysSinceLatest: number | null;
@@ -130,6 +139,15 @@ export function summarizeWeightForChat(
 		coverage: {
 			weighIns: input.weighIns,
 			historyDays: input.historyDays,
+			/**
+			 * Spennet skrevet ut, ikke bare som et antall dager.
+			 *
+			 * «1 204 veiinger over 3 222 dager» krever at modellen regner for å svare
+			 * på «har du tall fra 2014?», og en modell som må regne for å vite om den
+			 * har noe, svarer gjerne at den ikke har det — og finner så på tallene.
+			 * Se docs/changelog/2026-08-09-manedssnitt-vekt-og-oppdiktede-tall.md.
+			 */
+			firstWeighIn: input.historyStart ?? input.days[0]?.date ?? null,
 			/**
 			 * Rekorder krever en historikk å være rekord i. Er denne false, skal
 			 * modellen ikke kalle noe «lavest noensinne».
