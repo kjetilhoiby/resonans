@@ -286,8 +286,14 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // egne ord, og traff ingen modul: «ser du belastningen min denne uka?» kom
    // gjennom bare fordi den også sa «trening». Uten health-blokka vet ikke
    // modellen at query_training finnes, og faller tilbake på råtallene.
+   //
+   // «måling», «veiing» og «veide» dekker sletting av en feilmåling: «slett
+   // målingen fra 10. august 2018» inneholder ikke ordet «vekt», og traff derfor
+   // ingen modul — da vet ikke modellen at manage_weight_measurement finnes.
+   // NB: «maling» uten ø er BEVISST utelatt. Det er maling til veggen, og et
+   // hus-prosjekt skal ikke dra inn helse-blokka.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide/.test(
          text
       )
    )

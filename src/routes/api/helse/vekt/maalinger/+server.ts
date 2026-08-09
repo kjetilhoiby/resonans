@@ -1,7 +1,7 @@
 /**
- * GET /api/helse/vekt/maalinger?mistenkelige=true
+ * GET /api/helse/vekt/maalinger?mistenkelige=false&dato=YYYY-MM-DD
  *
- * Vektmålinger med `sensor_events.id`, så en enkeltmåling kan rettes eller slettes.
+ * Vektmålinger med `sensor_events.id`, så en enkeltmåling kan slettes.
  *
  * ## Hvorfor
  *
@@ -11,20 +11,18 @@
  * synken vår er additiv, så vår kopi blir stående.
  *
  * `mistenkelige=true` er standard og gir bare radene `findWeightOutliers` peker på.
- * Uten den returneres alt innenfor vinduet, som er det man vil ha når feilmålingen
- * ikke er ekstrem nok til å bli flagget.
+ * Uten den returneres alt, som er det man vil ha når feilmålingen ikke er ekstrem nok
+ * til å bli flagget. `dato` snevrer til én dag.
+ *
+ * Lesingen bor i `weight-measurement-store`, delt med chat-verktøyet.
  */
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { and, asc, eq, gte } from 'drizzle-orm';
-import { db } from '$lib/db';
-import { sensorEvents, sensors } from '$lib/db/schema';
-import { osloDayKey } from '$lib/domain/oslo-time';
-import { findWeightOutliers, type WeightRow } from '$lib/domain/health/weight-outliers';
-import { MILESTONE_HISTORY_DAYS } from '$lib/server/weight-dashboard';
+import { findWeightOutliers } from '$lib/domain/health/weight-outliers';
+import { listWeightMeasurements } from '$lib/server/health/weight-measurement-store';
 
-/** Tak på rå-lista. Uteliggerlista er alltid kort og har ikke behov for et tak. */
+/** Tak på rå-lista. Uteliggerlista er alltid kort og trenger ikke et tak. */
 const MAX_ROWS = 2000;
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -33,54 +31,38 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const onlySuspicious = url.searchParams.get('mistenkelige') !== 'false';
-	const since = new Date(Date.now() - MILESTONE_HISTORY_DAYS * 86_400_000);
+	const date = url.searchParams.get('dato');
+	if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+		return json({ error: 'Ugyldig "dato" — forventer YYYY-MM-DD' }, { status: 400 });
+	}
+	// Spør man om en bestemt dag, vil man ha dagens målinger — ikke bare dem som
+	// tilfeldigvis er ekstreme nok til å bli flagget.
+	const onlySuspicious = !date && url.searchParams.get('mistenkelige') !== 'false';
 
 	try {
-		// Rå lesing er riktig her: vi trenger id-en for å kunne slette, og
-		// `toWeightMeasurements` kaster den. Vekta leses som ett felt med én betydning
-		// gjennom historikken — det er kroppssammensetningen som er tvetydig, og den
-		// brukes ikke her. Fila står i `knownRawReaders` med den begrunnelsen.
-		const rows = await db
-			.select({
-				id: sensorEvents.id,
-				timestamp: sensorEvents.timestamp,
-				data: sensorEvents.data,
-				provider: sensors.provider
-			})
-			.from(sensorEvents)
-			.leftJoin(sensors, eq(sensorEvents.sensorId, sensors.id))
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'weight'),
-					gte(sensorEvents.timestamp, since)
-				)
-			)
-			.orderBy(asc(sensorEvents.timestamp));
+		const all = await listWeightMeasurements(userId);
 
-		const weightRows: WeightRow[] = [];
-		for (const row of rows) {
-			const weight = (row.data as { weight?: unknown } | null)?.weight;
-			if (typeof weight !== 'number' || !Number.isFinite(weight) || weight <= 0) continue;
-			weightRows.push({
-				id: row.id,
-				date: osloDayKey(row.timestamp),
-				weightKg: weight,
-				source: row.provider ?? null
+		if (date) {
+			return json({
+				dato: date,
+				total: all.length,
+				maalinger: all.filter((row) => row.date === date)
 			});
 		}
 
 		if (onlySuspicious) {
-			const outliers = findWeightOutliers(weightRows);
-			return json({ mistenkelige: true, total: weightRows.length, maalinger: outliers });
+			return json({
+				mistenkelige: true,
+				total: all.length,
+				maalinger: findWeightOutliers(all)
+			});
 		}
 
 		return json({
 			mistenkelige: false,
-			total: weightRows.length,
-			truncated: weightRows.length > MAX_ROWS,
-			maalinger: weightRows.slice(-MAX_ROWS)
+			total: all.length,
+			truncated: all.length > MAX_ROWS,
+			maalinger: all.slice(-MAX_ROWS)
 		});
 	} catch (err) {
 		console.error('[vekt-maalinger] failed:', err);

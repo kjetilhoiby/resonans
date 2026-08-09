@@ -36,6 +36,37 @@ med **medianen av de ti nærmeste i tid** og flagger avvik over
 
 `WeightOutliersCard` under grafen, med bekreftelsessteg per rad.
 
+### Fase 4: Chatten
+
+`manage_weight_measurement` — «slett målingen fra 10. august 2018» → «10. august 2018 har
+én måling på 40,2 kg. Slette den?» → «ja».
+
+Delt lesing og sletting med endepunktene gjennom
+`$lib/server/health/weight-measurement-store.ts`. To veier inn til samme sletting ville
+drevet fra hverandre, og en bruker som får ulikt svar på samme spørsmål stoler på ingen
+av dem.
+
+**Bekreftelsen er håndhevet av datamodellen, ikke av prompten.** `delete` tar **bare en
+id**, aldri en dato. En modell som ikke har kalt `find` har ingen gyldig id å sende, og
+en oppdiktet uuid treffer ingen rad. Det opplagte designet — `slett(dato)` — er også det
+farlige: en modell som mistolker «i går» eller plukker feil årstall sletter en ekte
+veiing, og en sensorrad kan ikke angres fra flaten. Instruksjoner kan overses; en
+manglende id kan ikke.
+
+**Flere målinger per dag er normalt** — folk veier seg morgen og kveld. `find` returnerer
+dem alle med en merknad om å spørre hvilken. Å slette alle på datoen ville fjernet en
+riktig måling sammen med den gale.
+
+Registrert på begge flater (`routes/api/chat/+server.ts` og `assistant/shared-tools.ts`),
+med `query_sensor_data`-beskrivelsen oppdatert til å si at den *ikke* kan slette, og
+`DOMAIN_PROMPTS.health` utvidet.
+
+**`detectPromptFocusModules` måtte utvides.** «Slett målingen fra 10. august 2018»
+inneholder ikke ordet «vekt» og traff derfor ingen modul — da får modellen aldri vite at
+verktøyet finnes. Lagt til `måling`, `maaling`, `veiing` og `veide`. **`maling` uten ø er
+bevisst utelatt:** det er maling til veggen, og et hus-prosjekt skal ikke dra inn
+helse-blokka. Begge deler er dekket av tester.
+
 ## Beslutninger
 
 **Vi peker, brukeren bestemmer — vi filtrerer ikke.** Fristelsen er å la grafen ignorere

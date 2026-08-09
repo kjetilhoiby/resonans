@@ -11,6 +11,7 @@ import { queryProjectsTool } from '$lib/ai/tools/query-projects';
 import { querySensorDataTool } from '$lib/ai/tools/query-sensor-data';
 import { queryTrainingTool } from '$lib/ai/tools/query-training';
 import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { querySleepTool } from '$lib/ai/tools/query-sleep';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
 import { queryTeslaVehicleTool } from '$lib/ai/tools/query-tesla-vehicle';
@@ -172,6 +173,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	 */
 	adaptSharedTool(queryTrainingTool),
 	adaptSharedTool(queryWeightTool),
+	adaptSharedTool(manageWeightMeasurementTool),
 	adaptSharedTool(querySleepTool),
 	adaptSharedTool(queryEgenfrekvensTool),
 	adaptSharedTool(queryTeslaVehicleTool),

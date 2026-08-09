@@ -100,7 +100,7 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// `toWeightMeasurements` kaster id-en. Leser bare `data.weight` — ett felt
 			// med én betydning gjennom historikken. Kroppssammensetningen, som er den
 			// tvetydige delen, brukes ikke her.
-			'routes/api/helse/vekt/maalinger/+server.ts'
+			'lib/server/health/weight-measurement-store.ts'
 		]
 	},
 	{
