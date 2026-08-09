@@ -96,4 +96,23 @@ fylle.
 
 - `npm run check`: 0 feil.
 - `npm test`: 2 929 grønne, inkludert 15 nye.
-- Kjørt mot prod med `dryRun=true` først, deretter for alvor.
+
+Kjørt mot prod med `dryRun=true` først. Planen og kjøringen ga samme tall:
+
+```
+fetched 1339 · stored 1337 · updated 233 · alreadyComplete 1104
+unmatched 2 · unvisited 0
+fatFreeMass 233 · fatRatio 208 · fatMassKg 208 · muscleMass 208
+                · boneMass 208 · hydration 208
+```
+
+Rader med kroppssammensetning gikk fra 10 til 233. En ny tørrkjøring rett etter ga
+`updated 0`, `alreadyComplete 1337` — idempotensen er dermed vist mot ekte data, ikke
+bare i testen.
+
+**Det som står igjen, og hvorfor.** Withings ga 1 379 målegrupper, men 1 339 etter
+parsing: 40 grupper har en kroppsmåling **uten vekt**. De kan ikke festes til en rad
+uten å gjette hvilken veiing de hører til, og regelen om eksakt tidsstempelmatch nekter
+å gjette. Det er derfor 2017 fikk null felt selv om året har målinger. Samme grunn til
+at `unmatched: 2` telles og vises — de to er målinger som er slettet gjennom
+`/api/helse/vekt/maalinger`, og berikelsen gjenoppretter dem bevisst ikke.
