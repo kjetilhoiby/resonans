@@ -6,10 +6,13 @@ import { and, eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
-import { parseWorkoutFile, downsampleTrack, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
+import { parseWorkoutFile, downsampleTrack, forgottenTrackingSuggestionFor, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { pushSession } from '$lib/server/services/strava-sync-service';
+import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
+import { runInBackground } from '$lib/server/run-in-background';
+import { parseWorkoutAnalysis } from '$lib/domain/health/workout-analysis';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
 const IMAGE_MIME_PREFIXES = ['image/'];
@@ -85,7 +88,7 @@ async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promis
 	return created.id;
 }
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	const userId = locals.userId;
 	if (!userId) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
@@ -109,7 +112,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	try {
 		if (isWorkoutFile(file)) {
-			return await handleWorkoutUpload(file, { userId, sensorId, app, sessionId, formData });
+			return await handleWorkoutUpload(file, { userId, sensorId, app, sessionId, formData, appUrl: url.origin });
 		}
 
 		if (isImageFile(file)) {
@@ -128,7 +131,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 async function handleWorkoutUpload(
 	file: File,
-	ctx: { userId: string; sensorId: string; app: ExternalAppConfig; sessionId: string | null; formData: FormData }
+	ctx: {
+		userId: string;
+		sensorId: string;
+		app: ExternalAppConfig;
+		sessionId: string | null;
+		formData: FormData;
+		appUrl: string;
+	}
 ) {
 	const sportType = ctx.formData.get('sportType') as string | null;
 	// Klienten kan be om Resonans-only (hopp over Strava-auto-push) — brukes når en økt lastes
@@ -140,6 +150,18 @@ async function handleWorkoutUpload(
 	// brukt som standard i web-avspillingen. Valgfritt.
 	const basemapRaw = (ctx.formData.get('basemap') as string | null)?.trim() || null;
 	const preferredBasemap = basemapRaw === 'topo' || basemapRaw === 'sat' ? basemapRaw : null;
+	// Øktanalyse fra Ekko (valgfri): navngitte bakker, strekk og baner med brukerens
+	// egen historikk, pluss rundetider og bakkedrag. Det serveren IKKE kan utlede av
+	// sporet — se $lib/domain/health/workout-analysis.ts og docs/ekko-oktanalyse.md.
+	// Feiler tolkningen, lagres økta uten analyse: GPX-en er det viktige.
+	const { analysis, warnings: analysisWarnings } = parseWorkoutAnalysis(
+		ctx.formData.get('analysis')
+	);
+	if (analysisWarnings.length > 0) {
+		console.warn(
+			`[apps/upload] øktanalyse fra ${ctx.app.id} delvis forkastet: ${analysisWarnings.join('; ')}`
+		);
+	}
 	const gpxContent = await file.text();
 	const parsed = parseWorkoutFile(file.name || 'track.gpx', gpxContent);
 
@@ -153,6 +175,14 @@ async function handleWorkoutUpload(
 	// Normaliser sportType (f.eks. Ekko sender «eBiking») til kanonisk form
 	// slik at autocheck/effort/analyse kjenner den igjen.
 	parsed.sportType = normalizeSportType(parsed.sportType);
+
+	// Etter normaliseringen, ikke før: terskelen for «i bevegelse» er per
+	// sportsfamilie, og en el-sykkeltur parset som «running» ville fått feil.
+	//
+	// Dette ENDRER ingenting. Økta lagres som den ble spilt inn; forslaget er noe
+	// Ekko kan vise, og brukeren kan handle på ved å kutte lokalt og laste opp på
+	// nytt. Se docs/ekko-glemte-trackeren.md.
+	const forgottenTracking = forgottenTrackingSuggestionFor(parsed);
 
 	const result = await SensorEventService.write(
 		{
@@ -174,7 +204,8 @@ async function handleWorkoutUpload(
 						? parsed.duration / (parsed.distance / 1000)
 						: undefined,
 				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS),
-				...(preferredBasemap ? { preferredBasemap } : {})
+				...(preferredBasemap ? { preferredBasemap } : {}),
+				...(analysis ? { ekkoAnalysis: analysis } : {})
 			},
 			metadata: {
 				sourceApp: ctx.app.id,
@@ -188,6 +219,26 @@ async function handleWorkoutUpload(
 		},
 		{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 	);
+
+	// Etterbehandling: aggregater, autohaking, målprogresjon og push. Dette lå
+	// fram til august 2026 bare i Withings- og Dropbox-synken, så en tur lastet
+	// opp fra Ekko ble usynlig i formkurven til nattjobben og ga aldri varsel —
+	// se docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md.
+	//
+	// `runInBackground` (waitUntil) holder funksjonen i live til jobben er ferdig
+	// uten å forsinke svaret til Ekko: appen venter på dette kallet før den kan
+	// merke økta som opplastet.
+	if (result.event?.id) {
+		runInBackground(
+			runAfterWorkoutWrite({
+				userId: ctx.userId,
+				eventIds: [result.event.id],
+				timestamps: [parsed.startTime],
+				appUrl: ctx.appUrl,
+				source: `${ctx.app.id}_upload`
+			})
+		);
+	}
 
 	// Auto-push til Strava hvis brukeren er koblet til. pushSession er dedup-et
 	// (external_id = `<app>-<sessionId>`) og feiler aldri hardt — den bokfører
@@ -216,7 +267,17 @@ async function handleWorkoutUpload(
 		inserted: result.inserted,
 		trackPoints: parsed.trackPoints.length,
 		distance: Math.round(parsed.distance),
-		duration: Math.round(parsed.duration)
+		duration: Math.round(parsed.duration),
+		// null i det store flertallet av tilfellene. Er den satt, ser det ut som
+		// sporingen ble glemt, og Ekko kan tilby «snapp sluttpunktet hit».
+		forgottenTracking,
+		// Hva vi faktisk tok imot av analysen. Uten dette er et avvist felt usynlig
+		// for appen og ser ut som at Resonans ignorerer den — samme grunn som
+		// `warnings` på HealthKit-importen.
+		analysis: analysis
+			? { features: analysis.features.length, laps: analysis.laps.length, hillReps: analysis.hillReps.length }
+			: null,
+		...(analysisWarnings.length > 0 ? { analysisWarnings } : {})
 	});
 }
 

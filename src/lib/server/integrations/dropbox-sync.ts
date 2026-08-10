@@ -8,9 +8,9 @@ import {
 	refreshDropboxAccessToken,
 	type DropboxListFolderEntry
 } from '$lib/server/integrations/dropbox';
-import { getWorkoutContextForUser, type WorkoutContextSummary } from '$lib/server/workout-context';
-import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
+import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { suggestForgottenTracking } from '$lib/domain/health/moving-time';
 
 interface DropboxCredentials {
 	access_token: string;
@@ -218,6 +218,19 @@ export function parseWorkoutFile(path: string, content: string): ParsedWorkout |
 }
 
 /**
+ * Ser det ut som sporingen ble glemt? Et **forslag**, aldri en korreksjon.
+ *
+ * Kalles etter at `sportType` er avgjort — terskelen for «i bevegelse» er per
+ * sportsfamilie, og en el-sykkeltur parset som «running» ville fått feil.
+ *
+ * Bruker sporet i full oppløsning, ikke det nedsamplede: nedsamplingen er en
+ * avveiing mot kart-payload, og har ingen grunn til å påvirke hvor kuttet lander.
+ */
+export function forgottenTrackingSuggestionFor(parsed: ParsedWorkout) {
+	return suggestForgottenTracking(parsed.trackPoints, { sportType: parsed.sportType });
+}
+
+/**
  * Maks antall trackpunkter som lagres per økt i `sensor_events.data`. Taket er en avveiing mot
  * kart-rendering/payload i nettleseren, ikke DB-plass (jsonb tåler langt mer). `metadata.totalTrackPoints`
  * beholder alltid det sanne antallet. Ved 2000 blir en 40 km-økt ~1 punkt/20 m.
@@ -365,6 +378,7 @@ export async function syncDropboxWorkoutsForUser(
 	let skipped = 0;
 	let failed = 0;
 	const importedWorkoutIds: string[] = [];
+	const importedWorkoutTimestamps: Date[] = [];
 
 	for (const file of workoutFiles) {
 		const sourcePath = file.path_lower || file.path_display || file.name;
@@ -425,7 +439,10 @@ export async function syncDropboxWorkoutsForUser(
 			});
 
 			imported += 1;
-			if (insertedWorkout?.id) importedWorkoutIds.push(insertedWorkout.id);
+			if (insertedWorkout?.id) {
+				importedWorkoutIds.push(insertedWorkout.id);
+				importedWorkoutTimestamps.push(parsed.startTime);
+			}
 		} catch (error) {
 			failed += 1;
 			console.error('[dropbox-sync] import failed for file:', sourcePath, error);
@@ -449,18 +466,23 @@ export async function syncDropboxWorkoutsForUser(
 		})
 		.where(eq(sensors.id, sensor.id));
 
+	// Etterbehandlingen er felles med Ekko-opplastingen og Withings-synken, se
+	// docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md. Varslingen lå her
+	// alene fram til august 2026 — det var derfor en Ekko-opplastet tur bare ga
+	// push når Dropbox-fila for den samme turen tilfeldigvis kom fram etterpå.
+	// `runAfterWorkoutWrite` deduperer varselet mot de andre kildene.
 	let notified = 0;
-	if (options?.fullRescan !== true && options?.appUrl && importedWorkoutIds.length > 0) {
-		const importedWorkouts = (
-			await Promise.all(importedWorkoutIds.map((workoutId) => getWorkoutContextForUser(userId, workoutId)))
-		).filter((workout): workout is WorkoutContextSummary => workout !== null);
-
-		const notificationResult = await notifyUserAboutImportedWorkouts({
+	if (importedWorkoutIds.length > 0) {
+		const followup = await runAfterWorkoutWrite({
 			userId,
-			appUrl: options.appUrl,
-			workouts: importedWorkouts
+			eventIds: importedWorkoutIds,
+			timestamps: importedWorkoutTimestamps,
+			appUrl: options?.appUrl ?? null,
+			source: 'dropbox_sync',
+			// En rescan importerer hele mappa på nytt; da skal ingen telefon vibrere.
+			backfill: options?.fullRescan === true
 		});
-		notified = notificationResult.sent;
+		notified = followup.notified;
 	}
 
 	return {

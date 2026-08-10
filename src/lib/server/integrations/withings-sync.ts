@@ -10,8 +10,7 @@ import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './
 import { isPlausibleVo2max, VO2MAX_MAX, VO2MAX_MIN } from '$lib/domain/health/vo2max';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { autocheckChecklistItemsForDay, autocheckWeekChecklistItems } from '$lib/server/checklist-autocheck';
-import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
+import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { syncHrRecovery } from './withings-hr-recovery';
 import { syncSleepHrv } from './withings-sleep-hrv';
@@ -882,10 +881,20 @@ export async function syncWorkoutData(
 	// Store events in batches for performance
 	console.log(`   Storing ${parsed.length} workout events in database...`);
 	const batchSize = 100;
+	// Bare de NYE radene mates til `runAfterWorkoutWrite`, som trenger øktenes
+	// egne tidsstempler for å regne om riktig dag og uke.
+	//
+	// Filteret på `wasExisting` er det som holder cronen billig: den inkrementelle
+	// synken henter 7 dagers overlapp hvert 5. minutt for å fange retroaktive
+	// revisjoner, så uten det ville hver kjøring dratt med seg en re-aggregering
+	// av en hel uke. Prisen er at en revidert økt ikke re-aggregeres før
+	// nattjobben — projeksjonen oppdateres uansett, og det er den øktlistene leser.
+	const writtenEventIds: string[] = [];
+	const writtenTimestamps: Date[] = [];
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
 
-		await SensorEventService.writeMany(
+		const results = await SensorEventService.writeMany(
 			batch.map((event) => ({
 				userId,
 				sensorId,
@@ -898,13 +907,19 @@ export async function syncWorkoutData(
 			})),
 			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 		);
-		
+
+		for (const row of results) {
+			if (!row.event?.id || row.wasExisting) continue;
+			writtenEventIds.push(row.event.id);
+			writtenTimestamps.push(row.event.timestamp);
+		}
+
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} workout events...`);
 		}
 	}
 
-	return parsed.length;
+	return { count: parsed.length, eventIds: writtenEventIds, timestamps: writtenTimestamps };
 }
 
 /**
@@ -997,14 +1012,32 @@ export async function syncAllWithingsData(
 	console.log(`   ✓ Synced ${sleep} sleep sessions`);
 
 	console.log('💪 Syncing workout data...');
-	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
+	const workoutSync = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
+	const workouts = workoutSync.count;
 	console.log(`   ✓ Synced ${workouts} workouts`);
 
-	// After workout sync, run immediate auto-updates so the UI reflects new workouts quickly.
-	// We still enqueue background jobs as resilience fallback.
-	if (workouts > 0) {
+	// Etterbehandlingen er felles med Ekko-opplastingen og Dropbox-importen —
+	// se docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md. Blokka lå
+	// duplisert her fram til august 2026, og aggregeringen manglet helt, så
+	// form- og belastningskortene ventet på nattjobben uansett kilde.
+	//
+	// `notify: false`: Withings beholder sin egen, bevisst smale varsling
+	// (`notifyWithingsSyncResults` — yoga og vekt). Klokka registrerer gåturer
+	// og småøkter av seg selv, og et varsel per stykk ville blitt støy.
+	if (workoutSync.eventIds.length > 0) {
+		await runAfterWorkoutWrite({
+			userId,
+			eventIds: workoutSync.eventIds,
+			timestamps: workoutSync.timestamps,
+			appUrl: null,
+			source: 'withings_sync',
+			notify: false
+		});
+
+		// Køede jobber beholdes som sikkerhetsnett: feiler et steg over, tar
+		// bakgrunnskøen det på neste kjøring.
+		const todayOslo = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
 		const now = new Date();
-		const todayOslo = now.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
 		const dayOfWeek = now.getUTCDay() || 7; // Mon=1 … Sun=7
 		const weekStart = new Date(now);
 		weekStart.setUTCDate(now.getUTCDate() - dayOfWeek + 1);
@@ -1012,27 +1045,12 @@ export async function syncAllWithingsData(
 		const weekEnd = new Date(weekStart);
 		weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
 
-		try {
-			await autocheckChecklistItemsForDay({ userId, date: todayOslo });
-			await autocheckWeekChecklistItems({ userId, date: todayOslo });
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error(`[withings-sync] immediate checklist autocheck failed user=${userId}: ${msg}`);
-		}
-
 		await enqueueBackgroundJob({
 			userId,
 			type: 'checklist_autocheck',
 			payload: { date: todayOslo },
 			priority: 1
 		});
-
-		try {
-			await syncSensorProgressForTasks({ userId, weekStart, weekEnd });
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error(`[withings-sync] immediate sensor progress sync failed user=${userId}: ${msg}`);
-		}
 
 		await enqueueBackgroundJob({
 			userId,

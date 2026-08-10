@@ -61,7 +61,6 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/tracks/routes-repository.ts',
 			// Gjeld — aggregerer over økter og bør flyttes til den delte leseren.
 			'lib/server/sensor-goal-automation.ts',
-			'lib/server/workout-nuggets.ts',
 			'routes/api/sensor-summary/+server.ts',
 			// Summerer Withings' egne økt-kalorier som kryssjekk. Bare Withings-rader
 			// har feltet i dag, så det dobbeltteller ikke — men det gjør det den dagen

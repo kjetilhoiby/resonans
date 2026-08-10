@@ -634,6 +634,42 @@ datainnhentingen.
 - Tester på modellen skal uttrykke **forhold**, ikke nivå. Hardkodet 87,5 låste
   `effort-service.test.ts` til `MET_CALIBRATION = 2,5`.
 
+### Glemte trackeren: et forslag, aldri en korreksjon
+
+`$lib/domain/health/moving-time.ts`, kontrakten i `docs/ekko-glemte-trackeren.md`. Se
+`docs/changelog/2026-08-10-glemte-trackeren.md`.
+
+- **`data.duration` er elapsed**, og det er det effort ALLTID skåres på. Glemmer man å
+  avslutte sporingen, teller den døde halen fullt ut — en el-sykkeltur på 9,07 km sto som
+  2 t 20 min og fikk effort 114 der svaret var ~20.
+- **Automatisk korreksjon ble bygget og revet ut igjen samme dag.** Den ville endret 96
+  økter for en feil som skjer et par ganger i året, og tok feil på de fleste: en løpetur
+  der sporingen brøt sammen ble til «8 min», en fjelltur mistet halvparten fordi bratt
+  terreng er sakte. **En sjelden katastrofe skal ikke behandles som en systematisk
+  skjevhet.** En feil gjetning skal koste et forslag brukeren avviser, ikke et tall
+  brukeren må oppdage.
+- **`suggestForgottenTracking` returnerer null i det store flertallet av tilfellene**, og
+  skal gjøre det. Forslaget følger med i svaret fra `POST /api/apps/upload`; korreksjonen
+  skjer i Ekko ved at sporet kuttes lokalt og lastes opp på nytt med samme `sessionId`.
+- **Bare hale-kutt er trygt.** Kuttes starten, endres `startTime`, upserten treffer en
+  annen nøkkel, og turen telles to ganger.
+- **Ingen lagret overstyring.** Kutt sporet, så blir `duration` sann — da trenger ingen
+  leser å vite at en korreksjon har skjedd.
+- **Farten måles som forflytning mellom vinduets endepunkter**, ikke som sporlengde mellom
+  nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker punktene 2–5 meter.
+- **To porter, og begge må åpne.** Den fine (10 s) spør «var jeg i bevegelse nå», den
+  grove (120 s) «kom jeg noen vei». Et rødlys består den grove og felles av den fine;
+  innendørs GPS-drift er motsatt.
+- **Kuttpunktet krever VEDVARENDE bevegelse** (over halve siste minutt). Uten det landet
+  kuttet nede i garasjen — multipath ga en spike på 4 m/s, og gåturen opp på kontoret
+  bestod den grove porten fordi den faktisk kommer noen vei.
+- **Sykkelterskelen er 2,5 m/s, ikke Stravas ~1,4**, nettopp for å ta gåturen med. Løping
+  har ikke det gapet (rask gange 1,7 mot sliten jogg 1,8) og står på 0,7. Kjent rest.
+- **Minst 10 min og 15 % av økta.** Et forslag på hver tur blir bakgrunnsstøy.
+- **`coverage` måler mot SPORET, `MIN_TRACK_SPAN_SHARE` mot ØKTA.** Et spor kan være
+  perfekt tett og likevel dekke en åttendedel av turen — det var slik «56 min → 8 min»
+  oppsto. Splits og pulsfordeling på flaten regnes fra de samme punktene og avslører det.
+
 ### Ukas effort: budsjett og belastning er to dommer
 
 `$lib/domain/health/effort-standing.ts` eier ordene, `tracks/effort-budget.ts` tallene.
@@ -711,6 +747,107 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
 - **Vi haker aldri AV automatisk.** To reelle økter innenfor klyngevinduet på to timer
   ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
   hake for mye er trygt; å fjerne opptjent framgang er det ikke.
+
+### En økt er skrevet — én vei inn for etterbehandlingen
+
+Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
+`$lib/server/workouts/after-workout-write.ts`, beslutningene rent i
+`$lib/domain/health/workout-followup.ts`.
+
+- **Skriver du en `workout`-hendelse, kaller du `runAfterWorkoutWrite`.** Den gjør
+  aggregering → autohaking (dag + uke) → målprogresjon → varsling. Fram til august
+  2026 lå dette duplisert i Withings-synken og Dropbox-importen, og `/api/apps/upload`
+  (Ekko) hadde det ikke i det hele tatt: en tur du nettopp hadde løpt ga ingen push,
+  ingen hake, og fantes ikke i formkurven før nattjobben kl. 03 UTC. Alt sammen kom i
+  stedet timer senere, den gangen en *annen* kilde beskrev den samme turen.
+- **`sensor_aggregates` skrives ellers BARE av `/api/cron/aggregate`** (`0 3 * * *`
+  UTC = 05:00 Oslo). Alt som leser dagsraden — `loadDailyEffort`, altså CTL/ATL/TSB —
+  henger til neste morgen uten dette kallet. Aktivitetslista og effort-budsjettet
+  leser live og var aldri berørt; det er derfor symptomet var vanskelig å feste.
+- **Varselet dedupliseres per KILDE i klynga, aldri på `activityId`.** Klyngens id er
+  dens *eldste* evidence-event, og den flytter seg når en kilde med tidligere
+  tidsstempel lander etterpå — en dedup på id slipper da varsel nummer to gjennom for
+  samme tur. `workout_notifications` har én rad per kilde, og hele klynga hoppes over
+  hvis én av dem er varslet om før.
+- **Bokføringen skjer før utsending**, ellers sender to samtidige skrivinger hver sin
+  push. Et varsel som feiler prøves altså ikke på nytt — bevisst: en tapt push er en
+  økt du ser neste gang du åpner appen, dobbeltvarsling får folk til å skru av varsler.
+- **Withings kjører med `notify: false`.** `notifyWithingsSyncResults` (yoga + vekt)
+  er et bevisst smalt valg — klokka registrerer gåturer av seg selv, og et varsel per
+  stykk blir støy. De øvrige stegene deles.
+- **Begge aldersvaktene finnes for backfill, ikke for sen synk.**
+  `FOLLOWUP_MAX_AGE_DAYS` hindrer at en full synk løper autohakingen én gang per
+  kalenderdag siden 2017; `NOTIFY_MAX_AGE_DAYS` hindrer at den samme synken tømmer
+  varslingskanalen for tillit. `selectFollowupDays` returnerer `skipped`, som skal
+  logges — en stille kapping ser ut som «alt ble behandlet».
+- **`wasExisting` på `SensorEventService.write`/`writeMany` er ikke pynt.** Den
+  inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
+  det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
+
+### Krydderet telles per aktivitet, aldri på tvers
+
+Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
+`$lib/domain/health/workout-nugget-rules.ts`, aktivitetstypen i
+`workout-activity-kind.ts`.
+
+- **Streak og telling er per aktivitetstype.** Fram til august 2026 pooler de alt:
+  elsykkel mandag + løpetur tirsdag + gåtur onsdag ga «3 dager på rad», som ikke
+  er en vane man har bygget. Nå: «Løpt 4 dager på rad», «Elsykkeltur nr. 50 i år».
+- **`workoutActivityKind` er et TREDJE grupperingsvokabular, med vilje.**
+  `workoutSportFamily` folder `e_bike` inn i `cycling` (riktig når man teller
+  kilometer, galt for krydder), og `describeWorkoutSportType` gjør det samme —
+  og er dessuten en visningsstreng, som er en skjør gruppenøkkel. Motsatt vei
+  må `trail_running`/`indoor_running` slås SAMMEN med `running`.
+- **Årsmilepæler bare på runde tall.** «Nr. 37 i år» er ikke en nyhet, og krydder
+  på hver tur blir bakgrunnsstøy — som blir slått av.
+- **Tempo-rekord bare for løping.** På sykkel avgjøres farten av terreng, vind og
+  motor.
+- **Historikken leses gjennom `buildUnifiedWorkoutActivities`.** Modulen lå i
+  `knownRawReaders` og telte derfor én tur som tre — «3. økt denne uka» kunne
+  være én tur fra klokka, Dropbox og Ekko.
+- **Egen økt kjennes igjen på evidence-ideene**, ikke på `activityId`: klyngens id
+  er dens eldste kilde og trenger ikke være raden du ble kalt med.
+- `e_bike` har egen tittel («Elsykkeltur»), ikke «Sykkeløkt». Den har egen
+  MET-verdi, egen effort-faktor og eget krydder-regnskap.
+
+### Øktvurderingen: terreng fra sporet, navn fra Ekko
+
+Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten bygges
+rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
+`$lib/server/workouts/workout-assessment.ts`.
+
+- **All geografi kommer fra Ekko. Resonans detekterer ingenting selv.** Bakker,
+  runder og strekk leses utelukkende av `analysis`-feltet på opplastingen
+  (`workout-analysis.ts`, kontrakt i `docs/ekko-oktanalyse.md`). Resonans hadde en
+  periode sin egen `detectClimbs`/`detectLaps` over trackPoints — den er **fjernet**.
+  To motorer som leter etter «en bakke» i samme spor blir aldri enige, og den ene
+  av dem har navn og brukerens egen historikk. En terskel som bare finnes ett sted
+  kan dessuten kalibreres; to sett terskler i to språk kan det ikke.
+  **Ikke bygg den tilbake.** Mangler bakker på en økt, er svaret å utvide Ekkos
+  deteksjon, ikke å legge en ny motor i Resonans.
+- **Konsekvensen er bevisst:** en økt uten Ekko-analyse — fra klokka, fra Dropbox,
+  fra Strava, eller en Ekko-økt utenfor rundbanemodus / uten lagret rute — har
+  ingen bakker og ingen runder i vurderingen. Den har fortsatt distanse, tid, puls,
+  kilometersplitter, effort og mål. `lapDetectionActive` i Ekko krever ingen valgt
+  rute, ingen intervalløkt og ingen oppvarming; bakkesegmenter finnes bare på
+  lagrede ruter.
+- **Strekk kan uansett bare komme fra Ekko.** `RunFeature` sier det selv: et strekk
+  «finnes i historikken og i hodet», og ingen terrengterskel kan finne det.
+- **Enheten følger idretten, ett sted:** `formatPaceOrSpeed` i
+  `$lib/utils/activity-metrics`. Prompten hardkodet «/km» fram til august 2026 og
+  ga «tempo 3:08/km» på en sykkeltur der kortet over sa «19,1 km/t».
+- **Måltall leses fra `sensor_goals`, aldri fra måltittelen.** `currentValue`,
+  `targetValue`, `baselineValue` og `unit` har ligget der hele tiden; vurderingen
+  leste dem aldri, og ga «redusere vekten til 85 kg og 95 kg». `goal-horizon.ts`
+  eier både progresjonen og kort/lang-inndelingen. Nedadgående mål måles fra
+  `baselineValue` — uten den vet vi ikke om 88 kg er nesten i mål eller nettopp begynt.
+- **Rådet er betinget.** «Avslutt med ett enkelt råd» tvang fram «løp mer» på hver
+  eneste økt. «Ingenting å endre» er et gyldig svar.
+- **Cachen hviler på `context_hash`**, som dekker konteksten *og* systemprompten.
+  Lander Ekko-analysen etterpå eller endrer vi instruksene, skrives vurderingen om.
+  Uten den ville cachen låst inne en vurdering fra før halvparten av dataene fantes.
+- **Chatten på økta får samme kontekst som vurderingen** — siden bygde tidligere sitt
+  eget vedlegg, med samme «/km»-feil.
 
 ### Withings-backfill
 

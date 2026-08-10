@@ -76,6 +76,12 @@ export function computeWorkoutEffort(
 	input: WorkoutEffortInput,
 	baseline: EffortBaseline
 ): WorkoutEffortResult | null {
+	// Skåres ALLTID på øktas oppgitte varighet. Bevegelsestid brukes ikke her:
+	// en glemt sporing rettes ved at brukeren godkjenner et forslag i Ekko, som
+	// kutter sporet og dermed gjør `duration` sann. Se
+	// docs/changelog/2026-08-10-glemte-trackeren.md — automatisk korreksjon ble
+	// bygget og forkastet, fordi den endret 96 økter for en feil som skjer et par
+	// ganger i året, og tok feil på de fleste av dem.
 	const durationSeconds = typeof input.durationSeconds === 'number' ? input.durationSeconds : null;
 	if (!durationSeconds || durationSeconds < MIN_DURATION_SECONDS) return null;
 
