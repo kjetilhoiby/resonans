@@ -741,6 +741,15 @@ rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
   i prinsippet: Ekkos `RunFeature` sier selv at et strekk «finnes i historikken og i
   hodet». Kontrakten står i `docs/ekko-oktanalyse.md`, parseren i
   `workout-analysis.ts`.
+- **Serverdeteksjonen er en FALLBACK, ikke et tillegg.** Der Ekko har navngitt
+  grunnen, undertrykkes den oppdagede geometrien (`suppressNamedClimbs`, og Ekkos
+  runder erstatter de oppdagede i sin helhet). Ellers leser modellen «Dreperen» og
+  «stigningen fra km 2,1» som to bakker — dobbelttelling i en ny form.
+  Sammenligningen går på TID, siden Ekkos features er plassert med `startOffsetSec`.
+  Fallbacken har rikelig å gjøre: Ekkos rundedeteksjon kjører **bare i
+  rundbanemodus** (`lapDetectionActive` krever ingen valgt rute, ingen intervall,
+  ingen oppvarming), bakkesegmenter finnes **bare på lagrede ruter**, og økter fra
+  klokka, Dropbox og Strava har ingen Ekko-analyse i det hele tatt.
 - **Historikken sendes MED fra Ekko.** Vi har ikke feature-historikken og kan ikke
   regne medianen selv. Differansen skrives dessuten ferdig ut i konteksten
   («12 s raskere enn medianen din») — en modell som må regne selv regner av og til feil.

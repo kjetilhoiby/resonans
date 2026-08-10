@@ -19,7 +19,7 @@
 
 import { formatPaceOrSpeed, isWheeledSport } from '$lib/utils/activity-metrics';
 import type { KmSplit } from '$lib/utils/track-stats';
-import type { Climb, Lap } from './workout-terrain';
+import { suppressNamedClimbs, type Climb, type Lap } from './workout-terrain';
 import type { WorkoutAnalysis } from './workout-analysis';
 import type { FramedGoal } from './goal-horizon';
 
@@ -197,6 +197,53 @@ export function describeFeatures(analysis: WorkoutAnalysis | null): string[] {
 	});
 }
 
+/**
+ * Ekkos egne runder — talt live mot ankeret brukeren satte, med «din vanlige
+ * runde her» der historikken holder (Ekko krever tre tidligere runder på samme
+ * bane før den påstår en median).
+ */
+export function describeAnalysisLaps(analysis: WorkoutAnalysis | null): string[] {
+	if (!analysis) return [];
+
+	return analysis.laps.map((lap) => {
+		const parts = [`runde ${lap.index}`];
+		if (lap.durationSec !== null) parts.push(mmss(lap.durationSec));
+		if (lap.distanceMeters !== null) parts.push(`${Math.round(lap.distanceMeters)} m`);
+		if (lap.avgHeartRate !== null) parts.push(`puls ${lap.avgHeartRate}`);
+
+		const h = lap.history;
+		if (h && h.medianDurationSec !== null && lap.durationSec !== null) {
+			const delta = Math.round(h.medianDurationSec - lap.durationSec);
+			parts.push(
+				delta === 0
+					? '— på din vanlige rundetid her'
+					: `— ${mmss(Math.abs(delta))} ${delta > 0 ? 'raskere' : 'tregere'} enn din vanlige runde her`
+			);
+		}
+		return parts.join(', ').replace(', —', ' —');
+	});
+}
+
+/** Bakkedrag fra en strukturert bakkeøkt, med sonefordeling der den finnes. */
+export function describeHillReps(analysis: WorkoutAnalysis | null): string[] {
+	if (!analysis) return [];
+
+	return analysis.hillReps.map((rep) => {
+		const parts = [`drag ${rep.index}`];
+		if (rep.durationSec !== null) parts.push(mmss(rep.durationSec));
+		if (rep.distanceMeters !== null) parts.push(`${Math.round(rep.distanceMeters)} m`);
+		const hr = hrText(rep.avgHeartRate, rep.peakHeartRate);
+		if (hr) parts.push(hr);
+		if (rep.secondsInZone) {
+			// Bare den dominerende sonen: fem tall per drag over ti drag er en
+			// tabell, ikke en observasjon.
+			const max = Math.max(...rep.secondsInZone);
+			if (max > 0) parts.push(`mest i Z${rep.secondsInZone.indexOf(max) + 1}`);
+		}
+		return parts.join(', ');
+	});
+}
+
 function describeGoals(goals: FramedGoal[]): string[] {
 	return goals.map((g) => {
 		const parts = [g.title];
@@ -237,13 +284,34 @@ export function buildAssessmentContext(input: AssessmentInput): string {
 				.map(([dist, sec]) => `${dist}: ${mmss(sec)}`)
 		: [];
 
+	// Serverdeteksjonen er en FALLBACK, ikke et tillegg. Der Ekko alt har beskrevet
+	// grunnen med navn og historikk, er dens versjon bedre på alle måter — og to
+	// beskrivelser av samme motbakke leses som to motbakker.
+	//
+	// Ekkos rundedeteksjon kjører bare i rundbanemodus, og bakkesegmentene bare på
+	// lagrede ruter, så fallbacken har rikelig å gjøre: økter fra klokka, fra
+	// Dropbox og fra Strava har ingen Ekko-analyse i det hele tatt.
+	const namedSpans = (input.analysis?.features ?? [])
+		.filter((f) => f.startOffsetSec !== null && f.durationSec !== null)
+		.map((f) => ({
+			startSec: f.startOffsetSec as number,
+			endSec: (f.startOffsetSec as number) + (f.durationSec as number)
+		}));
+	const climbs = suppressNamedClimbs(input.climbs, namedSpans);
+	// Runder: Ekko teller dem live mot ankeret brukeren selv satte, og bærer
+	// «din vanlige runde her». Har den sagt noe, er vår geometriske variant
+	// overflødig i sin helhet.
+	const laps = (input.analysis?.laps.length ?? 0) > 0 ? [] : input.laps;
+
 	const blocks = [
 		section('Økt', summary),
 		// Navngitte strekninger først: de er det eneste modellen ikke kunne
 		// utledet selv, og det brukeren kjenner igjen.
 		section('Navngitte strekninger (fra Ekko, med din egen historikk)', describeFeatures(input.analysis)),
-		section('Runder', describeLaps(w.sportType, input.laps)),
-		section('Bakker (oppdaget i sporet)', describeClimbs(w.sportType, input.climbs)),
+		section('Runder (fra Ekko, med din egen historikk)', describeAnalysisLaps(input.analysis)),
+		section('Runder (oppdaget i sporet)', describeLaps(w.sportType, laps)),
+		section('Bakkedrag', describeHillReps(input.analysis)),
+		section('Bakker (oppdaget i sporet)', describeClimbs(w.sportType, climbs)),
 		section('Kilometer', describeSplits(w.sportType, input.splits)),
 		section('Raskeste sammenhengende strekk i økta', best),
 		input.nugget ? section('Mot egen historikk', [input.nugget]) : null,

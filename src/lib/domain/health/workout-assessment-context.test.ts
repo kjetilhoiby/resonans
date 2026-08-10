@@ -216,6 +216,8 @@ describe('buildAssessmentContext', () => {
 					{
 						startDistanceM: 2100,
 						endDistanceM: 2600,
+						startOffsetSec: 600,
+						endOffsetSec: 750,
 						lengthM: 500,
 						gainM: 40,
 						avgGradientPct: 8,
@@ -299,5 +301,109 @@ describe('buildAssessmentContext', () => {
 		);
 		expect(context).toContain('runde 1: 0,8 km, 3:20');
 		expect(context).toContain('puls 163');
+	});
+});
+
+describe('serverdeteksjonen er fallback, ikke tillegg', () => {
+	const namedHill = {
+		kind: 'hill' as const,
+		name: 'Dreperen',
+		startName: null,
+		endName: null,
+		startOffsetSec: 590,
+		durationSec: 170,
+		distanceMeters: 480,
+		elevationGainM: 42,
+		avgHeartRate: 168,
+		maxHeartRate: 179,
+		avgPaceSecPerKm: 354,
+		history: null
+	};
+
+	const detectedSameHill = {
+		startDistanceM: 2100,
+		endDistanceM: 2600,
+		startOffsetSec: 600,
+		endOffsetSec: 750,
+		lengthM: 500,
+		gainM: 40,
+		avgGradientPct: 8,
+		durationSec: 150,
+		avgPaceSecPerKm: 300,
+		avgHr: 165,
+		maxHr: 175
+	};
+
+	it('teller ikke den samme motbakken to ganger', () => {
+		const context = buildAssessmentContext(
+			baseInput({
+				analysis: { version: 1, features: [namedHill], laps: [], hillReps: [] },
+				climbs: [detectedSameHill]
+			})
+		);
+
+		expect(context).toContain('Dreperen');
+		// Den oppdagede tvillingen skal være borte helt — ellers leser modellen
+		// «Dreperen» og «stigningen fra km 2,1» som to bakker.
+		expect(context).not.toContain('Bakker (oppdaget i sporet)');
+	});
+
+	it('beholder oppdagede bakker Ekko ikke har sagt noe om', () => {
+		const context = buildAssessmentContext(
+			baseInput({
+				analysis: { version: 1, features: [{ ...namedHill, startOffsetSec: 3000 }], laps: [], hillReps: [] },
+				climbs: [detectedSameHill]
+			})
+		);
+		expect(context).toContain('Bakker (oppdaget i sporet)');
+	});
+
+	it('lar Ekkos runder erstatte de oppdagede i sin helhet', () => {
+		const context = buildAssessmentContext(
+			baseInput({
+				analysis: {
+					version: 1,
+					features: [],
+					laps: [
+						{
+							index: 1,
+							distanceMeters: 400,
+							durationSec: 96,
+							avgHeartRate: 162,
+							history: { completions: 30, medianDurationSec: 101, medianAvgHeartRate: null, bestDurationSec: null }
+						}
+					],
+					hillReps: []
+				},
+				laps: [{ index: 1, distanceM: 400, durationSec: 96, avgPaceSecPerKm: 240, avgHr: 162 }]
+			})
+		);
+
+		expect(context).toContain('Runder (fra Ekko, med din egen historikk)');
+		expect(context).toContain('raskere enn din vanlige runde her');
+		expect(context).not.toContain('Runder (oppdaget i sporet)');
+	});
+
+	it('bruker de oppdagede rundene når Ekko ikke har talt noen', () => {
+		const context = buildAssessmentContext(
+			baseInput({ laps: [{ index: 1, distanceM: 400, durationSec: 96, avgPaceSecPerKm: 240, avgHr: 162 }] })
+		);
+		expect(context).toContain('Runder (oppdaget i sporet)');
+	});
+
+	it('tar med bakkedrag fra en strukturert bakkeøkt', () => {
+		const context = buildAssessmentContext(
+			baseInput({
+				analysis: {
+					version: 1,
+					features: [],
+					laps: [],
+					hillReps: [
+						{ index: 1, durationSec: 62, distanceMeters: 210, avgHeartRate: 171, peakHeartRate: 182, secondsInZone: [0, 0, 12, 38, 12] }
+					]
+				}
+			})
+		);
+		expect(context).toContain('drag 1, 1:02, 210 m, puls 171/182, mest i Z4');
 	});
 });

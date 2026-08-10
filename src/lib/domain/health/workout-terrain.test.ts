@@ -5,6 +5,7 @@ import {
 	smoothElevation,
 	CLIMB_DIP_TOLERANCE_M,
 	MIN_CLIMB_GAIN_M,
+	suppressNamedClimbs,
 	type Climb
 } from './workout-terrain';
 import { cumulativeDistanceMeters, type TrackPoint } from '$lib/utils/track-stats';
@@ -232,5 +233,52 @@ describe('detectLaps', () => {
 
 	it('tåler et for kort spor', () => {
 		expect(detectLaps([{ lat: 59.9, lon: 10.75 }])).toEqual([]);
+	});
+});
+
+describe('suppressNamedClimbs', () => {
+	const climb = (startOffsetSec: number | null, endOffsetSec: number | null): Climb => ({
+		startDistanceM: 2100,
+		endDistanceM: 2600,
+		startOffsetSec,
+		endOffsetSec,
+		lengthM: 500,
+		gainM: 40,
+		avgGradientPct: 8,
+		durationSec: endOffsetSec !== null && startOffsetSec !== null ? endOffsetSec - startOffsetSec : null,
+		avgPaceSecPerKm: 300,
+		avgHr: 165,
+		maxHr: 175
+	});
+
+	it('fjerner et drag som beskriver den samme bakken Ekko har navngitt', () => {
+		const result = suppressNamedClimbs([climb(600, 750)], [{ startSec: 590, endSec: 760 }]);
+		expect(result).toEqual([]);
+	});
+
+	it('beholder et drag som ligger et helt annet sted i økta', () => {
+		const result = suppressNamedClimbs([climb(600, 750)], [{ startSec: 1800, endSec: 1950 }]);
+		expect(result).toHaveLength(1);
+	});
+
+	it('krever mer enn en så vidt-berøring for å regne det som samme bakke', () => {
+		// Overlapper bare de siste ti sekundene av et 150-sekunders drag.
+		const result = suppressNamedClimbs([climb(600, 750)], [{ startSec: 740, endSec: 900 }]);
+		expect(result).toHaveLength(1);
+	});
+
+	it('slår til på delvis overlapp over halvparten — endene treffer aldri helt likt', () => {
+		const result = suppressNamedClimbs([climb(600, 750)], [{ startSec: 660, endSec: 900 }]);
+		expect(result).toEqual([]);
+	});
+
+	it('beholder draget når tidsstemplene mangler — heller dobbelt enn skjult', () => {
+		const result = suppressNamedClimbs([climb(null, null)], [{ startSec: 0, endSec: 9999 }]);
+		expect(result).toHaveLength(1);
+	});
+
+	it('rører ingenting når Ekko ikke har navngitt noe', () => {
+		const climbs = [climb(600, 750)];
+		expect(suppressNamedClimbs(climbs, [])).toEqual(climbs);
 	});
 });

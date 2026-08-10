@@ -21,6 +21,14 @@ import { cumulativeDistanceMeters, haversineMeters, type TrackPoint } from '$lib
 export type Climb = {
 	startDistanceM: number;
 	endDistanceM: number;
+	/**
+	 * Sekunder fra øktas start til draget begynte/sluttet. Finnes for å kunne
+	 * kjenne igjen den samme bakken som Ekko alt har navngitt — Ekkos features
+	 * er plassert i tid (`startOffsetSec`), ikke i distanse, så tid er den ene
+	 * aksen de to beskrivelsene deler.
+	 */
+	startOffsetSec: number | null;
+	endOffsetSec: number | null;
 	lengthM: number;
 	gainM: number;
 	/** Snittstigning i prosent over hele dragets lengde. */
@@ -135,6 +143,14 @@ function averageHr(points: TrackPoint[], from: number, to: number): { avg: numbe
 	return { avg: count > 0 ? Math.round(sum / count) : null, max };
 }
 
+/** Sekunder fra øktas start til et punkt. Null er en gyldig verdi her. */
+function offsetSec(points: TrackPoint[], index: number): number | null {
+	const t0 = parseTimeMs(points[0]);
+	const t = parseTimeMs(points[index]);
+	if (t0 === null || t === null) return null;
+	return Math.max(0, (t - t0) / 1000);
+}
+
 function elapsedSec(points: TrackPoint[], from: number, to: number): number | null {
 	const t0 = parseTimeMs(points[from]);
 	const t1 = parseTimeMs(points[to]);
@@ -184,10 +200,16 @@ export function detectClimbs(points: TrackPoint[]): Climb[] {
 		if (avgGradientPct < MIN_CLIMB_GRADIENT_PCT) return;
 
 		const durationSec = elapsedSec(points, from, to);
+		const startOffsetSec = offsetSec(points, from);
 		const { avg, max } = averageHr(points, from, to);
 		climbs.push({
 			startDistanceM: Math.round(cum[from]),
 			endDistanceM: Math.round(cum[to]),
+			startOffsetSec: startOffsetSec === null ? null : Math.round(startOffsetSec),
+			endOffsetSec:
+				startOffsetSec === null || durationSec === null
+					? null
+					: Math.round(startOffsetSec + durationSec),
 			lengthM: Math.round(lengthM),
 			gainM: Math.round(gainM),
 			avgGradientPct: Math.round(avgGradientPct * 10) / 10,
@@ -292,4 +314,52 @@ export function detectLaps(points: TrackPoint[]): Lap[] {
 
 	// Én «runde» er bare en tur som endte der den startet. To eller flere er en bane.
 	return laps.length >= 2 ? laps : [];
+}
+
+/**
+ * Hvor mye av et oppdaget drag som må ligge inni en navngitt strekning før vi
+ * regner det som den samme bakken.
+ *
+ * Halvparten, ikke alt: Ekkos feature er snappet til en lagret geometri mens
+ * vårt drag er funnet i høydeprofilen, så endene treffer sjelden helt likt.
+ * Krevde vi full overlapp, ville dedupen aldri slått til — og da har man et
+ * filter som ser ut som det virker.
+ */
+export const DUPLICATE_OVERLAP_SHARE = 0.5;
+
+/** Tidsvinduet en navngitt strekning dekker, i sekunder fra øktas start. */
+type NamedSpan = { startSec: number; endSec: number };
+
+/**
+ * Fjerner oppdagede bakker som beskriver den samme grunnen som en strekning
+ * Ekko allerede har gitt navn.
+ *
+ * **Hvorfor dette må gjøres.** Deteksjonen her er en *fallback* for spor Ekko
+ * ikke har sagt noe om — økter fra klokka, fra Dropbox eller fra Strava, og
+ * Ekko-økter uten lagret rute. Der Ekko HAR beskrevet bakken, er dens versjon
+ * bedre på alle måter: den har navn og brukerens egen historikk. Lister vi
+ * begge, ser modellen «Dreperen» og «stigningen fra km 2,1» som to bakker og
+ * teller den samme motbakken dobbelt — samme feil som widgeten gjorde med
+ * løpedistanse, i en annen form.
+ *
+ * Sammenligningen går på TID, ikke distanse: Ekkos features er plassert med
+ * `startOffsetSec`, og tid er den eneste aksen begge beskrivelsene deler.
+ * Mangler tidsstemplene, beholdes draget — en usikker dobbeltoppføring er
+ * bedre enn å skjule en bakke vi faktisk fant.
+ */
+export function suppressNamedClimbs(climbs: Climb[], namedSpans: NamedSpan[]): Climb[] {
+	if (namedSpans.length === 0) return climbs;
+
+	return climbs.filter((climb) => {
+		if (climb.startOffsetSec === null || climb.endOffsetSec === null) return true;
+		const length = climb.endOffsetSec - climb.startOffsetSec;
+		if (length <= 0) return true;
+
+		return !namedSpans.some((span) => {
+			const overlap =
+				Math.min(climb.endOffsetSec as number, span.endSec) -
+				Math.max(climb.startOffsetSec as number, span.startSec);
+			return overlap > 0 && overlap / length >= DUPLICATE_OVERLAP_SHARE;
+		});
+	});
 }
