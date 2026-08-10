@@ -5,6 +5,7 @@ export { default as GoogleSheetsSourceCard } from './GoogleSheetsSourceCard.svel
 export { default as StravaSourceCard } from './StravaSourceCard.svelte';
 export { default as TeslaSourceCard } from './TeslaSourceCard.svelte';
 export { default as EmailRulesCard } from './EmailRulesCard.svelte';
+export { default as EffortReprojectCard } from './EffortReprojectCard.svelte';
 export { default as MerchantTable } from './MerchantTable.svelte';
 export { default as MerchantEditForm } from './MerchantEditForm.svelte';
 export { default as MerchantAnalysisPanel } from './MerchantAnalysisPanel.svelte';

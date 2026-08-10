@@ -224,7 +224,8 @@ enkeltøkt-ruter (`source-role`, `dismiss`) og fra staleness-sweeperen, som utle
 av mål-datoer. `/api/admin/jobs` er lesing alene, og
 `POST /api/sensors/workouts/reanalyze` rører bare analytics — ikke `effortScore`.
 
-Nytt: **`POST /api/admin/workouts/reproject?weeks=8[&dryRun=true]`**.
+Nytt: **`POST /api/helse/trening/reprojiser?weeks=8[&dryRun=true]`**, med knapp i
+`/settings/sources` (`EffortReprojectCard`).
 
 - Rapporterer **effort per uke før og etter**, med prosentvis endring. En reberegning man
   ikke kan se effekten av, er en man må stole på.
@@ -239,6 +240,16 @@ Nytt: **`POST /api/admin/workouts/reproject?weeks=8[&dryRun=true]`**.
 
 Vindusvalideringen og før/etter-sammenligningen bor rent og testet i
 `$lib/domain/health/reproject-window.ts`.
+
+**Endepunktet lå først under `/api/admin/`, og det var feil.** Handlingen rører bare
+innsenderens egne rader, er idempotent og har et tak — det er vedlikehold av egne data.
+Under `/api/admin/` ville knappen vært død for en delt bruker som ikke er admin.
+`?userId=` er noe annet: å skrive på en annens rader ER admin, og gates fortsatt.
+
+Kortet leder med **hvorfor** framfor med knappen — en knapp som heter «Reberegn» uten
+forklaring blir trykket når noe føles rart, og det er ikke det den er til. Det viser
+makspulskilden med ord, og advarer eksplisitt når den er `observed`: da mangler
+fødselsåret, og jobben blir en no-op som ser fullført ut.
 
 ## Etterarbeid
 - **Ekko regner budsjettet mot en tom økthistorikk.** `513 av 100–120` er

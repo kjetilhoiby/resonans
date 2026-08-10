@@ -602,7 +602,8 @@ datainnhentingen.
 - **Endrer du skåringen, må historikken reberegnes.** `effortScore` er *lagret* i
   `canonical_workouts`, så en modellendring gjelder bare nye økter — og ankeret leses
   fra de gamle radene, så de to havner på hver sin skala uten at noe sier fra.
-  `POST /api/admin/workouts/reproject?weeks=8` (`&dryRun=true` viser planen) skårer
+  **Knappen bor i `/settings/sources`** (`EffortReprojectCard`);
+  `POST /api/helse/trening/reprojiser?weeks=8` (`&dryRun=true` viser planen) skårer
   vinduet på nytt og rapporterer effort per uke før/etter. Gulvet er 5 uker fordi
   ankervinduet er 4; taket er 26 per kjøring, så lengre historikk kjøres i biter.
   Sjekk `baseline.maxHrSource` i svaret: `'observed'` der du forventet `'age'` betyr at

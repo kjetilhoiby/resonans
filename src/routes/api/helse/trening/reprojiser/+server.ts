@@ -18,7 +18,17 @@ export const config = { maxDuration: 60 };
 /**
  * Reberegner lagrede `effortScore` fra gjeldende skåringsmodell.
  *
- * `POST /api/admin/workouts/reproject?weeks=8[&dryRun=true]`
+ * `POST /api/helse/trening/reprojiser?weeks=8[&dryRun=true]`
+ *
+ * ## Hvorfor den ikke ligger under `/api/admin/`
+ *
+ * Den gjorde det først, og det var feil. Handlingen rører bare **innsenderens egne**
+ * rader, er idempotent og har et tak på 26 uker — det er vedlikehold av egne data, ikke
+ * en administratorhandling. Under `/api/admin/` ville knappen i innstillingene vært død
+ * for en delt bruker som ikke er admin.
+ *
+ * `?userId=` er noe annet: å skrive på en annen brukers rader ER admin, og gates
+ * fortsatt.
  *
  * ## Hvorfor endepunktet finnes
  *
@@ -44,9 +54,12 @@ export const config = { maxDuration: 60 };
  * `POST /api/sensors/withings/enrich-weight`.
  */
 export const POST: RequestHandler = async ({ locals, url }) => {
-	await requireAdmin(locals.userId);
+	if (!locals.userId) return json({ error: 'Ikke innlogget.' }, { status: 401 });
 
-	const userId = url.searchParams.get('userId')?.trim() || locals.userId;
+	const requested = url.searchParams.get('userId')?.trim();
+	// Egne rader: en vanlig innlogget bruker. En annens: admin.
+	if (requested && requested !== locals.userId) await requireAdmin(locals.userId);
+	const userId = requested || locals.userId;
 	const dryRun = url.searchParams.get('dryRun') === 'true';
 
 	const resolved = resolveReprojectWindow(url.searchParams.get('weeks') ?? undefined, new Date());
@@ -142,12 +155,11 @@ async function readWeeklyEffort(userId: string, from: Date, to: Date): Promise<W
 	}));
 }
 
-export const GET: RequestHandler = async ({ locals, url }) => {
-	await requireAdmin(locals.userId);
+export const GET: RequestHandler = async ({ locals }) => {
+	if (!locals.userId) return json({ error: 'Ikke innlogget.' }, { status: 401 });
 	return json({
 		success: true,
-		usage: `POST /api/admin/workouts/reproject?weeks=${DEFAULT_REPROJECT_WEEKS}[&dryRun=true]`,
-		hint: 'GET gjør ingenting — reberegning skriver, og skriving hører på POST.',
-		requested: url.searchParams.get('weeks') ?? null
+		usage: `POST /api/helse/trening/reprojiser?weeks=${DEFAULT_REPROJECT_WEEKS}[&dryRun=true]`,
+		hint: 'GET gjør ingenting — reberegning skriver, og skriving hører på POST.'
 	});
 };
