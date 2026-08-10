@@ -599,9 +599,15 @@ datainnhentingen.
 - Ordene deles med chatten (`planText`/`loadText` i `training-summary.ts`). Med bare
   `standing: 'over'` fant modellen sine egne ord, og «over» ble like gjerne «du har
   overtrent» som «du gjorde mer enn planen ba om».
-- **Endrer du skåringen, må historikken reberegnes.**
-  `WorkoutProjectionService.refreshForRange` skårer alt i vinduet på nytt fra gjeldende
-  baseline; kjør ≥8 uker. Ellers ligger ankeret og denne ukas økter på hver sin skala.
+- **Endrer du skåringen, må historikken reberegnes.** `effortScore` er *lagret* i
+  `canonical_workouts`, så en modellendring gjelder bare nye økter — og ankeret leses
+  fra de gamle radene, så de to havner på hver sin skala uten at noe sier fra.
+  `POST /api/admin/workouts/reproject?weeks=8` (`&dryRun=true` viser planen) skårer
+  vinduet på nytt og rapporterer effort per uke før/etter. Gulvet er 5 uker fordi
+  ankervinduet er 4; taket er 26 per kjøring, så lengre historikk kjøres i biter.
+  Sjekk `baseline.maxHrSource` i svaret: `'observed'` der du forventet `'age'` betyr at
+  fødselsåret mangler i kroppsprofilen, og da ble reberegningen en no-op som ser
+  fullført ut.
 
 ### Rå lesing av sensor_events er vaktet
 

@@ -210,12 +210,37 @@ dev-server, som ikke finnes i dette miljøet. `EffortBudgetCard` er endret visue
 statuslinja er nå en to-raders `<dl>` — så baselinene må oppdateres ved første kjøring
 med database.
 
-## Etterarbeid
+### Fase 5: En vei til å reberegne historikken
 
-- **Historiske `effortScore` må reberegnes.** `WorkoutProjectionService.refreshForRange`
-  skårer alt i vinduet på nytt fra gjeldende baseline, så en refresh over **≥8 uker**
-  holder. Uten den ligger ankeret (bygget av lagrede rader på gammel skala) og denne ukas
-  økter på hver sin skala, og uka ser kunstig lav ut mot et oppblåst bånd.
+`effortScore` er **lagret** i `canonical_workouts`, ikke regnet ved lesing. En endring i
+modellen gjelder derfor bare økter som skrives etterpå — og siden båndet ankres på
+snittet av de siste fire ukene fra nettopp de lagrede radene, ender ankeret og denne ukas
+økter på hver sin skala. Uka ser kunstig lav ut mot et for høyt bånd, og **ingenting sier
+fra**: begge tallene ser plausible ut.
+
+Jobbtypen `workout_projection_refresh` gjorde alt som skulle til fra før, men **ingenting
+kunne starte den med et vilkårlig datospenn**. `refreshForRange` var bare nåbar fra to
+enkeltøkt-ruter (`source-role`, `dismiss`) og fra staleness-sweeperen, som utleder spennet
+av mål-datoer. `/api/admin/jobs` er lesing alene, og
+`POST /api/sensors/workouts/reanalyze` rører bare analytics — ikke `effortScore`.
+
+Nytt: **`POST /api/admin/workouts/reproject?weeks=8[&dryRun=true]`**.
+
+- Rapporterer **effort per uke før og etter**, med prosentvis endring. En reberegning man
+  ikke kan se effekten av, er en man må stole på.
+- Rapporterer **baselinen som ble brukt**. `maxHrSource: 'observed'` der man forventet
+  `'age'` er den stille grunnen til at ingenting skjedde — fødselsåret mangler i
+  kroppsprofilen. Uten det feltet ser en no-op ut som en fullført jobb.
+- **Gulvet er 5 uker**, ikke et rundt tall: ankervinduet (4) pluss inneværende uke. Et
+  kortere vindu ser ut som en reberegning, men lar minst én av ankerets uker stå på gammel
+  skala. Taket er 26 uker per kjøring, siden `refreshForRange` sletter og skriver i ett
+  spenn — lengre historikk kjøres i biter, samme regel som `withings_backfill`.
+- **Idempotent.** Samme modell inn gir samme tall ut, så den kan kjøres om igjen.
+
+Vindusvalideringen og før/etter-sammenligningen bor rent og testet i
+`$lib/domain/health/reproject-window.ts`.
+
+## Etterarbeid
 - **Ekko regner budsjettet mot en tom økthistorikk.** `513 av 100–120` er
   `FLOOR_EFFORT × growthFactor`, altså `anchor: 'gulv'` — grenen som bare treffes når
   historikken er tom. Resonans traff riktig gren på samme data. Ikke undersøkt her.
