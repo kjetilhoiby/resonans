@@ -616,10 +616,13 @@ datainnhentingen.
   er ikke en økt.
 - **Pace regnes på samme varighet som effort skåres på.** Ellers får en økt med lang
   stillstand lav «fart» og dermed lav intensitet, i tillegg til at halen alt er trukket fra.
-- **Historikken må backfilles OG reprojiseres:**
-  `POST /api/helse/trening/bevegelsestid` (additiv, idempotent, `?dryRun=true`) og deretter
-  `POST /api/helse/trening/reprojiser?weeks=…`. Ankeret leses fra de *lagrede* skårene, så
-  et skrevet `movingDuration` uten reprojeksjon ser ut som en jobb som ikke gjorde noe.
+- **Historikken må backfilles OG reprojiseres**, og de to hører sammen: ankeret leses fra
+  de *lagrede* skårene, så et skrevet `movingDuration` uten reprojeksjon ser ut som en
+  jobb som ikke gjorde noe. **Knappen bor i `/settings/sources`**
+  (`MovingTimeBackfillCard`) og kjører hele kjeden — den utleder reprojeksjonsvinduet fra
+  den eldste økta backfillen rørte, og sier fra når historikken er lengre enn taket på 26
+  uker. Endepunktene er `POST /api/helse/trening/bevegelsestid` (additiv, idempotent,
+  `?dryRun=true`) og `POST /api/helse/trening/reprojiser?weeks=…`.
 - Manuell crop for haler som *ikke* står stille (glemt sporing i bilen hjem) er ikke
   bygget. Den hører under «Kilder og avvik» ved siden av `dismiss`/`source-role`.
 

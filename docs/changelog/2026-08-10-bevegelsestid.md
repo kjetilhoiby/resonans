@@ -124,7 +124,24 @@ hele ukene lest fra de *lagrede* skårene, så uten den ville nye uker og ankere
 hver sin skala uten at noe sa fra — nøyaktig fella CLAUDE.md advarer mot under «Endrer du
 skåringen, må historikken reberegnes».
 
-### Fase 5: Flaten
+### Fase 5: Knappen
+
+`MovingTimeBackfillCard` i `/settings/sources`, over `EffortReprojectCard`.
+
+**De to stegene er ett kort med vilje.** `data.movingDuration` er rådata; `effortScore`
+er lagret i `canonical_workouts` og ser den ikke før en reprojeksjon har kjørt. Lot man
+brukeren kjøre bare det første, ville jobben sett fullført ut mens hvert tall på
+Trening-flaten sto uendret — en feil som bare kan oppdages, ikke oppleves.
+
+Kortet fyller i biter til det ikke er flere kandidater (sløyfa stopper på «ingen
+framgang», ikke bare på «ingen kandidater» — uavklarte rader får aldri feltet og forblir
+kandidater), utleder reprojeksjonsvinduet fra den **eldste** økta backfillen rørte, og
+sier fra med ord når historikken er lengre enn takdet på 26 uker per kjøring.
+
+«Se hva som skjer» viser de ti største avvikene mellom opptak og bevegelse før noe
+skrives — det er der man kan kjenne igjen turene og se om tallene stemmer.
+
+### Fase 6: Flaten
 
 `HealthActivityList` viser bevegelsestid som hovedtall når stillstanden overstiger
 `NOTABLE_STOPPED_SHARE` (20 %), med «i bevegelse · 2 t 20 min opptak» under. Under
@@ -175,21 +192,24 @@ med at telefonen legges fra seg — den fortsetter å følge et menneske som gj�
 - Domenetesten reproduserer saken direkte: 25 min sykling + 115 min stillstand med
   GPS-jitter gir 1400–1600 bevegelsessekunder mot 8400 elapsed.
 
-**Ikke kjørt ennå** (krever prod-DB):
+De visuelle testene kunne ikke kjøres i utviklingsmiljøet (ingen `DATABASE_URL`, så
+dev-serveren Playwright venter på starter ikke). `HealthActivityList` er endret og ligger
+på Trening-flaten, som er dekket av `tests/visual/pages.spec.ts` — kjør
+`npm run test:visual:review` med kontekst når du har basen.
+
+**Backfillen er ikke kjørt ennå.** Den gjøres fra **«Fyll inn bevegelsestid» i
+`/settings/sources`**: «Se hva som skjer» først, så «Fyll inn og reberegn», som kjører
+hele kjeden. Turen 10. august er fasiten — den bør lande nær Stravas 27 min 3 s. Gjør den
+ikke det, er terskelen eller det grove gulvet feil, og da er *det tallet* vi justerer
+etter.
+
+Endepunktene direkte, om man vil ha dem:
 
 ```bash
-# 1. Se hva backfillen ville skrevet — sorteres med verste avvik først
 POST /api/helse/trening/bevegelsestid?dryRun=true&limit=500
-
-# 2. Skriv
 POST /api/helse/trening/bevegelsestid?limit=500
-
-# 3. Se hva reprojeksjonen ville gjort med ukene
-POST /api/helse/trening/reprojiser?weeks=26&dryRun=true
-
-# 4. Reberegn (26 uker per kjøring; lengre historikk i biter)
 POST /api/helse/trening/reprojiser?weeks=26
 ```
 
-Steg 4 er nødvendig: `effortScore` er lagret, ikke regnet ved lesing. Et skrevet
-`movingDuration` uten reprojeksjon ser ut som en jobb som ikke gjorde noe.
+Det siste steget er ikke valgfritt: `effortScore` er lagret, ikke regnet ved lesing. Et
+skrevet `movingDuration` uten reprojeksjon ser ut som en jobb som ikke gjorde noe.

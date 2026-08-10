@@ -8,7 +8,8 @@
 		StravaSourceCard,
 		TeslaSourceCard,
 		EmailRulesCard,
-		EffortReprojectCard
+		EffortReprojectCard,
+		MovingTimeBackfillCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -107,6 +108,7 @@
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
+		<MovingTimeBackfillCard />
 		<EffortReprojectCard />
 	</div>
 	</PageSection>
