@@ -729,6 +729,45 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
 
+### Øktvurderingen: terreng fra sporet, navn fra Ekko
+
+Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten bygges
+rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
+`$lib/server/workouts/workout-assessment.ts`.
+
+- **All geografi kommer fra Ekko. Resonans detekterer ingenting selv.** Bakker,
+  runder og strekk leses utelukkende av `analysis`-feltet på opplastingen
+  (`workout-analysis.ts`, kontrakt i `docs/ekko-oktanalyse.md`). Resonans hadde en
+  periode sin egen `detectClimbs`/`detectLaps` over trackPoints — den er **fjernet**.
+  To motorer som leter etter «en bakke» i samme spor blir aldri enige, og den ene
+  av dem har navn og brukerens egen historikk. En terskel som bare finnes ett sted
+  kan dessuten kalibreres; to sett terskler i to språk kan det ikke.
+  **Ikke bygg den tilbake.** Mangler bakker på en økt, er svaret å utvide Ekkos
+  deteksjon, ikke å legge en ny motor i Resonans.
+- **Konsekvensen er bevisst:** en økt uten Ekko-analyse — fra klokka, fra Dropbox,
+  fra Strava, eller en Ekko-økt utenfor rundbanemodus / uten lagret rute — har
+  ingen bakker og ingen runder i vurderingen. Den har fortsatt distanse, tid, puls,
+  kilometersplitter, effort og mål. `lapDetectionActive` i Ekko krever ingen valgt
+  rute, ingen intervalløkt og ingen oppvarming; bakkesegmenter finnes bare på
+  lagrede ruter.
+- **Strekk kan uansett bare komme fra Ekko.** `RunFeature` sier det selv: et strekk
+  «finnes i historikken og i hodet», og ingen terrengterskel kan finne det.
+- **Enheten følger idretten, ett sted:** `formatPaceOrSpeed` i
+  `$lib/utils/activity-metrics`. Prompten hardkodet «/km» fram til august 2026 og
+  ga «tempo 3:08/km» på en sykkeltur der kortet over sa «19,1 km/t».
+- **Måltall leses fra `sensor_goals`, aldri fra måltittelen.** `currentValue`,
+  `targetValue`, `baselineValue` og `unit` har ligget der hele tiden; vurderingen
+  leste dem aldri, og ga «redusere vekten til 85 kg og 95 kg». `goal-horizon.ts`
+  eier både progresjonen og kort/lang-inndelingen. Nedadgående mål måles fra
+  `baselineValue` — uten den vet vi ikke om 88 kg er nesten i mål eller nettopp begynt.
+- **Rådet er betinget.** «Avslutt med ett enkelt råd» tvang fram «løp mer» på hver
+  eneste økt. «Ingenting å endre» er et gyldig svar.
+- **Cachen hviler på `context_hash`**, som dekker konteksten *og* systemprompten.
+  Lander Ekko-analysen etterpå eller endrer vi instruksene, skrives vurderingen om.
+  Uten den ville cachen låst inne en vurdering fra før halvparten av dataene fantes.
+- **Chatten på økta får samme kontekst som vurderingen** — siden bygde tidligere sitt
+  eget vedlegg, med samme «/km»-feil.
+
 ### Withings-backfill
 
 Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.

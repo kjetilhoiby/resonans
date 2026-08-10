@@ -12,6 +12,7 @@ import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workou
 import { pushSession } from '$lib/server/services/strava-sync-service';
 import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { runInBackground } from '$lib/server/run-in-background';
+import { parseWorkoutAnalysis } from '$lib/domain/health/workout-analysis';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
 const IMAGE_MIME_PREFIXES = ['image/'];
@@ -149,6 +150,18 @@ async function handleWorkoutUpload(
 	// brukt som standard i web-avspillingen. Valgfritt.
 	const basemapRaw = (ctx.formData.get('basemap') as string | null)?.trim() || null;
 	const preferredBasemap = basemapRaw === 'topo' || basemapRaw === 'sat' ? basemapRaw : null;
+	// Øktanalyse fra Ekko (valgfri): navngitte bakker, strekk og baner med brukerens
+	// egen historikk, pluss rundetider og bakkedrag. Det serveren IKKE kan utlede av
+	// sporet — se $lib/domain/health/workout-analysis.ts og docs/ekko-oktanalyse.md.
+	// Feiler tolkningen, lagres økta uten analyse: GPX-en er det viktige.
+	const { analysis, warnings: analysisWarnings } = parseWorkoutAnalysis(
+		ctx.formData.get('analysis')
+	);
+	if (analysisWarnings.length > 0) {
+		console.warn(
+			`[apps/upload] øktanalyse fra ${ctx.app.id} delvis forkastet: ${analysisWarnings.join('; ')}`
+		);
+	}
 	const gpxContent = await file.text();
 	const parsed = parseWorkoutFile(file.name || 'track.gpx', gpxContent);
 
@@ -191,7 +204,8 @@ async function handleWorkoutUpload(
 						? parsed.duration / (parsed.distance / 1000)
 						: undefined,
 				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS),
-				...(preferredBasemap ? { preferredBasemap } : {})
+				...(preferredBasemap ? { preferredBasemap } : {}),
+				...(analysis ? { ekkoAnalysis: analysis } : {})
 			},
 			metadata: {
 				sourceApp: ctx.app.id,
@@ -256,7 +270,14 @@ async function handleWorkoutUpload(
 		duration: Math.round(parsed.duration),
 		// null i det store flertallet av tilfellene. Er den satt, ser det ut som
 		// sporingen ble glemt, og Ekko kan tilby «snapp sluttpunktet hit».
-		forgottenTracking
+		forgottenTracking,
+		// Hva vi faktisk tok imot av analysen. Uten dette er et avvist felt usynlig
+		// for appen og ser ut som at Resonans ignorerer den — samme grunn som
+		// `warnings` på HealthKit-importen.
+		analysis: analysis
+			? { features: analysis.features.length, laps: analysis.laps.length, hillReps: analysis.hillReps.length }
+			: null,
+		...(analysisWarnings.length > 0 ? { analysisWarnings } : {})
 	});
 }
 
