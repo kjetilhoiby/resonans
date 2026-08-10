@@ -810,6 +810,27 @@ Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
 - `e_bike` har egen tittel («Elsykkeltur»), ikke «Sykkeløkt». Den har egen
   MET-verdi, egen effort-faktor og eget krydder-regnskap.
 
+### Push-varsler ruter gjennom appen, ikke utenom den
+
+Se `docs/changelog/2026-08-11-pwa-varselnavigasjon.md`.
+
+- **`WindowClient.navigate()` passerer ikke `beforeNavigate`.** Versjonsvakta i
+  `+layout.svelte` («ny versjon deployet → neste navigasjon blir full sidelast, så
+  vi aldri prøver å laste chunks som ikke finnes lenger») gjelder bare navigasjon
+  appen selv starter. En SW som navigerer utenfra går rundt den.
+- **Service workeren ber derfor klienten rute selv** (`postMessage` +
+  `MessageChannel`-ack), og faller tilbake på `navigate()`/`openWindow()` først når
+  ingen svarer. Klienten bekrefter FØR den navigerer — rekker den ikke det, gjør
+  SW-en fallback og man får to navigasjoner.
+- **To samtidige navigasjoner i en iOS-PWA gir blank skjerm.** Det var slik
+  varselet «krasjet» appen: SW-ens `navigate()` og `visibilitychange`-reloaden
+  fyrte i samme øyeblikk. `routingFromNotification` gater reloaden.
+- **`skipWaiting()` hører inni `waitUntil`.** Utenfor kan den nye workeren aktivere
+  før cachen er fylt, og `activate` sletter da gamle cacher mens en side fortsatt
+  kjører gammel kode.
+- `/_app/immutable/` caches bevisst ikke — kommentaren i service workeren sier
+  hvorfor: blandede versjoner bryter hydrering.
+
 ### Fart per hjerteslag slår VO2max på formspørsmålet
 
 Se `docs/changelog/2026-08-11-efficiency-factor.md`. Logikken i
