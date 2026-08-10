@@ -32,6 +32,10 @@ export interface MovingTimeBackfillWorkout {
 	coverage: number;
 	/** Median sekunder mellom sporpunkter — tallet som avslører et for tynt spor. */
 	medianSampleSeconds: number | null;
+	/** Sporets eget tidsspenn. Kortere enn `elapsedSeconds` = sporingen dekket ikke økta. */
+	trackSpanSeconds: number | null;
+	/** Antall gyldige sporpunkter (posisjon + tid). */
+	pointCount: number;
 }
 
 export interface MovingTimeBackfillResult {
@@ -119,7 +123,10 @@ export async function backfillMovingTime(
 			continue;
 		}
 
-		const analysis = analyzeMovingTime(points, { sportType: row.sport_type });
+		const analysis = analyzeMovingTime(points, {
+			sportType: row.sport_type,
+			declaredDurationSeconds: row.duration != null ? Number(row.duration) : null
+		});
 		const moving = analysis.result;
 		if (!moving) {
 			result.inconclusive += 1;
@@ -141,7 +148,9 @@ export async function backfillMovingTime(
 					? Math.round((1 - moving.movingSeconds / elapsed) * 1000) / 1000
 					: 0,
 			coverage: moving.coverage,
-			medianSampleSeconds: moving.medianSampleSeconds
+			medianSampleSeconds: moving.medianSampleSeconds,
+			trackSpanSeconds: moving.trackSpanSeconds,
+			pointCount: analysis.pointCount
 		});
 
 		if (!result.fromTimestamp || timestamp < result.fromTimestamp) result.fromTimestamp = timestamp;

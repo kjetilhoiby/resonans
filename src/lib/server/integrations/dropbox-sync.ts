@@ -230,7 +230,14 @@ export function parseWorkoutFile(path: string, content: string): ParsedWorkout |
  * avveiing mot kart-payload, og har ingen grunn til å påvirke et tall vi skårer på.
  */
 export function movingDurationFor(parsed: ParsedWorkout): number | undefined {
-	const result = computeMovingTime(parsed.trackPoints, { sportType: parsed.sportType });
+	const result = computeMovingTime(parsed.trackPoints, {
+		sportType: parsed.sportType,
+		// NB: her er `duration` utledet av de samme punktene, så porten er i
+		// praksis en no-op på denne stien. Den sendes likevel, fordi et framtidig
+		// format som oppgir varighet uavhengig av sporet ellers ville sluppet
+		// gjennom uten at noen la merke til at vakten ikke gjaldt.
+		declaredDurationSeconds: parsed.duration
+	});
 	return result ? result.movingSeconds : undefined;
 }
 

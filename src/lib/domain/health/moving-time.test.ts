@@ -6,6 +6,7 @@ import {
 	MAX_CREDITED_INTERVAL_SECONDS,
 	MIN_POINTS,
 	MAX_MEDIAN_SAMPLE_SECONDS,
+	MIN_TRACK_SPAN_SHARE,
 	MOVING_THRESHOLD_MS_BY_FAMILY,
 	type MovingTimePoint
 } from './moving-time';
@@ -276,5 +277,48 @@ describe('computeMovingTime', () => {
 		expect(analyzeMovingTime(styrke, { sportType: 'strength_training' }).rejection).toBe(
 			'family_uten_bevegelsestid'
 		);
+	});
+
+	it('svarer ikke når sporingen bare dekket en del av økta', () => {
+		// Løpeturen 24. mars: 8,33 km på 56 minutter ifølge både Withings og
+		// GPX-fila, men sporpunktene dekker 1,25 km og 7,5 minutter. Sporingen
+		// gikk i stykker underveis. Modulen så et internt konsistent spor, fant
+		// at alt var bevegelse, og svarte «8 min» på en 56-minutters økt.
+		const points = track([{ seconds: 450, speedMs: 2.5 }]);
+
+		const analysis = analyzeMovingTime(points, {
+			sportType: 'running',
+			declaredDurationSeconds: 3360
+		});
+
+		expect(analysis.result).toBeNull();
+		expect(analysis.rejection).toBe('sporet_dekker_ikke_okta');
+		expect(analysis.trackSpanSeconds).toBe(448);
+	});
+
+	it('svarer når sporet dekker økta', () => {
+		const points = track([{ seconds: 3360, speedMs: 2.5 }]);
+
+		const analysis = analyzeMovingTime(points, {
+			sportType: 'running',
+			declaredDurationSeconds: 3360
+		});
+
+		expect(analysis.rejection).toBeNull();
+		expect(analysis.result!.movingSeconds).toBeGreaterThan(3300);
+	});
+
+	it('dekningsporten måler mot SPORET, span-porten mot ØKTA', () => {
+		// De to er ikke samme spørsmål, og det var forvekslingen som slapp
+		// feilen gjennom: et spor kan være perfekt tett og likevel beskrive en
+		// åttendedel av turen.
+		const tettMenKort = track([{ seconds: 450, speedMs: 2.5 }]);
+
+		expect(analyzeMovingTime(tettMenKort, { sportType: 'running' }).rejection).toBeNull();
+		expect(
+			analyzeMovingTime(tettMenKort, { sportType: 'running', declaredDurationSeconds: 3360 })
+				.rejection
+		).toBe('sporet_dekker_ikke_okta');
+		expect(MIN_TRACK_SPAN_SHARE).toBeGreaterThan(0.5);
 	});
 });

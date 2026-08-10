@@ -27,6 +27,8 @@
 		movingSeconds: number;
 		stoppedShare: number;
 		medianSampleSeconds: number | null;
+		trackSpanSeconds: number | null;
+		pointCount: number;
 	}
 
 	/**
@@ -35,6 +37,7 @@
 	 */
 	const REJECTION_LABELS: Record<string, string> = {
 		for_tynt_spor: 'sporet er for tynt — punktene ligger for langt fra hverandre til å skille en pause fra et hull',
+		sporet_dekker_ikke_okta: 'sporingen dekket bare en del av økta — resten vet vi ingenting om',
 		for_daarlig_dekning: 'for store hull i sporet',
 		for_faa_punkter: 'for få sporpunkter',
 		family_uten_bevegelsestid: 'sport uten bevegelsestid (styrke, yoga, svømming)',
@@ -241,11 +244,18 @@
 	{/if}
 
 	{#if worst.length > 0}
-		<p class="meta">Størst forskjell mellom opptak og bevegelse:</p>
+		<p class="meta">
+			Størst forskjell mellom opptak og bevegelse. <strong>Sporlengde</strong> er hvor mye
+			av økta sporpunktene faktisk dekker — er den mye kortere enn opptaket, gikk
+			sporingen i stykker underveis, og da er tallet til venstre ikke til å stole på.
+		</p>
 		<div class="table-scroll">
 			<table>
 				<thead>
-					<tr><th>Dato</th><th>Sport</th><th>Opptak</th><th>I bevegelse</th><th>Punkt&shy;avstand</th></tr>
+					<tr>
+						<th>Dato</th><th>Sport</th><th>Opptak</th><th>I bevegelse</th>
+						<th>Spor&shy;lengde</th><th>Punkter</th><th>Punkt&shy;avstand</th>
+					</tr>
 				</thead>
 				<tbody>
 					{#each worst.slice(0, 10) as w (w.eventId)}
@@ -256,6 +266,8 @@
 							<td class="num" class:down={w.stoppedShare > 0.2}>
 								{formatDuration(w.movingSeconds)}
 							</td>
+							<td class="num">{formatDuration(w.trackSpanSeconds)}</td>
+							<td class="num">{w.pointCount}</td>
 							<td class="num">
 								{w.medianSampleSeconds === null ? '–' : `${String(w.medianSampleSeconds).replace('.', ',')} s`}
 							</td>

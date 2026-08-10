@@ -613,10 +613,12 @@ datainnhentingen.
 - **Sporet må være tett nok** (`MAX_MEDIAN_SAMPLE_SECONDS`, 15 s). Ligger punktene et
   minutt fra hverandre, kapper `MAX_CREDITED_INTERVAL_SECONDS` hvert intervall til 60 s,
   og svaret blir «antall intervaller × ett minutt» — et tall om oppløsningen, ikke om
-  økta. Prod ga «56 min opptak → 8 min i bevegelse» på en løpetur, og at *hver* verdi i
-  rapporten var et helt antall minutter var det som avslørte det. `analyzeMovingTime`
-  returnerer grunnen (`rejection`) og punktavstanden, og begge vises i kortet — en stille
-  null sender folk på leting i innhentingen.
+  økta. Porten er prinsipiell, ikke målt: den kom av en feildiagnose — «hver verdi i
+  rapporten er et helt antall minutter» var kortets egen `Math.round(sekunder / 60)`, ikke
+  et mønster i dataene. Den står igjen fordi resonnementet holder på egne bein og utfallet
+  er null, altså elapsed videre. `analyzeMovingTime` returnerer grunnen (`rejection`),
+  sporlengden og punktavstanden, og alle vises i kortet — en stille null sender folk på
+  leting i innhentingen.
 - **null betyr «vet ikke», ikke «sto stille»**, og gir elapsed videre. Det gjelder også
   0 bevegelsessekunder: et spor uten forflytning er like gjerne en tredemølle.
 - **Gange og fjelltur står på 0,25 m/s.** En bratt tur går i rykk og napp, og 0,3 m/s opp

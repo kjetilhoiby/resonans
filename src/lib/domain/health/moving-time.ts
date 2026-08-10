@@ -41,6 +41,8 @@ export interface MovingTimeResult {
 	thresholdMetersPerSecond: number;
 	/** Median sekunder mellom gyldige sporpunkter. Se `MAX_MEDIAN_SAMPLE_SECONDS`. */
 	medianSampleSeconds: number;
+	/** `siste − første` gyldige punkt. Kan være langt kortere enn økta — se `MIN_TRACK_SPAN_SHARE`. */
+	trackSpanSeconds: number;
 }
 
 /** Hvorfor et spor ikke fikk et svar. Rapporteres, ikke svelget. */
@@ -48,14 +50,16 @@ export type MovingTimeRejection =
 	| 'family_uten_bevegelsestid'
 	| 'for_faa_punkter'
 	| 'for_tynt_spor'
+	| 'sporet_dekker_ikke_okta'
 	| 'for_daarlig_dekning'
 	| 'ingen_varighet';
 
 export interface MovingTimeAnalysis {
 	result: MovingTimeResult | null;
 	rejection: MovingTimeRejection | null;
-	/** Fylt ut også når svaret ble avvist — det er tallet som forklarer hvorfor. */
+	/** Fylt ut også når svaret ble avvist — det er tallene som forklarer hvorfor. */
 	medianSampleSeconds: number | null;
+	trackSpanSeconds: number | null;
 	pointCount: number;
 }
 
@@ -151,6 +155,25 @@ export const MIN_COVERAGE = 0.7;
  */
 export const MAX_MEDIAN_SAMPLE_SECONDS = 15;
 
+/**
+ * Hvor stor del av øktas oppgitte varighet sporet må spenne over.
+ *
+ * **Dette er porten den virkelige feilen slapp gjennom.** Løpeturen 24. mars er
+ * 8,33 km på 56 minutter ifølge både Withings og GPX-fila — men sporpunktene med
+ * brukbar tid dekker bare 1,25 km og 7,5 minutter av den (splits og pulsfordeling
+ * på flaten regnes fra de samme punktene og viser det svart på hvitt). Sporingen
+ * gikk i stykker underveis. Modulen så et internt konsistent spor på sju
+ * minutter, fant at alt var bevegelse, og svarte «8 min» på en 56-minutters økt.
+ *
+ * `coverage` fanget det ikke, fordi den måler krediterte intervaller mot
+ * *sporets* eget spenn — ikke mot økta. Et spor kan være perfekt tett og likevel
+ * beskrive en åttendedel av turen.
+ *
+ * Om de resterende 48 minuttene var bevegelse eller stillstand vet vi ingenting
+ * om, og da er «vet ikke» det eneste svaret.
+ */
+export const MIN_TRACK_SPAN_SHARE = 0.8;
+
 /** Færre punkter enn dette gir ingen mening å vurdere. */
 export const MIN_POINTS = 10;
 
@@ -226,6 +249,12 @@ function windowSpeed(points: readonly ValidPoint[], index: number, windowSeconds
 export interface ComputeMovingTimeOptions {
 	sportType?: string | null;
 	sportFamily?: string | null;
+	/**
+	 * Øktas oppgitte varighet (`data.duration`), når den er kjent. Uten den kan
+	 * modulen ikke se at sporet bare dekker en del av økta — se
+	 * `MIN_TRACK_SPAN_SHARE`. Utelates den, hopper porten over.
+	 */
+	declaredDurationSeconds?: number | null;
 }
 
 /** Median sekunder mellom påfølgende punkter. */
@@ -255,7 +284,12 @@ export function analyzeMovingTime(
 	const family = classifyEffortFamily(options.sportType ?? null, options.sportFamily ?? null);
 	const valid = validPoints(points);
 	const median = medianSampleSeconds(valid);
-	const base = { result: null, medianSampleSeconds: median, pointCount: valid.length };
+	const base = {
+		result: null,
+		medianSampleSeconds: median,
+		trackSpanSeconds: valid.length > 0 ? valid[valid.length - 1].tSec : null,
+		pointCount: valid.length
+	};
 
 	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) {
 		return { ...base, rejection: 'family_uten_bevegelsestid' };
@@ -273,6 +307,12 @@ export function analyzeMovingTime(
 
 	const elapsedSeconds = valid[valid.length - 1].tSec;
 	if (!(elapsedSeconds > 0)) return { ...base, rejection: 'ingen_varighet' };
+
+	// Sporet må dekke økta, ikke bare være internt konsistent.
+	const declared = options.declaredDurationSeconds;
+	if (typeof declared === 'number' && declared > 0 && elapsedSeconds / declared < MIN_TRACK_SPAN_SHARE) {
+		return { ...base, rejection: 'sporet_dekker_ikke_okta' };
+	}
 
 	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
 
@@ -305,10 +345,12 @@ export function analyzeMovingTime(
 			coverage: Math.round(coverage * 1000) / 1000,
 			family,
 			thresholdMetersPerSecond: threshold,
-			medianSampleSeconds: Math.round(median * 10) / 10
+			medianSampleSeconds: Math.round(median * 10) / 10,
+			trackSpanSeconds: Math.round(elapsedSeconds)
 		},
 		rejection: null,
 		medianSampleSeconds: median,
+		trackSpanSeconds: elapsedSeconds,
 		pointCount: valid.length
 	};
 }

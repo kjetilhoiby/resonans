@@ -1,4 +1,4 @@
-# Bevegelsestid: tetthetsporten som manglet
+# Bevegelsestid: sporet må dekke økta
 
 Dato: 2026-08-10
 Status: ferdig (backfill står fortsatt ubrukt)
@@ -18,33 +18,60 @@ Første måling mot prod, med `dryRun`, ga dette:
 | 23. juli | walking | 3 t 18 min | 1 t 39 min |
 | 5. juli | running | 1 t 4 min | 41 min |
 
-En 56-minutters løpetur har ikke åtte minutter bevegelse. Og tallene avslører seg selv:
-**hver eneste verdi er et helt antall minutter** — 8, 12, 8, 8, 9, 41, 99.
+En 56-minutters løpetur har ikke åtte minutter bevegelse.
 
-Det er `MAX_CREDITED_INTERVAL_SECONDS` (60) som slår inn på *hvert* intervall. Sporene har
-punkter et minutt eller mer fra hverandre, så bevegelsestiden ble «antall krediterte
-intervaller × ett minutt» — et tall om sporets oppløsning, ikke om økta.
+### Feilsporet, og hvorfor det er verdt å skrive ned
 
-`MIN_COVERAGE` på 0,5 var ikke nok til å stoppe det: et spor med to minutter mellom
-punktene får dekning rundt 0,5 og slapp så vidt gjennom.
+Første diagnose var at **hver verdi var et helt antall minutter** — 8, 12, 8, 8, 9, 41, 99
+— og at `MAX_CREDITED_INTERVAL_SECONDS` (60) derfor slo inn på hvert intervall.
+
+Det mønsteret fantes ikke i dataene. `formatDuration` i kortet gjør
+`Math.round(seconds / 60)`; hele «funnet» var **vår egen formatering**. En diagnose bygget
+på et artefakt fra visningslaget, altså — og den lærdommen er verdt mer enn feilen: leter
+du etter et mønster i en rapport, sjekk om rapporten kan ha laget det.
+
+### Hva som faktisk skjedde
+
+Brukeren åpnet økta på flaten. Der står 8,33 km / 56 min, med to kilder som er enige
+(Withings og Dropbox GPX). Men **splits stopper på 1,25 km, og pulsfordelingen summerer til
+7 min 34 s** — og begge regnes fra nøyaktig de `trackPoints` bevegelsestiden leser.
+
+Sporingen gikk i stykker underveis. Modulen så et internt konsistent spor på under åtte
+minutter, fant at alt var bevegelse, og svarte «8 min» på en 56-minutters økt.
+
+`coverage` fanget det ikke, og det er det egentlige designhullet: den måler krediterte
+intervaller mot **sporets eget spenn**, ikke mot **økta**. Et spor kan være perfekt tett og
+likevel beskrive en åttendedel av turen.
 
 Feilen er verre enn et galt tall. Modulen er bygget rundt regelen «null framfor et gjettet
 tall», og her ga den et **selvsikkert** svar på et spørsmål sporet ikke kunne besvare.
 
 ## Faser
 
-### Fase 1: Tetthetsport
+### Fase 1: Sporet må dekke økta
+
+`MIN_TRACK_SPAN_SHARE` (0,8). Sporets tidsspenn måles mot øktas oppgitte varighet
+(`data.duration`), som sendes inn via `declaredDurationSeconds`. Dekker sporet mindre enn
+80 % av økta, er svaret null: om de resterende minuttene var bevegelse eller stillstand vet
+vi ingenting om.
+
+En test binder de to portene fra hverandre, siden det var forvekslingen som slapp feilen
+gjennom: `coverage` måler mot sporet, span-porten mot økta.
+
+### Fase 2: Tetthetsport
 
 `MAX_MEDIAN_SAMPLE_SECONDS` (15 s). Er medianavstanden mellom sporpunkter større, kan en
-pause ikke skilles fra et hull uansett hvor god resten av modellen er — og da er «vet ikke»
-det eneste ærlige svaret.
+pause ikke skilles fra et hull uansett hvor god resten av modellen er.
 
-Porten står **før** alt annet som regner, og en test binder den til å ligge under kappet
-(`MAX_CREDITED_INTERVAL_SECONDS`), så feilen ikke kan komme tilbake stille.
+**Denne porten er prinsipiell, ikke målt.** Den ble bygget på feilsporet over, og står
+igjen fordi resonnementet holder på egne bein: med minuttavstand mellom punktene kappes
+hvert intervall til 60 sekunder, og svaret blir en beskrivelse av oppløsningen. Den er
+konservativ — utfallet er null, altså elapsed videre — så den kan ikke gjøre skade. Men
+ingen prod-rad er bekreftet avvist av den ennå.
 
 `MIN_COVERAGE` er hevet fra 0,5 til 0,7 av samme grunn.
 
-### Fase 2: Grunnen rapporteres
+### Fase 3: Grunnen rapporteres
 
 `analyzeMovingTime` returnerer `{ result, rejection, medianSampleSeconds, pointCount }`.
 `computeMovingTime` er nå et tynt kall over den.
@@ -54,7 +81,7 @@ sporets oppløsning. Backfillen teller per grunn (`rejections`), og kortet viser
 klartekst med punktavstanden per økt. «89 ga ikke noe svar» ser ut som ett problem; det er
 fire, og bare ett av dem er verdt å gjøre noe med.
 
-### Fase 3: Fjellturen
+### Fase 4: Fjellturen
 
 Terskelen for `walking` og `hiking` er senket fra 0,4 til **0,25 m/s**.
 
@@ -71,20 +98,22 @@ gitt større tall på tynne spor, men ikke sannere: mellom to punkter to minutte
 hverandre vet vi ikke hva som skjedde. Kappet er riktig; det som manglet var å la være å
 svare.
 
-**Ingen ny modellering av tynne spor.** Fristelsen er å interpolere. Da hadde vi konstruert
-data for å slippe å si «vet ikke», som er samme feil i en penere innpakning.
+**Tre tall til i tabellen.** Sporlengde, antall punkter og punktavstand vises per økt.
+Feilen ble funnet ved at brukeren åpnet økta og så at splits stoppet på 1,25 km — altså i
+en helt annen del av appen. Tallene som avgjør om et svar er til å stole på skal stå ved
+siden av svaret, ikke måtte oppsøkes.
 
-**Ett tall til i tabellen.** Punktavstanden vises per økt i kortet. Det var *mønsteret i
-tallene* som avslørte feilen, ikke koden — så neste gang skal tallet stå der uten at noen
-må legge merke til at alt er delelig på seksti.
+**Ingen ny modellering av tynne eller delvise spor.** Fristelsen er å interpolere. Da hadde
+vi konstruert data for å slippe å si «vet ikke», som er samme feil i en penere innpakning.
 
 ## Verifisering
 
-- `npm test`: 3074 grønne (5 nye i `moving-time.test.ts`).
+- `npm test`: 3077 grønne (8 nye i `moving-time.test.ts`).
 - `npm run check`: 0 feil, 0 advarsler.
-- Testen som fester feilen bruker samme form som prod-dataene: et spor på 3360 sekunder
-  med 120 sekunder mellom punktene gir nå `rejection: 'for_tynt_spor'` framfor «8 min».
-  Samme spor med 4 sekunders avstand gir over 3300 sekunder bevegelse.
+- Testen som fester den ekte feilen: et spor på 450 sekunder mot en oppgitt varighet på
+  3360 gir `rejection: 'sporet_dekker_ikke_okta'` framfor et tall.
+- Tetthetsporten har sin egen test (120 s punktavstand → `for_tynt_spor`), og en test
+  binder den til å ligge under `MAX_CREDITED_INTERVAL_SECONDS`.
 - Fjellturen: 1 t 20 min gange, 50 min på 0,3 m/s, 40 min gange → over 90 % kreditert.
 
 **Fortsatt ikke kjørt:** selve backfillen og de visuelle testene. Neste dry-run er den
