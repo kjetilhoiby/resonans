@@ -596,9 +596,20 @@ datainnhentingen.
 - **Kall `movingDurationFor` ETTER at `sportType` er avgjort.** Terskelen er per
   sportsfamilie, og opplastingsstien overstyrer sportstypen *etter* parsingen — en
   el-sykkeltur parset som «running» ville fått løpeterskelen.
-- **Farten måles som forflytning mellom endepunktene i et 10-sekundersvindu**, ikke som
-  sporlengde mellom nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker
-  punktene 2–5 meter, og over fire sekunder ser det ut som over én meter i sekundet.
+- **Farten måles som forflytning mellom endepunktene i et vindu**, ikke som sporlengde
+  mellom nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker punktene
+  2–5 meter, og over fire sekunder ser det ut som over én meter i sekundet.
+- **To porter, og begge må åpne.** Den fine (10 s) spør «var jeg i bevegelse nå», den
+  grove (120 s, gulv på 25 % av terskelen) «kom jeg noen vei». Et rødlys består den grove
+  og felles av den fine; innendørs GPS-drift er motsatt.
+- **En glemt sporing slutter sjelden med at telefonen legges fra seg.** Halen på turen som
+  utløste dette er en garasje (multipath kaster posisjonen titalls meter — ikke jitter,
+  men *fart* over ti sekunder) og en gåtur opp på kontoret. Modellerer du en hale som
+  stillstand, bommer du på begge.
+- **Sykkelterskelen er 2,5 m/s, ikke Stravas ~1,4.** Gange (1,2–1,7) kommer noen vei og
+  slipper gjennom den grove porten, så det er farten som må skille den fra sykling — og
+  ekte sykling ligger på 4–8. Løping har ikke det gapet (rask gange 1,7 mot sliten jogg
+  1,8), står på 0,7, og krediterer derfor en gåtur hjem. Kjent rest.
 - **null betyr «vet ikke», ikke «sto stille»**, og gir elapsed videre. Det gjelder også
   0 bevegelsessekunder: et spor uten forflytning er like gjerne en tredemølle.
 - **Minstelengden måles på bevegelsestiden.** En time stillstand med to minutter sykling

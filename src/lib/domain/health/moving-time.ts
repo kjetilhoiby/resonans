@@ -44,19 +44,26 @@ export interface MovingTimeResult {
 /**
  * Terskler i m/s, per effort-family.
  *
- * Merk at de ligger godt over «i det hele tatt i bevegelse». GPS-punkter spriker
- * 2–5 meter når man står stille, og en terskel på 0,5 m/s ville derfor kreditert
- * stillstand som bevegelse — nøyaktig det vi prøver å bli kvitt. Sammen med
- * `SPEED_WINDOW_SECONDS` og forflytning-framfor-sporlengde (se `windowSpeed`)
- * er marginen stor: en sykkel i fart ligger på 5–8 m/s, en jogg på ~2,5.
+ * De ligger godt over «i det hele tatt i bevegelse». GPS-punkter spriker 2–5
+ * meter når man står stille, og en terskel på 0,5 m/s ville derfor kreditert
+ * stillstand som bevegelse — nøyaktig det vi prøver å bli kvitt.
  *
- * Gange har lavest terskel fordi en rolig tur ligger på ~1,2 m/s og en pause i
- * en tur ikke skal koste like mye som en pause på sykkel.
+ * **Sykkelterskelen er 2,5 og ikke Stravas ~1,4 med vilje.** Halen på en tur er
+ * sjelden bare stillstand: man parkerer, tar telefonen med og går inn. Gange
+ * ligger på 1,2–1,7 m/s og ville bestått en terskel på 1,4 — mens ekte sykling
+ * ligger på 4–8. Gapet er så stort at porten kan settes der uten å tape noe
+ * reelt, og en kryping bak fotgjengere som faller utenfor er sekunder, ikke
+ * minutter.
+ *
+ * **Løping har ikke det gapet, og terskelen later ikke som.** En rask gange
+ * (1,7) og en sliten jogg (1,8) er ikke til å skille på fart alene, så
+ * `running` står på 0,7 — en løpetur med gangpauser krediteres, og en gåtur
+ * hjem etterpå gjør det også. Det er en kjent rest, ikke et løst problem.
  */
 export const MOVING_THRESHOLD_MS_BY_FAMILY: Record<EffortFamily, number> = {
 	running: 0.7,
-	cycling: 1.4,
-	ebike: 1.4,
+	cycling: 2.5,
+	ebike: 2.5,
 	walking: 0.4,
 	hiking: 0.4,
 	swimming: 0,
@@ -71,6 +78,30 @@ export const MOVING_THRESHOLD_MS_BY_FAMILY: Record<EffortFamily, number> = {
  * størrelsesorden som en faktisk forflytning.
  */
 export const SPEED_WINDOW_SECONDS = 10;
+
+/**
+ * Det grove vinduet: «kom jeg noen vei?».
+ *
+ * Ti sekunder holder mot jitter fra en telefon som ligger i ro, men **ikke** mot
+ * GPS innendørs. Parkerer man i en garasje og tar telefonen med opp på kontoret,
+ * er halen ikke stillstand — det er multipath som kaster posisjonen titalls meter
+ * av gårde, og over ti sekunder ser det ut som fart. Feilen er en helt annen
+ * størrelsesorden enn de 2–5 meterne et spor utendørs spriker.
+ *
+ * Over to minutter avslører den seg: en telefon i en garasje kommer ingen vei,
+ * uansett hvor mye posisjonen hopper. Ekte sykling gjør det.
+ */
+export const PROGRESS_WINDOW_SECONDS = 120;
+
+/**
+ * Hvor stor del av familiens terskel det grove vinduet må nå. Andel framfor et
+ * fast tall, så gulvet skalerer med sporten: 0,35 m/s for sykkel, 0,1 for gange.
+ *
+ * Lavt med vilje — porten skal fange «kommer ingen vei», ikke dømme tempo. Et
+ * rødlys midt i en tur består den grove porten (vinduet rundt inneholder
+ * syklingen på begge sider) og felles av den fine, som er riktig arbeidsdeling.
+ */
+export const PROGRESS_FLOOR_FRACTION = 0.25;
 
 /**
  * Et intervall krediteres høyst så mange sekunder. Er det et hull i sporet —
@@ -136,13 +167,13 @@ function validPoints(points: readonly MovingTimePoint[]): ValidPoint[] {
  *
  * Det er forskjellen som gjør terskelen til å stole på: sporlengde summerer
  * GPS-støyen (hvert lille hopp legger til meter), mens forflytning mellom to
- * punkter ti sekunder fra hverandre er ~0 når man står stille, uansett hvor mye
- * punktene imellom spriker.
+ * punkter et stykke fra hverandre er ~0 når man ikke kommer noen vei, uansett
+ * hvor mye punktene imellom spriker.
  */
-function windowSpeed(points: readonly ValidPoint[], index: number): number | null {
+function windowSpeed(points: readonly ValidPoint[], index: number, windowSeconds: number): number | null {
 	let lo = index - 1;
 	let hi = index;
-	while (points[hi].tSec - points[lo].tSec < SPEED_WINDOW_SECONDS && (lo > 0 || hi < points.length - 1)) {
+	while (points[hi].tSec - points[lo].tSec < windowSeconds && (lo > 0 || hi < points.length - 1)) {
 		// Utvid symmetrisk der det er rom, så vinduet ikke blir skjevt i endene.
 		if (lo > 0 && (hi === points.length - 1 || index - lo <= hi - index)) lo -= 1;
 		else if (hi < points.length - 1) hi += 1;
@@ -183,15 +214,22 @@ export function computeMovingTime(
 	const elapsedSeconds = valid[valid.length - 1].tSec;
 	if (!(elapsedSeconds > 0)) return null;
 
+	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
+
 	let movingSeconds = 0;
 	let stoppedSeconds = 0;
 	for (let i = 1; i < valid.length; i += 1) {
 		const dt = valid[i].tSec - valid[i - 1].tSec;
 		if (!(dt > 0)) continue;
 		const credited = Math.min(dt, MAX_CREDITED_INTERVAL_SECONDS);
-		const speed = windowSpeed(valid, i);
+		const speed = windowSpeed(valid, i, SPEED_WINDOW_SECONDS);
 		if (speed === null) continue;
-		if (speed >= threshold) movingSeconds += credited;
+		// To porter, og begge må åpne. Den fine spør «var jeg i bevegelse nå»,
+		// den grove «kom jeg noen vei». Innendørs GPS-drift består den fine og
+		// felles av den grove; et rødlys er motsatt.
+		const progress = windowSpeed(valid, i, PROGRESS_WINDOW_SECONDS);
+		const moving = speed >= threshold && (progress === null || progress >= progressFloor);
+		if (moving) movingSeconds += credited;
 		else stoppedSeconds += credited;
 	}
 

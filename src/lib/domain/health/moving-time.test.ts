@@ -158,6 +158,46 @@ describe('computeMovingTime', () => {
 		);
 	});
 
+	it('teller ikke innendørs GPS-drift i en garasje som sykling', () => {
+		// Halen er ikke stillstand: telefonen ligger i en garasje der multipath
+		// kaster posisjonen titalls meter av gårde. Over ti sekunder ser det ut
+		// som fart — det er den grove porten som avslører at man ikke kom noen vei.
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 1800, speedMs: 0, jitterMeters: 40 }
+		]);
+
+		const result = computeMovingTime(points, { sportType: 'e_bike' });
+
+		expect(result).not.toBeNull();
+		expect(result!.movingSeconds).toBeGreaterThan(1400);
+		expect(result!.movingSeconds).toBeLessThan(1700);
+	});
+
+	it('teller ikke gåturen opp på kontoret som sykling', () => {
+		// Etter garasjen bæres telefonen inn. Gange på 1,4 m/s kommer faktisk
+		// noen vei, så den grove porten slipper den gjennom — det er terskelen
+		// for sportsfamilien som skiller den fra sykling.
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 300, speedMs: 1.4 }
+		]);
+
+		const result = computeMovingTime(points, { sportType: 'e_bike' });
+
+		expect(result).not.toBeNull();
+		expect(result!.movingSeconds).toBeGreaterThan(1400);
+		expect(result!.movingSeconds).toBeLessThan(1600);
+	});
+
+	it('krediterer hele turen når den samme gangfarten ER sporten', () => {
+		const points = track([{ seconds: 1800, speedMs: 1.4 }]);
+
+		const result = computeMovingTime(points, { sportType: 'walking' });
+
+		expect(result!.movingSeconds).toBeGreaterThan(1700);
+	});
+
 	it('bruker terskelen til sportsfamilien, ikke en felles', () => {
 		// 1 m/s: over gange-terskelen, under sykkel-terskelen.
 		const points = track([{ seconds: 1200, speedMs: 1 }]);

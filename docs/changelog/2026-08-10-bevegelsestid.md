@@ -47,13 +47,33 @@ endepunkter delt på tiden. Sporlengden gjennom vinduet ville summert GPS-støye
 lite hopp legger til meter — mens forflytning mellom to punkter ti sekunder fra hverandre
 er ~0 når man står stille, uansett hvor mye punktene imellom spriker.
 
-**Vindu på 10 sekunder** (`SPEED_WINDOW_SECONDS`), ikke mellom nabopunkter. Ekko sampler
-hvert 1–4 sekund, og over så kort tid er GPS-støyen på samme størrelsesorden som en
-faktisk forflytning.
+**To porter, og begge må åpne.** Den fine (`SPEED_WINDOW_SECONDS`, 10 s) spør «var jeg i
+bevegelse nå». Den grove (`PROGRESS_WINDOW_SECONDS`, 120 s) spør «kom jeg noen vei».
 
-**Terskler per sportsfamilie** (`MOVING_THRESHOLD_MS_BY_FAMILY`), og de ligger bevisst
-over «i det hele tatt i bevegelse»: løp 0,7 m/s, sykkel/el-sykkel 1,4, gange/tur 0,4.
-Marginen er stor — en sykkel i fart ligger på 5–8 m/s.
+Den grove porten kom til etter en korreksjon fra brukeren, og den var nødvendig: halen på
+denne turen er ikke en telefon som ligger i ro. Sykkelen parkeres i en **garasje**, og
+telefonen bæres opp på kontoret. Innendørs GPS er ikke jitter på 2–5 meter — det er
+multipath som kaster posisjonen titalls meter av gårde, og over ti sekunder ser det ut som
+fart. Over to minutter avslører det seg: en telefon i en garasje kommer ingen vei, uansett
+hvor mye posisjonen hopper. Ekte sykling gjør det.
+
+Arbeidsdelingen faller ut riktig av seg selv: et rødlys består den grove porten (vinduet
+rundt inneholder syklingen på begge sider) og felles av den fine. Garasjedrift er motsatt.
+Gulvet er `PROGRESS_FLOOR_FRACTION` (0,25) av familiens terskel — en andel, ikke et fast
+tall, så det skalerer med sporten.
+
+**Terskler per sportsfamilie** (`MOVING_THRESHOLD_MS_BY_FAMILY`): sykkel/el-sykkel 2,5 m/s,
+løp 0,7, gange/tur 0,4.
+
+Sykkelterskelen er bevisst høyere enn Stravas ~1,4. Gåturen fra garasjen til kontoret
+*kommer* noen vei, så den grove porten slipper den gjennom — det som skiller den fra
+sykling er farten. Gange ligger på 1,2–1,7 m/s og ville bestått 1,4; ekte sykling ligger på
+4–8. Gapet er så stort at porten kan settes midt i det uten å tape noe reelt.
+
+**Løping har ikke det gapet, og terskelen later ikke som.** En rask gange (1,7) og en
+sliten jogg (1,8) er ikke til å skille på fart alene. `running` står derfor på 0,7: en
+løpetur med gangpauser krediteres, og en gåtur hjem etterpå gjør det også. Kjent rest,
+ikke et løst problem.
 
 Modulen returnerer **null** framfor et tall når sporet ikke kan svare: under `MIN_POINTS`
 (10), under `MIN_COVERAGE` (0,5), eller for familier der begrepet ikke gir mening (styrke,
@@ -135,6 +155,12 @@ sluppet gjennom og blitt skåret som to minutter.
 to motsatt rettede utslag hverandre i endepunktene, slipper et intervall gjennom. Målt på
 worst-case-syntetikk (±5 m alternerende) er resten under 5 % av stillstanden. Retningen på
 feilen er den trygge: vi krediterer litt for mye tid, aldri for lite.
+
+**«Stillstand» var feil modell for halen, og korreksjonen kostet et helt lag.** Første
+utgave hadde bare den fine porten, med den begrunnelsen at en telefon i ro spriker 2–5
+meter. Det stemmer utendørs. Halen her er en garasje og en gåtur, og begge produserer fart
+som består en tiendesekunders test. Lærdommen er generell: en glemt sporing slutter sjelden
+med at telefonen legges fra seg — den fortsetter å følge et menneske som gjør noe annet.
 
 **Bevegelsestid gjelder også TRIMP-stien.** Puls demper feilen (død tid drar
 `avgHeartRate` ned), men `avgHeartRate × varighet` blåses fortsatt opp.
