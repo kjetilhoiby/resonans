@@ -1,8 +1,14 @@
 const WORKOUT_TITLE_BY_SPORT: Record<string, string> = {
 	running: 'Løpetur',
 	indoor_running: 'Løpetur',
+	// Terreng- og innendørsløping er samme vane som løping, og skal ikke vises
+	// som «Treningsøkt» (som var utfallet før — trail_running manglet helt).
+	trail_running: 'Løpetur',
 	cycling: 'Sykkeløkt',
-	e_bike: 'Sykkeløkt',
+	// El-sykkel er sin egen tittel. Den har egen MET-verdi (4,5 mot 7), egen
+	// effort-faktor (0,4) og eget krydder-regnskap; å vise den som «Sykkeløkt»
+	// gjorde varselet «9,07 km — Sykkeløkt importert» om en elsykkeltur.
+	e_bike: 'Elsykkeltur',
 	indoor_cycling: 'Sykkeløkt',
 	swimming: 'Svømmeøkt',
 	walking: 'Gåtur',
