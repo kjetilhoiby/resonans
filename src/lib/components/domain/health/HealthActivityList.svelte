@@ -7,9 +7,6 @@
 	import HrDistributionBar from '../../charts/HrDistributionBar.svelte';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
-	// Terskelen for «verdt å forklare» deles med serveren — flaten og skåringen
-	// skal ikke ha hver sin mening om når et stopp er stort nok til å nevnes.
-	import { NOTABLE_STOPPED_SHARE } from '$lib/domain/health/moving-time';
 	import { invalidateAll } from '$app/navigation';
 	import { invalidateHealthFamily } from '$lib/client/dashboard-cache';
 	import BottomSheet from '../../ui/BottomSheet.svelte';
@@ -34,7 +31,6 @@
 		sensorType: string;
 		distanceMeters: number | null;
 		durationSeconds: number | null;
-		movingSeconds: number | null;
 		avgHeartRate: number | null;
 	}
 
@@ -44,7 +40,6 @@
 		sportType: string;
 		distanceMeters: number | null;
 		durationSeconds: number | null;
-		movingSeconds: number | null;
 		paceSecondsPerKm: number | null;
 		elevationMeters: number | null;
 		avgHeartRate: number | null;
@@ -253,29 +248,6 @@
 		return rem === 0 ? `${h} t` : `${h} t ${rem} min`;
 	}
 
-	/**
-	 * Varigheten som skal stå som hovedtall, og om avviket er verdt å forklare.
-	 *
-	 * Elapsed er lengden på opptaket; bevegelsestid er lengden på innsatsen, og
-	 * det er den effort skåres på. Er forskjellen liten (et rødlys), er to tall
-	 * bare støy. Er den stor — en glemt sporing — må flaten si hvorfor Resonans
-	 * viser 27 min der stoppeklokka i appen sa 2 t 20.
-	 */
-	function durationDisplay(act: { durationSeconds: number | null; movingSeconds: number | null }): {
-		seconds: number | null;
-		elapsedNote: string | null;
-	} {
-		const elapsed = act.durationSeconds;
-		const moving = act.movingSeconds;
-		if (moving === null || elapsed === null || elapsed <= 0) {
-			return { seconds: elapsed, elapsedNote: null };
-		}
-		if (1 - moving / elapsed < NOTABLE_STOPPED_SHARE) {
-			return { seconds: elapsed, elapsedNote: null };
-		}
-		return { seconds: moving, elapsedNote: `i bevegelse · ${formatDuration(elapsed)} opptak` };
-	}
-
 	function providerLabel(provider: string, sensorType: string): string {
 		if (provider === 'dropbox' || sensorType === 'workout_files') return 'Dropbox (GPX/TCX)';
 		if (provider === 'withings') return 'Withings';
@@ -327,8 +299,7 @@
 			{@const compactSuffix = (() => {
 				const parts: string[] = [];
 				if (act.distanceMeters && !noDistance) parts.push(`${(act.distanceMeters / 1000).toFixed(1)} km`);
-				const shown = durationDisplay(act).seconds;
-				if (shown) parts.push(formatDuration(shown));
+				if (act.durationSeconds) parts.push(formatDuration(act.durationSeconds));
 				return parts.join(' · ');
 			})()}
 			<ExpandableCard
@@ -370,13 +341,9 @@
 								</div>
 							{/if}
 							{#if act.durationSeconds}
-								{@const dur = durationDisplay(act)}
 								<div class="hd-stat">
 									<span class="hd-stat-label">Varighet</span>
-									<span class="hd-stat-value">{formatDuration(dur.seconds)}</span>
-									{#if dur.elapsedNote}
-										<span class="hd-stat-note">{dur.elapsedNote}</span>
-									{/if}
+									<span class="hd-stat-value">{formatDuration(act.durationSeconds)}</span>
 								</div>
 							{/if}
 							{#if act.paceSecondsPerKm && !noDistance}
@@ -683,12 +650,6 @@
 		font-weight: 600;
 		color: #e8e8e8;
 		font-variant-numeric: tabular-nums;
-	}
-
-	.hd-stat-note {
-		font-size: 0.62rem;
-		color: #888;
-		line-height: 1.2;
 	}
 
 	.hd-stat-unit {

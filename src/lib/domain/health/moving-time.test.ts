@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
+	analyzeMovingTime,
 	computeMovingTime,
 	stoppedShare,
+	MAX_CREDITED_INTERVAL_SECONDS,
 	MIN_POINTS,
+	MAX_MEDIAN_SAMPLE_SECONDS,
+	MIN_TRACK_SPAN_SHARE,
+	MIN_SUGGESTED_TRIM_SECONDS,
+	suggestForgottenTracking,
 	MOVING_THRESHOLD_MS_BY_FAMILY,
 	type MovingTimePoint
 } from './moving-time';
@@ -218,5 +224,180 @@ describe('computeMovingTime', () => {
 		const result = computeMovingTime(points, { sportType: 'cycling' });
 
 		expect(result!.movingSeconds).toBeLessThanOrEqual(result!.elapsedSeconds);
+	});
+
+	it('svarer ikke på et spor som er for tynt til å skille pause fra hull', () => {
+		// Feilen fra første måling mot prod: en 56-minutters løpetur ble til
+		// «8 min i bevegelse». Sporet hadde punkter to minutter fra hverandre, og
+		// MAX_CREDITED_INTERVAL_SECONDS kappet hvert intervall til 60 sekunder —
+		// så svaret beskrev sporets oppløsning, ikke økta. At hver eneste verdi i
+		// rapporten var et helt antall minutter var det som avslørte det.
+		const points = track([{ seconds: 3360, speedMs: 3, sampleSeconds: 120 }]);
+
+		const analysis = analyzeMovingTime(points, { sportType: 'running' });
+
+		expect(analysis.result).toBeNull();
+		expect(analysis.rejection).toBe('for_tynt_spor');
+		expect(analysis.medianSampleSeconds).toBe(120);
+	});
+
+	it('svarer på det samme sporet når punktene ligger tett', () => {
+		const points = track([{ seconds: 3360, speedMs: 3, sampleSeconds: 4 }]);
+
+		const analysis = analyzeMovingTime(points, { sportType: 'running' });
+
+		expect(analysis.rejection).toBeNull();
+		expect(analysis.result!.movingSeconds).toBeGreaterThan(3300);
+	});
+
+	it('holder grensa for tynne spor godt under kappet på ett minutt', () => {
+		// Er terskelen over kappet, kan feilen komme tilbake uten at noe sier fra.
+		expect(MAX_MEDIAN_SAMPLE_SECONDS).toBeLessThan(MAX_CREDITED_INTERVAL_SECONDS);
+	});
+
+	it('krediterer en fjelltur med tidvis svært lav fart', () => {
+		// En bratt tur går i rykk og napp: 0,3 m/s opp en ur er ekte gange, ikke
+		// en pause. Å kutte den ville fjernet noe brukeren faktisk gjorde — og
+		// det er den dyre retningen å ta feil i.
+		const points = track([
+			{ seconds: 2400, speedMs: 1.2 },
+			{ seconds: 3000, speedMs: 0.3 },
+			{ seconds: 2400, speedMs: 1.2 }
+		]);
+
+		const result = computeMovingTime(points, { sportType: 'walking' });
+
+		expect(result).not.toBeNull();
+		expect(result!.movingSeconds).toBeGreaterThan(result!.elapsedSeconds * 0.9);
+	});
+
+	it('rapporterer grunnen framfor å svelge den', () => {
+		const kort = track([{ seconds: 20, speedMs: 3 }]);
+		expect(analyzeMovingTime(kort, { sportType: 'running' }).rejection).toBe('for_faa_punkter');
+
+		const styrke = track([{ seconds: 1800, speedMs: 0 }]);
+		expect(analyzeMovingTime(styrke, { sportType: 'strength_training' }).rejection).toBe(
+			'family_uten_bevegelsestid'
+		);
+	});
+
+	it('svarer ikke når sporingen bare dekket en del av økta', () => {
+		// Løpeturen 24. mars: 8,33 km på 56 minutter ifølge både Withings og
+		// GPX-fila, men sporpunktene dekker 1,25 km og 7,5 minutter. Sporingen
+		// gikk i stykker underveis. Modulen så et internt konsistent spor, fant
+		// at alt var bevegelse, og svarte «8 min» på en 56-minutters økt.
+		const points = track([{ seconds: 450, speedMs: 2.5 }]);
+
+		const analysis = analyzeMovingTime(points, {
+			sportType: 'running',
+			declaredDurationSeconds: 3360
+		});
+
+		expect(analysis.result).toBeNull();
+		expect(analysis.rejection).toBe('sporet_dekker_ikke_okta');
+		expect(analysis.trackSpanSeconds).toBe(448);
+	});
+
+	it('svarer når sporet dekker økta', () => {
+		const points = track([{ seconds: 3360, speedMs: 2.5 }]);
+
+		const analysis = analyzeMovingTime(points, {
+			sportType: 'running',
+			declaredDurationSeconds: 3360
+		});
+
+		expect(analysis.rejection).toBeNull();
+		expect(analysis.result!.movingSeconds).toBeGreaterThan(3300);
+	});
+
+	it('dekningsporten måler mot SPORET, span-porten mot ØKTA', () => {
+		// De to er ikke samme spørsmål, og det var forvekslingen som slapp
+		// feilen gjennom: et spor kan være perfekt tett og likevel beskrive en
+		// åttendedel av turen.
+		const tettMenKort = track([{ seconds: 450, speedMs: 2.5 }]);
+
+		expect(analyzeMovingTime(tettMenKort, { sportType: 'running' }).rejection).toBeNull();
+		expect(
+			analyzeMovingTime(tettMenKort, { sportType: 'running', declaredDurationSeconds: 3360 })
+				.rejection
+		).toBe('sporet_dekker_ikke_okta');
+		expect(MIN_TRACK_SPAN_SHARE).toBeGreaterThan(0.5);
+	});
+});
+
+describe('suggestForgottenTracking', () => {
+	it('foreslår å snappe sluttpunktet der ruta stopper', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 6900, speedMs: 0, jitterMeters: 4 }
+		]);
+
+		const forslag = suggestForgottenTracking(points, { sportType: 'e_bike' });
+
+		expect(forslag).not.toBeNull();
+		expect(forslag!.keptSeconds).toBeGreaterThan(1400);
+		expect(forslag!.keptSeconds).toBeLessThan(1600);
+		expect(forslag!.droppedSeconds).toBeGreaterThan(6800);
+		expect(new Date(forslag!.cutAtIso).getTime()).toBeGreaterThan(START);
+	});
+
+	it('kutter garasjen OG gåturen opp på kontoret', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 1200, speedMs: 0, jitterMeters: 40 },
+			{ seconds: 300, speedMs: 1.4 }
+		]);
+
+		const forslag = suggestForgottenTracking(points, { sportType: 'e_bike' });
+
+		expect(forslag).not.toBeNull();
+		expect(forslag!.keptSeconds).toBeLessThan(1600);
+	});
+
+	it('sier ingenting om en vanlig tur', () => {
+		const points = track([
+			{ seconds: 1800, speedMs: 6 },
+			{ seconds: 120, speedMs: 0, jitterMeters: 2 },
+			{ seconds: 1800, speedMs: 6 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting om en fjelltur i svært lavt tempo', () => {
+		const points = track([
+			{ seconds: 2400, speedMs: 1.2 },
+			{ seconds: 3000, speedMs: 0.3 },
+			{ seconds: 2400, speedMs: 1.2 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'walking' })).toBeNull();
+	});
+
+	it('sier ingenting om en kort hale — et forslag på hver tur blir slått av', () => {
+		const points = track([
+			{ seconds: 3600, speedMs: 6 },
+			{ seconds: 300, speedMs: 0, jitterMeters: 3 }
+		]);
+
+		expect(300).toBeLessThan(MIN_SUGGESTED_TRIM_SECONDS);
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting når ingenting var i bevegelse', () => {
+		// Det er ikke en glemt hale, det er en økt vi ikke forstår.
+		const points = track([{ seconds: 3600, speedMs: 0, jitterMeters: 3 }]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting for styrke og yoga', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 6900, speedMs: 0, jitterMeters: 4 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'strength_training' })).toBeNull();
+		expect(suggestForgottenTracking(points, { sportType: 'yoga' })).toBeNull();
 	});
 });

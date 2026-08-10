@@ -39,6 +39,28 @@ export interface MovingTimeResult {
 	coverage: number;
 	family: EffortFamily;
 	thresholdMetersPerSecond: number;
+	/** Median sekunder mellom gyldige sporpunkter. Se `MAX_MEDIAN_SAMPLE_SECONDS`. */
+	medianSampleSeconds: number;
+	/** `siste − første` gyldige punkt. Kan være langt kortere enn økta — se `MIN_TRACK_SPAN_SHARE`. */
+	trackSpanSeconds: number;
+}
+
+/** Hvorfor et spor ikke fikk et svar. Rapporteres, ikke svelget. */
+export type MovingTimeRejection =
+	| 'family_uten_bevegelsestid'
+	| 'for_faa_punkter'
+	| 'for_tynt_spor'
+	| 'sporet_dekker_ikke_okta'
+	| 'for_daarlig_dekning'
+	| 'ingen_varighet';
+
+export interface MovingTimeAnalysis {
+	result: MovingTimeResult | null;
+	rejection: MovingTimeRejection | null;
+	/** Fylt ut også når svaret ble avvist — det er tallene som forklarer hvorfor. */
+	medianSampleSeconds: number | null;
+	trackSpanSeconds: number | null;
+	pointCount: number;
 }
 
 /**
@@ -64,8 +86,8 @@ export const MOVING_THRESHOLD_MS_BY_FAMILY: Record<EffortFamily, number> = {
 	running: 0.7,
 	cycling: 2.5,
 	ebike: 2.5,
-	walking: 0.4,
-	hiking: 0.4,
+	walking: 0.25,
+	hiking: 0.25,
 	swimming: 0,
 	strength: 0,
 	yoga: 0,
@@ -110,8 +132,47 @@ export const PROGRESS_FLOOR_FRACTION = 0.25;
  */
 export const MAX_CREDITED_INTERVAL_SECONDS = 60;
 
-/** Under denne dekningen sier vi ikke noe. */
-export const MIN_COVERAGE = 0.5;
+/**
+ * Under denne dekningen sier vi ikke noe. Hevet fra 0,5 etter første måling mot
+ * prod: et spor der halvparten av tida ikke er vurdert, kan ikke si hvor mye av
+ * den som var stillstand.
+ */
+export const MIN_COVERAGE = 0.7;
+
+/**
+ * Maks median-avstand mellom sporpunkter, i sekunder.
+ *
+ * **Dette er porten som manglet, og fraværet ga selvsikkert tull.** Første
+ * måling mot prod ga «56 min opptak → 8 min i bevegelse» på en løpetur. Hver
+ * eneste verdi i rapporten var et helt antall minutter, som avslørte hva som
+ * skjedde: sporene har punkter et minutt eller mer fra hverandre, og
+ * `MAX_CREDITED_INTERVAL_SECONDS` kappet derfor *hvert* intervall til 60
+ * sekunder. Bevegelsestiden ble antall krediterte intervaller × ett minutt —
+ * et tall om sporets oppløsning, ikke om økta.
+ *
+ * På et spor med minuttavstand kan en pause ikke skilles fra et hull uansett
+ * hvor god resten av modellen er. Da er «vet ikke» det eneste ærlige svaret.
+ */
+export const MAX_MEDIAN_SAMPLE_SECONDS = 15;
+
+/**
+ * Hvor stor del av øktas oppgitte varighet sporet må spenne over.
+ *
+ * **Dette er porten den virkelige feilen slapp gjennom.** Løpeturen 24. mars er
+ * 8,33 km på 56 minutter ifølge både Withings og GPX-fila — men sporpunktene med
+ * brukbar tid dekker bare 1,25 km og 7,5 minutter av den (splits og pulsfordeling
+ * på flaten regnes fra de samme punktene og viser det svart på hvitt). Sporingen
+ * gikk i stykker underveis. Modulen så et internt konsistent spor på sju
+ * minutter, fant at alt var bevegelse, og svarte «8 min» på en 56-minutters økt.
+ *
+ * `coverage` fanget det ikke, fordi den måler krediterte intervaller mot
+ * *sporets* eget spenn — ikke mot økta. Et spor kan være perfekt tett og likevel
+ * beskrive en åttendedel av turen.
+ *
+ * Om de resterende 48 minuttene var bevegelse eller stillstand vet vi ingenting
+ * om, og da er «vet ikke» det eneste svaret.
+ */
+export const MIN_TRACK_SPAN_SHARE = 0.8;
 
 /** Færre punkter enn dette gir ingen mening å vurdere. */
 export const MIN_POINTS = 10;
@@ -143,6 +204,8 @@ interface ValidPoint {
 	lat: number;
 	lon: number;
 	tSec: number;
+	/** Absolutt tid — forslaget må kunne peke på et klokkeslett, ikke et offset. */
+	tMs: number;
 }
 
 function validPoints(points: readonly MovingTimePoint[]): ValidPoint[] {
@@ -158,7 +221,7 @@ function validPoints(points: readonly MovingTimePoint[]): ValidPoint[] {
 	valid.sort((a, b) => a.tMs - b.tMs);
 	if (valid.length === 0) return [];
 	const t0 = valid[0].tMs;
-	return valid.map((p) => ({ lat: p.lat, lon: p.lon, tSec: (p.tMs - t0) / 1000 }));
+	return valid.map((p) => ({ lat: p.lat, lon: p.lon, tSec: (p.tMs - t0) / 1000, tMs: p.tMs }));
 }
 
 /**
@@ -188,31 +251,70 @@ function windowSpeed(points: readonly ValidPoint[], index: number, windowSeconds
 export interface ComputeMovingTimeOptions {
 	sportType?: string | null;
 	sportFamily?: string | null;
+	/**
+	 * Øktas oppgitte varighet (`data.duration`), når den er kjent. Uten den kan
+	 * modulen ikke se at sporet bare dekker en del av økta — se
+	 * `MIN_TRACK_SPAN_SHARE`. Utelates den, hopper porten over.
+	 */
+	declaredDurationSeconds?: number | null;
+}
+
+/** Median sekunder mellom påfølgende punkter. */
+function medianSampleSeconds(points: readonly ValidPoint[]): number | null {
+	if (points.length < 2) return null;
+	const gaps: number[] = [];
+	for (let i = 1; i < points.length; i += 1) {
+		const dt = points[i].tSec - points[i - 1].tSec;
+		if (dt > 0) gaps.push(dt);
+	}
+	if (gaps.length === 0) return null;
+	gaps.sort((a, b) => a - b);
+	const mid = Math.floor(gaps.length / 2);
+	return gaps.length % 2 === 0 ? (gaps[mid - 1] + gaps[mid]) / 2 : gaps[mid];
 }
 
 /**
- * Bevegelsestid for et spor, eller null når sporet ikke bærer svaret.
+ * Bevegelsestid for et spor, med grunnen når svaret ble avvist.
  *
- * Null betyr «vet ikke» og skal føre til at elapsed brukes videre — ikke til at
- * økta nulles ut. Grunnene til null er: for få punkter, for dårlig dekning, en
- * sportsfamilie der begrepet ikke gir mening (styrke, svømming i basseng), eller
- * en familie uten terskel.
+ * Grunnen rapporteres framfor å svelges: en stille null ser ut som «ingen data»,
+ * og da leter man etter feil i innhentingen i stedet for i sporets oppløsning.
  */
-export function computeMovingTime(
+export function analyzeMovingTime(
 	points: readonly MovingTimePoint[],
 	options: ComputeMovingTimeOptions = {}
-): MovingTimeResult | null {
+): MovingTimeAnalysis {
 	const family = classifyEffortFamily(options.sportType ?? null, options.sportFamily ?? null);
-	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) return null;
-
-	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
-	if (!(threshold > 0)) return null;
-
 	const valid = validPoints(points);
-	if (valid.length < MIN_POINTS) return null;
+	const median = medianSampleSeconds(valid);
+	const base = {
+		result: null,
+		medianSampleSeconds: median,
+		trackSpanSeconds: valid.length > 0 ? valid[valid.length - 1].tSec : null,
+		pointCount: valid.length
+	};
+
+	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) {
+		return { ...base, rejection: 'family_uten_bevegelsestid' };
+	}
+	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
+	if (!(threshold > 0)) return { ...base, rejection: 'family_uten_bevegelsestid' };
+
+	if (valid.length < MIN_POINTS) return { ...base, rejection: 'for_faa_punkter' };
+
+	// Tetthetsporten står FØR alt annet som regner: er sporet for tynt, er
+	// tallene under bare en beskrivelse av oppløsningen.
+	if (median === null || median > MAX_MEDIAN_SAMPLE_SECONDS) {
+		return { ...base, rejection: 'for_tynt_spor' };
+	}
 
 	const elapsedSeconds = valid[valid.length - 1].tSec;
-	if (!(elapsedSeconds > 0)) return null;
+	if (!(elapsedSeconds > 0)) return { ...base, rejection: 'ingen_varighet' };
+
+	// Sporet må dekke økta, ikke bare være internt konsistent.
+	const declared = options.declaredDurationSeconds;
+	if (typeof declared === 'number' && declared > 0 && elapsedSeconds / declared < MIN_TRACK_SPAN_SHARE) {
+		return { ...base, rejection: 'sporet_dekker_ikke_okta' };
+	}
 
 	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
 
@@ -234,17 +336,38 @@ export function computeMovingTime(
 	}
 
 	const coverage = (movingSeconds + stoppedSeconds) / elapsedSeconds;
-	if (coverage < MIN_COVERAGE) return null;
+	if (coverage < MIN_COVERAGE) return { ...base, rejection: 'for_daarlig_dekning' };
 
 	return {
-		// Bevegelsestid kan aldri overstige elapsed, uansett hvordan intervallene faller.
-		movingSeconds: Math.round(Math.min(movingSeconds, elapsedSeconds)),
-		elapsedSeconds: Math.round(elapsedSeconds),
-		stoppedSeconds: Math.round(stoppedSeconds),
-		coverage: Math.round(coverage * 1000) / 1000,
-		family,
-		thresholdMetersPerSecond: threshold
+		result: {
+			// Bevegelsestid kan aldri overstige elapsed, uansett hvordan intervallene faller.
+			movingSeconds: Math.round(Math.min(movingSeconds, elapsedSeconds)),
+			elapsedSeconds: Math.round(elapsedSeconds),
+			stoppedSeconds: Math.round(stoppedSeconds),
+			coverage: Math.round(coverage * 1000) / 1000,
+			family,
+			thresholdMetersPerSecond: threshold,
+			medianSampleSeconds: Math.round(median * 10) / 10,
+			trackSpanSeconds: Math.round(elapsedSeconds)
+		},
+		rejection: null,
+		medianSampleSeconds: median,
+		trackSpanSeconds: elapsedSeconds,
+		pointCount: valid.length
 	};
+}
+
+/**
+ * Bevegelsestid for et spor, eller null når sporet ikke bærer svaret.
+ *
+ * Null betyr «vet ikke» og skal føre til at elapsed brukes videre — ikke til at
+ * økta nulles ut.
+ */
+export function computeMovingTime(
+	points: readonly MovingTimePoint[],
+	options: ComputeMovingTimeOptions = {}
+): MovingTimeResult | null {
+	return analyzeMovingTime(points, options).result;
 }
 
 /**
@@ -262,3 +385,128 @@ export function stoppedShare(result: MovingTimeResult): number {
  * tolv minutter — nok til å flytte effort merkbart.
  */
 export const NOTABLE_STOPPED_SHARE = 0.2;
+
+/**
+ * Et forslag om at sporingen ble glemt — aldri en korreksjon.
+ *
+ * ## Hvorfor forslag og ikke automatikk
+ *
+ * Første utgave rettet dette automatisk for alle økter. Den endret 96 økter for
+ * en feil som skjer et par ganger i året, og tok feil på de fleste av dem: en
+ * 56-minutters løpetur ble til «8 min» fordi sporingen hadde brutt sammen
+ * underveis, en fjelltur mistet halvparten fordi bratt terreng er sakte. Ingen
+ * av de radene var en glemt sporing.
+ *
+ * Retningen er nå motsatt. Vi rører ingenting; vi sier fra når det ser ut som
+ * du glemte å stoppe, og du bestemmer. En feil gjetning koster da et forslag du
+ * avviser, ikke et tall du må oppdage.
+ */
+export interface ForgottenTrackingSuggestion {
+	/** Siste punkt der du faktisk var i bevegelse — der ruta stopper. */
+	cutAtIso: string;
+	/** Varigheten økta ville fått. */
+	keptSeconds: number;
+	/** Hva som kuttes bort. */
+	droppedSeconds: number;
+	droppedShare: number;
+	family: EffortFamily;
+}
+
+/**
+ * Minste hale verdt å foreslå. En glemt sporing er timer, ikke minutter — og et
+ * forslag som dukker opp på hver tur blir bakgrunnsstøy, og bakgrunnsstøy blir
+ * slått av. Samme resonnement som `sendFuelNudge` sin én-per-dag-gate.
+ */
+export const MIN_SUGGESTED_TRIM_SECONDS = 10 * 60;
+
+/** …og den må være en merkbar del av økta, ikke ti minutter av en femtimers tur. */
+export const MIN_SUGGESTED_TRIM_SHARE = 0.15;
+
+/** Vinduet «var jeg vedvarende i bevegelse her?» måles over. */
+export const SUSTAINED_WINDOW_SECONDS = 60;
+
+/** …og hvor stor del av det vinduet som må være bevegelse. */
+export const SUSTAINED_MOVING_SHARE = 0.5;
+
+/**
+ * Finner halen der sporet slutter å komme noen vei, og foreslår å snappe
+ * sluttpunktet dit.
+ *
+ * Returnerer null når det ikke er noe å foreslå — som er det vanlige svaret.
+ * Bruker samme to porter som `analyzeMovingTime`, så «i bevegelse» betyr det
+ * samme her som der.
+ */
+export function suggestForgottenTracking(
+	points: readonly MovingTimePoint[],
+	options: ComputeMovingTimeOptions = {}
+): ForgottenTrackingSuggestion | null {
+	const family = classifyEffortFamily(options.sportType ?? null, options.sportFamily ?? null);
+	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) return null;
+	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
+	if (!(threshold > 0)) return null;
+
+	const valid = validPoints(points);
+	if (valid.length < MIN_POINTS) return null;
+
+	const median = medianSampleSeconds(valid);
+	if (median === null || median > MAX_MEDIAN_SAMPLE_SECONDS) return null;
+
+	const totalSeconds = valid[valid.length - 1].tSec;
+	if (!(totalSeconds > 0)) return null;
+
+	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
+
+	// Klassifiser hvert intervall, og bygg en kumulativ sum av bevegelsessekunder.
+	const cumulativeMoving = new Array<number>(valid.length).fill(0);
+	for (let i = 1; i < valid.length; i += 1) {
+		const dt = valid[i].tSec - valid[i - 1].tSec;
+		let moving = false;
+		if (dt > 0) {
+			const speed = windowSpeed(valid, i, SPEED_WINDOW_SECONDS);
+			const progress = windowSpeed(valid, i, PROGRESS_WINDOW_SECONDS);
+			moving = speed !== null && speed >= threshold && (progress === null || progress >= progressFloor);
+		}
+		cumulativeMoving[i] = cumulativeMoving[i - 1] + (moving ? Math.min(dt, MAX_CREDITED_INTERVAL_SECONDS) : 0);
+	}
+
+	/**
+	 * Siste punkt med VEDVARENDE bevegelse — ikke siste enkeltintervall som besto
+	 * portene.
+	 *
+	 * Forskjellen er ikke akademisk. I en garasje kaster multipath posisjonen
+	 * titalls meter, og et enkelt tisekundersvindu kan da vise 4 m/s. Ligger
+	 * gåturen inn på kontoret rett etterpå, består den grove porten også — den
+	 * kommer jo faktisk noen vei — og kuttet ville landet nede i garasjen med et
+	 * par minutter fjernet i stedet for halvannen time.
+	 *
+	 * Kravet er derfor at over halve det siste minuttet før punktet var bevegelse.
+	 */
+	let lastMovingIndex = -1;
+	for (let i = valid.length - 1; i >= 1; i -= 1) {
+		let j = i;
+		while (j > 0 && valid[i].tSec - valid[j].tSec < SUSTAINED_WINDOW_SECONDS) j -= 1;
+		const span = valid[i].tSec - valid[j].tSec;
+		if (span <= 0) continue;
+		const movingInWindow = cumulativeMoving[i] - cumulativeMoving[j];
+		if (movingInWindow / span >= SUSTAINED_MOVING_SHARE) {
+			lastMovingIndex = i;
+			break;
+		}
+	}
+	// Ingen vedvarende bevegelse i det hele tatt er ikke en glemt hale — det er en
+	// økt vi ikke forstår, og da sier vi ingenting.
+	if (lastMovingIndex < 1) return null;
+
+	const keptSeconds = Math.round(valid[lastMovingIndex].tSec);
+	const droppedSeconds = Math.round(totalSeconds - valid[lastMovingIndex].tSec);
+	if (droppedSeconds < MIN_SUGGESTED_TRIM_SECONDS) return null;
+	if (droppedSeconds / totalSeconds < MIN_SUGGESTED_TRIM_SHARE) return null;
+
+	return {
+		cutAtIso: new Date(valid[lastMovingIndex].tMs).toISOString(),
+		keptSeconds,
+		droppedSeconds,
+		droppedShare: Math.round((droppedSeconds / totalSeconds) * 1000) / 1000,
+		family
+	};
+}

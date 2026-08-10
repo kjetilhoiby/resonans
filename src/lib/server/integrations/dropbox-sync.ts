@@ -10,7 +10,7 @@ import {
 } from '$lib/server/integrations/dropbox';
 import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { computeMovingTime } from '$lib/domain/health/moving-time';
+import { suggestForgottenTracking } from '$lib/domain/health/moving-time';
 
 interface DropboxCredentials {
 	access_token: string;
@@ -218,20 +218,16 @@ export function parseWorkoutFile(path: string, content: string): ParsedWorkout |
 }
 
 /**
- * Bevegelsestid i sekunder for en parset økt, eller undefined når sporet ikke
- * bærer svaret (for få punkter, for dårlig dekning, eller en sportsfamilie der
- * begrepet ikke gir mening).
+ * Ser det ut som sporingen ble glemt? Et **forslag**, aldri en korreksjon.
  *
- * **Kalles etter at `sportType` er endelig avgjort.** Terskelen er per
- * sportsfamilie, og opplastingsstien overstyrer sportstypen *etter* parsingen —
- * en el-sykkeltur som ble parset som «running» ville fått løpeterskelen.
+ * Kalles etter at `sportType` er avgjort — terskelen for «i bevegelse» er per
+ * sportsfamilie, og en el-sykkeltur parset som «running» ville fått feil.
  *
  * Bruker sporet i full oppløsning, ikke det nedsamplede: nedsamplingen er en
- * avveiing mot kart-payload, og har ingen grunn til å påvirke et tall vi skårer på.
+ * avveiing mot kart-payload, og har ingen grunn til å påvirke hvor kuttet lander.
  */
-export function movingDurationFor(parsed: ParsedWorkout): number | undefined {
-	const result = computeMovingTime(parsed.trackPoints, { sportType: parsed.sportType });
-	return result ? result.movingSeconds : undefined;
+export function forgottenTrackingSuggestionFor(parsed: ParsedWorkout) {
+	return suggestForgottenTracking(parsed.trackPoints, { sportType: parsed.sportType });
 }
 
 /**
@@ -405,7 +401,6 @@ export async function syncDropboxWorkoutsForUser(
 			}
 
 			const paceSecondsPerKm = parsed.distance > 0 ? (parsed.duration / (parsed.distance / 1000)) : undefined;
-			const movingDuration = movingDurationFor(parsed);
 			const sampledTrack = downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS).map((p) => ({
 				lat: p.lat,
 				lon: p.lon,
@@ -423,9 +418,6 @@ export async function syncDropboxWorkoutsForUser(
 				data: {
 					sportType: parsed.sportType,
 					duration: parsed.duration,
-					// Bevegelsestid ved siden av elapsed, aldri i stedet for. Elapsed er
-					// et faktum om opptaket; moving er en tolkning av det.
-					...(movingDuration !== undefined ? { movingDuration } : {}),
 					distance: parsed.distance,
 					elevation: parsed.elevation,
 					avgHeartRate: parsed.avgHeartRate,

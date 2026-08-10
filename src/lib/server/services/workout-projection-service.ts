@@ -224,21 +224,16 @@ export class WorkoutProjectionService {
 		const canonicalRows = inRange.map((workout) => {
 			const family = sportFamily(workout.sportType);
 			const isTrail = trailEventIds.size > 0 && workout.evidence.some((e) => trailEventIds.has(e.eventId));
-			// Pace regnes på samme varighet som effort skåres på. Ellers ville en
-			// økt med lang stillstand fått lav «fart» og dermed lav intensitet, i
-			// tillegg til at halen alt er trukket fra minuttene — samme feil to ganger.
-			const scoredSeconds = workout.movingSeconds ?? workout.durationSeconds;
 			const effort = computeWorkoutEffort(
 				{
 					sportType: workout.sportType,
 					sportFamily: family,
 					durationSeconds: workout.durationSeconds,
-					movingSeconds: workout.movingSeconds,
 					avgHeartRate: workout.avgHeartRate,
 					// Pace gir intensitets-justert effort for løp uten puls
 					paceSecPerKm:
-						workout.distanceMeters && workout.distanceMeters > 0 && scoredSeconds
-							? scoredSeconds / (workout.distanceMeters / 1000)
+						workout.distanceMeters && workout.distanceMeters > 0 && workout.durationSeconds
+							? workout.durationSeconds / (workout.distanceMeters / 1000)
 							: null,
 					isTrail
 				},
@@ -253,7 +248,6 @@ export class WorkoutProjectionService {
 				sportFamily: family,
 				distanceMeters: workout.distanceMeters !== null ? String(workout.distanceMeters) : null,
 				durationSeconds: workout.durationSeconds !== null ? String(workout.durationSeconds) : null,
-				movingSeconds: workout.movingSeconds !== null ? String(workout.movingSeconds) : null,
 				avgHeartRate: workout.avgHeartRate !== null ? String(workout.avgHeartRate) : null,
 				maxHeartRate: workout.maxHeartRate !== null ? String(workout.maxHeartRate) : null,
 				effortScore: effort ? String(effort.score) : null,
