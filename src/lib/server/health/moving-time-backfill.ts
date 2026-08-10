@@ -15,7 +15,11 @@
 
 import { db, rowsOf } from '$lib/db';
 import { sql } from 'drizzle-orm';
-import { computeMovingTime, type MovingTimePoint } from '$lib/domain/health/moving-time';
+import {
+	analyzeMovingTime,
+	type MovingTimePoint,
+	type MovingTimeRejection
+} from '$lib/domain/health/moving-time';
 
 export interface MovingTimeBackfillWorkout {
 	eventId: string;
@@ -26,6 +30,8 @@ export interface MovingTimeBackfillWorkout {
 	/** Andel av opptaket som var stillstand, 0..1. */
 	stoppedShare: number;
 	coverage: number;
+	/** Median sekunder mellom sporpunkter — tallet som avslører et for tynt spor. */
+	medianSampleSeconds: number | null;
 }
 
 export interface MovingTimeBackfillResult {
@@ -34,8 +40,13 @@ export interface MovingTimeBackfillResult {
 	candidates: number;
 	/** Rader der sporet faktisk ga et svar. */
 	computed: number;
-	/** Rader der sporet ikke kunne svare — for få punkter, dårlig dekning, styrke/yoga. */
+	/** Rader der sporet ikke kunne svare. Se `rejections` for hvorfor. */
 	inconclusive: number;
+	/**
+	 * Antall per avvisningsgrunn. Uten denne ser «89 ga ikke noe svar» ut som
+	 * ett problem, mens det er fire — og bare ett av dem er verdt å gjøre noe med.
+	 */
+	rejections: Record<string, number>;
 	written: number;
 	/** De største avvikene først. Kappet til `MAX_REPORTED`. */
 	workouts: MovingTimeBackfillWorkout[];
@@ -93,6 +104,7 @@ export async function backfillMovingTime(
 		candidates: rows.length,
 		computed: 0,
 		inconclusive: 0,
+		rejections: {},
 		written: 0,
 		workouts: [],
 		fromTimestamp: null,
@@ -103,12 +115,15 @@ export async function backfillMovingTime(
 		const points = Array.isArray(row.track_points) ? row.track_points : null;
 		if (!points) {
 			result.inconclusive += 1;
+			bumpRejection(result, 'ingen_sporpunkter');
 			continue;
 		}
 
-		const moving = computeMovingTime(points, { sportType: row.sport_type });
+		const analysis = analyzeMovingTime(points, { sportType: row.sport_type });
+		const moving = analysis.result;
 		if (!moving) {
 			result.inconclusive += 1;
+			bumpRejection(result, analysis.rejection ?? 'ukjent');
 			continue;
 		}
 		result.computed += 1;
@@ -125,7 +140,8 @@ export async function backfillMovingTime(
 				Number.isFinite(elapsed) && elapsed > 0
 					? Math.round((1 - moving.movingSeconds / elapsed) * 1000) / 1000
 					: 0,
-			coverage: moving.coverage
+			coverage: moving.coverage,
+			medianSampleSeconds: moving.medianSampleSeconds
 		});
 
 		if (!result.fromTimestamp || timestamp < result.fromTimestamp) result.fromTimestamp = timestamp;
@@ -151,4 +167,11 @@ export async function backfillMovingTime(
 	result.workouts = result.workouts.slice(0, MAX_REPORTED);
 
 	return result;
+}
+
+function bumpRejection(
+	result: MovingTimeBackfillResult,
+	reason: MovingTimeRejection | 'ingen_sporpunkter' | 'ukjent'
+): void {
+	result.rejections[reason] = (result.rejections[reason] ?? 0) + 1;
 }

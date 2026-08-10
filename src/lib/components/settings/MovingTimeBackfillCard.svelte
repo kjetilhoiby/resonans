@@ -26,7 +26,22 @@
 		elapsedSeconds: number | null;
 		movingSeconds: number;
 		stoppedShare: number;
+		medianSampleSeconds: number | null;
 	}
+
+	/**
+	 * Avvisningsgrunnene i klartekst. «89 ga ikke noe svar» ser ut som ett
+	 * problem; det er fire, og bare ett av dem er verdt å gjøre noe med.
+	 */
+	const REJECTION_LABELS: Record<string, string> = {
+		for_tynt_spor: 'sporet er for tynt — punktene ligger for langt fra hverandre til å skille en pause fra et hull',
+		for_daarlig_dekning: 'for store hull i sporet',
+		for_faa_punkter: 'for få sporpunkter',
+		family_uten_bevegelsestid: 'sport uten bevegelsestid (styrke, yoga, svømming)',
+		ingen_varighet: 'sporet har ingen varighet',
+		ingen_sporpunkter: 'ingen sporpunkter',
+		ukjent: 'ukjent grunn'
+	};
 
 	/** Rader per kall. Sporene er store, så historikken hentes i biter. */
 	const BATCH = 300;
@@ -40,6 +55,7 @@
 	let wasDryRun = $state(false);
 	let worst = $state<BackfillWorkout[]>([]);
 	let weekRows = $state<ReprojectComparison[] | null>(null);
+	let rejections = $state<Array<{ reason: string; count: number }>>([]);
 	let notCovered = $state<string | null>(null);
 
 	function formatDuration(seconds: number | null): string {
@@ -61,6 +77,13 @@
 		worst = [];
 		weekRows = null;
 		notCovered = null;
+		rejections = [];
+	}
+
+	function readRejections(data: { rejections?: Record<string, number> }) {
+		return Object.entries(data.rejections ?? {})
+			.map(([reason, count]) => ({ reason, count }))
+			.sort((a, b) => b.count - a.count);
 	}
 
 	async function callBackfill(dryRun: boolean) {
@@ -90,13 +113,11 @@
 		try {
 			const data = await callBackfill(true);
 			worst = data.workouts ?? [];
+			rejections = readRejections(data);
 			summary =
 				data.candidates === 0
 					? 'Ingen økter mangler bevegelsestid. Alt som har spor er fylt inn.'
-					: `${data.candidates} økter uten bevegelsestid, hvorav ${data.computed} kunne beregnes fra sporet. Ingenting er skrevet.` +
-						(data.inconclusive > 0
-							? ` ${data.inconclusive} ga ikke noe svar — for få sporpunkter, for dårlig dekning, eller en sport uten bevegelsestid.`
-							: '');
+					: `${data.candidates} økter uten bevegelsestid, hvorav ${data.computed} kunne beregnes fra sporet. Ingenting er skrevet.`;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -127,7 +148,10 @@
 				if (data.fromTimestamp && (!oldest || data.fromTimestamp < oldest)) {
 					oldest = data.fromTimestamp;
 				}
-				if (rounds === 1) worst = data.workouts ?? [];
+				if (rounds === 1) {
+					worst = data.workouts ?? [];
+					rejections = readRejections(data);
+				}
 				if (!data.written || data.candidates < BATCH) break;
 			}
 
@@ -208,12 +232,20 @@
 		<p class="warn">{notCovered}</p>
 	{/if}
 
+	{#if rejections.length > 0}
+		<ul class="reasons">
+			{#each rejections as r (r.reason)}
+				<li>{r.count} — {REJECTION_LABELS[r.reason] ?? r.reason}</li>
+			{/each}
+		</ul>
+	{/if}
+
 	{#if worst.length > 0}
 		<p class="meta">Størst forskjell mellom opptak og bevegelse:</p>
 		<div class="table-scroll">
 			<table>
 				<thead>
-					<tr><th>Dato</th><th>Sport</th><th>Opptak</th><th>I bevegelse</th></tr>
+					<tr><th>Dato</th><th>Sport</th><th>Opptak</th><th>I bevegelse</th><th>Punkt&shy;avstand</th></tr>
 				</thead>
 				<tbody>
 					{#each worst.slice(0, 10) as w (w.eventId)}
@@ -223,6 +255,9 @@
 							<td class="num">{formatDuration(w.elapsedSeconds)}</td>
 							<td class="num" class:down={w.stoppedShare > 0.2}>
 								{formatDuration(w.movingSeconds)}
+							</td>
+							<td class="num">
+								{w.medianSampleSeconds === null ? '–' : `${String(w.medianSampleSeconds).replace('.', ',')} s`}
 							</td>
 						</tr>
 					{/each}
@@ -287,6 +322,14 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.reasons {
+		margin: 0;
+		padding-left: 1.1rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.5;
 	}
 
 	.summary {

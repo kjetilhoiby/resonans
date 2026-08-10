@@ -610,8 +610,18 @@ datainnhentingen.
   slipper gjennom den grove porten, så det er farten som må skille den fra sykling — og
   ekte sykling ligger på 4–8. Løping har ikke det gapet (rask gange 1,7 mot sliten jogg
   1,8), står på 0,7, og krediterer derfor en gåtur hjem. Kjent rest.
+- **Sporet må være tett nok** (`MAX_MEDIAN_SAMPLE_SECONDS`, 15 s). Ligger punktene et
+  minutt fra hverandre, kapper `MAX_CREDITED_INTERVAL_SECONDS` hvert intervall til 60 s,
+  og svaret blir «antall intervaller × ett minutt» — et tall om oppløsningen, ikke om
+  økta. Prod ga «56 min opptak → 8 min i bevegelse» på en løpetur, og at *hver* verdi i
+  rapporten var et helt antall minutter var det som avslørte det. `analyzeMovingTime`
+  returnerer grunnen (`rejection`) og punktavstanden, og begge vises i kortet — en stille
+  null sender folk på leting i innhentingen.
 - **null betyr «vet ikke», ikke «sto stille»**, og gir elapsed videre. Det gjelder også
   0 bevegelsessekunder: et spor uten forflytning er like gjerne en tredemølle.
+- **Gange og fjelltur står på 0,25 m/s.** En bratt tur går i rykk og napp, og 0,3 m/s opp
+  en ur er ekte gange. Å kutte den fjerner noe brukeren faktisk gjorde — samme retning som
+  «vi haker aldri AV automatisk».
 - **Minstelengden måles på bevegelsestiden.** En time stillstand med to minutter sykling
   er ikke en økt.
 - **Pace regnes på samme varighet som effort skåres på.** Ellers får en økt med lang

@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+	analyzeMovingTime,
 	computeMovingTime,
 	stoppedShare,
+	MAX_CREDITED_INTERVAL_SECONDS,
 	MIN_POINTS,
+	MAX_MEDIAN_SAMPLE_SECONDS,
 	MOVING_THRESHOLD_MS_BY_FAMILY,
 	type MovingTimePoint
 } from './moving-time';
@@ -218,5 +221,60 @@ describe('computeMovingTime', () => {
 		const result = computeMovingTime(points, { sportType: 'cycling' });
 
 		expect(result!.movingSeconds).toBeLessThanOrEqual(result!.elapsedSeconds);
+	});
+
+	it('svarer ikke på et spor som er for tynt til å skille pause fra hull', () => {
+		// Feilen fra første måling mot prod: en 56-minutters løpetur ble til
+		// «8 min i bevegelse». Sporet hadde punkter to minutter fra hverandre, og
+		// MAX_CREDITED_INTERVAL_SECONDS kappet hvert intervall til 60 sekunder —
+		// så svaret beskrev sporets oppløsning, ikke økta. At hver eneste verdi i
+		// rapporten var et helt antall minutter var det som avslørte det.
+		const points = track([{ seconds: 3360, speedMs: 3, sampleSeconds: 120 }]);
+
+		const analysis = analyzeMovingTime(points, { sportType: 'running' });
+
+		expect(analysis.result).toBeNull();
+		expect(analysis.rejection).toBe('for_tynt_spor');
+		expect(analysis.medianSampleSeconds).toBe(120);
+	});
+
+	it('svarer på det samme sporet når punktene ligger tett', () => {
+		const points = track([{ seconds: 3360, speedMs: 3, sampleSeconds: 4 }]);
+
+		const analysis = analyzeMovingTime(points, { sportType: 'running' });
+
+		expect(analysis.rejection).toBeNull();
+		expect(analysis.result!.movingSeconds).toBeGreaterThan(3300);
+	});
+
+	it('holder grensa for tynne spor godt under kappet på ett minutt', () => {
+		// Er terskelen over kappet, kan feilen komme tilbake uten at noe sier fra.
+		expect(MAX_MEDIAN_SAMPLE_SECONDS).toBeLessThan(MAX_CREDITED_INTERVAL_SECONDS);
+	});
+
+	it('krediterer en fjelltur med tidvis svært lav fart', () => {
+		// En bratt tur går i rykk og napp: 0,3 m/s opp en ur er ekte gange, ikke
+		// en pause. Å kutte den ville fjernet noe brukeren faktisk gjorde — og
+		// det er den dyre retningen å ta feil i.
+		const points = track([
+			{ seconds: 2400, speedMs: 1.2 },
+			{ seconds: 3000, speedMs: 0.3 },
+			{ seconds: 2400, speedMs: 1.2 }
+		]);
+
+		const result = computeMovingTime(points, { sportType: 'walking' });
+
+		expect(result).not.toBeNull();
+		expect(result!.movingSeconds).toBeGreaterThan(result!.elapsedSeconds * 0.9);
+	});
+
+	it('rapporterer grunnen framfor å svelge den', () => {
+		const kort = track([{ seconds: 20, speedMs: 3 }]);
+		expect(analyzeMovingTime(kort, { sportType: 'running' }).rejection).toBe('for_faa_punkter');
+
+		const styrke = track([{ seconds: 1800, speedMs: 0 }]);
+		expect(analyzeMovingTime(styrke, { sportType: 'strength_training' }).rejection).toBe(
+			'family_uten_bevegelsestid'
+		);
 	});
 });

@@ -39,6 +39,24 @@ export interface MovingTimeResult {
 	coverage: number;
 	family: EffortFamily;
 	thresholdMetersPerSecond: number;
+	/** Median sekunder mellom gyldige sporpunkter. Se `MAX_MEDIAN_SAMPLE_SECONDS`. */
+	medianSampleSeconds: number;
+}
+
+/** Hvorfor et spor ikke fikk et svar. Rapporteres, ikke svelget. */
+export type MovingTimeRejection =
+	| 'family_uten_bevegelsestid'
+	| 'for_faa_punkter'
+	| 'for_tynt_spor'
+	| 'for_daarlig_dekning'
+	| 'ingen_varighet';
+
+export interface MovingTimeAnalysis {
+	result: MovingTimeResult | null;
+	rejection: MovingTimeRejection | null;
+	/** Fylt ut også når svaret ble avvist — det er tallet som forklarer hvorfor. */
+	medianSampleSeconds: number | null;
+	pointCount: number;
 }
 
 /**
@@ -64,8 +82,8 @@ export const MOVING_THRESHOLD_MS_BY_FAMILY: Record<EffortFamily, number> = {
 	running: 0.7,
 	cycling: 2.5,
 	ebike: 2.5,
-	walking: 0.4,
-	hiking: 0.4,
+	walking: 0.25,
+	hiking: 0.25,
 	swimming: 0,
 	strength: 0,
 	yoga: 0,
@@ -110,8 +128,28 @@ export const PROGRESS_FLOOR_FRACTION = 0.25;
  */
 export const MAX_CREDITED_INTERVAL_SECONDS = 60;
 
-/** Under denne dekningen sier vi ikke noe. */
-export const MIN_COVERAGE = 0.5;
+/**
+ * Under denne dekningen sier vi ikke noe. Hevet fra 0,5 etter første måling mot
+ * prod: et spor der halvparten av tida ikke er vurdert, kan ikke si hvor mye av
+ * den som var stillstand.
+ */
+export const MIN_COVERAGE = 0.7;
+
+/**
+ * Maks median-avstand mellom sporpunkter, i sekunder.
+ *
+ * **Dette er porten som manglet, og fraværet ga selvsikkert tull.** Første
+ * måling mot prod ga «56 min opptak → 8 min i bevegelse» på en løpetur. Hver
+ * eneste verdi i rapporten var et helt antall minutter, som avslørte hva som
+ * skjedde: sporene har punkter et minutt eller mer fra hverandre, og
+ * `MAX_CREDITED_INTERVAL_SECONDS` kappet derfor *hvert* intervall til 60
+ * sekunder. Bevegelsestiden ble antall krediterte intervaller × ett minutt —
+ * et tall om sporets oppløsning, ikke om økta.
+ *
+ * På et spor med minuttavstand kan en pause ikke skilles fra et hull uansett
+ * hvor god resten av modellen er. Da er «vet ikke» det eneste ærlige svaret.
+ */
+export const MAX_MEDIAN_SAMPLE_SECONDS = 15;
 
 /** Færre punkter enn dette gir ingen mening å vurdere. */
 export const MIN_POINTS = 10;
@@ -190,29 +228,51 @@ export interface ComputeMovingTimeOptions {
 	sportFamily?: string | null;
 }
 
+/** Median sekunder mellom påfølgende punkter. */
+function medianSampleSeconds(points: readonly ValidPoint[]): number | null {
+	if (points.length < 2) return null;
+	const gaps: number[] = [];
+	for (let i = 1; i < points.length; i += 1) {
+		const dt = points[i].tSec - points[i - 1].tSec;
+		if (dt > 0) gaps.push(dt);
+	}
+	if (gaps.length === 0) return null;
+	gaps.sort((a, b) => a - b);
+	const mid = Math.floor(gaps.length / 2);
+	return gaps.length % 2 === 0 ? (gaps[mid - 1] + gaps[mid]) / 2 : gaps[mid];
+}
+
 /**
- * Bevegelsestid for et spor, eller null når sporet ikke bærer svaret.
+ * Bevegelsestid for et spor, med grunnen når svaret ble avvist.
  *
- * Null betyr «vet ikke» og skal føre til at elapsed brukes videre — ikke til at
- * økta nulles ut. Grunnene til null er: for få punkter, for dårlig dekning, en
- * sportsfamilie der begrepet ikke gir mening (styrke, svømming i basseng), eller
- * en familie uten terskel.
+ * Grunnen rapporteres framfor å svelges: en stille null ser ut som «ingen data»,
+ * og da leter man etter feil i innhentingen i stedet for i sporets oppløsning.
  */
-export function computeMovingTime(
+export function analyzeMovingTime(
 	points: readonly MovingTimePoint[],
 	options: ComputeMovingTimeOptions = {}
-): MovingTimeResult | null {
+): MovingTimeAnalysis {
 	const family = classifyEffortFamily(options.sportType ?? null, options.sportFamily ?? null);
-	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) return null;
-
-	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
-	if (!(threshold > 0)) return null;
-
 	const valid = validPoints(points);
-	if (valid.length < MIN_POINTS) return null;
+	const median = medianSampleSeconds(valid);
+	const base = { result: null, medianSampleSeconds: median, pointCount: valid.length };
+
+	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) {
+		return { ...base, rejection: 'family_uten_bevegelsestid' };
+	}
+	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
+	if (!(threshold > 0)) return { ...base, rejection: 'family_uten_bevegelsestid' };
+
+	if (valid.length < MIN_POINTS) return { ...base, rejection: 'for_faa_punkter' };
+
+	// Tetthetsporten står FØR alt annet som regner: er sporet for tynt, er
+	// tallene under bare en beskrivelse av oppløsningen.
+	if (median === null || median > MAX_MEDIAN_SAMPLE_SECONDS) {
+		return { ...base, rejection: 'for_tynt_spor' };
+	}
 
 	const elapsedSeconds = valid[valid.length - 1].tSec;
-	if (!(elapsedSeconds > 0)) return null;
+	if (!(elapsedSeconds > 0)) return { ...base, rejection: 'ingen_varighet' };
 
 	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
 
@@ -234,17 +294,36 @@ export function computeMovingTime(
 	}
 
 	const coverage = (movingSeconds + stoppedSeconds) / elapsedSeconds;
-	if (coverage < MIN_COVERAGE) return null;
+	if (coverage < MIN_COVERAGE) return { ...base, rejection: 'for_daarlig_dekning' };
 
 	return {
-		// Bevegelsestid kan aldri overstige elapsed, uansett hvordan intervallene faller.
-		movingSeconds: Math.round(Math.min(movingSeconds, elapsedSeconds)),
-		elapsedSeconds: Math.round(elapsedSeconds),
-		stoppedSeconds: Math.round(stoppedSeconds),
-		coverage: Math.round(coverage * 1000) / 1000,
-		family,
-		thresholdMetersPerSecond: threshold
+		result: {
+			// Bevegelsestid kan aldri overstige elapsed, uansett hvordan intervallene faller.
+			movingSeconds: Math.round(Math.min(movingSeconds, elapsedSeconds)),
+			elapsedSeconds: Math.round(elapsedSeconds),
+			stoppedSeconds: Math.round(stoppedSeconds),
+			coverage: Math.round(coverage * 1000) / 1000,
+			family,
+			thresholdMetersPerSecond: threshold,
+			medianSampleSeconds: Math.round(median * 10) / 10
+		},
+		rejection: null,
+		medianSampleSeconds: median,
+		pointCount: valid.length
 	};
+}
+
+/**
+ * Bevegelsestid for et spor, eller null når sporet ikke bærer svaret.
+ *
+ * Null betyr «vet ikke» og skal føre til at elapsed brukes videre — ikke til at
+ * økta nulles ut.
+ */
+export function computeMovingTime(
+	points: readonly MovingTimePoint[],
+	options: ComputeMovingTimeOptions = {}
+): MovingTimeResult | null {
+	return analyzeMovingTime(points, options).result;
 }
 
 /**
