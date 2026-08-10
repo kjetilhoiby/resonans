@@ -29,6 +29,7 @@
 		hasTrackPoints: boolean;
 		provider: string;
 		sensorType: string;
+		timestamp: string;
 		distanceMeters: number | null;
 		durationSeconds: number | null;
 		avgHeartRate: number | null;
@@ -246,6 +247,17 @@
 		const h = Math.floor(m / 60);
 		const rem = m % 60;
 		return rem === 0 ? `${h} t` : `${h} t ${rem} min`;
+	}
+
+	/** Sekundpresist — det er sekundene som avgjør om to rader er «samme» økt. */
+	function startedAtLabel(iso: string): string {
+		return new Date(iso).toLocaleString('nb-NO', {
+			day: 'numeric',
+			month: 'short',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
 	}
 
 	function providerLabel(provider: string, sensorType: string): string {
@@ -471,6 +483,13 @@
 				{#if sheetEv.durationSeconds !== null}<span>{formatDuration(sheetEv.durationSeconds)}</span>{/if}
 				{#if sheetEv.avgHeartRate !== null}<span>♥ {sheetEv.avgHeartRate}</span>{/if}
 			</div>
+			<!--
+				Starttidspunktet er ikke pynt: Resonans upserter en økt på (sensor,
+				dataType, STARTTID), så to registreringer fra samme kilde betyr at
+				starttidene spriker. Uten tallet her er det umulig å se hvorfor to
+				chips står ved siden av hverandre.
+			-->
+			<p class="hd-sheet-meta">Starttid {startedAtLabel(sheetEv.timestamp)}</p>
 			<div class="hd-sheet-actions">
 				{#if multi}
 					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('main')}>Hovedkilde (alt)</button>
@@ -731,6 +750,13 @@
 		margin: 0;
 		font-size: 1rem;
 		color: #eee;
+	}
+
+	.hd-sheet-meta {
+		margin: 0;
+		font-size: 0.75rem;
+		color: #777;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.hd-sheet-data {

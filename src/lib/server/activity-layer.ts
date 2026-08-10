@@ -26,6 +26,8 @@ interface WorkoutEvidenceEvent {
 	id: string;
 	sensorId: string;
 	timestamp: Date;
+	/** Når raden ble skrevet. Avgjør hvilken versjon som gjelder når én sensor har flere. */
+	createdAt: Date;
 	data: Record<string, unknown>;
 	metadata: Record<string, unknown>;
 	provider: string;
@@ -192,6 +194,32 @@ function choosePreferredNumeric(
 	return Math.max(...top.map((candidate) => candidate.value));
 }
 
+/**
+ * Én registrering per sensor i en klynge — den nyest skrevne.
+ *
+ * **To hendelser fra samme sensor i samme klynge er to versjoner av samme
+ * opptak, ikke to kilder.** Klyngen ER aktiviteten; en sensor som har skrevet
+ * to rader innenfor vinduet har rettet seg selv.
+ *
+ * Uten dette avgjorde `choosePreferredNumeric`, som tar den STØRSTE verdien blant
+ * kildene med høyest prioritet. En bruker som kuttet en glemt sporing i Ekko fra
+ * 2 t 20 min til 24 min fikk derfor fortsatt 2 t 20 min på flaten: den gamle
+ * raden var lengst, og lengst vant. Rettingen så ut som den ikke gjorde noe.
+ *
+ * «Nyest skrevet» og ikke «kortest»: en korreksjon kan gå begge veier, og det
+ * eneste vi vet sikkert er hvilken versjon som kom sist.
+ */
+function latestPerSensor(events: WorkoutEvidenceEvent[]): WorkoutEvidenceEvent[] {
+	const bySensor = new Map<string, WorkoutEvidenceEvent>();
+	for (const event of events) {
+		const existing = bySensor.get(event.sensorId);
+		if (!existing || event.createdAt > existing.createdAt) {
+			bySensor.set(event.sensorId, event);
+		}
+	}
+	return events.filter((event) => bySensor.get(event.sensorId) === event);
+}
+
 function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 	const hasTrackPoints = event.hasTrackPoints
 		|| (typeof event.metadata.totalTrackPoints === 'number' && event.metadata.totalTrackPoints > 0);
@@ -252,6 +280,7 @@ export async function buildUnifiedWorkoutActivities(
 			eventType: sensorEvents.eventType,
 			dataType: sensorEvents.dataType,
 			timestamp: sensorEvents.timestamp,
+			createdAt: sensorEvents.createdAt,
 			data: sql<Record<string, unknown>>`jsonb_build_object(
 				'sportType', ${sensorEvents.data}->'sportType',
 				'distance', ${sensorEvents.data}->'distance',
@@ -300,6 +329,7 @@ export async function buildUnifiedWorkoutActivities(
 			id: event.id,
 			sensorId: event.sensorId,
 			timestamp: event.timestamp,
+			createdAt: event.createdAt,
 			data: (event.data ?? {}) as Record<string, unknown>,
 			metadata: (event.metadata ?? {}) as Record<string, unknown>,
 			provider,
@@ -348,7 +378,7 @@ export async function buildUnifiedWorkoutActivities(
 
 	const unified = clusters
 		.map((cluster): UnifiedWorkoutActivity => {
-			const events = cluster.events;
+			const events = latestPerSensor(cluster.events);
 			const distanceMeters = pickNumericField(events, (event) => normalizeDistanceMeters(event.data.distance), 'preferGps');
 			const durationSeconds = pickNumericField(events, (event) => normalizeDurationSeconds(event.data.duration), 'preferGps');
 			const paceSecondsPerKm =
