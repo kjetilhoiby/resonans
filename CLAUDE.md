@@ -579,6 +579,39 @@ datainnhentingen.
 - Tester på modellen skal uttrykke **forhold**, ikke nivå. Hardkodet 87,5 låste
   `effort-service.test.ts` til `MET_CALIBRATION = 2,5`.
 
+### Varighet er ikke det samme som opptak
+
+`$lib/domain/health/moving-time.ts`. Se `docs/changelog/2026-08-10-bevegelsestid.md`.
+
+- **`data.duration` er elapsed** — `siste sporpunkt − første`. Glemmer man å avslutte
+  sporingen, teller den døde halen fullt ut, og MET-stien er **rent lineær i varighet**.
+  En el-sykkeltur på 9,07 km sto som 2 t 20 min og fikk effort 114 der svaret var ~20;
+  Strava viste samme spor som 27 min 3 s. Distansen var identisk — hele feilen var tid.
+- **`data.movingDuration` skrives ved siden av, aldri i stedet for.** Elapsed er et faktum
+  om opptaket; moving er en tolkning av det. `computeWorkoutEffort` og
+  `estimateWorkoutKcal` skårer på moving når den finnes; `durationBasis` sier hvilken.
+- **Én glemt sporing forurenser fire ting samtidig:** ukas effort, akutt/kronisk-dommen,
+  `energy-expenditure` (~800 kcal fantomaktivitet) og dermed `sendFuelNudge`. Regner du på
+  en varighet fra en økt, spør hvilken av de to du vil ha.
+- **Kall `movingDurationFor` ETTER at `sportType` er avgjort.** Terskelen er per
+  sportsfamilie, og opplastingsstien overstyrer sportstypen *etter* parsingen — en
+  el-sykkeltur parset som «running» ville fått løpeterskelen.
+- **Farten måles som forflytning mellom endepunktene i et 10-sekundersvindu**, ikke som
+  sporlengde mellom nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker
+  punktene 2–5 meter, og over fire sekunder ser det ut som over én meter i sekundet.
+- **null betyr «vet ikke», ikke «sto stille»**, og gir elapsed videre. Det gjelder også
+  0 bevegelsessekunder: et spor uten forflytning er like gjerne en tredemølle.
+- **Minstelengden måles på bevegelsestiden.** En time stillstand med to minutter sykling
+  er ikke en økt.
+- **Pace regnes på samme varighet som effort skåres på.** Ellers får en økt med lang
+  stillstand lav «fart» og dermed lav intensitet, i tillegg til at halen alt er trukket fra.
+- **Historikken må backfilles OG reprojiseres:**
+  `POST /api/helse/trening/bevegelsestid` (additiv, idempotent, `?dryRun=true`) og deretter
+  `POST /api/helse/trening/reprojiser?weeks=…`. Ankeret leses fra de *lagrede* skårene, så
+  et skrevet `movingDuration` uten reprojeksjon ser ut som en jobb som ikke gjorde noe.
+- Manuell crop for haler som *ikke* står stille (glemt sporing i bilen hjem) er ikke
+  bygget. Den hører under «Kilder og avvik» ved siden av `dismiss`/`source-role`.
+
 ### Ukas effort: budsjett og belastning er to dommer
 
 `$lib/domain/health/effort-standing.ts` eier ordene, `tracks/effort-budget.ts` tallene.

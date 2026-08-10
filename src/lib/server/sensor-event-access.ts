@@ -55,6 +55,10 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Skrive-/vedlikeholdsstier som opererer på rå rader.
 			'routes/api/admin/cleanup-walking/+server.ts',
 			'routes/api/tema/[id=uuid]/trip/import-walk/+server.ts',
+			// Backfill av bevegelsestid: trenger sporpunktene per KILDE-rad, og det
+			// er kilde-raden `data.movingDuration` skrives tilbake på. Den delte
+			// leseren gir klynger, ikke rader, og kan derfor ikke brukes her.
+			'lib/server/health/moving-time-backfill.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så
 			// styrkeøkter må leses rått. Utholdenhet leses allerede fra canonical.
 			'lib/server/tracks/repository.ts',

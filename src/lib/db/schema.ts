@@ -2715,7 +2715,14 @@ export const canonicalWorkouts = pgTable('canonical_workouts', {
 	sportType: text('sport_type').notNull(),
 	sportFamily: text('sport_family').notNull(),
 	distanceMeters: decimal('distance_meters'),
+	/** Elapsed: siste sporpunkt − første. Hvor lenge opptaket varte. */
 	durationSeconds: decimal('duration_seconds'),
+	/**
+	 * Bevegelsestid utledet av sporet ($lib/domain/health/moving-time.ts).
+	 * NULL = sporet kunne ikke svare, ikke at økta sto stille. `effortScore`
+	 * regnes på denne når den finnes — se `computeWorkoutEffort`.
+	 */
+	movingSeconds: decimal('moving_seconds'),
 	avgHeartRate: decimal('avg_heart_rate'),
 	maxHeartRate: decimal('max_heart_rate'),
 	effortScore: decimal('effort_score'),

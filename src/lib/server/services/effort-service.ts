@@ -46,6 +46,13 @@ export interface WorkoutEffortInput {
 	sportType: string | null | undefined;
 	sportFamily?: string | null;
 	durationSeconds: number | null | undefined;
+	/**
+	 * Bevegelsestid fra øktas spor, når den finnes. **Dette er tallet det skåres
+	 * på.** Elapsed er lengden på opptaket, ikke på innsatsen: glemmer man å
+	 * avslutte sporingen, teller den døde halen fullt ut på MET-stien, som er
+	 * rent lineær i varighet. Null/undefined betyr «vet ikke» og gir elapsed.
+	 */
+	movingSeconds?: number | null;
 	avgHeartRate?: number | null;
 	/** Øktas pace (sek/km) — gir intensitets-justert MET for løp uten puls. */
 	paceSecPerKm?: number | null;
@@ -61,6 +68,8 @@ export interface WorkoutEffortResult {
 	score: number;
 	method: EffortMethod;
 	family: EffortFamily;
+	/** Hvilken varighet skåren ble regnet på. Flaten skal kunne si hvorfor. */
+	durationBasis: 'moving' | 'elapsed';
 }
 
 /**
@@ -76,7 +85,13 @@ export function computeWorkoutEffort(
 	input: WorkoutEffortInput,
 	baseline: EffortBaseline
 ): WorkoutEffortResult | null {
-	const durationSeconds = typeof input.durationSeconds === 'number' ? input.durationSeconds : null;
+	const elapsedSeconds = typeof input.durationSeconds === 'number' ? input.durationSeconds : null;
+	const movingSeconds = typeof input.movingSeconds === 'number' && input.movingSeconds > 0 ? input.movingSeconds : null;
+	// Bevegelsestid vinner når den finnes. Gulvet for «for kort til å telle»
+	// måles på det samme tallet — ellers ville en times stillstand med to minutter
+	// sykling sluppet gjennom porten og blitt skåret som to minutter.
+	const durationBasis: 'moving' | 'elapsed' = movingSeconds !== null ? 'moving' : 'elapsed';
+	const durationSeconds = movingSeconds ?? elapsedSeconds;
 	if (!durationSeconds || durationSeconds < MIN_DURATION_SECONDS) return null;
 
 	const durationMin = durationSeconds / 60;
@@ -95,10 +110,11 @@ export function computeWorkoutEffort(
 			return {
 				score: round1(durationMin * MET_FACTOR_BY_FAMILY[family] * MET_CALIBRATION),
 				method: 'met',
-				family
+				family,
+				durationBasis
 			};
 		}
-		return { score: round1(score), method: 'trimp', family };
+		return { score: round1(score), method: 'trimp', family, durationBasis };
 	}
 
 	const base = durationMin * MET_FACTOR_BY_FAMILY[family] * MET_CALIBRATION;
@@ -114,10 +130,10 @@ export function computeWorkoutEffort(
 		// vei ned til 0.75. Samme skille som rute-biblioteket (fase 2).
 		const floor = input.isTrail ? 1.0 : 0.75;
 		const intensity = Math.max(floor, Math.min(1.5, (easyPace / pace) ** 2));
-		return { score: round1(base * intensity), method: input.isTrail ? 'met_trail' : 'met_pace', family };
+		return { score: round1(base * intensity), method: input.isTrail ? 'met_trail' : 'met_pace', family, durationBasis };
 	}
 
-	return { score: round1(base), method: 'met', family };
+	return { score: round1(base), method: 'met', family, durationBasis };
 }
 
 function round1(value: number): number {
