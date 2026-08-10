@@ -15,7 +15,6 @@ import { db } from '$lib/db';
 import { canonicalWorkouts, goals, sensorGoals, workoutAssessments } from '$lib/db/schema';
 import { openai } from '$lib/server/openai';
 import { computeKmSplits, type TrackPoint } from '$lib/utils/track-stats';
-import { detectClimbs, detectLaps } from '$lib/domain/health/workout-terrain';
 import { parseWorkoutAnalysis, type WorkoutAnalysis } from '$lib/domain/health/workout-analysis';
 import { frameGoals, type GoalInput } from '$lib/domain/health/goal-horizon';
 import {
@@ -151,8 +150,8 @@ export async function buildWorkoutAssessmentContext(
 	return buildAssessmentContext({
 		workout: sources.workout,
 		splits: points.length >= 2 ? computeKmSplits(points) : [],
-		climbs: points.length >= 2 ? detectClimbs(points) : [],
-		laps: points.length >= 2 ? detectLaps(points) : [],
+		// Bakker, runder og strekk kommer fra Ekko, ikke fra sporet — se
+		// filhodet i workout-assessment-context.ts.
 		analysis,
 		effort: {
 			score: toNumber(canonical?.effortScore),

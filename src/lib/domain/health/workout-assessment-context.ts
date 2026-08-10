@@ -8,6 +8,18 @@
  * 95 kg», og et råd om å løpe mer uansett hva økta hadde vært. Ingen av delene
  * var hallusinasjon: det var alt den hadde.
  *
+ * **Geografien kommer fra Ekko, ikke herfra.** Bakker, runder og strekk leses
+ * utelukkende av `analysis`-feltet på opplastingen (`workout-analysis.ts`,
+ * kontrakt i `docs/ekko-oktanalyse.md`). Resonans hadde en periode sin egen
+ * deteksjon over trackPoints — den er fjernet. To motorer som finner «en bakke»
+ * i samme spor blir aldri enige, og den ene av dem har navn og brukerens egen
+ * historikk. En terskel som bare finnes ett sted er dessuten mulig å kalibrere;
+ * to sett terskler i to språk er det ikke.
+ *
+ * Konsekvensen er bevisst: en økt uten Ekko-analyse — fra klokka, fra Dropbox,
+ * fra Strava — har ingen bakker og ingen runder i vurderingen. Den har fortsatt
+ * distanse, tid, puls, kilometersplitter, effort og mål.
+ *
  * Modulen er ren, så det er etterprøvbart hva modellen ser. To regler den
  * håndhever, som begge har kostet en gal setning:
  *
@@ -19,7 +31,6 @@
 
 import { formatPaceOrSpeed, isWheeledSport } from '$lib/utils/activity-metrics';
 import type { KmSplit } from '$lib/utils/track-stats';
-import { suppressNamedClimbs, type Climb, type Lap } from './workout-terrain';
 import type { WorkoutAnalysis } from './workout-analysis';
 import type { FramedGoal } from './goal-horizon';
 
@@ -47,8 +58,7 @@ export type AssessmentWorkout = {
 export type AssessmentInput = {
 	workout: AssessmentWorkout;
 	splits: KmSplit[];
-	climbs: Climb[];
-	laps: Lap[];
+	/** Bakker, runder og strekk — utelukkende fra Ekko. Se filhodet. */
 	analysis: WorkoutAnalysis | null;
 	effort: { score: number | null; method: string | null };
 	bestEfforts: Record<string, number> | null;
@@ -116,32 +126,6 @@ export function describeSplits(sportType: string, splits: KmSplit[]): string[] {
 	];
 }
 
-function describeClimbs(sportType: string, climbs: Climb[]): string[] {
-	return climbs.map((c, i) => {
-		const parts = [
-			`bakke ${i + 1}: km ${num(c.startDistanceM / 1000)}–${num(c.endDistanceM / 1000)}`,
-			`${c.lengthM} m`,
-			`+${c.gainM} hm (${num(c.avgGradientPct)} %)`
-		];
-		if (c.durationSec !== null) parts.push(mmss(c.durationSec));
-		const speed = speedText(sportType, c.avgPaceSecPerKm);
-		if (speed) parts.push(speed);
-		const hr = hrText(c.avgHr, c.maxHr);
-		if (hr) parts.push(hr);
-		return parts.join(', ');
-	});
-}
-
-function describeLaps(sportType: string, laps: Lap[]): string[] {
-	return laps.map((l) => {
-		const parts = [`runde ${l.index}: ${num(l.distanceM / 1000)} km`];
-		if (l.durationSec !== null) parts.push(mmss(l.durationSec));
-		const speed = speedText(sportType, l.avgPaceSecPerKm);
-		if (speed) parts.push(speed);
-		if (l.avgHr !== null) parts.push(`puls ${l.avgHr}`);
-		return parts.join(', ');
-	});
-}
 
 const KIND_LABEL: Record<string, string> = {
 	hill: 'Bakke',
@@ -284,34 +268,13 @@ export function buildAssessmentContext(input: AssessmentInput): string {
 				.map(([dist, sec]) => `${dist}: ${mmss(sec)}`)
 		: [];
 
-	// Serverdeteksjonen er en FALLBACK, ikke et tillegg. Der Ekko alt har beskrevet
-	// grunnen med navn og historikk, er dens versjon bedre på alle måter — og to
-	// beskrivelser av samme motbakke leses som to motbakker.
-	//
-	// Ekkos rundedeteksjon kjører bare i rundbanemodus, og bakkesegmentene bare på
-	// lagrede ruter, så fallbacken har rikelig å gjøre: økter fra klokka, fra
-	// Dropbox og fra Strava har ingen Ekko-analyse i det hele tatt.
-	const namedSpans = (input.analysis?.features ?? [])
-		.filter((f) => f.startOffsetSec !== null && f.durationSec !== null)
-		.map((f) => ({
-			startSec: f.startOffsetSec as number,
-			endSec: (f.startOffsetSec as number) + (f.durationSec as number)
-		}));
-	const climbs = suppressNamedClimbs(input.climbs, namedSpans);
-	// Runder: Ekko teller dem live mot ankeret brukeren selv satte, og bærer
-	// «din vanlige runde her». Har den sagt noe, er vår geometriske variant
-	// overflødig i sin helhet.
-	const laps = (input.analysis?.laps.length ?? 0) > 0 ? [] : input.laps;
-
 	const blocks = [
 		section('Økt', summary),
 		// Navngitte strekninger først: de er det eneste modellen ikke kunne
 		// utledet selv, og det brukeren kjenner igjen.
-		section('Navngitte strekninger (fra Ekko, med din egen historikk)', describeFeatures(input.analysis)),
-		section('Runder (fra Ekko, med din egen historikk)', describeAnalysisLaps(input.analysis)),
-		section('Runder (oppdaget i sporet)', describeLaps(w.sportType, laps)),
+		section('Strekninger (med din egen historikk)', describeFeatures(input.analysis)),
+		section('Runder', describeAnalysisLaps(input.analysis)),
 		section('Bakkedrag', describeHillReps(input.analysis)),
-		section('Bakker (oppdaget i sporet)', describeClimbs(w.sportType, climbs)),
 		section('Kilometer', describeSplits(w.sportType, input.splits)),
 		section('Raskeste sammenhengende strekk i økta', best),
 		input.nugget ? section('Mot egen historikk', [input.nugget]) : null,

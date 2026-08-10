@@ -5,15 +5,24 @@ Kontrakten for `analysis`-feltet på `POST /api/apps/upload`. Serversiden bor i
 
 ## Hvorfor feltet finnes
 
-Resonans kan finne av sporet selv at det ligger en stigning fra km 2,1 til km 2,6
-(`$lib/domain/health/workout-terrain.ts`). Det Resonans **ikke** kan finne er at
-den heter «Dreperen», at du har løpt den fjorten ganger, og at medianen din er
-2:23. Og for strekk er det umulig i prinsippet — Ekkos egen `RunFeature`-modell
-sier det: et strekk «finnes i historikken og i hodet», ingen terrengterskel kan
-finne det.
+**Dette er Resonans' eneste kilde til geografi i en økt.** Bakker, runder og strekk
+finnes ikke i vurderingen med mindre de kommer herfra.
 
-Uten dette feltet blir øktvurderingen geometrisk: «stigningen på km 3». Med det
-blir den «Dreperen, 12 sekunder raskere enn medianen din, 6 slag lavere puls».
+Resonans hadde en periode sin egen deteksjon over trackPoints. Den er fjernet: to
+motorer som leter etter «en bakke» i samme spor blir aldri enige, og Ekkos versjon
+er bedre på alle måter — den har navn og brukerens egen historikk. For strekk var
+det uansett umulig i prinsippet, som `RunFeature` sier det selv: et strekk «finnes
+i historikken og i hodet».
+
+Konsekvensen er at **hullene i Ekkos deteksjon blir hull i vurderingen**. To er
+kjent i dag:
+
+- `lapDetectionActive` krever ingen valgt rute, ingen intervalløkt og ingen
+  oppvarming — så runder telles bare i fri rundbanemodus.
+- Bakkesegmenter finnes bare på **lagrede ruter**.
+
+Sender Ekko ingenting, sier vurderingen ingenting om terreng. Den har fortsatt
+distanse, tid, puls, kilometersplitter, effort og mål.
 
 ## Format
 

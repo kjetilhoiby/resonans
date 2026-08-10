@@ -735,31 +735,23 @@ Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten by
 rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
 `$lib/server/workouts/workout-assessment.ts`.
 
-- **Serveren finner geometri, Ekko eier navnene.** `detectClimbs`/`detectLaps`
-  (`workout-terrain.ts`) finner at det ligger en stigning fra km 2,1 til km 2,6.
-  At den heter «Dreperen» kan bare komme fra appen — og for **strekk** er det umulig
-  i prinsippet: Ekkos `RunFeature` sier selv at et strekk «finnes i historikken og i
-  hodet». Kontrakten står i `docs/ekko-oktanalyse.md`, parseren i
-  `workout-analysis.ts`.
-- **Serverdeteksjonen er en FALLBACK, ikke et tillegg.** Der Ekko har navngitt
-  grunnen, undertrykkes den oppdagede geometrien (`suppressNamedClimbs`, og Ekkos
-  runder erstatter de oppdagede i sin helhet). Ellers leser modellen «Dreperen» og
-  «stigningen fra km 2,1» som to bakker — dobbelttelling i en ny form.
-  Sammenligningen går på TID, siden Ekkos features er plassert med `startOffsetSec`.
-  Fallbacken har rikelig å gjøre: Ekkos rundedeteksjon kjører **bare i
-  rundbanemodus** (`lapDetectionActive` krever ingen valgt rute, ingen intervall,
-  ingen oppvarming), bakkesegmenter finnes **bare på lagrede ruter**, og økter fra
-  klokka, Dropbox og Strava har ingen Ekko-analyse i det hele tatt.
-- **Historikken sendes MED fra Ekko.** Vi har ikke feature-historikken og kan ikke
-  regne medianen selv. Differansen skrives dessuten ferdig ut i konteksten
-  («12 s raskere enn medianen din») — en modell som må regne selv regner av og til feil.
-- **Medianen holder dagens økt utenfor**, både for features og runder, av samme
-  grunn som HRV-baselinen holder siste natt utenfor sin egen.
-- **`MIN_CLIMB_GAIN_M` (10) er et støygulv, ikke en preferanse.** Barometerløse
-  telefoner spriker 5–10 m i ro. Høyde glattes over **distanse**, ikke punkter: et
-  spor har tettere punkter når man går sakte, så et punktvindu glatter hardest i
-  bakkene. `CLIMB_DIP_TOLERANCE_M` finnes fordi en lang bakke med platå ellers ble
-  tre korte. Én runde rapporteres ikke — det er en tur som endte der den startet.
+- **All geografi kommer fra Ekko. Resonans detekterer ingenting selv.** Bakker,
+  runder og strekk leses utelukkende av `analysis`-feltet på opplastingen
+  (`workout-analysis.ts`, kontrakt i `docs/ekko-oktanalyse.md`). Resonans hadde en
+  periode sin egen `detectClimbs`/`detectLaps` over trackPoints — den er **fjernet**.
+  To motorer som leter etter «en bakke» i samme spor blir aldri enige, og den ene
+  av dem har navn og brukerens egen historikk. En terskel som bare finnes ett sted
+  kan dessuten kalibreres; to sett terskler i to språk kan det ikke.
+  **Ikke bygg den tilbake.** Mangler bakker på en økt, er svaret å utvide Ekkos
+  deteksjon, ikke å legge en ny motor i Resonans.
+- **Konsekvensen er bevisst:** en økt uten Ekko-analyse — fra klokka, fra Dropbox,
+  fra Strava, eller en Ekko-økt utenfor rundbanemodus / uten lagret rute — har
+  ingen bakker og ingen runder i vurderingen. Den har fortsatt distanse, tid, puls,
+  kilometersplitter, effort og mål. `lapDetectionActive` i Ekko krever ingen valgt
+  rute, ingen intervalløkt og ingen oppvarming; bakkesegmenter finnes bare på
+  lagrede ruter.
+- **Strekk kan uansett bare komme fra Ekko.** `RunFeature` sier det selv: et strekk
+  «finnes i historikken og i hodet», og ingen terrengterskel kan finne det.
 - **Enheten følger idretten, ett sted:** `formatPaceOrSpeed` i
   `$lib/utils/activity-metrics`. Prompten hardkodet «/km» fram til august 2026 og
   ga «tempo 3:08/km» på en sykkeltur der kortet over sa «19,1 km/t».

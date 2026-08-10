@@ -34,8 +34,6 @@ function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
 			maxHeartRate: 171
 		},
 		splits: [],
-		climbs: [],
-		laps: [],
 		analysis: null,
 		effort: { score: null, method: null },
 		bestEfforts: null,
@@ -188,52 +186,7 @@ describe('buildAssessmentContext', () => {
 		expect(context).not.toContain('ukjent');
 	});
 
-	it('setter navngitte strekninger før oppdagede bakker', () => {
-		const context = buildAssessmentContext(
-			baseInput({
-				analysis: {
-					version: 1,
-					features: [
-						{
-							kind: 'stretch',
-							name: 'Grønland til Vålerenga',
-							startName: null,
-							endName: null,
-							startOffsetSec: 0,
-							durationSec: 400,
-							distanceMeters: 1500,
-							elevationGainM: null,
-							avgHeartRate: 160,
-							maxHeartRate: null,
-							avgPaceSecPerKm: 267,
-							history: null
-						}
-					],
-					laps: [],
-					hillReps: []
-				},
-				climbs: [
-					{
-						startDistanceM: 2100,
-						endDistanceM: 2600,
-						startOffsetSec: 600,
-						endOffsetSec: 750,
-						lengthM: 500,
-						gainM: 40,
-						avgGradientPct: 8,
-						durationSec: 150,
-						avgPaceSecPerKm: 300,
-						avgHr: 165,
-						maxHr: 175
-					}
-				]
-			})
-		);
-
-		expect(context.indexOf('Navngitte strekninger')).toBeLessThan(context.indexOf('Bakker'));
-		expect(context).toContain('Strekk «Grønland til Vålerenga»');
-	});
-
+	
 	it('tar med mål med progresjon, delt i kort og lang', () => {
 		const context = buildAssessmentContext(
 			baseInput({
@@ -290,75 +243,10 @@ describe('buildAssessmentContext', () => {
 		expect(context).toContain('5k: 23:20');
 	});
 
-	it('tar med runder med tid og puls', () => {
-		const context = buildAssessmentContext(
-			baseInput({
-				laps: [
-					{ index: 1, distanceM: 800, durationSec: 200, avgPaceSecPerKm: 250, avgHr: 158 },
-					{ index: 2, distanceM: 800, durationSec: 194, avgPaceSecPerKm: 242, avgHr: 163 }
-				]
-			})
-		);
-		expect(context).toContain('runde 1: 0,8 km, 3:20');
-		expect(context).toContain('puls 163');
-	});
-});
-
-describe('serverdeteksjonen er fallback, ikke tillegg', () => {
-	const namedHill = {
-		kind: 'hill' as const,
-		name: 'Dreperen',
-		startName: null,
-		endName: null,
-		startOffsetSec: 590,
-		durationSec: 170,
-		distanceMeters: 480,
-		elevationGainM: 42,
-		avgHeartRate: 168,
-		maxHeartRate: 179,
-		avgPaceSecPerKm: 354,
-		history: null
-	};
-
-	const detectedSameHill = {
-		startDistanceM: 2100,
-		endDistanceM: 2600,
-		startOffsetSec: 600,
-		endOffsetSec: 750,
-		lengthM: 500,
-		gainM: 40,
-		avgGradientPct: 8,
-		durationSec: 150,
-		avgPaceSecPerKm: 300,
-		avgHr: 165,
-		maxHr: 175
-	};
-
-	it('teller ikke den samme motbakken to ganger', () => {
-		const context = buildAssessmentContext(
-			baseInput({
-				analysis: { version: 1, features: [namedHill], laps: [], hillReps: [] },
-				climbs: [detectedSameHill]
-			})
-		);
-
-		expect(context).toContain('Dreperen');
-		// Den oppdagede tvillingen skal være borte helt — ellers leser modellen
-		// «Dreperen» og «stigningen fra km 2,1» som to bakker.
-		expect(context).not.toContain('Bakker (oppdaget i sporet)');
 	});
 
-	it('beholder oppdagede bakker Ekko ikke har sagt noe om', () => {
-		const context = buildAssessmentContext(
-			baseInput({
-				analysis: { version: 1, features: [{ ...namedHill, startOffsetSec: 3000 }], laps: [], hillReps: [] },
-				climbs: [detectedSameHill]
-			})
-		);
-		expect(context).toContain('Bakker (oppdaget i sporet)');
-	});
-
-	it('lar Ekkos runder erstatte de oppdagede i sin helhet', () => {
+describe('geografien kommer fra Ekko', () => {
+	it('viser Ekkos runder med sammenligning mot din vanlige runde', () => {
 		const context = buildAssessmentContext(
 			baseInput({
 				analysis: {
@@ -374,24 +262,15 @@ describe('serverdeteksjonen er fallback, ikke tillegg', () => {
 						}
 					],
 					hillReps: []
-				},
-				laps: [{ index: 1, distanceM: 400, durationSec: 96, avgPaceSecPerKm: 240, avgHr: 162 }]
+				}
 			})
 		);
 
-		expect(context).toContain('Runder (fra Ekko, med din egen historikk)');
-		expect(context).toContain('raskere enn din vanlige runde her');
-		expect(context).not.toContain('Runder (oppdaget i sporet)');
+		expect(context).toContain('Runder');
+		expect(context).toContain('0:05 raskere enn din vanlige runde her');
 	});
 
-	it('bruker de oppdagede rundene når Ekko ikke har talt noen', () => {
-		const context = buildAssessmentContext(
-			baseInput({ laps: [{ index: 1, distanceM: 400, durationSec: 96, avgPaceSecPerKm: 240, avgHr: 162 }] })
-		);
-		expect(context).toContain('Runder (oppdaget i sporet)');
-	});
-
-	it('tar med bakkedrag fra en strukturert bakkeøkt', () => {
+	it('viser bakkedrag med dominerende sone', () => {
 		const context = buildAssessmentContext(
 			baseInput({
 				analysis: {
@@ -405,5 +284,19 @@ describe('serverdeteksjonen er fallback, ikke tillegg', () => {
 			})
 		);
 		expect(context).toContain('drag 1, 1:02, 210 m, puls 171/182, mest i Z4');
+	});
+
+	it('har ingen bakker eller runder uten Ekko-analyse — det er den bevisste konsekvensen', () => {
+		// En økt fra klokka, Dropbox eller Strava. Den skal fortsatt ha alt det
+		// andre, men ingen geografi.
+		const context = buildAssessmentContext(
+			baseInput({ splits: [split(1, 272, 148)], analysis: null })
+		);
+
+		expect(context).not.toContain('Runder');
+		expect(context).not.toContain('Bakke');
+		expect(context).not.toContain('Strekning');
+		expect(context).toContain('Kilometer');
+		expect(context).toContain('km 1: 4:32 /km');
 	});
 });
