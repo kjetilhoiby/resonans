@@ -127,8 +127,9 @@ teksten som står er fortsatt om den samme økta.
 
 ## Verifisering
 
-- 81 nye enhetstester fordelt på fire moduler.
-- `npm test`: 3128 tester i 233 filer passerer.
+- 62 nye enhetstester i tre moduler (`workout-analysis` 18, `goal-horizon` 22,
+  `workout-assessment-context` 22).
+- `npm test`: 3131 tester i 233 filer passerer.
 - `npm run check`: 0 feil, 0 advarsler.
 - `npm run build`: går gjennom.
 
@@ -141,15 +142,19 @@ teksten som står er fortsatt om den samme økta.
 - **Ingen ende-til-ende-test mot prod.** Etter neste økt: sjekk at
   `analysis`-feltet i opplastingssvaret ikke er `null`, og at `analysisWarnings`
   er tom.
-- Bakke- og rundedeteksjonen er testet på syntetiske spor, ikke på ekte GPX.
-  Tersklene bør etterprøves mot en reell tur før de anses som riktige.
+- **Ingen økt i prod har `ekkoAnalysis` ennå**, siden Ekko-siden krever en
+  app-utgivelse. Fram til den er ute, vil vurderingene mangle bakker, runder og
+  strekk i sin helhet — det er forventet, ikke en feil.
 
 ## Gjenstår
 
 - `weekStanding` sendes som `null` inn i konteksten. `planText`/`loadText` fra
   `training-summary.ts` krever `loadTrainingDashboardData`, som er tung for en
   sideinnlasting — men vurderingen er cachet nå, så det kan gjøres.
-- Bakker og runder vises ikke på flata, bare i vurderingen. `KmSplitsTable` har
-  allerede plassen.
+- Bakker og runder fra Ekko vises ikke på flata, bare i vurderingen.
+  `KmSplitsTable` har allerede plassen.
+- Ekkos to kjente hull står igjen: rundedeteksjon kjører bare i rundbanemodus, og
+  bakkesegmenter finnes bare på lagrede ruter. Skal frie turer få bakker, må det
+  utvides i Ekko.
 - `RouteSpeedHistory` (median fart og puls per rutesegment) er ikke koblet på —
   bare `FeatureHistory`.

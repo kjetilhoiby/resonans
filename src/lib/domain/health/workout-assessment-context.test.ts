@@ -186,7 +186,6 @@ describe('buildAssessmentContext', () => {
 		expect(context).not.toContain('ukjent');
 	});
 
-	
 	it('tar med mål med progresjon, delt i kort og lang', () => {
 		const context = buildAssessmentContext(
 			baseInput({
@@ -242,8 +241,7 @@ describe('buildAssessmentContext', () => {
 		expect(context).toContain('1k: 4:18');
 		expect(context).toContain('5k: 23:20');
 	});
-
-	});
+});
 
 describe('geografien kommer fra Ekko', () => {
 	it('viser Ekkos runder med sammenligning mot din vanlige runde', () => {
