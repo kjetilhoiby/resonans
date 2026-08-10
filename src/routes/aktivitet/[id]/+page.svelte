@@ -18,8 +18,7 @@
 	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, assessment, activityListThemeId } = data;
-	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
+	const { workout, trackPoints, assessment, assessmentContext, activityListThemeId } = data;
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
 	let tab = $state<Tab>('detaljer');
@@ -59,31 +58,17 @@
 		}
 	}
 
-	// Build workout context note injected on the first chat message
-	const workoutContextNote = $derived.by(() => {
-		const lines: string[] = [
-			`Treningsøkt: ${workout.title}`,
-			`Dato: ${new Intl.DateTimeFormat('nb-NO', { dateStyle: 'full', timeStyle: 'short' }).format(new Date(workout.timestamp))}`,
-		];
-		if (workout.distanceKm != null) lines.push(`Distanse: ${workout.distanceKm.toFixed(2)} km`);
-		if (workout.durationSeconds != null) lines.push(`Varighet: ${Math.round(workout.durationSeconds / 60)} min`);
-		if (workout.paceSecondsPerKm != null) {
-			const m = Math.floor(workout.paceSecondsPerKm / 60);
-			const s = String(Math.round(workout.paceSecondsPerKm % 60)).padStart(2, '0');
-			lines.push(`Tempo: ${m}:${s} /km`);
-		}
-		if (workout.avgHeartRate != null) lines.push(`Snitt puls: ${Math.round(workout.avgHeartRate)} bpm`);
-		if (workout.maxHeartRate != null) lines.push(`Maks puls: ${Math.round(workout.maxHeartRate)} bpm`);
-		if (workout.elevationMeters != null) lines.push(`Høydemeter: ${Math.round(workout.elevationMeters)} m`);
-		if (assessment) lines.push(`\nVurdering: ${assessment}`);
-		if (healthGoals.length > 0) {
-			lines.push('\nAktive helsemål:');
-			for (const g of healthGoals) {
-				lines.push(`- ${g.title}${g.description ? `: ${g.description}` : ''}`);
-			}
-		}
-		return lines.join('\n');
-	});
+	// Chatten får NØYAKTIG samme fakta som vurderingen, bygget på serveren
+	// ($lib/server/workouts/workout-assessment.ts). Siden bygde tidligere sitt eget
+	// vedlegg av et halvt dusin tall — med «/km» også for sykling, og med måltitler
+	// uten progresjon. To veier inn til de samme tallene driver fra hverandre.
+	const workoutContextNote = $derived(
+		assessmentContext
+			? assessment
+				? `${assessmentContext}\n\nVurdering gitt til brukeren: ${assessment}`
+				: assessmentContext
+			: `Treningsøkt: ${workout.title}`
+	);
 
 	const chat = new ChatState({
 		getOrCreateConversationId: async () => null, // samtale opprettes lazy av API

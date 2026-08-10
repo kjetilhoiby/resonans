@@ -1467,6 +1467,26 @@ export const webPushSubscriptions = pgTable('web_push_subscriptions', {
 	idxUserId: index('web_push_subscriptions_user_id_idx').on(table.userId)
 }));
 
+// Cache for LLM-vurderingen av en økt — se
+// docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md.
+//
+// `contextHash` er hashen av konteksten som gikk inn i prompten. Lander
+// Ekko-analysen etterpå, flytter et mål seg, eller reberegnes effort, endres
+// hashen og vurderingen skrives på nytt. En cache uten den ville låst inne en
+// vurdering fra før halvparten av dataene fantes.
+export const workoutAssessments = pgTable('workout_assessments', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	sensorEventId: uuid('sensor_event_id').notNull(),
+	assessment: text('assessment').notNull(),
+	model: text('model'),
+	contextHash: text('context_hash').notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserEvent: unique('workout_assessments_user_event_idx').on(table.userId, table.sensorEventId)
+}));
+
 // Bokføring av hvilke øktvarsler som er sendt — se
 // docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md.
 //

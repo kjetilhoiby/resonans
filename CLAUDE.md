@@ -729,6 +729,44 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
 
+### Øktvurderingen: terreng fra sporet, navn fra Ekko
+
+Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten bygges
+rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
+`$lib/server/workouts/workout-assessment.ts`.
+
+- **Serveren finner geometri, Ekko eier navnene.** `detectClimbs`/`detectLaps`
+  (`workout-terrain.ts`) finner at det ligger en stigning fra km 2,1 til km 2,6.
+  At den heter «Dreperen» kan bare komme fra appen — og for **strekk** er det umulig
+  i prinsippet: Ekkos `RunFeature` sier selv at et strekk «finnes i historikken og i
+  hodet». Kontrakten står i `docs/ekko-oktanalyse.md`, parseren i
+  `workout-analysis.ts`.
+- **Historikken sendes MED fra Ekko.** Vi har ikke feature-historikken og kan ikke
+  regne medianen selv. Differansen skrives dessuten ferdig ut i konteksten
+  («12 s raskere enn medianen din») — en modell som må regne selv regner av og til feil.
+- **Medianen holder dagens økt utenfor**, både for features og runder, av samme
+  grunn som HRV-baselinen holder siste natt utenfor sin egen.
+- **`MIN_CLIMB_GAIN_M` (10) er et støygulv, ikke en preferanse.** Barometerløse
+  telefoner spriker 5–10 m i ro. Høyde glattes over **distanse**, ikke punkter: et
+  spor har tettere punkter når man går sakte, så et punktvindu glatter hardest i
+  bakkene. `CLIMB_DIP_TOLERANCE_M` finnes fordi en lang bakke med platå ellers ble
+  tre korte. Én runde rapporteres ikke — det er en tur som endte der den startet.
+- **Enheten følger idretten, ett sted:** `formatPaceOrSpeed` i
+  `$lib/utils/activity-metrics`. Prompten hardkodet «/km» fram til august 2026 og
+  ga «tempo 3:08/km» på en sykkeltur der kortet over sa «19,1 km/t».
+- **Måltall leses fra `sensor_goals`, aldri fra måltittelen.** `currentValue`,
+  `targetValue`, `baselineValue` og `unit` har ligget der hele tiden; vurderingen
+  leste dem aldri, og ga «redusere vekten til 85 kg og 95 kg». `goal-horizon.ts`
+  eier både progresjonen og kort/lang-inndelingen. Nedadgående mål måles fra
+  `baselineValue` — uten den vet vi ikke om 88 kg er nesten i mål eller nettopp begynt.
+- **Rådet er betinget.** «Avslutt med ett enkelt råd» tvang fram «løp mer» på hver
+  eneste økt. «Ingenting å endre» er et gyldig svar.
+- **Cachen hviler på `context_hash`**, som dekker konteksten *og* systemprompten.
+  Lander Ekko-analysen etterpå eller endrer vi instruksene, skrives vurderingen om.
+  Uten den ville cachen låst inne en vurdering fra før halvparten av dataene fantes.
+- **Chatten på økta får samme kontekst som vurderingen** — siden bygde tidligere sitt
+  eget vedlegg, med samme «/km»-feil.
+
 ### Withings-backfill
 
 Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
