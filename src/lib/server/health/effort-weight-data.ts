@@ -83,8 +83,24 @@ export async function buildEffortWeightInputs(
 		if (row.day >= sevenDaysAgo) rolling7dEffort += effort;
 	}
 
+	/**
+	 * Første dagen vi HAR øktdata for. Uker før denne har ingen økter fordi ingen
+	 * kilde skrev dem — ikke fordi brukeren hvilte.
+	 *
+	 * Skillet var usynlig så lenge vekt- og økthistorikken startet samtidig
+	 * (oktober 2017). HealthKit-backfillen brøt det: vekt går nå tilbake til 2014,
+	 * og uten gulvet her ble hver uke i mellomrommet et regresjonspunkt som sa
+	 * «stort vekttap ved null trening». Se
+	 * docs/changelog/2026-08-09-effort-uten-oektdata.md.
+	 */
+	const firstEffortDay = effortRows.reduce<string | null>(
+		(min, row) => (min === null || row.day < min ? row.day : min),
+		null
+	);
+	const effortFloorWeek = firstEffortDay ? mondayOfDate(firstEffortDay) : null;
+
 	// Sammenhengende ukeliste fra vinduets start til nå — uker uten økter er
-	// reelle hvileuker (effort 0), ikke manglende data.
+	// reelle hvileuker (effort 0) SÅ LENGE vi har øktdata for perioden.
 	const weeks: WeeklyEffortWeightInput[] = [];
 	const firstMonday = mondayOfDate(windowStart.toISOString().slice(0, 10));
 	const lastMonday = mondayOfDate(now.toISOString().slice(0, 10));
@@ -99,7 +115,10 @@ export async function buildEffortWeightInputs(
 			weekKey,
 			weightAvg: weights.length > 0 ? weights.reduce((a, b) => a + b, 0) / weights.length : null,
 			weighInCount: weights.length,
-			effort: Math.round((effortByWeek.get(weekKey) ?? 0) * 10) / 10
+			effort: Math.round((effortByWeek.get(weekKey) ?? 0) * 10) / 10,
+			// Ingen øktkilde i det hele tatt: da er ingen uke kjent, og modellen
+			// skal ikke fitte på noe.
+			effortKnown: effortFloorWeek !== null && weekKey >= effortFloorWeek
 		});
 	}
 
