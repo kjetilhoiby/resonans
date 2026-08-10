@@ -54,8 +54,31 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
 - Generelle UI-elementer hører i `ui/`, domene-spesifikke i `domain/`, sammensatte i `composed/`.
 - Eksporter nye ui-komponenter fra `src/lib/components/ui/index.ts`.
 
-**En chat-tråd rendres ALLTID med `ui/ChatMessages.svelte`**, aldri med en egen
-`{#each}`-løkke over `TriageCard`. Se
+**Chat-flatene deler fire lag. Skriv aldri et femte.** Se
+`docs/changelog/2026-08-10-chat-konsolidering.md`.
+
+| Lag | Fil | Eier |
+|-----|-----|------|
+| Sending/strømming | `client/chat-state.svelte.ts` | tilstand, avbrudd, watchdog, retry, kø |
+| Historikk | samme (`hydrate`/`loadThread`/`loadOlder`) | endepunkt, markør, deduplisering |
+| Meldingsruten | `ui/ChatThread.svelte` | scroll, bunnforankring, hent-ved-scroll-opp |
+| Meldingene | `ui/ChatMessages.svelte` | bobler, kort, stjerne, retry |
+
+- **Ingen flate skriver sin egen SSE-løkke.** Tre gjorde det til august 2026 (bok, film
+  ×2) — 35 linjer hver, med `streamProxyChat` rett ved siden av. De var ikke spesielle;
+  de var skrevet før `ChatState` fantes. Nye særtrekk hører i krokene:
+  `onAssistantMessage` (etterbehandle svaret), `onPayload`, `systemPrompt` som funksjon,
+  og `SendOptions.displayText` når boblen og prompten skal si ulike ting.
+- **`ChatThread` tar primitiver, ikke en ChatState.** Flyt og lønnsmåned holder tråden
+  sin utenfor (serialisert i `flowData`, eller per steg) og må kunne bruke pana likevel.
+- **`class` på en komponent treffer ikke scoped CSS.** `class="min-ramme"` på
+  `<ChatThread>` lander på et element i en annen komponent, så `.min-ramme { }` i
+  forelderen matcher ikke. Bruk `:global(.min-ramme)`. Stille feil — ingen advarsel.
+- `initialMessages` finnes på bok/film-fanene bare for `/design`: galleriet mocker
+  nettverket gjennom `api`-propen, og tråd-lastingen går forbi den.
+
+**En chat-tråd rendres ALLTID med `ui/ChatMessages.svelte`** (gjennom `ChatThread`),
+aldri med en egen `{#each}`-løkke over `TriageCard`. Se
 `docs/changelog/2026-08-10-chatmessages-paa-alle-flater.md`.
 
 - Sju flater hadde fem ulike duplikater fram til august 2026, og hver manglet noe ulikt:

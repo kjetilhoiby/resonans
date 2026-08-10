@@ -25,6 +25,8 @@ export { default as StreakCard } from './StreakCard.svelte';
 export { default as ChipStrip } from './ChipStrip.svelte';
 export { default as ChatBubble } from './ChatBubble.svelte';
 export { default as ChatInput } from './ChatInput.svelte';
+export { default as ChatMessages } from './ChatMessages.svelte';
+export { default as ChatThread } from './ChatThread.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as ChecklistCheckbox } from './ChecklistCheckbox.svelte';
 export { default as ChecklistItemRow } from './ChecklistItemRow.svelte';

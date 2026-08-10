@@ -7,6 +7,14 @@
  */
 
 import { streamProxyChat } from './proxy-chat-stream';
+import { extractApiErrorMessage } from './api-error';
+import {
+	displayRows,
+	oldestCursor,
+	threadRowToMessage,
+	dedupePrepend,
+	type ThreadRow
+} from './chat-thread-rows';
 import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -43,6 +51,12 @@ export interface ChatMessage {
 	eventCard?: ChatEventCard | null;
 	/** Kilde-kort fra web_search (bunnpanel med kilder, bilder og evt. kart). */
 	researchCard?: ResearchCard | null;
+}
+
+/** Ekstra valg per sending. */
+export interface SendOptions {
+	/** Teksten som VISES i brukerboblen når den skiller seg fra det modellen får. */
+	displayText?: string;
 }
 
 export interface ChatStateOptions {
@@ -94,10 +108,25 @@ export class ChatState {
 	lastUserText = $state('');
 	lastUserMsgId = $state('');
 
+	/** Finnes det eldre meldinger enn den første i `messages`? */
+	hasMore = $state(false);
+	/** Er en side med eldre meldinger på vei inn nå? */
+	loadingOlder = $state(false);
+	/** Feil fra historikk-henting. Holdes atskilt fra `error`, som gjelder svaret. */
+	historyError = $state('');
+	// Tidsstempelet til den eldste RÅ raden vi har hentet — markøren neste side hentes
+	// før. Serveren oppgir den i `X-Oldest-Cursor` nettopp fordi svaret er filtrert.
+	#oldestCursor: string | null = null;
+
 	// Kø for en melding som sendes mens en strøm pågår. Lagrer hele payloaden
 	// (tekst + bilde + vedlegg) slik at f.eks. to bilder rett etter hverandre begge
 	// får svar, i rekkefølge — i stedet for at det andre kortslutter det første.
-	#pendingSend: { text: string; imageUrl?: string; attachment?: unknown } | null = null;
+	#pendingSend: {
+		text: string;
+		imageUrl?: string;
+		attachment?: unknown;
+		opts?: SendOptions;
+	} | null = null;
 	#abortController: AbortController | null = null;
 	#isFirstMessage = true;
 	#opts: ChatStateOptions;
@@ -115,10 +144,114 @@ export class ChatState {
 	 *  Romslig nok til at en treg gpt-5.4-generering ikke trigger den. */
 	static ACTIVITY_TIMEOUT_MS = 60_000;
 
+	/** Meldinger per side ved lasting oppover. */
+	static HISTORY_PAGE_SIZE = 20;
+
 	constructor(opts: ChatStateOptions) {
 		this.#opts = opts;
 		if (opts.conversationId !== undefined) {
 			this.conversationId = opts.conversationId ?? null;
+		}
+	}
+
+	/**
+	 * Fyll tråden med en ferdig hentet side.
+	 *
+	 * `rows` er RÅ rader — system-meldinger og alt. Filtreringen skjer her, og markøren
+	 * settes fra den ufiltrerte lista, slik at neste side ikke henter dem om igjen.
+	 * `cursor` overstyrer når kilden vet bedre (endepunktets `X-Oldest-Cursor`).
+	 */
+	hydrate(rows: ThreadRow[], opts: { hasMore?: boolean; cursor?: string | null } = {}) {
+		this.messages = displayRows(rows).map(threadRowToMessage);
+		this.hasMore = opts.hasMore ?? false;
+		this.#oldestCursor = opts.cursor !== undefined ? opts.cursor : oldestCursor(rows);
+		this.historyError = '';
+		this.error = '';
+	}
+
+	/**
+	 * Bytt til en samtale og hent SISTE side av den.
+	 *
+	 * Uten `limit` returnerer endepunktet hele tråden, og en lang samtale åpner på sin
+	 * egen begynnelse — det var symptomet «jeg kommer alltid til eldste melding».
+	 * Returnerer en feilmelding, eller null når det gikk bra.
+	 */
+	async loadThread(
+		conversationId: string,
+		pageSize: number = ChatState.HISTORY_PAGE_SIZE
+	): Promise<string | null> {
+		this.setConversationId(conversationId);
+		this.loadingOlder = true;
+		try {
+			const res = await fetch(
+				`/api/conversations/${conversationId}/messages?limit=${pageSize}`
+			);
+			if (!res.ok) {
+				const message = `Kunne ikke laste samtalen. ${extractApiErrorMessage(
+					res.status,
+					await res.text()
+				)}`;
+				this.historyError = message;
+				return message;
+			}
+			const rows = (await res.json()) as ThreadRow[];
+			this.hydrate(rows, {
+				hasMore: res.headers.get('X-Has-More') === '1',
+				cursor: res.headers.get('X-Oldest-Cursor') || oldestCursor(rows)
+			});
+			return null;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Kunne ikke laste samtalen.';
+			this.historyError = message;
+			return message;
+		} finally {
+			this.loadingOlder = false;
+		}
+	}
+
+	/**
+	 * Hent forrige side og legg den på toppen. Returnerer antall meldinger som faktisk
+	 * ble lagt til, slik at kalleren vet om scroll-posisjonen må kompenseres.
+	 *
+	 * Kalleren måler høyden FØR og gjenoppretter etter — se `ChatThread.svelte`, som
+	 * gjør begge deler så ingen flate trenger å huske dansen.
+	 */
+	async loadOlder(pageSize: number = ChatState.HISTORY_PAGE_SIZE): Promise<number> {
+		if (this.loadingOlder || !this.hasMore || !this.#oldestCursor || !this.conversationId) {
+			return 0;
+		}
+		this.loadingOlder = true;
+		this.historyError = '';
+		try {
+			const res = await fetch(
+				`/api/conversations/${this.conversationId}/messages` +
+					`?before=${encodeURIComponent(this.#oldestCursor)}&limit=${pageSize}`
+			);
+			if (!res.ok) {
+				this.historyError = `Kunne ikke laste eldre meldinger. ${extractApiErrorMessage(
+					res.status,
+					await res.text()
+				)}`;
+				return 0;
+			}
+			const older = (await res.json()) as ThreadRow[];
+			const cursor = res.headers.get('X-Oldest-Cursor');
+			this.hasMore = res.headers.get('X-Has-More') === '1' && older.length > 0;
+			// Serverens markør vinner. Faller vi tilbake på svaret, er den eldste VISTE
+			// raden det beste vi har — da kan system-meldinger foran den hentes om igjen.
+			this.#oldestCursor = cursor || oldestCursor(older) || this.#oldestCursor;
+			if (older.length === 0) return 0;
+
+			const prepend = dedupePrepend(this.messages, older.map(threadRowToMessage));
+			if (prepend.length === 0) return 0;
+			this.messages = [...prepend, ...this.messages];
+			return prepend.length;
+		} catch (err) {
+			this.historyError =
+				err instanceof Error ? err.message : 'Kunne ikke laste eldre meldinger.';
+			return 0;
+		} finally {
+			this.loadingOlder = false;
 		}
 	}
 
@@ -137,6 +270,11 @@ export class ChatState {
 	setConversationId(id: string | null) {
 		this.conversationId = id;
 		this.#isFirstMessage = true;
+		// Markøren tilhørte forrige tråd. Uten dette ville lasting oppover i den nye
+		// samtalen hentet «før» et tidspunkt fra en helt annen samtale.
+		this.hasMore = false;
+		this.#oldestCursor = null;
+		this.historyError = '';
 	}
 
 	/** Tøm meldingslisten og avbryt en eventuell pågående strøm (f.eks. ved nytt steg i FlowSheet). */
@@ -201,13 +339,16 @@ export class ChatState {
 		return text;
 	}
 
-	async send(text: string, imageUrl?: string, attachment?: unknown) {
-		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
+	async send(text: string, imageUrl?: string, attachment?: unknown, opts?: SendOptions) {
+		// Boblen og prompten er ikke alltid samme tekst: bok-chatten viser «🎵 Lydklipp»
+		// mens modellen får hele transkripsjonen. `promptText` er det som sendes.
+		const displayText = opts?.displayText ?? text ?? (imageUrl ? '📷 [Bilde]' : '');
+		const promptText = text || displayText || (imageUrl ? '📷 [Bilde]' : '');
 
 		// Kø alt (også bilder/vedlegg) mens en strøm pågår, så hver melding får sitt
 		// eget svar i rekkefølge. Lagre rå-input; displayText utledes på nytt ved replay.
 		if (this.loading) {
-			this.#pendingSend = { text, imageUrl, attachment };
+			this.#pendingSend = { text, imageUrl, attachment, opts };
 			return;
 		}
 
@@ -250,7 +391,7 @@ export class ChatState {
 			let filmWasRouted = false;
 
 			const data = await streamProxyChat({
-				message: displayText,
+				message: promptText,
 				conversationId: this.conversationId,
 				// Kun aller første melding uten kjent samtale — deretter binder
 				// conversationId (bevares gjennom reset()) alle steg til samme samtale.
@@ -365,7 +506,7 @@ export class ChatState {
 				if (this.#pendingSend) {
 					const next = this.#pendingSend;
 					this.#pendingSend = null;
-					void this.send(next.text, next.imageUrl, next.attachment);
+					void this.send(next.text, next.imageUrl, next.attachment, next.opts);
 				}
 			}
 		}

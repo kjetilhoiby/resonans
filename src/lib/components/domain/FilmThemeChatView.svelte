@@ -1,14 +1,8 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import ChatMessages from '../ui/ChatMessages.svelte';
-	import { tick } from 'svelte';
+	import ChatThread from '../ui/ChatThread.svelte';
 	import { filmTabsApi, type FilmTabsApi, type Film } from './film-api';
-	import type { ChatMessage } from '$lib/client/chat-state.svelte';
-
-	interface ChatMsg {
-		role: 'user' | 'assistant';
-		text: string;
-	}
+	import { ChatState } from '$lib/client/chat-state.svelte';
 
 	interface Props {
 		themeId: string;
@@ -23,50 +17,19 @@
 
 	let { themeId, themeName, conversationId, films, onBack, api = filmTabsApi }: Props = $props();
 
-	let messages = $state<ChatMsg[]>([]);
+	// Egen SSE-løkke og egen tråd fram til august 2026.
+	const chat = new ChatState({
+		conversationId,
+		systemPrompt: () => buildSystemPrompt()
+	});
+
 	let loaded = $state(false);
-	let chatLoading = $state(false);
-	let chatError = $state('');
-	let streamingText = $state('');
-	let streamingStatus = $state('');
-
-	/* Tema-tråden holdes lokalt som `ChatMsg[]` (rolle + tekst, uten id).
-	   Oversettes til `ChatMessage` for den delte lista. */
-	const uiMessages = $derived<ChatMessage[]>(
-		messages.map((m, i) => ({ id: `filmtema-${i}`, role: m.role, text: m.text, starred: false }))
-	);
-	let messagesEl = $state<HTMLDivElement | null>(null);
-
-	function scrollToBottom() {
-		tick().then(() => {
-			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
-		});
-	}
 
 	$effect(() => {
-		if (!loaded) void loadHistory();
-	});
-
-	$effect(() => {
-		if (messagesEl && (loaded || streamingText)) scrollToBottom();
-	});
-
-	async function loadHistory() {
-		if (conversationId) {
-			try {
-				const res = await fetch(`/api/conversations/${conversationId}/messages`);
-				if (res.ok) {
-					const data: Array<{ role: string; content: string }> = await res.json();
-					messages = data
-						.filter((m) => m.role !== 'system')
-						.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.content }));
-				}
-			} catch {
-				/* ignore */
-			}
-		}
+		if (loaded) return;
 		loaded = true;
-	}
+		if (conversationId) void chat.loadThread(conversationId);
+	});
 
 	function buildSystemPrompt(): string {
 		const watched = films.filter((f) => f.status === 'watched');
@@ -116,59 +79,8 @@ Når brukeren vil prate om en film de har sett:
 	}
 
 	async function send(text: string) {
-		if (!text.trim() || chatLoading) return;
-		messages = [...messages, { role: 'user', text }];
-		scrollToBottom();
-		chatLoading = true;
-		chatError = '';
-		streamingText = '';
-		streamingStatus = 'Starter…';
-
-		try {
-			const body: Record<string, unknown> = {
-				mode: 'proxy',
-				message: text,
-				conversationId,
-				routing: {},
-				systemPrompt: buildSystemPrompt(),
-				messages: []
-			};
-			const response = await api.streamChatMessages(body);
-			if (!response.ok || !response.body) throw new Error('Streaming feilet');
-
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let finalPayload: Record<string, unknown> | null = null;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				for (let i = 0; i < lines.length - 1; i++) {
-					const line = lines[i].trim();
-					if (!line.startsWith('data: ')) continue;
-					const event = JSON.parse(line.slice(6));
-					if (event.type === 'status') streamingStatus = event.data?.message ?? '';
-					else if (event.type === 'token') {
-						streamingStatus = '';
-						streamingText += event.data?.token ?? '';
-					} else if (event.type === 'complete') finalPayload = event.data;
-				}
-				buffer = lines[lines.length - 1];
-			}
-
-			const raw = (finalPayload as { message?: string })?.message ?? streamingText;
-			messages = [...messages, { role: 'assistant', text: raw }];
-			scrollToBottom();
-		} catch {
-			chatError = 'Noe gikk galt. Prøv igjen.';
-		} finally {
-			streamingText = '';
-			streamingStatus = '';
-			chatLoading = false;
-		}
+		if (!text.trim() || chat.loading) return;
+		await chat.send(text);
 	}
 </script>
 
@@ -178,10 +90,24 @@ Når brukeren vil prate om en film de har sett:
 		<h1 class="fl-tchat-title">💬 Prat om film</h1>
 	</div>
 
-	<div class="fl-tchat-messages" bind:this={messagesEl} aria-live="polite">
-		{#if !loaded}
-			<p class="fl-empty">Laster…</p>
-		{:else if messages.length === 0}
+	<ChatThread
+		class="fl-tchat-messages"
+		messages={chat.messages}
+		streamingText={chat.streamingText}
+		streamingSteps={chat.streamingSteps}
+		loading={chat.loading}
+		stopped={chat.stopped}
+		stoppedText={chat.stoppedText}
+		error={chat.error}
+		lastUserMsgId={chat.lastUserMsgId}
+		loadingHistory={!loaded}
+		hasMore={chat.hasMore}
+		loadingOlder={chat.loadingOlder}
+		historyError={chat.historyError}
+		onLoadOlder={() => chat.loadOlder()}
+		onRetry={() => chat.retry()}
+	>
+		{#snippet empty()}
 			<div class="fl-tchat-intro">
 				<p>Spør om anbefalinger eller start en prat om en film du har sett.</p>
 				<div class="fl-tchat-suggestions">
@@ -189,16 +115,16 @@ Når brukeren vil prate om en film de har sett:
 					<button onclick={() => send('Foreslå en regissør jeg burde utforske')}>En regissør å utforske</button>
 				</div>
 			</div>
-		{/if}
-		<ChatMessages
-			messages={uiMessages}
-			streamingText={streamingText}
-			loading={chatLoading}
-			error={chatError}
-		/>
-	</div>
+		{/snippet}
+	</ChatThread>
 
-	<ChatInput placeholder="Snakk om film…" disabled={chatLoading} onsubmit={(msg) => send(msg)} />
+	<ChatInput
+		placeholder="Snakk om film…"
+		disabled={chat.loading}
+		streaming={chat.loading}
+		onStop={() => chat.stop()}
+		onsubmit={(msg) => send(msg)}
+	/>
 </div>
 
 <style>
@@ -230,16 +156,12 @@ Når brukeren vil prate om en film de har sett:
 		font-size: 1rem;
 		color: var(--film-text-primary, #eee);
 	}
-	.fl-tchat-messages {
-		flex: 1;
+	:global(.fl-tchat-messages) {
 		overflow-y: scroll;
 		-webkit-overflow-scrolling: touch;
 		overscroll-behavior: contain;
 		touch-action: pan-y;
 		padding: 12px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
 	}
 	.fl-tchat-intro {
 		color: var(--film-text-tertiary, #7a6a6a);
@@ -266,11 +188,5 @@ Når brukeren vil prate om en film de har sett:
 		color: var(--film-accent-text, #ffcaa0);
 		border-radius: 99px;
 		cursor: pointer;
-	}
-	.fl-empty {
-		color: var(--film-text-tertiary, #7a6a6a);
-		font-size: 0.85rem;
-		text-align: center;
-		padding: 24px 16px;
 	}
 </style>

@@ -664,8 +664,7 @@ export const mockBookTabsApi: BookTabsApi = {
 	deleteClip: async () => {},
 	refreshContext: async () => new Response(JSON.stringify({ action: 'requeued' })),
 	uploadImage: async () => new Response(JSON.stringify({})),
-	transcribe: async () => new Response(JSON.stringify({})),
-	streamChatMessages: async () => new Response('')
+	transcribe: async () => new Response(JSON.stringify({}))
 };
 
 export const bookWithPackMock: Book = {

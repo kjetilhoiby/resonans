@@ -170,7 +170,6 @@ export interface FilmTabsApi {
 	deleteClip(themeId: string, filmId: string, clipId: string): Promise<void>;
 	refreshContext(themeId: string, filmId: string): Promise<Response>;
 	/** Streamer chat-svar (SSE) — komponenten leser response.body selv. */
-	streamChatMessages(body: unknown): Promise<Response>;
 }
 
 export const filmTabsApi: FilmTabsApi = {
@@ -210,13 +209,5 @@ export const filmTabsApi: FilmTabsApi = {
 
 	refreshContext(themeId, filmId) {
 		return fetch(`/api/tema/${themeId}/films/${filmId}/refresh-context`, { method: 'POST' });
-	},
-
-	streamChatMessages(body) {
-		return fetch('/api/chat-stream-messages', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
 	}
 };

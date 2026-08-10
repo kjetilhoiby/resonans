@@ -4,24 +4,15 @@
 -->
 <script lang="ts">
 	import ChatInput from '../../ui/ChatInput.svelte';
-	import ChatMessages from '../../ui/ChatMessages.svelte';
+	import ChatThread from '../../ui/ChatThread.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import CollapsibleSection from '../../ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '../../ui/ConversationContextMenu.svelte';
 	import { ChatState } from '$lib/client/chat-state.svelte';
-	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import type { ThreadRow } from '$lib/client/chat-thread-rows';
 	import { uploadImage } from '$lib/client/upload-image';
-	import {
-		bottomAnchorKey,
-		isNearTop,
-		scrollTopAfterPrepend
-	} from '$lib/client/chat-scroll';
-	import { tick } from 'svelte';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { goto } from '$app/navigation';
-
-	/** Meldinger per side ved lasting oppover. Speiler `/samtaler`. */
-	const PAGE_SIZE = 20;
 	import { formatRelativeDay, formatWorkoutDistance, formatWorkoutDuration, formatWorkoutPace, formatWorkoutTimestamp } from '$lib/utils/format';
 
 	/* ── Types ──────────────────────────────────────────── */
@@ -33,15 +24,6 @@
 		archived: boolean;
 		updatedAt: string;
 		createdAt: string;
-	}
-
-	/** Rad slik endepunktene og siden-loaderen leverer den. */
-	interface ThreadMessage {
-		id?: string;
-		role: string;
-		content: string;
-		imageUrl?: string | null;
-		timestamp?: string;
 	}
 
 	interface SelectedWorkout {
@@ -68,7 +50,7 @@
 		themeEmoji: string | null;
 		conversationId: string;
 		conversations: ThemeConversation[];
-		initialMessages: ThreadMessage[];
+		initialMessages: ThreadRow[];
 		/** Finnes det eldre meldinger enn `initialMessages`? */
 		hasMoreMessages?: boolean;
 		selectedWorkout?: SelectedWorkout | null;
@@ -98,21 +80,6 @@
 	}: Props = $props();
 
 	/* ── Chat state ────────────────────────────────────── */
-	// DB-id-en beholdes som `id` når den finnes: paginering oppover må kunne
-	// deduplisere mot det som alt ligger i tråden, og en fersk uuid per lasting
-	// ville gjort hver melding unik uansett hvor mange ganger den ble hentet.
-	function toMsg(m: ThreadMessage): ChatMessage {
-		return {
-			id: m.id ?? crypto.randomUUID(),
-			dbId: m.id ?? null,
-			role: m.role as 'user' | 'assistant',
-			text: m.content,
-			starred: false,
-			createdAt: m.timestamp ?? null,
-			imageUrl: m.imageUrl ?? null
-		};
-	}
-
 	const canonChat = new ChatState({
 		conversationId,
 		onPayload: async (data) => {
@@ -124,9 +91,9 @@
 			}
 		}
 	});
-	canonChat.messages = initialMessages
-		.filter((m) => m.role !== 'system')
-		.map(toMsg);
+	// hydrate() filtrerer system-meldinger og setter pagineringsmarkøren fra den
+	// UFILTRERTE lista — se `chat-thread-rows.ts`.
+	canonChat.hydrate(initialMessages, { hasMore: hasMoreMessages });
 
 	const extraChat = new ChatState({});
 
@@ -154,83 +121,6 @@
 	});
 
 	const activeConversationMessages = $derived(activeChat.messages);
-
-	/* ── Historikk: åpne ved siste melding, hent eldre ved scroll opp ──────── */
-	let messagesEl = $state<HTMLDivElement | null>(null);
-	let loadingOlder = $state(false);
-
-	/* Pagineringen holdes per tråd, ikke som én delt markør. Fanen har to
-	   ChatState-er — temaets egen samtale og «den andre» — og hopper man fram og
-	   tilbake, ville én markør latt den ene tråden arve den andres posisjon.
-	   `cursor` er tidsstempelet til den eldste lastede meldingen. */
-	interface PageCursor {
-		more: boolean;
-		cursor: string | null;
-	}
-	let canonPage = $state<PageCursor>({
-		more: hasMoreMessages,
-		cursor: initialMessages[0]?.timestamp ?? null
-	});
-	let extraPage = $state<PageCursor>({ more: false, cursor: null });
-	const activePage = $derived(selectedConvId === conversationId ? canonPage : extraPage);
-
-	// Hold visningen ved bunnen. Nøkkelen ser bevisst IKKE på antall meldinger, så
-	// effekten ikke fyrer når eldre historikk prepend-es — se `chat-scroll.ts`.
-	const bottomKey = $derived(
-		bottomAnchorKey(
-			activeChat.messages.at(-1)?.id,
-			activeChat.streamingText.length,
-			activeChat.loading
-		)
-	);
-
-	$effect(() => {
-		bottomKey;
-		selectedConvId;
-		if (!messagesEl) return;
-		messagesEl.scrollTop = messagesEl.scrollHeight;
-	});
-
-	async function loadOlderMessages() {
-		const page = activePage;
-		if (!selectedConvId || loadingOlder || !page.more || !page.cursor || !messagesEl) return;
-		loadingOlder = true;
-		const el = messagesEl;
-		const before = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight };
-		try {
-			const res = await fetch(
-				`/api/conversations/${selectedConvId}/messages?before=${encodeURIComponent(page.cursor)}&limit=${PAGE_SIZE}`
-			);
-			if (!res.ok) {
-				navError = `Kunne ikke laste eldre meldinger. ${extractApiErrorMessage(res.status, await res.text())}`;
-				return;
-			}
-			const older = (await res.json()) as ThreadMessage[];
-			const more = res.headers.get('X-Has-More') === '1' && older.length > 0;
-			setActivePage({ more, cursor: older[0]?.timestamp ?? page.cursor });
-			if (older.length === 0) return;
-			const seen = new Set(activeChat.messages.map((m) => m.id));
-			const prepend = older.map(toMsg).filter((m) => !seen.has(m.id));
-			if (prepend.length === 0) return;
-			activeChat.messages = [...prepend, ...activeChat.messages];
-			// Bevar utsnittet: uten dette kastes brukeren bakover i historikken
-			// nøyaktig idet den ankommer.
-			await tick();
-			el.scrollTop = scrollTopAfterPrepend(before, el.scrollHeight);
-		} finally {
-			loadingOlder = false;
-		}
-	}
-
-	function setActivePage(next: PageCursor) {
-		if (selectedConvId === conversationId) canonPage = next;
-		else extraPage = next;
-	}
-
-	function onMessagesScroll() {
-		if (!messagesEl) return;
-		if (isNearTop(messagesEl) && activePage.more && !loadingOlder) void loadOlderMessages();
-	}
 
 	/* ── Bilde-opplasting til chat ─────────────────────── */
 	let chatImageUploading = $state(false);
@@ -301,34 +191,16 @@
 
 	async function openConversation(convId: string) {
 		if (convId === conversationId) {
-			// Temaets egen samtale beholder sin egen markør (canonPage) — den kan alt
-			// ha lastet eldre historikk, og skal ikke starte på nytt.
+			// Temaets egen samtale beholder sin egen ChatState — den kan alt ha lastet
+			// eldre historikk, og skal ikke starte på nytt.
 			selectedConvId = conversationId;
 			return;
 		}
 		convLoadingMessages = true;
-		try {
-			// Paginert modus: SISTE side, ikke hele tråden. Uten `limit` returnerer
-			// endepunktet alle meldingene, og en lang samtale åpner på sin begynnelse.
-			const res = await fetch(`/api/conversations/${convId}/messages?limit=${PAGE_SIZE}`);
-			if (!res.ok) {
-				throw new Error(
-					`Kunne ikke laste samtalen. ${extractApiErrorMessage(res.status, await res.text())}`
-				);
-			}
-			const data = (await res.json()) as ThreadMessage[];
-			extraChat.setConversationId(convId);
-			extraChat.messages = data.map(toMsg);
-			extraPage = {
-				more: res.headers.get('X-Has-More') === '1',
-				cursor: data[0]?.timestamp ?? null
-			};
-			selectedConvId = convId;
-		} catch (err) {
-			navError = err instanceof Error ? err.message : 'Kunne ikke laste samtalen.';
-		} finally {
-			convLoadingMessages = false;
-		}
+		const failure = await extraChat.loadThread(convId);
+		if (failure) navError = failure;
+		else selectedConvId = convId;
+		convLoadingMessages = false;
 	}
 
 	async function createNewConversation() {
@@ -337,9 +209,9 @@
 			const res = await fetch(`/api/tema/${themeId}/conversations`, { method: 'POST' });
 			if (!res.ok) throw new Error('Oppretting feilet');
 			const data: { conversationId: string } = await res.json();
+			// setConversationId nullstiller også markøren fra forrige tråd.
 			extraChat.setConversationId(data.conversationId);
 			extraChat.messages = [];
-			extraPage = { more: false, cursor: null };
 			selectedConvId = data.conversationId;
 		} catch {
 			navError = 'Kunne ikke opprette samtale.';
@@ -494,33 +366,25 @@
 			</section>
 		{/if}
 
-		<div
+		<ChatThread
 			class="chat-messages"
-			bind:this={messagesEl}
-			onscroll={onMessagesScroll}
-			aria-live="polite"
-			aria-label="Samtalehistorikk"
-		>
-			{#if loadingOlder}
-				<p class="chat-older-loading">Henter eldre meldinger…</p>
-			{/if}
-			{#if activeConversationMessages.length === 0}
-				<p class="chat-empty">Ingen meldinger ennå — start samtalen nedenfor.</p>
-			{/if}
-
-			<ChatMessages
-				messages={activeConversationMessages}
-				streamingText={activeChat.streamingText}
-				streamingSteps={activeChat.streamingSteps}
-				loading={activeChat.loading}
-				stopped={activeChat.stopped}
-				stoppedText={activeChat.stoppedText}
-				error={activeChat.error}
-				lastUserMsgId={activeChat.lastUserMsgId}
-				onRetry={() => activeChat.retry()}
-				onEditStopped={editStoppedMessage}
-			/>
-		</div>
+			messages={activeConversationMessages}
+			streamingText={activeChat.streamingText}
+			streamingSteps={activeChat.streamingSteps}
+			loading={activeChat.loading}
+			stopped={activeChat.stopped}
+			stoppedText={activeChat.stoppedText}
+			error={activeChat.error}
+			lastUserMsgId={activeChat.lastUserMsgId}
+			emptyText="Ingen meldinger ennå — start samtalen nedenfor."
+			loadingHistory={convLoadingMessages}
+			hasMore={activeChat.hasMore}
+			loadingOlder={activeChat.loadingOlder}
+			historyError={activeChat.historyError}
+			onLoadOlder={() => activeChat.loadOlder()}
+			onRetry={() => activeChat.retry()}
+			onEditStopped={editStoppedMessage}
+		/>
 
 		<div class="chat-input-wrap">
 			{#if chatImageUploading}
@@ -576,15 +440,9 @@
 		max-height: calc(100dvh - 160px);
 	}
 
-	.chat-messages {
-		flex: 1;
-		overflow-y: auto;
+	/* ChatThread eier scroll, retning og gap; her settes bare rammen. */
+	:global(.chat-messages) {
 		padding: 16px var(--page-px) 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		scrollbar-width: thin;
-		scrollbar-color: #222 transparent;
 	}
 
 	.chat-image-preview {
@@ -630,21 +488,6 @@
 		justify-content: center;
 		cursor: pointer;
 		padding: 0;
-	}
-
-	.chat-older-loading {
-		margin: 0 0 4px;
-		text-align: center;
-		font-size: 0.76rem;
-		color: #555;
-	}
-
-	.chat-empty {
-		color: #333;
-		font-size: 0.82rem;
-		text-align: center;
-		margin: auto;
-		font-style: italic;
 	}
 
 	.chat-error {

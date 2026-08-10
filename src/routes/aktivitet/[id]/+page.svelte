@@ -6,8 +6,7 @@
 	import KmSplitsTable from '$lib/components/charts/KmSplitsTable.svelte';
 	import HrDistributionBar from '$lib/components/charts/HrDistributionBar.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
-	import { tick } from 'svelte';
+	import ChatThread from '$lib/components/ui/ChatThread.svelte';
 	import { goto } from '$app/navigation';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import {
@@ -23,8 +22,6 @@
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
 	let tab = $state<Tab>('detaljer');
-
-	let messagesEl = $state<HTMLElement | null>(null);
 
 	// Skjul-økt-tilstand (to-stegs bekreftelse — backend setter metadata.dismissed)
 	let hiding = $state(false);
@@ -90,18 +87,13 @@
 		initialAttachment: { url: 'resonans://workout-context', kind: 'other' as const, contentText: workoutContextNote, note: 'Treningsøkt-kontekst' }
 	});
 
-	async function scrollToBottom() {
-		await tick();
-		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
-	}
-
 	let chatDraft = $state('');
 	let chatInputKey = $state(0);
 
 	async function sendMessage(text: string) {
+		// ChatThread forankrer ved bunnen selv når en melding kommer til.
 		chatDraft = '';
 		await chat.send(text);
-		await scrollToBottom();
 	}
 
 	// Stoppet svar: legg brukerens tekst tilbake i feltet. Nøkkelen remounter
@@ -316,23 +308,20 @@
 
 	<div class="chat-section">
 		<p class="chat-label">Chat</p>
-		<div class="chat-messages" bind:this={messagesEl} aria-live="polite">
-			{#if chat.messages.length === 0 && !chat.loading}
-				<p class="chat-empty">Spør om denne økten…</p>
-			{/if}
-			<ChatMessages
-				messages={chat.messages}
-				streamingText={chat.streamingText}
-				streamingSteps={chat.streamingSteps}
-				loading={chat.loading}
-				stopped={chat.stopped}
-				stoppedText={chat.stoppedText}
-				error={chat.error}
-				lastUserMsgId={chat.lastUserMsgId}
-				onRetry={() => chat.retry()}
-				onEditStopped={editStoppedMessage}
-			/>
-		</div>
+		<ChatThread
+			class="chat-messages"
+			messages={chat.messages}
+			streamingText={chat.streamingText}
+			streamingSteps={chat.streamingSteps}
+			loading={chat.loading}
+			stopped={chat.stopped}
+			stoppedText={chat.stoppedText}
+			error={chat.error}
+			lastUserMsgId={chat.lastUserMsgId}
+			emptyText="Spør om denne økten…"
+			onRetry={() => chat.retry()}
+			onEditStopped={editStoppedMessage}
+		/>
 		{#key chatInputKey}
 			<ChatInput
 				placeholder="Spør om denne økten…"
@@ -644,7 +633,7 @@
 		flex-shrink: 0;
 	}
 
-	.chat-messages {
+	:global(.chat-messages) {
 		flex: 1;
 		overflow-y: auto;
 		padding: 0.5rem 1rem;
@@ -652,12 +641,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-height: 0;
-	}
-
-	.chat-empty {
-		color: #444;
-		font-size: 0.85rem;
-		margin: 0.5rem 0;
 	}
 
 </style>

@@ -21,11 +21,6 @@
 	}
 	let { themeId, themeName = 'Film', themeEmoji = '🎬', themeConversationId = null }: Props = $props();
 
-	interface ChatMsg {
-		role: 'user' | 'assistant';
-		text: string;
-	}
-
 	/* ── Data ───────────────────────────────────────────── */
 	let films = $state<Film[]>([]);
 	let lists = $state<FilmList[]>([]);
@@ -42,8 +37,6 @@
 	let selectedList = $state<FilmList | null>(null);
 
 	/* ── Chat ───────────────────────────────────────────── */
-	let chatMessages = $state<ChatMsg[]>([]);
-	let chatMessagesLoaded = $state(false);
 
 	$effect(() => {
 		if (!loaded) void loadAll();
@@ -78,30 +71,12 @@
 		selectedFilm = film;
 		view = 'film';
 		filmTab = 'chat';
-		chatMessages = [];
-		chatMessagesLoaded = false;
-
-		if (film.conversationId) {
-			try {
-				const res = await fetch(`/api/conversations/${film.conversationId}/messages`);
-				if (res.ok) {
-					const data: Array<{ role: string; content: string }> = await res.json();
-					chatMessages = data
-						.filter((m) => m.role !== 'system')
-						.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.content }));
-				}
-			} catch {
-				/* ignore */
-			}
-		}
-		chatMessagesLoaded = true;
-
+		// Tråden lastes av FilmChatTab gjennom ChatState — SISTE side, ikke hele samtalen.
 		if (film.contextStatus === 'pending') void pollContextStatus(film.id);
 	}
 
 	function closeFilm() {
 		selectedFilm = null;
-		chatMessages = [];
 		view = 'library';
 	}
 
@@ -144,9 +119,6 @@
 	function handleFilmDeleted(filmId: string) {
 		films = films.filter((f) => f.id !== filmId);
 		closeFilm();
-	}
-	function handleChatMessage(msg: ChatMsg) {
-		chatMessages = [...chatMessages, msg];
 	}
 	function handleFilmAdded(film: Film) {
 		films = [...films, film];
@@ -219,9 +191,6 @@
 			<FilmChatTab
 				{themeId}
 				film={selectedFilm}
-				{chatMessages}
-				{chatMessagesLoaded}
-				onChatMessage={handleChatMessage}
 			/>
 		{:else if filmTab === 'klipp'}
 			<FilmClipsTab {themeId} film={selectedFilm} />

@@ -89,11 +89,13 @@
 			themeId="demo"
 			book={bookMock}
 			clips={bookClipsMock}
-			chatMessages={bookChatMessagesMock}
-			chatMessagesLoaded={true}
+			initialMessages={bookChatMessagesMock.map((m, i) => ({
+				id: `mock-${i}`,
+				role: m.role,
+				content: m.text
+			}))}
 			onAutoProgress={noop}
 			onClipAdded={noop}
-			onChatMessage={noop}
 			api={mockBookTabsApi}
 		/>
 	</div>
