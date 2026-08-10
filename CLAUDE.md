@@ -729,6 +729,32 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
 
+### Krydderet telles per aktivitet, aldri på tvers
+
+Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
+`$lib/domain/health/workout-nugget-rules.ts`, aktivitetstypen i
+`workout-activity-kind.ts`.
+
+- **Streak og telling er per aktivitetstype.** Fram til august 2026 pooler de alt:
+  elsykkel mandag + løpetur tirsdag + gåtur onsdag ga «3 dager på rad», som ikke
+  er en vane man har bygget. Nå: «Løpt 4 dager på rad», «Elsykkeltur nr. 50 i år».
+- **`workoutActivityKind` er et TREDJE grupperingsvokabular, med vilje.**
+  `workoutSportFamily` folder `e_bike` inn i `cycling` (riktig når man teller
+  kilometer, galt for krydder), og `describeWorkoutSportType` gjør det samme —
+  og er dessuten en visningsstreng, som er en skjør gruppenøkkel. Motsatt vei
+  må `trail_running`/`indoor_running` slås SAMMEN med `running`.
+- **Årsmilepæler bare på runde tall.** «Nr. 37 i år» er ikke en nyhet, og krydder
+  på hver tur blir bakgrunnsstøy — som blir slått av.
+- **Tempo-rekord bare for løping.** På sykkel avgjøres farten av terreng, vind og
+  motor.
+- **Historikken leses gjennom `buildUnifiedWorkoutActivities`.** Modulen lå i
+  `knownRawReaders` og telte derfor én tur som tre — «3. økt denne uka» kunne
+  være én tur fra klokka, Dropbox og Ekko.
+- **Egen økt kjennes igjen på evidence-ideene**, ikke på `activityId`: klyngens id
+  er dens eldste kilde og trenger ikke være raden du ble kalt med.
+- `e_bike` har egen tittel («Elsykkeltur»), ikke «Sykkeløkt». Den har egen
+  MET-verdi, egen effort-faktor og eget krydder-regnskap.
+
 ### Øktvurderingen: terreng fra sporet, navn fra Ekko
 
 Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten bygges
