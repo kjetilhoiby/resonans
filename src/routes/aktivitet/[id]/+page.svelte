@@ -6,7 +6,7 @@
 	import KmSplitsTable from '$lib/components/charts/KmSplitsTable.svelte';
 	import HrDistributionBar from '$lib/components/charts/HrDistributionBar.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ChatState } from '$lib/client/chat-state.svelte';
@@ -95,9 +95,20 @@
 		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
 	}
 
+	let chatDraft = $state('');
+	let chatInputKey = $state(0);
+
 	async function sendMessage(text: string) {
+		chatDraft = '';
 		await chat.send(text);
 		await scrollToBottom();
+	}
+
+	// Stoppet svar: legg brukerens tekst tilbake i feltet. Nøkkelen remounter
+	// ChatInput, ellers ser ikke `initialValue`-effekten en uendret tekst.
+	function editStoppedMessage() {
+		chatDraft = chat.editStopped();
+		chatInputKey++;
 	}
 
 	// Formatters
@@ -309,26 +320,29 @@
 			{#if chat.messages.length === 0 && !chat.loading}
 				<p class="chat-empty">Spør om denne økten…</p>
 			{/if}
-			{#each chat.messages as msg (msg.id)}
-				{#if msg.role === 'user'}
-					<div class="bubble-user">{msg.text}</div>
-				{:else}
-					<TriageCard text={msg.text} />
-				{/if}
-			{/each}
-			{#if chat.loading}
-				{#if chat.streamingText}
-					<TriageCard text={chat.streamingText} streaming={true} />
-				{:else}
-					<TriageCard loading={true} steps={chat.streamingSteps} />
-				{/if}
-			{/if}
+			<ChatMessages
+				messages={chat.messages}
+				streamingText={chat.streamingText}
+				streamingSteps={chat.streamingSteps}
+				loading={chat.loading}
+				stopped={chat.stopped}
+				stoppedText={chat.stoppedText}
+				error={chat.error}
+				lastUserMsgId={chat.lastUserMsgId}
+				onRetry={() => chat.retry()}
+				onEditStopped={editStoppedMessage}
+			/>
 		</div>
-		<ChatInput
-			placeholder="Spør om denne økten…"
-			disabled={chat.loading}
-			onsubmit={sendMessage}
-		/>
+		{#key chatInputKey}
+			<ChatInput
+				placeholder="Spør om denne økten…"
+				disabled={chat.loading}
+				streaming={chat.loading}
+				onStop={() => chat.stop()}
+				initialValue={chatDraft}
+				onsubmit={sendMessage}
+			/>
+		{/key}
 	</div>
 </div>
 	</PageSection>
@@ -646,15 +660,5 @@
 		margin: 0.5rem 0;
 	}
 
-	.bubble-user {
-		align-self: flex-end;
-		background: #1e2a40;
-		color: #d0d8ff;
-		font-size: 0.88rem;
-		padding: 0.5rem 0.85rem;
-		border-radius: 14px 14px 2px 14px;
-		max-width: 80%;
-		line-height: 1.4;
-	}
 </style>
 

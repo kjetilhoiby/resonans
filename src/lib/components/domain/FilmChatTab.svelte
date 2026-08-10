@@ -1,8 +1,9 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatMessages from '../ui/ChatMessages.svelte';
 	import { tick } from 'svelte';
 	import { filmTabsApi, type FilmTabsApi, type Film } from './film-api';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 
 	export interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -21,6 +22,12 @@
 
 	let { themeId, film, chatMessages, chatMessagesLoaded, onChatMessage, api = filmTabsApi }: Props =
 		$props();
+
+	/* Film-tråden er `ChatMsg[]` (rolle + tekst, uten id) fordi den eies og lagres av
+	   FilmDashboard. Oversettes til `ChatMessage` for den delte lista. */
+	const uiMessages = $derived<ChatMessage[]>(
+		chatMessages.map((m, i) => ({ id: `film-${i}`, role: m.role, text: m.text, starred: false }))
+	);
 
 	let chatLoading = $state(false);
 	let chatError = $state('');
@@ -198,23 +205,12 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 				{/if}
 			</p>
 		{/if}
-		{#each chatMessages as msg}
-			{#if msg.role === 'user'}
-				<div class="fl-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-			{/if}
-		{/each}
-		{#if chatLoading}
-			{#if chatStreamingText}
-				<TriageCard text={chatStreamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} status={chatStreamingStatus} />
-			{/if}
-		{/if}
-		{#if chatError}
-			<p class="fl-error">{chatError}</p>
-		{/if}
+		<ChatMessages
+			messages={uiMessages}
+			streamingText={chatStreamingText}
+			loading={chatLoading}
+			error={chatError}
+		/>
 	</div>
 	<ChatInput
 		placeholder="Hva tenker du om «{film.title}»?"
@@ -244,19 +240,6 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		gap: 8px;
 	}
 
-	.fl-bubble-user {
-		align-self: flex-end;
-		background: var(--film-bg-accent, #2a1420);
-		color: #ffe8dc;
-		padding: 10px 14px;
-		border-radius: 18px 18px 4px 18px;
-		max-width: 80%;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-
 	.fl-empty {
 		color: var(--film-text-tertiary, #666);
 		font-size: 0.85rem;
@@ -264,9 +247,4 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		padding: 24px 16px;
 	}
 
-	.fl-error {
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
-	}
 </style>

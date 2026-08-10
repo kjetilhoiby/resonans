@@ -1,8 +1,9 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatMessages from '../ui/ChatMessages.svelte';
 	import { tick } from 'svelte';
 	import { filmTabsApi, type FilmTabsApi, type Film } from './film-api';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -28,6 +29,12 @@
 	let chatError = $state('');
 	let streamingText = $state('');
 	let streamingStatus = $state('');
+
+	/* Tema-tråden holdes lokalt som `ChatMsg[]` (rolle + tekst, uten id).
+	   Oversettes til `ChatMessage` for den delte lista. */
+	const uiMessages = $derived<ChatMessage[]>(
+		messages.map((m, i) => ({ id: `filmtema-${i}`, role: m.role, text: m.text, starred: false }))
+	);
 	let messagesEl = $state<HTMLDivElement | null>(null);
 
 	function scrollToBottom() {
@@ -183,21 +190,12 @@ Når brukeren vil prate om en film de har sett:
 				</div>
 			</div>
 		{/if}
-		{#each messages as msg}
-			{#if msg.role === 'user'}
-				<div class="fl-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-			{/if}
-		{/each}
-		{#if chatLoading}
-			{#if streamingText}
-				<TriageCard text={streamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} status={streamingStatus} />
-			{/if}
-		{/if}
-		{#if chatError}<p class="fl-error">{chatError}</p>{/if}
+		<ChatMessages
+			messages={uiMessages}
+			streamingText={streamingText}
+			loading={chatLoading}
+			error={chatError}
+		/>
 	</div>
 
 	<ChatInput placeholder="Snakk om film…" disabled={chatLoading} onsubmit={(msg) => send(msg)} />
@@ -243,18 +241,6 @@ Når brukeren vil prate om en film de har sett:
 		flex-direction: column;
 		gap: 8px;
 	}
-	.fl-bubble-user {
-		align-self: flex-end;
-		background: var(--film-bg-accent, #2a1420);
-		color: #ffe8dc;
-		padding: 10px 14px;
-		border-radius: 18px 18px 4px 18px;
-		max-width: 80%;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
 	.fl-tchat-intro {
 		color: var(--film-text-tertiary, #7a6a6a);
 		font-size: 0.85rem;
@@ -286,10 +272,5 @@ Når brukeren vil prate om en film de har sett:
 		font-size: 0.85rem;
 		text-align: center;
 		padding: 24px 16px;
-	}
-	.fl-error {
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
 	}
 </style>

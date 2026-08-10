@@ -54,6 +54,22 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
 - Generelle UI-elementer hører i `ui/`, domene-spesifikke i `domain/`, sammensatte i `composed/`.
 - Eksporter nye ui-komponenter fra `src/lib/components/ui/index.ts`.
 
+**En chat-tråd rendres ALLTID med `ui/ChatMessages.svelte`**, aldri med en egen
+`{#each}`-løkke over `TriageCard`. Se
+`docs/changelog/2026-08-10-chatmessages-paa-alle-flater.md`.
+
+- Sju flater hadde fem ulike duplikater fram til august 2026, og hver manglet noe ulikt:
+  aktivitetssiden rendret aldri `chat.error`, tema-chatten manglet retry og rediger-stoppet,
+  lønnsmåned dyttet feil inn som en botmelding. Et duplikat arver ikke rettelser.
+- Flater uten `ChatState` (flyt, bok, film, lønnsmåned) oversetter sin egen
+  `{ role, text }`-tråd til `ChatMessage` med **indeksbasert id**. Det holder fordi trådene
+  bare vokser bakerst — gjør de ikke det, trengs en ekte id.
+- **`ChatInput` er delt på samme måte**, og bildeknappen er en prop (`showAttachButton`),
+  ikke noe flaten bygger selv.
+- Vil du vite hvem som faktisk bruker lista, søk etter `import ChatMessages` — et søk på
+  `ChatMessages` treffer også `chatMessages`-propen i bok- og film-komponentene, og det
+  ga en gal kartlegging én gang.
+
 ### 3. Bruk og vedlikehold enhetstester
 
 ~1900 enhetstester (Vitest) i ~150 filer dekker forretningslogikk. Kjøres med `npm test`.

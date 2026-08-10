@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatMessages from '../ui/ChatMessages.svelte';
 	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
 	import { tick } from 'svelte';
 	import { bookTabsApi, type BookTabsApi, type Book, type BookClip } from './book-api';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 
 	export interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -40,6 +41,13 @@
 	let chatError = $state('');
 	let chatStreamingText = $state('');
 	let chatStreamingStatus = $state('');
+
+	/* Bok-tråden er `ChatMsg[]` (rolle + tekst, uten id) fordi den eies og lagres av
+	   BookDashboard. Oversettes til `ChatMessage` for den delte lista; indeksbasert id
+	   er stabil så lenge tråden bare vokser bakerst. */
+	const uiMessages = $derived<ChatMessage[]>(
+		chatMessages.map((m, i) => ({ id: `bok-${i}`, role: m.role, text: m.text, starred: false }))
+	);
 
 	/* ── Image attachment ────────────────────────────────── */
 	let pendingImageUrl = $state<string | null>(null);
@@ -348,23 +356,12 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				{/if}
 			</p>
 		{/if}
-		{#each chatMessages as msg}
-			{#if msg.role === 'user'}
-				<div class="bk-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-			{/if}
-		{/each}
-		{#if chatLoading}
-			{#if chatStreamingText}
-				<TriageCard text={chatStreamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} status={chatStreamingStatus} />
-			{/if}
-		{/if}
-		{#if chatError}
-			<p class="bk-error">{chatError}</p>
-		{/if}
+		<ChatMessages
+			messages={uiMessages}
+			streamingText={chatStreamingText}
+			loading={chatLoading}
+			error={chatError}
+		/>
 	</div>
 	{#if pendingImageUrl}
 		<div class="bk-pending-image">
@@ -461,19 +458,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-	}
-
-	.bk-bubble-user {
-		align-self: flex-end;
-		background: var(--book-bg-accent, #1e2244);
-		color: #e0e4ff;
-		padding: 10px 14px;
-		border-radius: 18px 18px 4px 18px;
-		max-width: 80%;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
 	}
 
 	.bk-pending-image {
@@ -595,9 +579,4 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		padding: 24px 16px;
 	}
 
-	.bk-error {
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
-	}
 </style>
