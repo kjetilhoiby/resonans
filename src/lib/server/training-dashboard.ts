@@ -17,11 +17,22 @@ import { getRoutesWithEffort } from '$lib/server/tracks/routes-repository';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { mapDailyEffortSeries } from '$lib/domain/health/daily-effort';
 import { pickVo2maxMetric, type Vo2maxSample } from '$lib/domain/health/vo2max';
+import {
+	efficiencySeries,
+	efficiencyTrend,
+	type EfficiencySession
+} from '$lib/domain/health/aerobic-efficiency';
 import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
 import { averagePaceSecPerKm, estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
+
+/**
+ * EF-historikk. Må dekke sammenligningsvinduet (8 uker tilbake pluss 28 dagers
+ * vindu) med god margin, ellers blir «for to måneder siden» tomt.
+ */
+const EF_HISTORY_DAYS = 240;
 
 // Dekker 365d-vinduet i aktivitetslista.
 const WORKOUT_LOOKBACK_DAYS = 400;
@@ -225,17 +236,62 @@ async function loadActivityDetail(userId: string) {
  * NB: ren lesing som standard. Milepæl-evaluering skriver til databasen og må
  * derfor bes om eksplisitt — dashboard-endepunktet gjør det ikke.
  */
+/**
+ * Efficiency Factor: fart per hjerteslag, bakkekorrigert.
+ *
+ * Svarer på «ligger puls/fart-kurven flatere nå enn før» — det VO2max ikke gjør,
+ * fordi VDOT antar maksimal innsats og denne brukeren ikke racer. Se
+ * `$lib/domain/health/aerobic-efficiency.ts`.
+ *
+ * Leses fra `canonical_workouts`, som alt har `gapSecPerKm` og
+ * `hrZoneDistribution` — ingen nye data trengs.
+ */
+async function loadAerobicEfficiency(userId: string) {
+	const since = new Date(Date.now() - EF_HISTORY_DAYS * 24 * 60 * 60 * 1000);
+	const rows = await db.query.canonicalWorkouts.findMany({
+		where: and(eq(canonicalWorkouts.userId, userId), gte(canonicalWorkouts.startTime, since)),
+		columns: {
+			startTime: true,
+			sportFamily: true,
+			gapSecPerKm: true,
+			avgHeartRate: true,
+			durationSeconds: true,
+			hrZoneDistribution: true
+		}
+	});
+
+	const sessions: EfficiencySession[] = rows.map((row) => {
+		const zones = row.hrZoneDistribution as { z4?: number; z5?: number } | null;
+		return {
+			startTime: row.startTime,
+			sportFamily: row.sportFamily,
+			gapSecPerKm: row.gapSecPerKm != null ? Number(row.gapSecPerKm) : null,
+			avgHeartRate: row.avgHeartRate != null ? Number(row.avgHeartRate) : null,
+			durationSeconds: row.durationSeconds != null ? Number(row.durationSeconds) : null,
+			// Andel av tida i sone 4–5 skiller en jevn økt fra en intervalløkt.
+			hardShare: zones ? (zones.z4 ?? 0) + (zones.z5 ?? 0) : null
+		};
+	});
+
+	const points = efficiencySeries(sessions);
+	return {
+		points: points.map((p) => ({ date: p.date.toISOString(), ef: Math.round(p.ef * 1000) / 1000 })),
+		trend: efficiencyTrend(points, new Date())
+	};
+}
+
 export async function loadTrainingDashboardData(
 	userId: string,
 	opts: { evaluateMilestones?: boolean } = {}
 ) {
 	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
 	// balanse er verdt å se også i oppsett-modus.
-	const [plan, dailyEffort, vo2max, hrRecovery] = await Promise.all([
+	const [plan, dailyEffort, vo2max, hrRecovery, aerobicEfficiency] = await Promise.all([
 		getActivePlan(userId),
 		loadDailyEffort(userId),
 		loadVo2max(userId).catch(() => null),
-		loadHrRecovery(userId).catch(() => null)
+		loadHrRecovery(userId).catch(() => null),
+		loadAerobicEfficiency(userId).catch(() => null)
 	]);
 
 	if (!plan) {
@@ -249,6 +305,7 @@ export async function loadTrainingDashboardData(
 			dailyEffort,
 			vo2max,
 			hrRecovery,
+			aerobicEfficiency,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -363,6 +420,7 @@ export async function loadTrainingDashboardData(
 		dailyEffort,
 		vo2max,
 		hrRecovery,
+		aerobicEfficiency,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

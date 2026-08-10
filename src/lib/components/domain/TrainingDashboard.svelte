@@ -19,6 +19,7 @@
 	import HrRecoveryCard from '$lib/components/domain/training/HrRecoveryCard.svelte';
 	import EffortWeightCard from '$lib/components/domain/health/EffortWeightCard.svelte';
 	import HealthActivityList from '$lib/components/domain/health/HealthActivityList.svelte';
+	import AerobicEfficiencyCard from '$lib/components/domain/health/AerobicEfficiencyCard.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import { formatEvent } from '$lib/components/domain/health/health-data';
 	import { computeTrainingLoad } from '$lib/util/training-load';
@@ -284,8 +285,21 @@
 			<RouteLibrary routes={data.states?.routes ?? []} />
 		{/if}
 
-		<!-- Trening → effekt, samlet: oksygenopptak, form/balanse og effort→vekt.
-		     Utenfor plan-grenen, fordi de er verdt å se også i oppsett-modus. -->
+		<!-- Øktene først. De er det man kommer hit for å se, og de sto tidligere
+		     under fire kort med avledede tall. -->
+		{#if (data.activities?.length ?? 0) > 0}
+			<HealthActivityList activities={data.activities} />
+		{/if}
+
+		<!-- Trening → effekt, samlet: fart per hjerteslag, oksygenopptak,
+		     form/balanse og effort→vekt. Utenfor plan-grenen, fordi de er verdt
+		     å se også i oppsett-modus.
+
+		     EF står FØR VO2max med vilje: den måler pulskostnaden ved en gitt
+		     fart på rolige økter, mens VDOT antar maksimal innsats og gir et
+		     fantomfall i uker uten hard løping. -->
+		<AerobicEfficiencyCard data={data.aerobicEfficiency ?? null} />
+
 		<Vo2maxCard metric={data.vo2max ?? null} />
 
 		<HrRecoveryCard metric={data.hrRecovery ?? null} />
@@ -293,10 +307,6 @@
 		<TrainingLoadSection series={trainingLoadSeries} />
 
 		<EffortWeightCard />
-
-		{#if (data.activities?.length ?? 0) > 0}
-			<HealthActivityList activities={data.activities} />
-		{/if}
 
 		{#if eventItems.length > 0}
 			<details class="tr-events-details">
