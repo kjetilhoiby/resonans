@@ -47,6 +47,16 @@ export type WriteSensorEventInput = {
 export type WriteSensorEventResult = {
 	event: typeof sensorEvents.$inferSelect | null;
 	inserted: boolean;
+	/**
+	 * Fantes raden fra før? Bare meningsfull i `upsert_sensor_datatype_timestamp`.
+	 *
+	 * Skiller «ny hendelse» fra «samme hendelse skrevet om igjen». Den
+	 * inkrementelle Withings-synken henter 7 dagers overlapp hvert 5. minutt for
+	 * å fange retroaktive revisjoner, så uten dette flagget ville
+	 * `runAfterWorkoutWrite` regnet om aggregatene for en uke, hver eneste
+	 * kjøring, uten at noe var endret.
+	 */
+	wasExisting: boolean;
 	enqueuedProjectionRefresh: boolean;
 };
 
@@ -137,6 +147,7 @@ export class SensorEventService {
 		return {
 			event,
 			inserted,
+			wasExisting: existedBefore,
 			enqueuedProjectionRefresh
 		};
 	}
@@ -267,6 +278,7 @@ export class SensorEventService {
 		return events.map((event) => ({
 			event,
 			inserted: true,
+			wasExisting: existingKeys.has(eventKey(event.sensorId, event.dataType, event.timestamp)),
 			enqueuedProjectionRefresh: enqueuedProjectionRefresh && event.dataType === 'workout'
 		}));
 	}

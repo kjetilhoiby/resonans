@@ -657,6 +657,42 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
   hake for mye er trygt; å fjerne opptjent framgang er det ikke.
 
+### En økt er skrevet — én vei inn for etterbehandlingen
+
+Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
+`$lib/server/workouts/after-workout-write.ts`, beslutningene rent i
+`$lib/domain/health/workout-followup.ts`.
+
+- **Skriver du en `workout`-hendelse, kaller du `runAfterWorkoutWrite`.** Den gjør
+  aggregering → autohaking (dag + uke) → målprogresjon → varsling. Fram til august
+  2026 lå dette duplisert i Withings-synken og Dropbox-importen, og `/api/apps/upload`
+  (Ekko) hadde det ikke i det hele tatt: en tur du nettopp hadde løpt ga ingen push,
+  ingen hake, og fantes ikke i formkurven før nattjobben kl. 03 UTC. Alt sammen kom i
+  stedet timer senere, den gangen en *annen* kilde beskrev den samme turen.
+- **`sensor_aggregates` skrives ellers BARE av `/api/cron/aggregate`** (`0 3 * * *`
+  UTC = 05:00 Oslo). Alt som leser dagsraden — `loadDailyEffort`, altså CTL/ATL/TSB —
+  henger til neste morgen uten dette kallet. Aktivitetslista og effort-budsjettet
+  leser live og var aldri berørt; det er derfor symptomet var vanskelig å feste.
+- **Varselet dedupliseres per KILDE i klynga, aldri på `activityId`.** Klyngens id er
+  dens *eldste* evidence-event, og den flytter seg når en kilde med tidligere
+  tidsstempel lander etterpå — en dedup på id slipper da varsel nummer to gjennom for
+  samme tur. `workout_notifications` har én rad per kilde, og hele klynga hoppes over
+  hvis én av dem er varslet om før.
+- **Bokføringen skjer før utsending**, ellers sender to samtidige skrivinger hver sin
+  push. Et varsel som feiler prøves altså ikke på nytt — bevisst: en tapt push er en
+  økt du ser neste gang du åpner appen, dobbeltvarsling får folk til å skru av varsler.
+- **Withings kjører med `notify: false`.** `notifyWithingsSyncResults` (yoga + vekt)
+  er et bevisst smalt valg — klokka registrerer gåturer av seg selv, og et varsel per
+  stykk blir støy. De øvrige stegene deles.
+- **Begge aldersvaktene finnes for backfill, ikke for sen synk.**
+  `FOLLOWUP_MAX_AGE_DAYS` hindrer at en full synk løper autohakingen én gang per
+  kalenderdag siden 2017; `NOTIFY_MAX_AGE_DAYS` hindrer at den samme synken tømmer
+  varslingskanalen for tillit. `selectFollowupDays` returnerer `skipped`, som skal
+  logges — en stille kapping ser ut som «alt ble behandlet».
+- **`wasExisting` på `SensorEventService.write`/`writeMany` er ikke pynt.** Den
+  inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
+  det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
+
 ### Withings-backfill
 
 Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
