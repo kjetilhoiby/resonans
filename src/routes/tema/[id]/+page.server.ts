@@ -5,7 +5,7 @@ import { mapContact } from '$lib/server/project-contacts';
 import { projectHasContacts } from '$lib/domain/project-kinds';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
-import { getConversationsByTheme } from '$lib/server/conversations';
+import { getConversationsByTheme, getConversationMessagesPage } from '$lib/server/conversations';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { getThemeFindsByName } from '$lib/server/services/finds-service';
@@ -15,6 +15,9 @@ import { resolveParentThemeId } from '$lib/domain/theme-hierarchy';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+
+/** Meldinger i første side av tema-chatten. Resten hentes ved scroll oppover. */
+const THEME_CHAT_PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const t0 = performance.now();
@@ -87,18 +90,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research, themeFindsRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
-			db
-				.select({
-					id: messagesTable.id,
-					role: messagesTable.role,
-					content: messagesTable.content,
-					imageUrl: messagesTable.imageUrl,
-					timestamp: messagesTable.createdAt
-				})
-				.from(messagesTable)
-				.where(eq(messagesTable.conversationId, conversationId))
-				.orderBy(asc(messagesTable.createdAt))
-				.limit(50),
+			// NB: SISTE side, ikke de første radene. Fram til august 2026 var dette
+			// `orderBy(asc(...)).limit(50)`, altså de 50 ELDSTE meldingene i tråden —
+			// så en lang samtale åpnet på sin egen begynnelse, og de ferske meldingene
+			// var ikke engang lastet. Resten hentes ved scroll oppover.
+			getConversationMessagesPage(conversationId, { limit: THEME_CHAT_PAGE_SIZE }),
 			db
 				.select({
 					id: goals.id,
@@ -148,7 +144,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			getThemeFindsByName(locals.userId, theme.name)
 		]);
 
-	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
+	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.messages.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
 
 	return {
 		theme: {
@@ -167,15 +163,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			updatedAt: c.updatedAt.toISOString(),
 			createdAt: c.createdAt.toISOString()
 		})),
-		messages: msgs.map((m) => ({
+		messages: msgs.messages.map((m) => ({
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',
 			content: m.content,
 			// Uten denne forsvinner bildet fra tråden ved neste sidelast — det ser ut
 			// som om det aldri ble sendt.
 			imageUrl: m.imageUrl,
-			timestamp: m.timestamp.toISOString()
+			timestamp: m.createdAt.toISOString()
 		})),
+		hasMoreMessages: msgs.hasMore,
 		goals: themeGoals,
 		conversationId,
 		themeInstruction: instruction,

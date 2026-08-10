@@ -75,9 +75,20 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		const before = beforeParam ? new Date(beforeParam) : undefined;
 		const { messages: page, hasMore } = await getConversationMessagesPage(params.id, { limit, before });
 
+		// Markøren er den eldste RÅ raden, før system-filtreringen. Klienten kan ikke
+		// utlede den fra svaret: filtreres en system-melding bort her, ville klientens
+		// «eldste viste» hentet den om igjen neste runde, og en side som bare inneholder
+		// system-meldinger ville stoppet pagineringen helt.
+		const rawOldest = page[0]?.createdAt?.toISOString() ?? '';
+
 		return json(
 			page.filter((m) => m.role !== 'system').map(serialize),
-			{ headers: { 'X-Has-More': hasMore ? '1' : '0' } }
+			{
+				headers: {
+					'X-Has-More': hasMore ? '1' : '0',
+					'X-Oldest-Cursor': rawOldest
+				}
+			}
 		);
 	}
 

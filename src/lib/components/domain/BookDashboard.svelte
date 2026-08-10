@@ -56,7 +56,6 @@
 		createdAt: string;
 	}
 
-	interface ChatMsg { role: 'user' | 'assistant'; text: string; }
 
 	let { themeId }: Props = $props();
 
@@ -75,10 +74,6 @@
 	/* ── Clips (shared with chat tab) ───────────────────── */
 	let clips = $state<BookClip[]>([]);
 	let clipsLoaded = $state(false);
-
-	/* ── Chat messages (owned here, passed to chat tab) ── */
-	let chatMessages = $state<ChatMsg[]>([]);
-	let chatMessagesLoaded = $state(false);
 
 	/* ── Progress editor state ──────────────────────────── */
 	let progressPage = $state('');
@@ -119,8 +114,6 @@
 		selectedBook = book;
 		bookTab = 'chat';
 		progressEditorOpen = false;
-		chatMessages = [];
-		chatMessagesLoaded = false;
 		clips = [];
 		clipsLoaded = false;
 		progressPage = String(book.currentPage || '');
@@ -129,19 +122,8 @@
 		totalDurHours = Math.floor((book.totalMinutes || 0) / 60);
 		totalDurMins = (book.totalMinutes || 0) % 60;
 
-		if (book.conversationId) {
-			try {
-				const res = await fetch(`/api/conversations/${book.conversationId}/messages`);
-				if (res.ok) {
-					const data: Array<{ role: string; content: string }> = await res.json();
-					chatMessages = data
-						.filter((m) => m.role !== 'system')
-						.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.content }));
-				}
-			} catch { /* ignore */ }
-		}
-		chatMessagesLoaded = true;
-
+		// Tråden lastes av BookChatTab gjennom ChatState — den henter SISTE side,
+		// ikke hele samtalen som dette kallet gjorde.
 		if (book.contextStatus === 'pending') {
 			void pollContextStatus(book.id);
 		}
@@ -149,7 +131,6 @@
 
 	function closeBook() {
 		selectedBook = null;
-		chatMessages = [];
 		clips = [];
 	}
 
@@ -307,10 +288,6 @@
 		clips = [clip, ...clips];
 	}
 
-	function handleChatMessage(msg: ChatMsg) {
-		chatMessages = [...chatMessages, msg];
-	}
-
 	function handleBookAdded(book: Book) {
 		books = [...books, book];
 		openBook(book);
@@ -356,11 +333,8 @@
 				{themeId}
 				book={selectedBook}
 				{clips}
-				{chatMessages}
-				{chatMessagesLoaded}
 				onAutoProgress={applyAutoProgress}
 				onClipAdded={handleClipAdded}
-				onChatMessage={handleChatMessage}
 			/>
 		{:else if bookTab === 'klipp'}
 			<BookClipsTab {themeId} book={selectedBook} />

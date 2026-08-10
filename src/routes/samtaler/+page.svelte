@@ -17,6 +17,7 @@
 	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
 	import { formatDayLabel, parseDayKey } from '$lib/client/chat-day-sections';
 	import { currentDayFromSpacers, type SpacerPos } from '$lib/client/chat-visible-day';
+	import { bottomAnchorKey, isNearTop, scrollTopAfterPrepend } from '$lib/client/chat-scroll';
 	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -72,27 +73,6 @@
 
 	const isListView = $derived(data.selectedConversation === null && !data.weightContext);
 
-	function toChatMessages(messages: ConversationMessage[]): ChatMessage[] {
-		return messages
-			.filter((m) => m.role !== 'system')
-			.map((m) => ({
-				id: m.id,
-				dbId: m.id,
-				role: m.role as 'user' | 'assistant',
-				text: m.content,
-				starred: m.starred,
-				createdAt: m.timestamp,
-				imageUrl: m.imageUrl ?? null,
-				widgetProposal: m.widgetProposal ?? null,
-				widgetFlow: m.widgetFlow ?? null,
-				statusWidget: m.statusWidget ?? null,
-				photoAnnotation: m.photoAnnotation ?? null,
-				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null,
-				eventCard: m.eventCard ?? null,
-				researchCard: m.researchCard ?? null
-			}));
-	}
-
 	const conversation = $derived(data.selectedConversation);
 
 	const chat = new ChatState(
@@ -115,10 +95,8 @@
 	let weightAutoSent = $state(false);
 
 	// ── Infinite scroll (last eldre meldinger ved scroll oppover) ─────────────
+	// Markør og hasMore bor i ChatState; her trengs bare elementet å måle mot.
 	let messagesEl = $state<HTMLDivElement | null>(null);
-	let hasMoreMessages = $state(false);
-	let loadingOlder = $state(false);
-	let oldestCursor = $state<string | null>(null);
 
 	// ── Overlay-header/-input: målte høyder styrer scroll-padding ────────────
 	let headerH = $state(0);
@@ -203,11 +181,8 @@
 
 	// Last inn meldinger fra server og synkroniser med ChatState
 	$effect(() => {
-		chat.messages = toChatMessages(data.messages);
-		chat.error = '';
-		hasMoreMessages = data.hasMoreMessages;
-		// Cursor = eldste lastede melding (rå, før system-filtrering) for paginering.
-		oldestCursor = data.messages[0]?.timestamp ?? null;
+		// hydrate() eier filtreringen og markøren — se `chat-thread-rows.ts`.
+		chat.hydrate(data.messages, { hasMore: data.hasMoreMessages });
 		// Nullstill vedlegg ved bytte av samtale.
 		clearPendingAttachment();
 		attachmentUploading = false;
@@ -217,7 +192,7 @@
 	// Sporer kun siste melding + streaming — endres IKKE når eldre meldinger
 	// prepend-es, så infinite scroll oppover river deg ikke ned til bunnen.
 	const bottomKey = $derived(
-		`${chat.messages.at(-1)?.id ?? ''}:${chat.streamingText.length}:${chat.loading}`
+		bottomAnchorKey(chat.messages.at(-1)?.id, chat.streamingText.length, chat.loading)
 	);
 	$effect(() => {
 		bottomKey;
@@ -291,40 +266,21 @@
 	}
 
 	async function loadOlderMessages() {
-		if (!conversation || loadingOlder || !hasMoreMessages || !oldestCursor || !messagesEl) return;
-		loadingOlder = true;
+		if (!messagesEl) return;
 		const el = messagesEl;
-		const prevHeight = el.scrollHeight;
-		const prevTop = el.scrollTop;
-		try {
-			const res = await fetch(
-				`/api/conversations/${conversation.id}/messages?before=${encodeURIComponent(oldestCursor)}&limit=12`
-			);
-			if (!res.ok) return;
-			const older = (await res.json()) as ConversationMessage[];
-			hasMoreMessages = res.headers.get('X-Has-More') === '1';
-			if (older.length === 0) {
-				hasMoreMessages = false;
-				return;
-			}
-			oldestCursor = older[0].timestamp;
-			const existing = new Set(chat.messages.map((m) => m.id));
-			const prepend = toChatMessages(older).filter((m) => !existing.has(m.id));
-			if (prepend.length === 0) return;
-			chat.messages = [...prepend, ...chat.messages];
-			// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
-			await tick();
-			el.scrollTop = el.scrollHeight - prevHeight + prevTop;
-			scheduleVisibleDayUpdate();
-		} finally {
-			loadingOlder = false;
-		}
+		const before = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight };
+		const added = await chat.loadOlder(12);
+		if (added <= 0) return;
+		// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
+		await tick();
+		el.scrollTop = scrollTopAfterPrepend(before, el.scrollHeight);
+		scheduleVisibleDayUpdate();
 	}
 
 	function onMessagesScroll() {
 		if (!messagesEl) return;
 		scheduleVisibleDayUpdate();
-		if (messagesEl.scrollTop < 120 && hasMoreMessages && !loadingOlder) {
+		if (isNearTop(messagesEl) && chat.hasMore && !chat.loadingOlder) {
 			void loadOlderMessages();
 		}
 	}
@@ -597,8 +553,11 @@
 		</div>
 
 		<div class="cp-messages" bind:this={messagesEl} onscroll={onMessagesScroll}>
-			{#if loadingOlder}
+			{#if chat.loadingOlder}
 				<div class="cp-load-older"><span class="cp-load-spinner"></span></div>
+			{/if}
+			{#if chat.historyError}
+				<p class="cp-history-error">{chat.historyError}</p>
 			{/if}
 			{#if chat.messages.length === 0}
 				<p class="cp-empty">Ingen meldinger ennå.</p>
@@ -1092,6 +1051,13 @@
 		transition: border-color 0.12s, color 0.12s;
 	}
 	.cp-retry-btn:hover { border-color: #7a4040; color: #d08080; }
+
+	.cp-history-error {
+		margin: 0;
+		text-align: center;
+		font-size: 0.76rem;
+		color: #e07070;
+	}
 
 	.cp-empty {
 		margin: auto;

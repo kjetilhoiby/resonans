@@ -54,6 +54,61 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
 - Generelle UI-elementer hører i `ui/`, domene-spesifikke i `domain/`, sammensatte i `composed/`.
 - Eksporter nye ui-komponenter fra `src/lib/components/ui/index.ts`.
 
+**Chat-flatene deler fire lag. Skriv aldri et femte.** Se
+`docs/changelog/2026-08-10-chat-konsolidering.md`.
+
+| Lag | Fil | Eier |
+|-----|-----|------|
+| Sending/strømming | `client/chat-state.svelte.ts` | tilstand, avbrudd, watchdog, retry, kø |
+| Historikk | samme (`hydrate`/`loadThread`/`loadOlder`) | endepunkt, markør, deduplisering |
+| Meldingsruten | `ui/ChatThread.svelte` | scroll, bunnforankring, hent-ved-scroll-opp |
+| Meldingene | `ui/ChatMessages.svelte` | bobler, kort, stjerne, retry |
+
+- **Ingen flate skriver sin egen SSE-løkke.** Tre gjorde det til august 2026 (bok, film
+  ×2) — 35 linjer hver, med `streamProxyChat` rett ved siden av. De var ikke spesielle;
+  de var skrevet før `ChatState` fantes. Nye særtrekk hører i krokene:
+  `onAssistantMessage` (etterbehandle svaret), `onPayload`, `systemPrompt` som funksjon,
+  og `SendOptions.displayText` når boblen og prompten skal si ulike ting.
+- **`ChatThread` tar primitiver, ikke en ChatState.** Flyt og lønnsmåned holder tråden
+  sin utenfor (serialisert i `flowData`, eller per steg) og må kunne bruke pana likevel.
+- **`class` på en komponent treffer ikke scoped CSS.** `class="min-ramme"` på
+  `<ChatThread>` lander på et element i en annen komponent, så `.min-ramme { }` i
+  forelderen matcher ikke. Bruk `:global(.min-ramme)`. Stille feil — ingen advarsel.
+- `initialMessages` finnes på bok/film-fanene bare for `/design`: galleriet mocker
+  nettverket gjennom `api`-propen, og tråd-lastingen går forbi den.
+
+**En chat-tråd rendres ALLTID med `ui/ChatMessages.svelte`** (gjennom `ChatThread`),
+aldri med en egen `{#each}`-løkke over `TriageCard`. Se
+`docs/changelog/2026-08-10-chatmessages-paa-alle-flater.md`.
+
+- Sju flater hadde fem ulike duplikater fram til august 2026, og hver manglet noe ulikt:
+  aktivitetssiden rendret aldri `chat.error`, tema-chatten manglet retry og rediger-stoppet,
+  lønnsmåned dyttet feil inn som en botmelding. Et duplikat arver ikke rettelser.
+- Flater uten `ChatState` (flyt, bok, film, lønnsmåned) oversetter sin egen
+  `{ role, text }`-tråd til `ChatMessage` med **indeksbasert id**. Det holder fordi trådene
+  bare vokser bakerst — gjør de ikke det, trengs en ekte id.
+- **`ChatInput` er delt på samme måte**, og bildeknappen er en prop (`showAttachButton`),
+  ikke noe flaten bygger selv.
+- Vil du vite hvem som faktisk bruker lista, søk etter `import ChatMessages` — et søk på
+  `ChatMessages` treffer også `chatMessages`-propen i bok- og film-komponentene, og det
+  ga en gal kartlegging én gang.
+
+**En tråd åpnes ved SISTE melding, og historikk hentes ved scroll oppover.** Reglene bor
+i `$lib/client/chat-scroll.ts`. Se
+`docs/changelog/2026-08-10-tema-chat-apner-ved-siste-melding.md`.
+
+- **Hent siste side, ikke de første radene.** `orderBy(asc(...)).limit(N)` gir
+  *begynnelsen* av tråden. Tema-chatten gjorde det til august 2026, så en lang samtale
+  åpnet på melding 1 og de ferske var ikke i payloaden i det hele tatt. Bruk
+  `getConversationMessagesPage`, som henter `limit + 1` synkende og rapporterer `hasMore`.
+- **Bunnforankringen må ikke se på antall meldinger** (`bottomAnchorKey`). Gjør den det,
+  fyrer den også ved prepend og river brukeren ned til bunnen idet historikken hen ba om
+  ankommer.
+- **Markøren er den eldste RÅ raden**, før system-meldinger filtreres bort — ellers
+  hentes de om igjen i hver runde.
+- Meldinger må bære **DB-id-en** som `id`, ikke en fersk uuid: dedupliseringen ved
+  prepend hviler på at samme rad får samme id hver gang den hentes.
+
 ### 3. Bruk og vedlikehold enhetstester
 
 ~1900 enhetstester (Vitest) i ~150 filer dekker forretningslogikk. Kjøres med `npm test`.

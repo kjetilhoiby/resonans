@@ -1,15 +1,28 @@
 <script lang="ts">
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
-	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import { tick } from 'svelte';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import type { SalaryMonthReport, SalaryInsight } from '$lib/types/salary-report';
 
 	interface RichMsg {
 		role: 'user' | 'assistant';
 		text: string;
 		streaming?: boolean;
+	}
+
+	/* Denne flyten holder tråden per steg i rene arrayer, ikke i en ChatState, så
+	   meldingene må oversettes til `ChatMessage` for den delte lista. Id-en er
+	   steg + indeks: stabil så lenge en tråd bare vokser bakerst, som den gjør her. */
+	function toChatMessages(msgs: RichMsg[] | undefined, stepIdx: number): ChatMessage[] {
+		return (msgs ?? []).map((m, i) => ({
+			id: `steg-${stepIdx}-${i}`,
+			role: m.role,
+			text: m.text,
+			starred: false
+		}));
 	}
 
 	let { data }: { data: { report: SalaryMonthReport | null; accounts: unknown[] } } = $props();
@@ -203,20 +216,11 @@
 
 				<!-- Chat messages -->
 				<div class="chat-scroll" bind:this={msgContainers[stepIndex]}>
-					{#each stepMsgs[stepIndex] ?? [] as msg, i (i)}
-						{#if msg.role === 'user'}
-							<div class="bubble-user">{msg.text}</div>
-						{:else}
-							<TriageCard text={msg.text} />
-						{/if}
-					{/each}
-					{#if stepLoading[stepIndex]}
-						{#if stepStreaming[stepIndex]}
-							<TriageCard text={stepStreaming[stepIndex]} streaming={true} />
-						{:else}
-							<TriageCard loading={true} status="Tenker..." />
-						{/if}
-					{/if}
+					<ChatMessages
+						messages={toChatMessages(stepMsgs[stepIndex], stepIndex)}
+						streamingText={stepStreaming[stepIndex] ?? ''}
+						loading={stepLoading[stepIndex] ?? false}
+					/>
 				</div>
 
 				<!-- Chat input -->
@@ -317,18 +321,6 @@
 		padding-bottom: 4px;
 		min-height: 120px;
 	}
-	.bubble-user {
-		background: hsl(228 35% 12%);
-		border: 1px solid hsl(228 40% 22%);
-		color: hsl(228 40% 82%);
-		padding: 9px 13px;
-		border-radius: 12px;
-		font-size: 0.88rem;
-		line-height: 1.45;
-		align-self: flex-end;
-		max-width: 90%;
-	}
-
 	.input-wrap {
 		flex-shrink: 0;
 	}

@@ -1,41 +1,36 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
-	import { tick } from 'svelte';
+	import ChatThread from '../ui/ChatThread.svelte';
 	import { filmTabsApi, type FilmTabsApi, type Film } from './film-api';
-
-	export interface ChatMsg {
-		role: 'user' | 'assistant';
-		text: string;
-	}
+	import { ChatState } from '$lib/client/chat-state.svelte';
+	import type { ThreadRow } from '$lib/client/chat-thread-rows';
 
 	interface Props {
 		themeId: string;
 		film: Film;
-		chatMessages: ChatMsg[];
-		chatMessagesLoaded: boolean;
-		onChatMessage: (msg: ChatMsg) => void;
+		/** Ferdig tråd i stedet for et nettverkskall — brukes av /design-galleriet. */
+		initialMessages?: ThreadRow[] | null;
 		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
 		api?: FilmTabsApi;
 	}
 
-	let { themeId, film, chatMessages, chatMessagesLoaded, onChatMessage, api = filmTabsApi }: Props =
-		$props();
+	let { themeId, film, initialMessages = null, api = filmTabsApi }: Props = $props();
 
-	let chatLoading = $state(false);
-	let chatError = $state('');
-	let chatStreamingText = $state('');
-	let chatStreamingStatus = $state('');
-	let chatMessagesEl = $state<HTMLDivElement | null>(null);
+	// Egen SSE-løkke og egen tråd-array fram til august 2026 — ChatState gjorde det
+	// samme, med avbrudd, watchdog, retry og kø på kjøpet.
+	const chat = new ChatState({
+		conversationId: film.conversationId ?? null,
+		systemPrompt: () => buildFilmSystemPrompt(film)
+	});
 
-	function scrollChatToBottom() {
-		tick().then(() => {
-			if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-		});
-	}
+	if (initialMessages) chat.hydrate(initialMessages);
 
+	let loadedConversationId = $state<string | null>(null);
 	$effect(() => {
-		if (chatMessagesEl && (chatMessagesLoaded || chatStreamingText)) scrollChatToBottom();
+		const convId = film.conversationId;
+		if (initialMessages || !convId || convId === loadedConversationId) return;
+		loadedConversationId = convId;
+		void chat.loadThread(convId);
 	});
 
 	/* ── System prompt builder ───────────────────────────── */
@@ -127,98 +122,36 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 
 	async function sendChatMessage(text: string) {
 		if (!film.conversationId || !text.trim()) return;
-
-		onChatMessage({ role: 'user', text });
-		scrollChatToBottom();
-		chatLoading = true;
-		chatError = '';
-		chatStreamingText = '';
-		chatStreamingStatus = 'Starter…';
-
-		try {
-			const systemPrompt = buildFilmSystemPrompt(film);
-			const body: Record<string, unknown> = {
-				mode: 'proxy',
-				message: text,
-				conversationId: film.conversationId,
-				routing: {},
-				systemPrompt,
-				messages: []
-			};
-
-			const response = await api.streamChatMessages(body);
-			if (!response.ok || !response.body) throw new Error('Streaming feilet');
-
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let finalPayload: Record<string, unknown> | null = null;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				for (let i = 0; i < lines.length - 1; i++) {
-					const line = lines[i].trim();
-					if (!line.startsWith('data: ')) continue;
-					const event = JSON.parse(line.slice(6));
-					if (event.type === 'status') chatStreamingStatus = event.data?.message ?? '';
-					else if (event.type === 'token') {
-						chatStreamingStatus = '';
-						chatStreamingText += event.data?.token ?? '';
-					} else if (event.type === 'complete') finalPayload = event.data;
-				}
-				buffer = lines[lines.length - 1];
-			}
-
-			const rawMessage = (finalPayload as { message?: string })?.message ?? chatStreamingText;
-			onChatMessage({ role: 'assistant', text: rawMessage });
-			scrollChatToBottom();
-		} catch {
-			chatError = 'Noe gikk galt. Prøv igjen.';
-		} finally {
-			chatStreamingText = '';
-			chatStreamingStatus = '';
-			chatLoading = false;
-		}
+		await chat.send(text);
 	}
 </script>
 
 <div class="fl-chat">
-	<div class="fl-chat-messages" bind:this={chatMessagesEl} aria-live="polite">
-		{#if !chatMessagesLoaded}
-			<p class="fl-empty">Laster…</p>
-		{:else if chatMessages.length === 0}
-			<p class="fl-empty">
-				{#if film.contextStatus === 'pending'}
-					Samler filmkontekst — jeg gir deg et rikere svar om litt…
-				{:else}
-					Start samtalen om filmen. Hva sitter du igjen med?
-				{/if}
-			</p>
-		{/if}
-		{#each chatMessages as msg}
-			{#if msg.role === 'user'}
-				<div class="fl-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-			{/if}
-		{/each}
-		{#if chatLoading}
-			{#if chatStreamingText}
-				<TriageCard text={chatStreamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} status={chatStreamingStatus} />
-			{/if}
-		{/if}
-		{#if chatError}
-			<p class="fl-error">{chatError}</p>
-		{/if}
-	</div>
+	<ChatThread
+		class="fl-chat-messages"
+		messages={chat.messages}
+		streamingText={chat.streamingText}
+		streamingSteps={chat.streamingSteps}
+		loading={chat.loading}
+		stopped={chat.stopped}
+		stoppedText={chat.stoppedText}
+		error={chat.error}
+		lastUserMsgId={chat.lastUserMsgId}
+		emptyText={film.contextStatus === 'pending'
+			? 'Samler filmkontekst — jeg gir deg et rikere svar om litt…'
+			: 'Start samtalen om filmen. Hva sitter du igjen med?'}
+		loadingHistory={chat.loadingOlder && chat.messages.length === 0}
+		hasMore={chat.hasMore}
+		loadingOlder={chat.loadingOlder}
+		historyError={chat.historyError}
+		onLoadOlder={() => chat.loadOlder()}
+		onRetry={() => chat.retry()}
+	/>
 	<ChatInput
 		placeholder="Hva tenker du om «{film.title}»?"
-		disabled={chatLoading}
+		disabled={chat.loading}
+		streaming={chat.loading}
+		onStop={() => chat.stop()}
 		onsubmit={(msg) => sendChatMessage(msg)}
 	/>
 </div>
@@ -232,29 +165,14 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		padding-top: 8px;
 	}
 
-	.fl-chat-messages {
-		flex: 1;
+	/* ChatThread eier scroll og retning; her settes bare rammen. */
+	:global(.fl-chat-messages) {
+		/* `scroll` (ikke `auto`) sammen med touch-reglene — iOS-momentum. */
 		overflow-y: scroll;
 		-webkit-overflow-scrolling: touch;
 		overscroll-behavior: contain;
 		touch-action: pan-y;
 		padding: 8px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.fl-bubble-user {
-		align-self: flex-end;
-		background: var(--film-bg-accent, #2a1420);
-		color: #ffe8dc;
-		padding: 10px 14px;
-		border-radius: 18px 18px 4px 18px;
-		max-width: 80%;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
 	}
 
 	.fl-empty {
@@ -264,9 +182,4 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		padding: 24px 16px;
 	}
 
-	.fl-error {
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
-	}
 </style>

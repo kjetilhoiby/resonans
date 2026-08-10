@@ -1,8 +1,7 @@
 <script lang="ts">
-	import TriageCard from '$lib/components/composed/TriageCard.svelte';
-	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import type { ChatState } from '$lib/client/chat-state.svelte';
+	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
+	import type { ChatMessage, ChatState } from '$lib/client/chat-state.svelte';
 	import type { RichChatMsg } from './flow-helpers';
 
 	interface Props {
@@ -25,6 +24,27 @@
 		onretry,
 		onTextChange
 	}: Props = $props();
+
+	/* Flyt-tråden er `RichChatMsg[]` (ingen id, ingen stjerne) og må oversettes til
+	   `ChatMessage` for den delte lista. Id-en er indeksbasert — samme nøkkel som
+	   `{#each}` brukte før — siden tråden bare vokser bakerst.
+
+	   `confirmAction` blir en action-knapp på TriageCard, men bare på SISTE melding og
+	   bare når svaret er ferdig: en bekreftelsesknapp midt i tråden ville sendt et steg
+	   brukeren alt har passert. */
+	const uiMessages = $derived<ChatMessage[]>(
+		chatMessages.map((m, i) => ({
+			id: `flow-${i}`,
+			role: m.role,
+			text: m.text,
+			starred: false,
+			statusWidget: m.statusWidget ?? null,
+			actions:
+				m.confirmAction && i === chatMessages.length - 1 && !flowChat.loading
+					? [{ id: m.confirmAction, label: m.confirmAction }]
+					: undefined
+		}))
+	);
 </script>
 
 <div class="fs-chat-area">
@@ -32,38 +52,15 @@
 		{#if chatMessages.length === 0 && !flowChat.loading}
 			<p class="fs-chat-empty">{autoSendLabel}</p>
 		{/if}
-		{#each chatMessages as msg, i (i)}
-			{#if msg.role === 'user'}
-				<div class="fs-chat-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-				{#if msg.statusWidget}
-					<ChatStatusWidget widget={msg.statusWidget} />
-				{/if}
-				{#if msg.confirmAction && i === chatMessages.length - 1 && !flowChat.loading}
-					<button
-						type="button"
-						class="fs-chat-confirm"
-						onclick={() => onsend(msg.confirmAction!)}
-					>{msg.confirmAction}</button>
-				{/if}
-			{/if}
-		{/each}
-		{#if flowChat.loading}
-			{#if flowChat.streamingText}
-				<TriageCard text={flowChat.streamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} steps={flowChat.streamingSteps} />
-			{/if}
-		{/if}
-		{#if flowChat.error && !flowChat.loading}
-			<div class="fs-chat-error" role="alert">
-				<span>{flowChat.error}</span>
-				{#if onretry}
-					<button type="button" class="fs-chat-retry" onclick={() => onretry?.()} data-track="selvangivelse-chat:prov-igjen">Prøv igjen</button>
-				{/if}
-			</div>
-		{/if}
+		<ChatMessages
+			messages={uiMessages}
+			streamingText={flowChat.streamingText}
+			streamingSteps={flowChat.streamingSteps}
+			loading={flowChat.loading}
+			error={flowChat.loading ? '' : flowChat.error}
+			onRetry={onretry}
+			onAction={(actionId) => onsend(actionId)}
+		/>
 	</div>
 	<ChatInput
 		placeholder="Skriv svar…"
@@ -98,54 +95,4 @@
 		padding: 20px 0;
 		margin: 0;
 	}
-	.fs-chat-bubble-user {
-		background: #0d1828;
-		border: 1px solid #2a4080;
-		color: #c8d4ef;
-		padding: 9px 13px;
-		border-radius: 12px;
-		max-width: 86%;
-		font-size: 0.88rem;
-		line-height: 1.45;
-		align-self: flex-end;
-	}
-	.fs-chat-confirm {
-		background: #0d1828;
-		border: 1px solid #2a4080;
-		color: #8bb4ef;
-		padding: 9px 16px;
-		border-radius: 8px;
-		font-size: 0.88rem;
-		cursor: pointer;
-		font-family: inherit;
-		transition: background 0.12s, border-color 0.12s;
-		align-self: flex-start;
-	}
-	.fs-chat-confirm:hover { background: #112038; border-color: #3a50a0; }
-	.fs-chat-error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		background: rgba(224, 112, 112, 0.08);
-		border: 1px solid rgba(224, 112, 112, 0.35);
-		color: #e3a0a0;
-		padding: 10px 13px;
-		border-radius: 10px;
-		font-size: 0.85rem;
-		align-self: stretch;
-	}
-	.fs-chat-retry {
-		flex-shrink: 0;
-		background: #0d1828;
-		border: 1px solid #2a4080;
-		color: #8bb4ef;
-		padding: 7px 14px;
-		border-radius: 8px;
-		font-size: 0.85rem;
-		cursor: pointer;
-		font-family: inherit;
-		transition: background 0.12s, border-color 0.12s;
-	}
-	.fs-chat-retry:hover { background: #112038; border-color: #3a50a0; }
 </style>

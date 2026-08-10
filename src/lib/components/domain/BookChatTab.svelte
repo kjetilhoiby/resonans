@@ -1,24 +1,19 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatThread from '../ui/ChatThread.svelte';
 	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
-	import { tick } from 'svelte';
 	import { bookTabsApi, type BookTabsApi, type Book, type BookClip } from './book-api';
-
-	export interface ChatMsg {
-		role: 'user' | 'assistant';
-		text: string;
-	}
+	import { ChatState } from '$lib/client/chat-state.svelte';
+	import type { ThreadRow } from '$lib/client/chat-thread-rows';
 
 	interface Props {
 		themeId: string;
 		book: Book;
 		clips: BookClip[];
-		chatMessages: ChatMsg[];
-		chatMessagesLoaded: boolean;
+		/** Ferdig tråd i stedet for et nettverkskall — brukes av /design-galleriet. */
+		initialMessages?: ThreadRow[] | null;
 		onAutoProgress: (bookId: string, currentMinutes: number, totalMinutes: number) => void;
 		onClipAdded: (clip: BookClip) => void;
-		onChatMessage: (msg: ChatMsg) => void;
 		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
 		api?: BookTabsApi;
 	}
@@ -27,19 +22,39 @@
 		themeId,
 		book,
 		clips,
-		chatMessages,
-		chatMessagesLoaded,
+		initialMessages = null,
 		onAutoProgress,
 		onClipAdded,
-		onChatMessage,
 		api = bookTabsApi
 	}: Props = $props();
 
 	/* ── Chat state ──────────────────────────────────────── */
-	let chatLoading = $state(false);
-	let chatError = $state('');
-	let chatStreamingText = $state('');
-	let chatStreamingStatus = $state('');
+	// Fram til august 2026 hadde denne fila sin egen SSE-løkke og sin egen tråd-array,
+	// mens ChatState gjorde det samme litt bedre (avbrudd, watchdog, retry, kø).
+	// Systemprompten evalueres per sending, så et oppdatert kontekstpakke slår inn.
+	const chat = new ChatState({
+		conversationId: book.conversationId ?? null,
+		systemPrompt: () => buildBookSystemPrompt(book),
+		// Lydbok-svar kan bære en usynlig fremdriftstagg. Den skal styre progresjonen,
+		// ikke vises i tråden.
+		onAssistantMessage: (msg) => {
+			const match = msg.text.match(/<!--FREMDRIFT:(\d+)\/(\d+)-->/);
+			if (!match) return;
+			onAutoProgress(book.id, parseInt(match[1], 10), parseInt(match[2], 10));
+			return { ...msg, text: msg.text.replace(/\s*<!--FREMDRIFT:\d+\/\d+-->\s*/, '').trim() };
+		}
+	});
+
+	if (initialMessages) chat.hydrate(initialMessages);
+
+	// Bytter man bok mens chat-fanen står åpen, byttes tråden under føttene på oss.
+	let loadedConversationId = $state<string | null>(null);
+	$effect(() => {
+		const convId = book.conversationId;
+		if (initialMessages || !convId || convId === loadedConversationId) return;
+		loadedConversationId = convId;
+		void chat.loadThread(convId);
+	});
 
 	/* ── Image attachment ────────────────────────────────── */
 	let pendingImageUrl = $state<string | null>(null);
@@ -56,19 +71,6 @@
 
 	/* ── Clip drawer ─────────────────────────────────────── */
 	let chatClipsOpen = $state(false);
-
-	/* ── Scroll ──────────────────────────────────────────── */
-	let chatMessagesEl = $state<HTMLDivElement | null>(null);
-
-	function scrollChatToBottom() {
-		tick().then(() => {
-			if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-		});
-	}
-
-	$effect(() => {
-		if (chatMessagesEl && (chatMessagesLoaded || chatStreamingText)) scrollChatToBottom();
-	});
 
 	/* ── Format helpers ──────────────────────────────────── */
 	function formatMinutes(mins: number): string {
@@ -260,112 +262,44 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		pendingAudioName = null;
 		pendingTranscript = null;
 
-		const userLabel = imageUrl
+		// Boblen og prompten skiller lag her: brukeren ser «🎵 Lydklipp», modellen får
+		// hele transkripsjonen. Systemprompten har egne instrukser for begge tilfellene.
+		const displayText = imageUrl
 			? `📷 ${text || 'Skjermbilde'}`
 			: transcript
 				? `🎵 ${text || 'Lydklipp'}`
 				: text;
-		onChatMessage({ role: 'user', text: userLabel });
-		scrollChatToBottom();
-		chatLoading = true;
-		chatError = '';
-		chatStreamingText = '';
-		chatStreamingStatus = 'Starter…';
 
-		try {
-			const systemPrompt = buildBookSystemPrompt(book);
-			let outMessage = text || (imageUrl ? 'Hva ser du på dette bildet?' : 'Kommenter dette lydklippet.');
-			if (transcript) {
-				outMessage = (text
-					? `${text}\n\n`
-					: '') + `[Lydklipp-transkripsjon]\n${transcript}`;
-			}
-			const body: Record<string, unknown> = {
-				mode: 'proxy',
-				message: outMessage,
-				conversationId: book.conversationId,
-				routing: {},
-				systemPrompt,
-				messages: []
-			};
-			if (imageUrl) body.imageUrl = imageUrl;
-
-			const response = await api.streamChatMessages(body);
-
-			if (!response.ok || !response.body) throw new Error('Streaming feilet');
-
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let finalPayload: Record<string, unknown> | null = null;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				for (let i = 0; i < lines.length - 1; i++) {
-					const line = lines[i].trim();
-					if (!line.startsWith('data: ')) continue;
-					const event = JSON.parse(line.slice(6));
-					if (event.type === 'status') chatStreamingStatus = event.data?.message ?? '';
-					else if (event.type === 'token') { chatStreamingStatus = ''; chatStreamingText += event.data?.token ?? ''; }
-					else if (event.type === 'complete') finalPayload = event.data;
-				}
-				buffer = lines[lines.length - 1];
-			}
-
-			const rawMessage = (finalPayload as any)?.message ?? chatStreamingText;
-			const fremdriftMatch = rawMessage.match(/<!--FREMDRIFT:(\d+)\/(\d+)-->/);
-			const displayMessage = fremdriftMatch
-				? rawMessage.replace(/\s*<!--FREMDRIFT:\d+\/\d+-->\s*/, '').trim()
-				: rawMessage;
-			onChatMessage({ role: 'assistant', text: displayMessage });
-			if (fremdriftMatch) {
-				onAutoProgress(book.id, parseInt(fremdriftMatch[1], 10), parseInt(fremdriftMatch[2], 10));
-			}
-			scrollChatToBottom();
-		} catch {
-			chatError = 'Noe gikk galt. Prøv igjen.';
-		} finally {
-			chatStreamingText = '';
-			chatStreamingStatus = '';
-			chatLoading = false;
+		let prompt = text || (imageUrl ? 'Hva ser du på dette bildet?' : 'Kommenter dette lydklippet.');
+		if (transcript) {
+			prompt = (text ? `${text}\n\n` : '') + `[Lydklipp-transkripsjon]\n${transcript}`;
 		}
+
+		await chat.send(prompt, imageUrl ?? undefined, undefined, { displayText });
 	}
 </script>
 
 <div class="bk-chat">
-	<div class="bk-chat-messages" bind:this={chatMessagesEl} aria-live="polite">
-		{#if !chatMessagesLoaded}
-			<p class="bk-empty">Laster…</p>
-		{:else if chatMessages.length === 0}
-			<p class="bk-empty">
-				{#if book.contextStatus === 'pending'}
-					Samler bokkontekst — jeg gir deg et rikere svar om litt…
-				{:else}
-					Start samtalen om boken. Hva tenker du så langt?
-				{/if}
-			</p>
-		{/if}
-		{#each chatMessages as msg}
-			{#if msg.role === 'user'}
-				<div class="bk-bubble-user">{msg.text}</div>
-			{:else}
-				<TriageCard text={msg.text} />
-			{/if}
-		{/each}
-		{#if chatLoading}
-			{#if chatStreamingText}
-				<TriageCard text={chatStreamingText} streaming={true} />
-			{:else}
-				<TriageCard loading={true} status={chatStreamingStatus} />
-			{/if}
-		{/if}
-		{#if chatError}
-			<p class="bk-error">{chatError}</p>
-		{/if}
-	</div>
+	<ChatThread
+		class="bk-chat-messages"
+		messages={chat.messages}
+		streamingText={chat.streamingText}
+		streamingSteps={chat.streamingSteps}
+		loading={chat.loading}
+		stopped={chat.stopped}
+		stoppedText={chat.stoppedText}
+		error={chat.error}
+		lastUserMsgId={chat.lastUserMsgId}
+		emptyText={book.contextStatus === 'pending'
+			? 'Samler bokkontekst — jeg gir deg et rikere svar om litt…'
+			: 'Start samtalen om boken. Hva tenker du så langt?'}
+		loadingHistory={chat.loadingOlder && chat.messages.length === 0}
+		hasMore={chat.hasMore}
+		loadingOlder={chat.loadingOlder}
+		historyError={chat.historyError}
+		onLoadOlder={() => chat.loadOlder()}
+		onRetry={() => chat.retry()}
+	/>
 	{#if pendingImageUrl}
 		<div class="bk-pending-image">
 			<img src={pendingImageUrl} alt="Vedlegg" class="bk-pending-thumb" />
@@ -398,7 +332,9 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	<ChatInput
 		showActionRig
 		placeholder="Hva tenker du om «{book.title}»?"
-		disabled={chatLoading || imageUploadLoading || audioUploadLoading}
+		disabled={chat.loading || imageUploadLoading || audioUploadLoading}
+		streaming={chat.loading}
+		onStop={() => chat.stop()}
 		onsubmit={(msg) => sendChatMessage(msg)}
 		onAttachment={(kind) => {
 			if (kind === 'camera') bookImageInput?.click();
@@ -451,29 +387,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		padding-top: 8px;
 	}
 
-	.bk-chat-messages {
-		flex: 1;
+	/* ChatThread eier scroll og retning; her settes bare rammen. */
+	:global(.bk-chat-messages) {
+		/* `scroll` (ikke `auto`) sammen med touch-reglene — iOS-momentum. */
 		overflow-y: scroll;
 		-webkit-overflow-scrolling: touch;
 		overscroll-behavior: contain;
 		touch-action: pan-y;
 		padding: 8px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.bk-bubble-user {
-		align-self: flex-end;
-		background: var(--book-bg-accent, #1e2244);
-		color: #e0e4ff;
-		padding: 10px 14px;
-		border-radius: 18px 18px 4px 18px;
-		max-width: 80%;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-		word-break: break-word;
 	}
 
 	.bk-pending-image {
@@ -595,9 +516,4 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		padding: 24px 16px;
 	}
 
-	.bk-error {
-		color: var(--error-text);
-		font-size: 0.8rem;
-		margin: 0;
-	}
 </style>

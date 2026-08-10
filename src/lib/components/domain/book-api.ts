@@ -104,7 +104,6 @@ export interface BookTabsApi {
 	/** Transkriberer lydopptak til klipp med ord-tidsstempler (BookChatTab). */
 	transcribe(themeId: string, bookId: string, formData: FormData): Promise<Response>;
 	/** Streamer chat-svar (SSE) — komponenten leser response.body selv. */
-	streamChatMessages(body: unknown): Promise<Response>;
 }
 
 export const bookTabsApi: BookTabsApi = {
@@ -158,13 +157,5 @@ export const bookTabsApi: BookTabsApi = {
 
 	transcribe(themeId, bookId, formData) {
 		return fetch(`/api/tema/${themeId}/books/${bookId}/transcribe`, { method: 'POST', body: formData });
-	},
-
-	streamChatMessages(body) {
-		return fetch('/api/chat-stream-messages', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
 	}
 };

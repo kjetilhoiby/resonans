@@ -4,13 +4,14 @@
 -->
 <script lang="ts">
 	import ChatInput from '../../ui/ChatInput.svelte';
+	import ChatThread from '../../ui/ChatThread.svelte';
 	import Icon from '../../ui/Icon.svelte';
-	import TriageCard from '../../composed/TriageCard.svelte';
 	import CollapsibleSection from '../../ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '../../ui/ConversationContextMenu.svelte';
 	import { ChatState } from '$lib/client/chat-state.svelte';
-	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import type { ThreadRow } from '$lib/client/chat-thread-rows';
 	import { uploadImage } from '$lib/client/upload-image';
+	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { goto } from '$app/navigation';
 	import { formatRelativeDay, formatWorkoutDistance, formatWorkoutDuration, formatWorkoutPace, formatWorkoutTimestamp } from '$lib/utils/format';
 
@@ -49,7 +50,9 @@
 		themeEmoji: string | null;
 		conversationId: string;
 		conversations: ThemeConversation[];
-		initialMessages: Array<{ role: string; content: string; imageUrl?: string | null }>;
+		initialMessages: ThreadRow[];
+		/** Finnes det eldre meldinger enn `initialMessages`? */
+		hasMoreMessages?: boolean;
 		selectedWorkout?: SelectedWorkout | null;
 		initialDraft?: string;
 		/** Whether to start with the conversation open (handoff, linked workout, or prompt) */
@@ -67,6 +70,7 @@
 		conversationId,
 		conversations,
 		initialMessages,
+		hasMoreMessages = false,
 		selectedWorkout = null,
 		initialDraft = '',
 		startOpen = false,
@@ -76,16 +80,6 @@
 	}: Props = $props();
 
 	/* ── Chat state ────────────────────────────────────── */
-	function toMsg(m: { role: string; content: string; imageUrl?: string | null }): ChatMessage {
-		return {
-			id: crypto.randomUUID(),
-			role: m.role as 'user' | 'assistant',
-			text: m.content,
-			starred: false,
-			imageUrl: m.imageUrl ?? null
-		};
-	}
-
 	const canonChat = new ChatState({
 		conversationId,
 		onPayload: async (data) => {
@@ -97,9 +91,9 @@
 			}
 		}
 	});
-	canonChat.messages = initialMessages
-		.filter((m) => m.role !== 'system')
-		.map(toMsg);
+	// hydrate() filtrerer system-meldinger og setter pagineringsmarkøren fra den
+	// UFILTRERTE lista — se `chat-thread-rows.ts`.
+	canonChat.hydrate(initialMessages, { hasMore: hasMoreMessages });
 
 	const extraChat = new ChatState({});
 
@@ -111,6 +105,7 @@
 	let convCreating = $state(false);
 	let navError = $state('');
 	let chatDraft = $state(initialDraft);
+	let chatInputKey = $state(0);
 
 	/* ── Samtaler-liste tilstand ─── omdøping / lokale oppdateringer ──────── */
 	let localConvList = $state<ThemeConversation[]>(conversations);
@@ -196,22 +191,16 @@
 
 	async function openConversation(convId: string) {
 		if (convId === conversationId) {
+			// Temaets egen samtale beholder sin egen ChatState — den kan alt ha lastet
+			// eldre historikk, og skal ikke starte på nytt.
 			selectedConvId = conversationId;
 			return;
 		}
 		convLoadingMessages = true;
-		try {
-			const res = await fetch(`/api/conversations/${convId}/messages`);
-			if (!res.ok) throw new Error('Lasting feilet');
-			const data: Array<{ role: string; content: string; imageUrl?: string | null }> = await res.json();
-			extraChat.setConversationId(convId);
-			extraChat.messages = data.map(toMsg);
-			selectedConvId = convId;
-		} catch {
-			navError = 'Kunne ikke laste samtalen.';
-		} finally {
-			convLoadingMessages = false;
-		}
+		const failure = await extraChat.loadThread(convId);
+		if (failure) navError = failure;
+		else selectedConvId = convId;
+		convLoadingMessages = false;
 	}
 
 	async function createNewConversation() {
@@ -220,6 +209,7 @@
 			const res = await fetch(`/api/tema/${themeId}/conversations`, { method: 'POST' });
 			if (!res.ok) throw new Error('Oppretting feilet');
 			const data: { conversationId: string } = await res.json();
+			// setConversationId nullstiller også markøren fra forrige tråd.
 			extraChat.setConversationId(data.conversationId);
 			extraChat.messages = [];
 			selectedConvId = data.conversationId;
@@ -233,6 +223,13 @@
 	async function sendMessage(text: string, imageUrl?: string) {
 		if (selectedConvId === null) return;
 		await activeChat.send(text, imageUrl);
+	}
+
+	// Stoppet svar: legg brukerens tekst tilbake i feltet. Nøkkelen remounter
+	// ChatInput, ellers ser ikke `initialValue`-effekten en uendret tekst.
+	function editStoppedMessage() {
+		chatDraft = activeChat.editStopped();
+		chatInputKey++;
 	}
 </script>
 
@@ -369,34 +366,25 @@
 			</section>
 		{/if}
 
-		<div class="chat-messages" aria-live="polite" aria-label="Samtalehistorikk">
-			{#if activeConversationMessages.length === 0}
-				<p class="chat-empty">Ingen meldinger ennå — start samtalen nedenfor.</p>
-			{/if}
-
-			{#each activeConversationMessages as msg}
-				{#if msg.role === 'user'}
-					{#if msg.imageUrl}
-						<img class="bubble-img" src={msg.imageUrl} alt="Bilde" loading="lazy" />
-					{/if}
-					<div class="bubble bubble-user">{msg.text}</div>
-				{:else}
-					<TriageCard text={msg.text} />
-				{/if}
-			{/each}
-
-			{#if activeChat.loading}
-				{#if activeChat.streamingText}
-					<TriageCard text={activeChat.streamingText} streaming={true} />
-				{:else}
-					<TriageCard loading={true} steps={activeChat.streamingSteps} />
-				{/if}
-			{/if}
-
-			{#if activeChat.error}
-				<p class="chat-error">{activeChat.error}</p>
-			{/if}
-		</div>
+		<ChatThread
+			class="chat-messages"
+			messages={activeConversationMessages}
+			streamingText={activeChat.streamingText}
+			streamingSteps={activeChat.streamingSteps}
+			loading={activeChat.loading}
+			stopped={activeChat.stopped}
+			stoppedText={activeChat.stoppedText}
+			error={activeChat.error}
+			lastUserMsgId={activeChat.lastUserMsgId}
+			emptyText="Ingen meldinger ennå — start samtalen nedenfor."
+			loadingHistory={convLoadingMessages}
+			hasMore={activeChat.hasMore}
+			loadingOlder={activeChat.loadingOlder}
+			historyError={activeChat.historyError}
+			onLoadOlder={() => activeChat.loadOlder()}
+			onRetry={() => activeChat.retry()}
+			onEditStopped={editStoppedMessage}
+		/>
 
 		<div class="chat-input-wrap">
 			{#if chatImageUploading}
@@ -415,25 +403,29 @@
 			{#if chatImageError}
 				<p class="chat-error chat-image-error">{chatImageError}</p>
 			{/if}
-			<ChatInput
-				placeholder="Spør om {themeName.toLowerCase()}…"
-				disabled={activeChat.loading || chatImageUploading}
-				initialValue={chatDraft}
-				showAttachButton={true}
-				attachAccept="image/*"
-				attachmentPending={chatImageUrl !== null}
-				onFilesSelected={(files) => {
-					const file = files[0];
-					if (file) void uploadChatImage(file);
-				}}
-				onsubmit={(message) => {
-					chatDraft = '';
-					const img = chatImageUrl;
-					clearChatImage();
-					chatImageError = '';
-					return sendMessage(message, img ?? undefined);
-				}}
-			/>
+			{#key chatInputKey}
+				<ChatInput
+					placeholder="Spør om {themeName.toLowerCase()}…"
+					disabled={activeChat.loading || chatImageUploading}
+					streaming={activeChat.loading}
+					onStop={() => activeChat.stop()}
+					initialValue={chatDraft}
+					showAttachButton={true}
+					attachAccept="image/*"
+					attachmentPending={chatImageUrl !== null}
+					onFilesSelected={(files) => {
+						const file = files[0];
+						if (file) void uploadChatImage(file);
+					}}
+					onsubmit={(message) => {
+						chatDraft = '';
+						const img = chatImageUrl;
+						clearChatImage();
+						chatImageError = '';
+						return sendMessage(message, img ?? undefined);
+					}}
+				/>
+			{/key}
 		</div>
 	</div>
 {/if}
@@ -448,39 +440,9 @@
 		max-height: calc(100dvh - 160px);
 	}
 
-	.chat-messages {
-		flex: 1;
-		overflow-y: auto;
+	/* ChatThread eier scroll, retning og gap; her settes bare rammen. */
+	:global(.chat-messages) {
 		padding: 16px var(--page-px) 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		scrollbar-width: thin;
-		scrollbar-color: #222 transparent;
-	}
-
-	.bubble-user {
-		align-self: flex-end;
-		background: hsl(var(--theme-hue) 28% 14%);
-		border: 1px solid hsl(var(--theme-hue) 24% 26%);
-		border-radius: 14px 14px 4px 14px;
-		padding: 9px 14px;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		max-width: 78%;
-		white-space: pre-wrap;
-		word-break: break-word;
-		color: var(--tp-text);
-	}
-
-	.bubble-img {
-		align-self: flex-end;
-		max-width: 78%;
-		max-height: 280px;
-		object-fit: contain;
-		border-radius: 12px;
-		border: 1px solid hsl(var(--theme-hue) 24% 26%);
-		margin-bottom: 4px;
 	}
 
 	.chat-image-preview {
@@ -526,14 +488,6 @@
 		justify-content: center;
 		cursor: pointer;
 		padding: 0;
-	}
-
-	.chat-empty {
-		color: #333;
-		font-size: 0.82rem;
-		text-align: center;
-		margin: auto;
-		font-style: italic;
 	}
 
 	.chat-error {
