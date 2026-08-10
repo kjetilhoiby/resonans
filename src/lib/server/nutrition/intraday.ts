@@ -50,7 +50,7 @@ export async function loadIntradayEnergy(
 			orderBy: [desc(sensorEvents.timestamp)]
 		}),
 		db.query.canonicalWorkouts.findMany({
-			columns: { startTime: true, sportType: true, durationSeconds: true, movingSeconds: true, distanceMeters: true },
+			columns: { startTime: true, sportType: true, durationSeconds: true, distanceMeters: true },
 			where: and(
 				eq(canonicalWorkouts.userId, userId),
 				gte(canonicalWorkouts.startTime, new Date(dayStart.getTime() - 12 * 60 * 60 * 1000)),
@@ -83,19 +83,11 @@ export async function loadIntradayEnergy(
 	const workouts: IntradayWorkout[] = workoutRows
 		.filter((row) => osloDateKey(row.startTime) === today)
 		.flatMap((row) => {
-			// Blokken i grafen tegnes like lang som den varigheten forbruket ble
-			// regnet på — ellers ville en glemt sporing lagt en to timer bred, nesten
-			// flat blokk over ettermiddagen.
-			const durationSeconds = row.movingSeconds
-				? Number(row.movingSeconds)
-				: row.durationSeconds
-					? Number(row.durationSeconds)
-					: null;
+			const durationSeconds = row.durationSeconds ? Number(row.durationSeconds) : null;
 			const estimate = estimateWorkoutKcal(
 				{
 					sportType: row.sportType,
-					durationSeconds: row.durationSeconds ? Number(row.durationSeconds) : null,
-					movingSeconds: row.movingSeconds ? Number(row.movingSeconds) : null,
+					durationSeconds,
 					distanceMeters: row.distanceMeters ? Number(row.distanceMeters) : null
 				},
 				weightKg

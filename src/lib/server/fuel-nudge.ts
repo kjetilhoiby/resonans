@@ -105,7 +105,7 @@ export async function sendFuelNudge(
 
 	const dayStart = new Date(`${today}T00:00:00.000Z`);
 	const workoutRows = await db.query.canonicalWorkouts.findMany({
-		columns: { startTime: true, sportType: true, durationSeconds: true, movingSeconds: true, distanceMeters: true },
+		columns: { startTime: true, sportType: true, durationSeconds: true, distanceMeters: true },
 		where: and(
 			eq(canonicalWorkouts.userId, userId),
 			gte(canonicalWorkouts.startTime, new Date(dayStart.getTime() - 12 * 60 * 60 * 1000))
@@ -119,7 +119,6 @@ export async function sendFuelNudge(
 				{
 					sportType: row.sportType,
 					durationSeconds: row.durationSeconds ? Number(row.durationSeconds) : null,
-					movingSeconds: row.movingSeconds ? Number(row.movingSeconds) : null,
 					distanceMeters: row.distanceMeters ? Number(row.distanceMeters) : null
 				},
 				NUDGE_WEIGHT_KG

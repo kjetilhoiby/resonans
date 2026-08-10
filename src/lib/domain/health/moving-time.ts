@@ -204,6 +204,8 @@ interface ValidPoint {
 	lat: number;
 	lon: number;
 	tSec: number;
+	/** Absolutt tid — forslaget må kunne peke på et klokkeslett, ikke et offset. */
+	tMs: number;
 }
 
 function validPoints(points: readonly MovingTimePoint[]): ValidPoint[] {
@@ -219,7 +221,7 @@ function validPoints(points: readonly MovingTimePoint[]): ValidPoint[] {
 	valid.sort((a, b) => a.tMs - b.tMs);
 	if (valid.length === 0) return [];
 	const t0 = valid[0].tMs;
-	return valid.map((p) => ({ lat: p.lat, lon: p.lon, tSec: (p.tMs - t0) / 1000 }));
+	return valid.map((p) => ({ lat: p.lat, lon: p.lon, tSec: (p.tMs - t0) / 1000, tMs: p.tMs }));
 }
 
 /**
@@ -383,3 +385,128 @@ export function stoppedShare(result: MovingTimeResult): number {
  * tolv minutter — nok til å flytte effort merkbart.
  */
 export const NOTABLE_STOPPED_SHARE = 0.2;
+
+/**
+ * Et forslag om at sporingen ble glemt — aldri en korreksjon.
+ *
+ * ## Hvorfor forslag og ikke automatikk
+ *
+ * Første utgave rettet dette automatisk for alle økter. Den endret 96 økter for
+ * en feil som skjer et par ganger i året, og tok feil på de fleste av dem: en
+ * 56-minutters løpetur ble til «8 min» fordi sporingen hadde brutt sammen
+ * underveis, en fjelltur mistet halvparten fordi bratt terreng er sakte. Ingen
+ * av de radene var en glemt sporing.
+ *
+ * Retningen er nå motsatt. Vi rører ingenting; vi sier fra når det ser ut som
+ * du glemte å stoppe, og du bestemmer. En feil gjetning koster da et forslag du
+ * avviser, ikke et tall du må oppdage.
+ */
+export interface ForgottenTrackingSuggestion {
+	/** Siste punkt der du faktisk var i bevegelse — der ruta stopper. */
+	cutAtIso: string;
+	/** Varigheten økta ville fått. */
+	keptSeconds: number;
+	/** Hva som kuttes bort. */
+	droppedSeconds: number;
+	droppedShare: number;
+	family: EffortFamily;
+}
+
+/**
+ * Minste hale verdt å foreslå. En glemt sporing er timer, ikke minutter — og et
+ * forslag som dukker opp på hver tur blir bakgrunnsstøy, og bakgrunnsstøy blir
+ * slått av. Samme resonnement som `sendFuelNudge` sin én-per-dag-gate.
+ */
+export const MIN_SUGGESTED_TRIM_SECONDS = 10 * 60;
+
+/** …og den må være en merkbar del av økta, ikke ti minutter av en femtimers tur. */
+export const MIN_SUGGESTED_TRIM_SHARE = 0.15;
+
+/** Vinduet «var jeg vedvarende i bevegelse her?» måles over. */
+export const SUSTAINED_WINDOW_SECONDS = 60;
+
+/** …og hvor stor del av det vinduet som må være bevegelse. */
+export const SUSTAINED_MOVING_SHARE = 0.5;
+
+/**
+ * Finner halen der sporet slutter å komme noen vei, og foreslår å snappe
+ * sluttpunktet dit.
+ *
+ * Returnerer null når det ikke er noe å foreslå — som er det vanlige svaret.
+ * Bruker samme to porter som `analyzeMovingTime`, så «i bevegelse» betyr det
+ * samme her som der.
+ */
+export function suggestForgottenTracking(
+	points: readonly MovingTimePoint[],
+	options: ComputeMovingTimeOptions = {}
+): ForgottenTrackingSuggestion | null {
+	const family = classifyEffortFamily(options.sportType ?? null, options.sportFamily ?? null);
+	if (FAMILIES_WITHOUT_MOVING_TIME.has(family)) return null;
+	const threshold = MOVING_THRESHOLD_MS_BY_FAMILY[family];
+	if (!(threshold > 0)) return null;
+
+	const valid = validPoints(points);
+	if (valid.length < MIN_POINTS) return null;
+
+	const median = medianSampleSeconds(valid);
+	if (median === null || median > MAX_MEDIAN_SAMPLE_SECONDS) return null;
+
+	const totalSeconds = valid[valid.length - 1].tSec;
+	if (!(totalSeconds > 0)) return null;
+
+	const progressFloor = threshold * PROGRESS_FLOOR_FRACTION;
+
+	// Klassifiser hvert intervall, og bygg en kumulativ sum av bevegelsessekunder.
+	const cumulativeMoving = new Array<number>(valid.length).fill(0);
+	for (let i = 1; i < valid.length; i += 1) {
+		const dt = valid[i].tSec - valid[i - 1].tSec;
+		let moving = false;
+		if (dt > 0) {
+			const speed = windowSpeed(valid, i, SPEED_WINDOW_SECONDS);
+			const progress = windowSpeed(valid, i, PROGRESS_WINDOW_SECONDS);
+			moving = speed !== null && speed >= threshold && (progress === null || progress >= progressFloor);
+		}
+		cumulativeMoving[i] = cumulativeMoving[i - 1] + (moving ? Math.min(dt, MAX_CREDITED_INTERVAL_SECONDS) : 0);
+	}
+
+	/**
+	 * Siste punkt med VEDVARENDE bevegelse — ikke siste enkeltintervall som besto
+	 * portene.
+	 *
+	 * Forskjellen er ikke akademisk. I en garasje kaster multipath posisjonen
+	 * titalls meter, og et enkelt tisekundersvindu kan da vise 4 m/s. Ligger
+	 * gåturen inn på kontoret rett etterpå, består den grove porten også — den
+	 * kommer jo faktisk noen vei — og kuttet ville landet nede i garasjen med et
+	 * par minutter fjernet i stedet for halvannen time.
+	 *
+	 * Kravet er derfor at over halve det siste minuttet før punktet var bevegelse.
+	 */
+	let lastMovingIndex = -1;
+	for (let i = valid.length - 1; i >= 1; i -= 1) {
+		let j = i;
+		while (j > 0 && valid[i].tSec - valid[j].tSec < SUSTAINED_WINDOW_SECONDS) j -= 1;
+		const span = valid[i].tSec - valid[j].tSec;
+		if (span <= 0) continue;
+		const movingInWindow = cumulativeMoving[i] - cumulativeMoving[j];
+		if (movingInWindow / span >= SUSTAINED_MOVING_SHARE) {
+			lastMovingIndex = i;
+			break;
+		}
+	}
+	// Ingen vedvarende bevegelse i det hele tatt er ikke en glemt hale — det er en
+	// økt vi ikke forstår, og da sier vi ingenting.
+	if (lastMovingIndex < 1) return null;
+
+	const keptSeconds = Math.round(valid[lastMovingIndex].tSec);
+	const droppedSeconds = Math.round(totalSeconds - valid[lastMovingIndex].tSec);
+	if (droppedSeconds < MIN_SUGGESTED_TRIM_SECONDS) return null;
+	if (droppedSeconds / totalSeconds < MIN_SUGGESTED_TRIM_SHARE) return null;
+
+	return {
+		cutAtIso: new Date(valid[lastMovingIndex].tMs).toISOString(),
+		keptSeconds,
+		droppedSeconds,
+		droppedShare: Math.round((droppedSeconds / totalSeconds) * 1000) / 1000,
+		family
+	};
+}

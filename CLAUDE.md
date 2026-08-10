@@ -579,64 +579,41 @@ datainnhentingen.
 - Tester på modellen skal uttrykke **forhold**, ikke nivå. Hardkodet 87,5 låste
   `effort-service.test.ts` til `MET_CALIBRATION = 2,5`.
 
-### Varighet er ikke det samme som opptak
+### Glemte trackeren: et forslag, aldri en korreksjon
 
-`$lib/domain/health/moving-time.ts`. Se `docs/changelog/2026-08-10-bevegelsestid.md`.
+`$lib/domain/health/moving-time.ts`, kontrakten i `docs/ekko-glemte-trackeren.md`. Se
+`docs/changelog/2026-08-10-glemte-trackeren.md`.
 
-- **`data.duration` er elapsed** — `siste sporpunkt − første`. Glemmer man å avslutte
-  sporingen, teller den døde halen fullt ut, og MET-stien er **rent lineær i varighet**.
-  En el-sykkeltur på 9,07 km sto som 2 t 20 min og fikk effort 114 der svaret var ~20;
-  Strava viste samme spor som 27 min 3 s. Distansen var identisk — hele feilen var tid.
-- **`data.movingDuration` skrives ved siden av, aldri i stedet for.** Elapsed er et faktum
-  om opptaket; moving er en tolkning av det. `computeWorkoutEffort` og
-  `estimateWorkoutKcal` skårer på moving når den finnes; `durationBasis` sier hvilken.
-- **Én glemt sporing forurenser fire ting samtidig:** ukas effort, akutt/kronisk-dommen,
-  `energy-expenditure` (~800 kcal fantomaktivitet) og dermed `sendFuelNudge`. Regner du på
-  en varighet fra en økt, spør hvilken av de to du vil ha.
-- **Kall `movingDurationFor` ETTER at `sportType` er avgjort.** Terskelen er per
-  sportsfamilie, og opplastingsstien overstyrer sportstypen *etter* parsingen — en
-  el-sykkeltur parset som «running» ville fått løpeterskelen.
-- **Farten måles som forflytning mellom endepunktene i et vindu**, ikke som sporlengde
-  mellom nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker punktene
-  2–5 meter, og over fire sekunder ser det ut som over én meter i sekundet.
+- **`data.duration` er elapsed**, og det er det effort ALLTID skåres på. Glemmer man å
+  avslutte sporingen, teller den døde halen fullt ut — en el-sykkeltur på 9,07 km sto som
+  2 t 20 min og fikk effort 114 der svaret var ~20.
+- **Automatisk korreksjon ble bygget og revet ut igjen samme dag.** Den ville endret 96
+  økter for en feil som skjer et par ganger i året, og tok feil på de fleste: en løpetur
+  der sporingen brøt sammen ble til «8 min», en fjelltur mistet halvparten fordi bratt
+  terreng er sakte. **En sjelden katastrofe skal ikke behandles som en systematisk
+  skjevhet.** En feil gjetning skal koste et forslag brukeren avviser, ikke et tall
+  brukeren må oppdage.
+- **`suggestForgottenTracking` returnerer null i det store flertallet av tilfellene**, og
+  skal gjøre det. Forslaget følger med i svaret fra `POST /api/apps/upload`; korreksjonen
+  skjer i Ekko ved at sporet kuttes lokalt og lastes opp på nytt med samme `sessionId`.
+- **Bare hale-kutt er trygt.** Kuttes starten, endres `startTime`, upserten treffer en
+  annen nøkkel, og turen telles to ganger.
+- **Ingen lagret overstyring.** Kutt sporet, så blir `duration` sann — da trenger ingen
+  leser å vite at en korreksjon har skjedd.
+- **Farten måles som forflytning mellom vinduets endepunkter**, ikke som sporlengde mellom
+  nabopunkter. Sporlengde summerer GPS-støyen; står man stille spriker punktene 2–5 meter.
 - **To porter, og begge må åpne.** Den fine (10 s) spør «var jeg i bevegelse nå», den
-  grove (120 s, gulv på 25 % av terskelen) «kom jeg noen vei». Et rødlys består den grove
-  og felles av den fine; innendørs GPS-drift er motsatt.
-- **En glemt sporing slutter sjelden med at telefonen legges fra seg.** Halen på turen som
-  utløste dette er en garasje (multipath kaster posisjonen titalls meter — ikke jitter,
-  men *fart* over ti sekunder) og en gåtur opp på kontoret. Modellerer du en hale som
-  stillstand, bommer du på begge.
-- **Sykkelterskelen er 2,5 m/s, ikke Stravas ~1,4.** Gange (1,2–1,7) kommer noen vei og
-  slipper gjennom den grove porten, så det er farten som må skille den fra sykling — og
-  ekte sykling ligger på 4–8. Løping har ikke det gapet (rask gange 1,7 mot sliten jogg
-  1,8), står på 0,7, og krediterer derfor en gåtur hjem. Kjent rest.
-- **Sporet må være tett nok** (`MAX_MEDIAN_SAMPLE_SECONDS`, 15 s). Ligger punktene et
-  minutt fra hverandre, kapper `MAX_CREDITED_INTERVAL_SECONDS` hvert intervall til 60 s,
-  og svaret blir «antall intervaller × ett minutt» — et tall om oppløsningen, ikke om
-  økta. Porten er prinsipiell, ikke målt: den kom av en feildiagnose — «hver verdi i
-  rapporten er et helt antall minutter» var kortets egen `Math.round(sekunder / 60)`, ikke
-  et mønster i dataene. Den står igjen fordi resonnementet holder på egne bein og utfallet
-  er null, altså elapsed videre. `analyzeMovingTime` returnerer grunnen (`rejection`),
-  sporlengden og punktavstanden, og alle vises i kortet — en stille null sender folk på
-  leting i innhentingen.
-- **null betyr «vet ikke», ikke «sto stille»**, og gir elapsed videre. Det gjelder også
-  0 bevegelsessekunder: et spor uten forflytning er like gjerne en tredemølle.
-- **Gange og fjelltur står på 0,25 m/s.** En bratt tur går i rykk og napp, og 0,3 m/s opp
-  en ur er ekte gange. Å kutte den fjerner noe brukeren faktisk gjorde — samme retning som
-  «vi haker aldri AV automatisk».
-- **Minstelengden måles på bevegelsestiden.** En time stillstand med to minutter sykling
-  er ikke en økt.
-- **Pace regnes på samme varighet som effort skåres på.** Ellers får en økt med lang
-  stillstand lav «fart» og dermed lav intensitet, i tillegg til at halen alt er trukket fra.
-- **Historikken må backfilles OG reprojiseres**, og de to hører sammen: ankeret leses fra
-  de *lagrede* skårene, så et skrevet `movingDuration` uten reprojeksjon ser ut som en
-  jobb som ikke gjorde noe. **Knappen bor i `/settings/sources`**
-  (`MovingTimeBackfillCard`) og kjører hele kjeden — den utleder reprojeksjonsvinduet fra
-  den eldste økta backfillen rørte, og sier fra når historikken er lengre enn taket på 26
-  uker. Endepunktene er `POST /api/helse/trening/bevegelsestid` (additiv, idempotent,
-  `?dryRun=true`) og `POST /api/helse/trening/reprojiser?weeks=…`.
-- Manuell crop for haler som *ikke* står stille (glemt sporing i bilen hjem) er ikke
-  bygget. Den hører under «Kilder og avvik» ved siden av `dismiss`/`source-role`.
+  grove (120 s) «kom jeg noen vei». Et rødlys består den grove og felles av den fine;
+  innendørs GPS-drift er motsatt.
+- **Kuttpunktet krever VEDVARENDE bevegelse** (over halve siste minutt). Uten det landet
+  kuttet nede i garasjen — multipath ga en spike på 4 m/s, og gåturen opp på kontoret
+  bestod den grove porten fordi den faktisk kommer noen vei.
+- **Sykkelterskelen er 2,5 m/s, ikke Stravas ~1,4**, nettopp for å ta gåturen med. Løping
+  har ikke det gapet (rask gange 1,7 mot sliten jogg 1,8) og står på 0,7. Kjent rest.
+- **Minst 10 min og 15 % av økta.** Et forslag på hver tur blir bakgrunnsstøy.
+- **`coverage` måler mot SPORET, `MIN_TRACK_SPAN_SHARE` mot ØKTA.** Et spor kan være
+  perfekt tett og likevel dekke en åttendedel av turen — det var slik «56 min → 8 min»
+  oppsto. Splits og pulsfordeling på flaten regnes fra de samme punktene og avslører det.
 
 ### Ukas effort: budsjett og belastning er to dommer
 

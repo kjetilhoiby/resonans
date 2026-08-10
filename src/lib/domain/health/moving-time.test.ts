@@ -7,6 +7,8 @@ import {
 	MIN_POINTS,
 	MAX_MEDIAN_SAMPLE_SECONDS,
 	MIN_TRACK_SPAN_SHARE,
+	MIN_SUGGESTED_TRIM_SECONDS,
+	suggestForgottenTracking,
 	MOVING_THRESHOLD_MS_BY_FAMILY,
 	type MovingTimePoint
 } from './moving-time';
@@ -320,5 +322,82 @@ describe('computeMovingTime', () => {
 				.rejection
 		).toBe('sporet_dekker_ikke_okta');
 		expect(MIN_TRACK_SPAN_SHARE).toBeGreaterThan(0.5);
+	});
+});
+
+describe('suggestForgottenTracking', () => {
+	it('foreslår å snappe sluttpunktet der ruta stopper', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 6900, speedMs: 0, jitterMeters: 4 }
+		]);
+
+		const forslag = suggestForgottenTracking(points, { sportType: 'e_bike' });
+
+		expect(forslag).not.toBeNull();
+		expect(forslag!.keptSeconds).toBeGreaterThan(1400);
+		expect(forslag!.keptSeconds).toBeLessThan(1600);
+		expect(forslag!.droppedSeconds).toBeGreaterThan(6800);
+		expect(new Date(forslag!.cutAtIso).getTime()).toBeGreaterThan(START);
+	});
+
+	it('kutter garasjen OG gåturen opp på kontoret', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 1200, speedMs: 0, jitterMeters: 40 },
+			{ seconds: 300, speedMs: 1.4 }
+		]);
+
+		const forslag = suggestForgottenTracking(points, { sportType: 'e_bike' });
+
+		expect(forslag).not.toBeNull();
+		expect(forslag!.keptSeconds).toBeLessThan(1600);
+	});
+
+	it('sier ingenting om en vanlig tur', () => {
+		const points = track([
+			{ seconds: 1800, speedMs: 6 },
+			{ seconds: 120, speedMs: 0, jitterMeters: 2 },
+			{ seconds: 1800, speedMs: 6 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting om en fjelltur i svært lavt tempo', () => {
+		const points = track([
+			{ seconds: 2400, speedMs: 1.2 },
+			{ seconds: 3000, speedMs: 0.3 },
+			{ seconds: 2400, speedMs: 1.2 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'walking' })).toBeNull();
+	});
+
+	it('sier ingenting om en kort hale — et forslag på hver tur blir slått av', () => {
+		const points = track([
+			{ seconds: 3600, speedMs: 6 },
+			{ seconds: 300, speedMs: 0, jitterMeters: 3 }
+		]);
+
+		expect(300).toBeLessThan(MIN_SUGGESTED_TRIM_SECONDS);
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting når ingenting var i bevegelse', () => {
+		// Det er ikke en glemt hale, det er en økt vi ikke forstår.
+		const points = track([{ seconds: 3600, speedMs: 0, jitterMeters: 3 }]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'cycling' })).toBeNull();
+	});
+
+	it('sier ingenting for styrke og yoga', () => {
+		const points = track([
+			{ seconds: 1500, speedMs: 6 },
+			{ seconds: 6900, speedMs: 0, jitterMeters: 4 }
+		]);
+
+		expect(suggestForgottenTracking(points, { sportType: 'strength_training' })).toBeNull();
+		expect(suggestForgottenTracking(points, { sportType: 'yoga' })).toBeNull();
 	});
 });

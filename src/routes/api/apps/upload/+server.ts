@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
-import { parseWorkoutFile, downsampleTrack, movingDurationFor, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
+import { parseWorkoutFile, downsampleTrack, forgottenTrackingSuggestionFor, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { pushSession } from '$lib/server/services/strava-sync-service';
@@ -165,7 +165,11 @@ async function handleWorkoutUpload(
 
 	// Etter normaliseringen, ikke før: terskelen for «i bevegelse» er per
 	// sportsfamilie, og en el-sykkeltur parset som «running» ville fått feil.
-	const movingDuration = movingDurationFor(parsed);
+	//
+	// Dette ENDRER ingenting. Økta lagres som den ble spilt inn; forslaget er noe
+	// Ekko kan vise, og brukeren kan handle på ved å kutte lokalt og laste opp på
+	// nytt. Se docs/ekko-glemte-trackeren.md.
+	const forgottenTracking = forgottenTrackingSuggestionFor(parsed);
 
 	const result = await SensorEventService.write(
 		{
@@ -177,8 +181,6 @@ async function handleWorkoutUpload(
 			data: {
 				sportType: parsed.sportType,
 				duration: parsed.duration,
-				// Ved siden av elapsed, aldri i stedet for — se `movingDurationFor`.
-				...(movingDuration !== undefined ? { movingDuration } : {}),
 				distance: parsed.distance,
 				elevation: parsed.elevation,
 				avgHeartRate: parsed.avgHeartRate,
@@ -252,10 +254,9 @@ async function handleWorkoutUpload(
 		trackPoints: parsed.trackPoints.length,
 		distance: Math.round(parsed.distance),
 		duration: Math.round(parsed.duration),
-		// Ekko viser dette når det avviker fra `duration`, så brukeren ser at
-		// halen ble trukket fra — og ikke lurer på hvorfor Resonans sier noe
-		// annet enn stoppeklokka i appen.
-		movingDuration: movingDuration ?? null
+		// null i det store flertallet av tilfellene. Er den satt, ser det ut som
+		// sporingen ble glemt, og Ekko kan tilby «snapp sluttpunktet hit».
+		forgottenTracking
 	});
 }
 
