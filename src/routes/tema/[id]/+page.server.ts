@@ -92,6 +92,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 					id: messagesTable.id,
 					role: messagesTable.role,
 					content: messagesTable.content,
+					imageUrl: messagesTable.imageUrl,
 					timestamp: messagesTable.createdAt
 				})
 				.from(messagesTable)
@@ -170,6 +171,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',
 			content: m.content,
+			// Uten denne forsvinner bildet fra tråden ved neste sidelast — det ser ut
+			// som om det aldri ble sendt.
+			imageUrl: m.imageUrl,
 			timestamp: m.timestamp.toISOString()
 		})),
 		goals: themeGoals,

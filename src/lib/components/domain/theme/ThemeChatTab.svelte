@@ -10,6 +10,7 @@
 	import ConversationContextMenu from '../../ui/ConversationContextMenu.svelte';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import { uploadImage } from '$lib/client/upload-image';
 	import { goto } from '$app/navigation';
 	import { formatRelativeDay, formatWorkoutDistance, formatWorkoutDuration, formatWorkoutPace, formatWorkoutTimestamp } from '$lib/utils/format';
 
@@ -48,7 +49,7 @@
 		themeEmoji: string | null;
 		conversationId: string;
 		conversations: ThemeConversation[];
-		initialMessages: Array<{ role: string; content: string }>;
+		initialMessages: Array<{ role: string; content: string; imageUrl?: string | null }>;
 		selectedWorkout?: SelectedWorkout | null;
 		initialDraft?: string;
 		/** Whether to start with the conversation open (handoff, linked workout, or prompt) */
@@ -75,8 +76,14 @@
 	}: Props = $props();
 
 	/* ── Chat state ────────────────────────────────────── */
-	function toMsg(m: { role: string; content: string }): ChatMessage {
-		return { id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text: m.content, starred: false };
+	function toMsg(m: { role: string; content: string; imageUrl?: string | null }): ChatMessage {
+		return {
+			id: crypto.randomUUID(),
+			role: m.role as 'user' | 'assistant',
+			text: m.content,
+			starred: false,
+			imageUrl: m.imageUrl ?? null
+		};
 	}
 
 	const canonChat = new ChatState({
@@ -124,7 +131,7 @@
 	let chatImageUploading = $state(false);
 	let chatImagePreview = $state<string | null>(null);
 	let chatImageUrl = $state<string | null>(null);
-	let chatImageInputEl = $state<HTMLInputElement | null>(null);
+	let chatImageError = $state('');
 
 	/* ── Funksjoner ────────────────────────────────────── */
 	function handleThemeConvStarred(id: string, starred: boolean) {
@@ -161,20 +168,27 @@
 		convEditingTitle = '';
 	}
 
+	function clearChatImage() {
+		if (chatImagePreview) URL.revokeObjectURL(chatImagePreview);
+		chatImagePreview = null;
+		chatImageUrl = null;
+	}
+
+	// Deler opplastingen med resten av appen (`$lib/client/upload-image`) — den la
+	// fila på riktig felt (`image`), som denne fila tidligere kalte `file`. Endepunktet
+	// svarte 400 på det, så bildesending kunne aldri ha virket herfra.
 	async function uploadChatImage(file: File) {
 		chatImageUploading = true;
+		chatImageError = '';
+		clearChatImage();
 		try {
-			const fd = new FormData();
-			fd.append('file', file);
-			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-			if (!res.ok) throw new Error('Opplasting feilet');
-			const { url } = await res.json();
+			const { url } = await uploadImage(file);
 			chatImageUrl = url;
 			chatImagePreview = URL.createObjectURL(file);
-		} catch {
-			navError = 'Bilde-opplasting feilet. Prøv igjen.';
-			chatImagePreview = null;
-			chatImageUrl = null;
+		} catch (err) {
+			// Meldingen fra serveren skal vises — «noe gikk galt» gjør en prod-feil uløselig.
+			chatImageError = err instanceof Error ? err.message : 'Bilde-opplasting feilet. Prøv igjen.';
+			clearChatImage();
 		} finally {
 			chatImageUploading = false;
 		}
@@ -189,7 +203,7 @@
 		try {
 			const res = await fetch(`/api/conversations/${convId}/messages`);
 			if (!res.ok) throw new Error('Lasting feilet');
-			const data: Array<{ role: string; content: string }> = await res.json();
+			const data: Array<{ role: string; content: string; imageUrl?: string | null }> = await res.json();
 			extraChat.setConversationId(convId);
 			extraChat.messages = data.map(toMsg);
 			selectedConvId = convId;
@@ -385,36 +399,39 @@
 		</div>
 
 		<div class="chat-input-wrap">
-			{#if chatImagePreview}
+			{#if chatImageUploading}
+				<p class="chat-image-status">Laster opp bilde…</p>
+			{:else if chatImagePreview}
 				<div class="chat-image-preview">
 					<img src={chatImagePreview} alt="Forhåndsvisning" class="chat-image-thumb" />
-					<button class="chat-image-remove" onclick={() => { chatImagePreview = null; chatImageUrl = null; }} aria-label="Fjern bilde">×</button>
+					<button
+						class="chat-image-remove"
+						onclick={clearChatImage}
+						aria-label="Fjern bilde"
+						data-track="tema-chat:fjern-bilde"
+					>×</button>
 				</div>
+			{/if}
+			{#if chatImageError}
+				<p class="chat-error chat-image-error">{chatImageError}</p>
 			{/if}
 			<ChatInput
 				placeholder="Spør om {themeName.toLowerCase()}…"
 				disabled={activeChat.loading || chatImageUploading}
 				initialValue={chatDraft}
+				showAttachButton={true}
+				attachAccept="image/*"
+				attachmentPending={chatImageUrl !== null}
+				onFilesSelected={(files) => {
+					const file = files[0];
+					if (file) void uploadChatImage(file);
+				}}
 				onsubmit={(message) => {
 					chatDraft = '';
 					const img = chatImageUrl;
-					chatImageUrl = null;
-					chatImagePreview = null;
+					clearChatImage();
+					chatImageError = '';
 					return sendMessage(message, img ?? undefined);
-				}}
-				onAttachment={(kind) => {
-					if (kind === 'camera' || kind === 'file') chatImageInputEl?.click();
-				}}
-			/>
-			<input
-				bind:this={chatImageInputEl}
-				type="file"
-				accept="image/*"
-				class="files-upload-input"
-				onchange={(e) => {
-					const f = (e.currentTarget as HTMLInputElement).files?.[0];
-					if (f) void uploadChatImage(f);
-					(e.currentTarget as HTMLInputElement).value = '';
 				}}
 			/>
 		</div>
@@ -473,6 +490,17 @@
 		margin-bottom: 6px;
 	}
 
+	.chat-image-status {
+		margin: 0 0 6px;
+		font-size: 0.78rem;
+		color: #666;
+	}
+
+	.chat-image-error {
+		margin: 0 0 6px;
+		text-align: left;
+	}
+
 	.chat-image-thumb {
 		max-height: 80px;
 		max-width: 120px;
@@ -517,10 +545,6 @@
 	.chat-input-wrap {
 		padding: 10px var(--page-px) env(safe-area-inset-bottom, 12px);
 		border-top: 1px solid #1a1a1a;
-	}
-
-	.files-upload-input {
-		display: none;
 	}
 
 	/* ── Samtaler-liste ── */
