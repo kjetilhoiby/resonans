@@ -281,3 +281,72 @@ describe('predictDeltaKg', () => {
 		expect(predictDeltaKg(model, 200)).toBeNull();
 	});
 });
+
+describe('effortKnown — uker uten øktdata er ikke hvileuker', () => {
+	/**
+	 * Regresjonen HealthKit-backfillen innførte: vekthistorikken går nå tilbake til
+	 * 2014, mens canonical_workouts begynner der den første øktkilden begynte. Uten
+	 * flagget ble hver uke i mellomrommet et punkt som sa «stort vekttap ved null
+	 * trening» — og modellen konkluderer da med at trening ikke betyr noe.
+	 */
+	function week(
+		weekKey: string,
+		weightAvg: number,
+		effort: number,
+		effortKnown?: boolean
+	): WeeklyEffortWeightInput {
+		return { weekKey, weightAvg, weighInCount: 3, effort, effortKnown };
+	}
+
+	it('dropper par der en uke mangler øktdata', () => {
+		const weeks = [
+			week('2015-01-05', 100, 0, false),
+			week('2015-01-12', 99, 0, false),
+			week('2015-01-19', 98, 0, false)
+		];
+
+		expect(buildWeeklyPairs(weeks)).toEqual([]);
+	});
+
+	it('beholder ekte hvileuker — effort 0 med kjent data', () => {
+		const weeks = [
+			week('2024-01-01', 100, 0, true),
+			week('2024-01-08', 99.8, 0, true)
+		];
+
+		expect(buildWeeklyPairs(weeks)).toHaveLength(1);
+	});
+
+	it('antar kjent når flagget mangler', () => {
+		// Bakoverkompatibelt: kallere som bygger lista fra en periode der øktdata
+		// finnes skal ikke måtte sette flagget.
+		const weeks = [week('2024-01-01', 100, 12), week('2024-01-08', 99.8, 30)];
+
+		expect(buildWeeklyPairs(weeks)).toHaveLength(1);
+	});
+
+	it('dropper par der en UKJENT uke ligger inne i effort-vinduet', () => {
+		// Vinduet snitter over flere uker. En ukjent uke inni gjør snittet for lavt,
+		// og et for lavt effort-tall parret med et ekte vekttap er nettopp punktet
+		// som trekker stigningstallet mot null.
+		const weeks = [
+			week('2024-01-01', 101, 0, false),
+			week('2024-01-08', 100, 40, true),
+			week('2024-01-15', 99, 40, true)
+		];
+
+		const pairs = buildWeeklyPairs(weeks, { effortWindowWeeks: 3 });
+
+		expect(pairs).toEqual([]);
+	});
+
+	it('grensa slipper gjennom når hele vinduet er kjent', () => {
+		const weeks = [
+			week('2024-01-01', 101, 40, true),
+			week('2024-01-08', 100, 40, true),
+			week('2024-01-15', 99, 40, true)
+		];
+
+		expect(buildWeeklyPairs(weeks, { effortWindowWeeks: 3 })).toHaveLength(1);
+	});
+});

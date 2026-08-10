@@ -19,6 +19,21 @@ export interface WeeklyEffortWeightInput {
 	weightAvg: number | null; // snittvekt for uka (kg), null hvis ingen veiinger
 	weighInCount: number; // antall veiinger i uka
 	effort: number; // weeklyEffort.total, 0 hvis ingen økter (reell hvileuke)
+	/**
+	 * Om vi i det hele tatt HAR øktdata for uka.
+	 *
+	 * `effort: 0` betyr «trente ikke». Det er noe helt annet enn «vi vet ikke hva
+	 * du trente», og forskjellen var usynlig så lenge vekt- og økthistorikken
+	 * startet samtidig. HealthKit-backfillen brøt det: vekt går nå tilbake til
+	 * 2014, mens `canonical_workouts` begynner der den første øktkilden begynte.
+	 * Uten dette flagget blir hver uke i mellomrommet et regresjonspunkt som sier
+	 * «stort vekttap ved null trening» — og modellen konkluderer med at trening
+	 * ikke betyr noe.
+	 *
+	 * Valgfri: uten den antas true, som er riktig for alle kallere som bygger
+	 * ukelista fra en periode der øktdata finnes.
+	 */
+	effortKnown?: boolean;
 }
 
 export interface WeeklyEffortWeightPoint {
@@ -74,8 +89,16 @@ export function buildWeeklyPairs(
 		if (prev.weightAvg == null || curr.weightAvg == null) continue;
 		if (prev.weighInCount < minWeighIns || curr.weighInCount < minWeighIns) continue;
 
+		// Hele effort-vinduet må ha kjent øktdata. Én ukjent uke inne i vinduet gjør
+		// snittet for lavt, og et for lavt effort-tall parret med et ekte vekttap er
+		// nettopp punktet som trekker stigningstallet mot null.
 		let effortSum = 0;
-		for (let j = i - windowWeeks + 1; j <= i; j++) effortSum += weeks[j].effort;
+		let effortKnown = true;
+		for (let j = i - windowWeeks + 1; j <= i; j++) {
+			if (weeks[j].effortKnown === false) effortKnown = false;
+			effortSum += weeks[j].effort;
+		}
+		if (!effortKnown) continue;
 
 		out.push({
 			weekKey: curr.weekKey,
