@@ -61,6 +61,11 @@ export type AssessmentInput = {
 	/** Bakker, runder og strekk — utelukkende fra Ekko. Se filhodet. */
 	analysis: WorkoutAnalysis | null;
 	effort: { score: number | null; method: string | null };
+	/**
+	 * Pulsdrift innad i økta. Svarer på «holdt jeg det ut», som er noe annet enn
+	 * EF-trenden på dashbordet («er jeg raskere per slag enn før»).
+	 */
+	decoupling: { driftPct: number; good: boolean } | null;
 	bestEfforts: Record<string, number> | null;
 	/** Ukas budsjett og belastning, med ordene flatene bruker. */
 	weekStanding: { planText: string | null; loadText: string | null } | null;
@@ -258,6 +263,13 @@ export function buildAssessmentContext(input: AssessmentInput): string {
 	if (w.elevationMeters !== null) summary.push(`${Math.round(w.elevationMeters)} høydemeter`);
 	const hr = hrText(w.avgHeartRate, w.maxHeartRate);
 	if (hr) summary.push(hr);
+	if (input.decoupling) {
+		const d = input.decoupling;
+		const sign = d.driftPct >= 0 ? '' : '−';
+		summary.push(
+			`pulsdrift ${sign}${Math.abs(d.driftPct).toFixed(1).replace('.', ',')} % (${d.good ? 'jevn' : 'dro oppover'})`
+		);
+	}
 	if (input.effort.score !== null) {
 		summary.push(`effort ${num(input.effort.score)}${input.effort.method ? ` (${input.effort.method})` : ''}`);
 	}

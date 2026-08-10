@@ -8,10 +8,16 @@ const DASHBOARD_CACHE = `resonans-dashboard-${version}`;
 const STATIC_ASSETS = [...build, ...files];
 
 self.addEventListener('install', (event) => {
+	// `skipWaiting` INNI `waitUntil`: står den utenfor, kan den nye workeren
+	// aktivere før cachen er fylt — og `activate` sletter da de gamle cachene
+	// mens en side fortsatt kjører gammel kode.
 	event.waitUntil(
-		caches.open(APP_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
+		(async () => {
+			const cache = await caches.open(APP_CACHE);
+			await cache.addAll(STATIC_ASSETS);
+			await self.skipWaiting();
+		})()
 	);
-	self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -77,6 +83,43 @@ self.addEventListener('push', (event) => {
 	);
 });
 
+/**
+ * Hvor lenge vi venter på at en åpen klient skal bekrefte at den ruter selv.
+ *
+ * Kort med vilje: svarer den ikke, er den enten gammel eller opptatt, og da er
+ * en full navigasjon riktigere enn å vente.
+ */
+const CLIENT_ROUTE_ACK_MS = 400;
+
+/**
+ * Be en åpen klient rute selv, og si fra om den tok imot.
+ *
+ * Poenget: `WindowClient.navigate()` er en navigasjon initiert UTENFRA appen, og
+ * passerer derfor aldri `beforeNavigate` i `+layout.svelte` — der versjonsvakten
+ * bor («ny versjon deployet → neste navigasjon blir full sidelast»). Etter en
+ * deploy kunne varselet dermed dra en kjørende PWA til en rute mens den fortsatt
+ * hadde gammel kode, samtidig som `visibilitychange` vurderte en reload. To
+ * navigasjoner i samme øyeblikk gir blank skjerm.
+ *
+ * Ruter appen selv, går alt gjennom `goto()` og dermed gjennom vakten.
+ */
+async function askClientToRoute(client: WindowClient, url: string): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		const channel = new MessageChannel();
+		const timer = setTimeout(() => resolve(false), CLIENT_ROUTE_ACK_MS);
+		channel.port1.onmessage = () => {
+			clearTimeout(timer);
+			resolve(true);
+		};
+		try {
+			client.postMessage({ type: 'resonans:navigate', url }, [channel.port2]);
+		} catch {
+			clearTimeout(timer);
+			resolve(false);
+		}
+	});
+}
+
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 	const targetUrl = (event.notification.data?.url as string | undefined) ?? '/';
@@ -86,11 +129,16 @@ self.addEventListener('notificationclick', (event) => {
 			const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 			for (const client of allClients) {
 				const windowClient = client as WindowClient;
-				if ('focus' in windowClient) {
-					await windowClient.focus();
-					windowClient.navigate(targetUrl);
-					return;
-				}
+				if (!('focus' in windowClient)) continue;
+				await windowClient.focus();
+
+				// Klienten ruter selv når den kan — den kjenner versjonsvakten.
+				if (await askClientToRoute(windowClient, targetUrl)) return;
+
+				// Ingen bekreftelse: gammel klient uten lytteren, eller en som ikke
+				// svarte. Full navigasjon er da tryggere enn å la varselet være dødt.
+				await windowClient.navigate(targetUrl).catch(() => {});
+				return;
 			}
 			await self.clients.openWindow(targetUrl);
 		})()

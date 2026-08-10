@@ -17,6 +17,8 @@ import { openai } from '$lib/server/openai';
 import { computeKmSplits, type TrackPoint } from '$lib/utils/track-stats';
 import { parseWorkoutAnalysis, type WorkoutAnalysis } from '$lib/domain/health/workout-analysis';
 import { frameGoals, type GoalInput } from '$lib/domain/health/goal-horizon';
+import { aerobicDecoupling, type DecouplingSample } from '$lib/domain/health/aerobic-efficiency';
+import { cumulativeDistanceMeters } from '$lib/utils/track-stats';
 import {
 	ASSESSMENT_SYSTEM_PROMPT,
 	buildAssessmentContext,
@@ -147,6 +149,25 @@ export async function buildWorkoutAssessmentContext(
 		readGoalsWithProgress(userId, sources.healthThemeIds)
 	]);
 
+	// Pulsdrift: hvor mye fart-per-slag falt fra første til andre halvdel.
+	// Regnes her fordi trackPoints alt er lastet for kartet.
+	let decoupling: { driftPct: number; good: boolean } | null = null;
+	if (points.length >= 2) {
+		const cum = cumulativeDistanceMeters(points);
+		const t0 = points[0].time ? new Date(points[0].time).getTime() : null;
+		if (t0 !== null && Number.isFinite(t0)) {
+			const samples: DecouplingSample[] = [];
+			for (const [i, point] of points.entries()) {
+				if (!point.time) continue;
+				const t = new Date(point.time).getTime();
+				if (!Number.isFinite(t)) continue;
+				samples.push({ tSec: (t - t0) / 1000, distanceM: cum[i], hr: point.hr ?? null });
+			}
+			const result = aerobicDecoupling(samples);
+			decoupling = result ? { driftPct: result.driftPct, good: result.good } : null;
+		}
+	}
+
 	return buildAssessmentContext({
 		workout: sources.workout,
 		splits: points.length >= 2 ? computeKmSplits(points) : [],
@@ -157,6 +178,7 @@ export async function buildWorkoutAssessmentContext(
 			score: toNumber(canonical?.effortScore),
 			method: canonical?.effortMethod ?? null
 		},
+		decoupling,
 		bestEfforts: (canonical?.bestEfforts as Record<string, number> | null) ?? null,
 		weekStanding: sources.weekStanding,
 		nugget: sources.nugget,

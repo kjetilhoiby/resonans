@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { updated } from '$app/state';
 	import { onMount } from 'svelte';
 	import { initUsageTracking, trackPageView } from '$lib/client/usage-logger';
@@ -12,6 +12,14 @@
 	// skal aldri kaste bort utkast midt i skriving.
 	const RELOAD_AFTER_HIDDEN_MS = 30 * 60_000;
 	let hiddenAt: number | null = null;
+
+	/**
+	 * Satt idet et push-varsel har bedt oss rute. Hindrer at
+	 * `visibilitychange`-reloaden fyrer i samme øyeblikk: to navigasjoner
+	 * samtidig i en iOS-PWA gir blank skjerm, og det var slik varselet «krasjet»
+	 * appen etter en deploy.
+	 */
+	let routingFromNotification = false;
 
 	onMount(() => {
 		initUsageTracking();
@@ -29,11 +37,33 @@
 				.catch(() => {});
 			const hiddenLong = hiddenAt !== null && Date.now() - hiddenAt > RELOAD_AFTER_HIDDEN_MS;
 			void updated.check().then((hasNewVersion) => {
-				if (hasNewVersion && hiddenLong) location.reload();
+				// Ikke reload mens et varsel ruter oss — se `routingFromNotification`.
+				if (hasNewVersion && hiddenLong && !routingFromNotification) location.reload();
 			}).catch(() => {});
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+
+		// Service workeren ber oss rute selv når et varsel trykkes, i stedet for å
+		// kalle `WindowClient.navigate()` utenfra. Da går turen gjennom `goto` →
+		// `beforeNavigate` → versjonsvakten under, som gjør den til en full
+		// sidelast når en ny versjon er deployet.
+		const onServiceWorkerMessage = (event: MessageEvent) => {
+			const data = event.data as { type?: string; url?: string } | undefined;
+			if (data?.type !== 'resonans:navigate' || typeof data.url !== 'string') return;
+			// Bekreft FØR navigasjonen: rekker vi ikke det, faller SW-en tilbake til
+			// `navigate()` og vi får to navigasjoner — nøyaktig det vi vil unngå.
+			event.ports[0]?.postMessage({ ok: true });
+			routingFromNotification = true;
+			void goto(data.url).finally(() => {
+				routingFromNotification = false;
+			});
+		};
+		navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
+
+		return () => {
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
+		};
 	});
 
 	// Ny versjon deployet → la neste klient-navigasjon bli en full sidelast,

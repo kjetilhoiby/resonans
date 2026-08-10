@@ -36,6 +36,7 @@ function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
 		splits: [],
 		analysis: null,
 		effort: { score: null, method: null },
+		decoupling: null,
 		bestEfforts: null,
 		weekStanding: null,
 		nugget: null,
@@ -296,5 +297,26 @@ describe('geografien kommer fra Ekko', () => {
 		expect(context).not.toContain('Strekning');
 		expect(context).toContain('Kilometer');
 		expect(context).toContain('km 1: 4:32 /km');
+	});
+});
+
+describe('pulsdrift', () => {
+	it('sier at pulsen holdt seg jevn', () => {
+		const context = buildAssessmentContext(baseInput({ decoupling: { driftPct: 2.4, good: true } }));
+		expect(context).toContain('pulsdrift 2,4 % (jevn)');
+	});
+
+	it('sier fra når pulsen dro oppover', () => {
+		const context = buildAssessmentContext(baseInput({ decoupling: { driftPct: 8.1, good: false } }));
+		expect(context).toContain('pulsdrift 8,1 % (dro oppover)');
+	});
+
+	it('viser negativ drift med minustegn — pulsen falt, og det er ikke en feil', () => {
+		const context = buildAssessmentContext(baseInput({ decoupling: { driftPct: -1.5, good: true } }));
+		expect(context).toContain('pulsdrift −1,5 %');
+	});
+
+	it('utelater drift helt når den ikke lot seg regne', () => {
+		expect(buildAssessmentContext(baseInput())).not.toContain('pulsdrift');
 	});
 });

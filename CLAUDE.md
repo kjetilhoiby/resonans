@@ -810,6 +810,52 @@ Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
 - `e_bike` har egen tittel («Elsykkeltur»), ikke «Sykkeløkt». Den har egen
   MET-verdi, egen effort-faktor og eget krydder-regnskap.
 
+### Push-varsler ruter gjennom appen, ikke utenom den
+
+Se `docs/changelog/2026-08-11-pwa-varselnavigasjon.md`.
+
+- **`WindowClient.navigate()` passerer ikke `beforeNavigate`.** Versjonsvakta i
+  `+layout.svelte` («ny versjon deployet → neste navigasjon blir full sidelast, så
+  vi aldri prøver å laste chunks som ikke finnes lenger») gjelder bare navigasjon
+  appen selv starter. En SW som navigerer utenfra går rundt den.
+- **Service workeren ber derfor klienten rute selv** (`postMessage` +
+  `MessageChannel`-ack), og faller tilbake på `navigate()`/`openWindow()` først når
+  ingen svarer. Klienten bekrefter FØR den navigerer — rekker den ikke det, gjør
+  SW-en fallback og man får to navigasjoner.
+- **To samtidige navigasjoner i en iOS-PWA gir blank skjerm.** Det var slik
+  varselet «krasjet» appen: SW-ens `navigate()` og `visibilitychange`-reloaden
+  fyrte i samme øyeblikk. `routingFromNotification` gater reloaden.
+- **`skipWaiting()` hører inni `waitUntil`.** Utenfor kan den nye workeren aktivere
+  før cachen er fylt, og `activate` sletter da gamle cacher mens en side fortsatt
+  kjører gammel kode.
+- `/_app/immutable/` caches bevisst ikke — kommentaren i service workeren sier
+  hvorfor: blandede versjoner bryter hydrering.
+
+### Fart per hjerteslag slår VO2max på formspørsmålet
+
+Se `docs/changelog/2026-08-11-efficiency-factor.md`. Logikken i
+`$lib/domain/health/aerobic-efficiency.ts`.
+
+- **VO2max svarer på «løp du hardt denne uka», ikke «har formen flyttet seg».**
+  VDOT antar maksimal innsats; brukeren racer ikke. **Efficiency Factor** (meter
+  per minutt per hjerteslag) er best på ROLIGE, jevne økter og måler nettopp
+  pulskostnaden ved en gitt fart. EF-kortet står derfor FØR VO2max-kortet.
+- **EF regnes på `gapSecPerKm`, aldri rått tempo.** 234 høydemeter på 8 km gjør rå
+  fart ubrukelig som sammenligningsgrunnlag.
+- **Bare løping**, og intervaller holdes utenfor (`MAX_HARD_SHARE`): en
+  intervalløkt har høy puls for sin snittfart, så trenden ville målt hvor mange
+  intervalløkter man har hatt. Under 20 min dominerer oppvarmingen.
+- **Median og et støygulv på 3 %.** EF varierer 3–5 % mellom to like økter på
+  ulike dager, og fire økter kreves i hvert vindu.
+- **Varme er den store forvekslingen, og den kan vi ikke korrigere for.** Puls
+  stiger 5–10 slag i varmen, og «nå mot for to måneder siden» krysser i Norge fra
+  kjøligere til varmere. Forbeholdet står i kortet fordi vi ikke har temperaturen
+  serverside — Ekkos `WeatherPoint` sendes ikke.
+- **Decoupling er et ANNET spørsmål:** «holdt jeg det ut» innad i én økt, ikke «er
+  jeg raskere per slag enn før». Den deler økta på TID, ikke distanse — blir man
+  tregere utover, ville en distansedeling flyttet skillet inn i den friske delen
+  og underdrevet driften.
+
 ### Øktvurderingen: terreng fra sporet, navn fra Ekko
 
 Se `docs/changelog/2026-08-10-oktvurdering-med-terreng-og-mal.md`. Konteksten bygges
