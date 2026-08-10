@@ -70,6 +70,22 @@ Nye UI-elementer skal legges i riktig komponentlag (se `docs/DESIGN.md`) og gjen
   `ChatMessages` treffer også `chatMessages`-propen i bok- og film-komponentene, og det
   ga en gal kartlegging én gang.
 
+**En tråd åpnes ved SISTE melding, og historikk hentes ved scroll oppover.** Reglene bor
+i `$lib/client/chat-scroll.ts`. Se
+`docs/changelog/2026-08-10-tema-chat-apner-ved-siste-melding.md`.
+
+- **Hent siste side, ikke de første radene.** `orderBy(asc(...)).limit(N)` gir
+  *begynnelsen* av tråden. Tema-chatten gjorde det til august 2026, så en lang samtale
+  åpnet på melding 1 og de ferske var ikke i payloaden i det hele tatt. Bruk
+  `getConversationMessagesPage`, som henter `limit + 1` synkende og rapporterer `hasMore`.
+- **Bunnforankringen må ikke se på antall meldinger** (`bottomAnchorKey`). Gjør den det,
+  fyrer den også ved prepend og river brukeren ned til bunnen idet historikken hen ba om
+  ankommer.
+- **Markøren er den eldste RÅ raden**, før system-meldinger filtreres bort — ellers
+  hentes de om igjen i hver runde.
+- Meldinger må bære **DB-id-en** som `id`, ikke en fersk uuid: dedupliseringen ved
+  prepend hviler på at samme rad får samme id hver gang den hentes.
+
 ### 3. Bruk og vedlikehold enhetstester
 
 ~1900 enhetstester (Vitest) i ~150 filer dekker forretningslogikk. Kjøres med `npm test`.

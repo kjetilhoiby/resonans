@@ -17,6 +17,7 @@
 	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
 	import { formatDayLabel, parseDayKey } from '$lib/client/chat-day-sections';
 	import { currentDayFromSpacers, type SpacerPos } from '$lib/client/chat-visible-day';
+	import { bottomAnchorKey, isNearTop, scrollTopAfterPrepend } from '$lib/client/chat-scroll';
 	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -217,7 +218,7 @@
 	// Sporer kun siste melding + streaming — endres IKKE når eldre meldinger
 	// prepend-es, så infinite scroll oppover river deg ikke ned til bunnen.
 	const bottomKey = $derived(
-		`${chat.messages.at(-1)?.id ?? ''}:${chat.streamingText.length}:${chat.loading}`
+		bottomAnchorKey(chat.messages.at(-1)?.id, chat.streamingText.length, chat.loading)
 	);
 	$effect(() => {
 		bottomKey;
@@ -314,7 +315,10 @@
 			chat.messages = [...prepend, ...chat.messages];
 			// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
 			await tick();
-			el.scrollTop = el.scrollHeight - prevHeight + prevTop;
+			el.scrollTop = scrollTopAfterPrepend(
+				{ scrollTop: prevTop, scrollHeight: prevHeight },
+				el.scrollHeight
+			);
 			scheduleVisibleDayUpdate();
 		} finally {
 			loadingOlder = false;
@@ -324,7 +328,7 @@
 	function onMessagesScroll() {
 		if (!messagesEl) return;
 		scheduleVisibleDayUpdate();
-		if (messagesEl.scrollTop < 120 && hasMoreMessages && !loadingOlder) {
+		if (isNearTop(messagesEl) && hasMoreMessages && !loadingOlder) {
 			void loadOlderMessages();
 		}
 	}

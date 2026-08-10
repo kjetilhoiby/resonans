@@ -26,6 +26,7 @@
 		bind:this={themePage}
 		theme={data.theme}
 		initialMessages={data.messages}
+		hasMoreMessages={data.hasMoreMessages}
 		goals={data.goals}
 		conversationId={data.conversationId}
 		themeConversations={data.themeConversations}

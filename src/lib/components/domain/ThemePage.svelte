@@ -47,6 +47,7 @@
 		role: 'user' | 'assistant' | 'system';
 		content: string;
 		timestamp: string;
+		imageUrl?: string | null;
 	}
 
 	interface Goal {
@@ -131,6 +132,8 @@
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
+		/** Finnes det eldre meldinger enn `initialMessages`? Styrer scroll-oppover. */
+		hasMoreMessages?: boolean;
 		goals: Goal[];
 		conversationId: string;
 		themeConversations?: ThemeConversation[];
@@ -153,7 +156,7 @@
 		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, parentThemeId = null,
+	let { theme, initialMessages, hasMoreMessages = false, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, parentThemeId = null,
 		projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
@@ -430,6 +433,7 @@
 				{conversationId}
 				conversations={themeConversations}
 				{initialMessages}
+				{hasMoreMessages}
 				{selectedWorkout}
 				initialDraft={chatInitialDraft}
 				startOpen={chatStartOpen}
