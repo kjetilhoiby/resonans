@@ -50,6 +50,8 @@ export interface WorkoutEvidence {
 	// Råverdier fra denne kilden — brukes til å vise kilde-vs-kilde-sammenligning
 	distanceMeters: number | null;
 	durationSeconds: number | null;
+	/** Bevegelsestid fra denne kildens spor. Null når kilden ikke har spor. */
+	movingSeconds: number | null;
 	avgHeartRate: number | null;
 }
 
@@ -58,7 +60,14 @@ export interface UnifiedWorkoutActivity {
 	startTime: string;
 	sportType: string;
 	distanceMeters: number | null;
+	/** Elapsed: `siste punkt − første punkt`. Det opptaket faktisk varte. */
 	durationSeconds: number | null;
+	/**
+	 * Bevegelsestid, når et spor kunne svare på det. Null betyr «vet ikke» — da
+	 * er `durationSeconds` det eneste tallet, ikke at økta sto stille.
+	 * Skåringen bruker denne når den finnes; se `computeWorkoutEffort`.
+	 */
+	movingSeconds: number | null;
 	paceSecondsPerKm: number | null;
 	elevationMeters: number | null;
 	avgHeartRate: number | null;
@@ -206,6 +215,10 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 	const notesValue = typeof event.data.notes === 'string' ? event.data.notes : undefined;
 	const distanceMeters = normalizeDistanceMeters(event.data.distance);
 	const durationSeconds = normalizeDurationSeconds(event.data.duration);
+	// 0 blir null her, og det er med vilje: et spor helt uten forflytning er like
+	// gjerne en tredemølle eller en rulle som en glemt sporing, og «vet ikke» er
+	// det ærlige svaret. Da faller skåringen tilbake på elapsed.
+	const movingSeconds = normalizeDurationSeconds(event.data.movingDuration);
 	const avgHeartRate =
 		normalizeHeartRate(event.data.avgHeartRate) ??
 		normalizeHeartRate(event.data.heartRate);
@@ -227,6 +240,7 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 		notes: notesValue,
 		distanceMeters,
 		durationSeconds,
+		movingSeconds,
 		avgHeartRate
 	};
 }
@@ -256,6 +270,7 @@ export async function buildUnifiedWorkoutActivities(
 				'sportType', ${sensorEvents.data}->'sportType',
 				'distance', ${sensorEvents.data}->'distance',
 				'duration', ${sensorEvents.data}->'duration',
+				'movingDuration', ${sensorEvents.data}->'movingDuration',
 				'paceSecondsPerKm', ${sensorEvents.data}->'paceSecondsPerKm',
 				'avgHeartRate', ${sensorEvents.data}->'avgHeartRate',
 				'maxHeartRate', ${sensorEvents.data}->'maxHeartRate',
@@ -351,6 +366,14 @@ export async function buildUnifiedWorkoutActivities(
 			const events = cluster.events;
 			const distanceMeters = pickNumericField(events, (event) => normalizeDistanceMeters(event.data.distance), 'preferGps');
 			const durationSeconds = pickNumericField(events, (event) => normalizeDurationSeconds(event.data.duration), 'preferGps');
+			// Bevegelsestid følger samme prioritet som varigheten, men klampes til den:
+			// to kilder kan ha registrert ulike deler av samme økt, og en bevegelsestid
+			// som overstiger opptaket er ikke et tall å skåre på.
+			const movingSecondsRaw = pickNumericField(events, (event) => normalizeDurationSeconds(event.data.movingDuration), 'preferGps');
+			const movingSeconds =
+				movingSecondsRaw !== null && durationSeconds !== null
+					? Math.min(movingSecondsRaw, durationSeconds)
+					: movingSecondsRaw;
 			const paceSecondsPerKm =
 				pickNumericField(events, (event) =>
 					typeof event.data.paceSecondsPerKm === 'number' ? event.data.paceSecondsPerKm : null,
@@ -393,6 +416,7 @@ export async function buildUnifiedWorkoutActivities(
 				sportType,
 				distanceMeters,
 				durationSeconds,
+				movingSeconds,
 				paceSecondsPerKm,
 				elevationMeters,
 				avgHeartRate,

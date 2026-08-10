@@ -109,6 +109,13 @@ export interface WorkoutForEstimate {
 	/** `sportType` fra canonical_workouts. */
 	sportType: string | null;
 	durationSeconds: number | null;
+	/**
+	 * Bevegelsestid fra sporet, når den finnes. Vinner over `durationSeconds`,
+	 * av samme grunn som i effort-modellen: en glemt sporing legger døde minutter
+	 * til forbruket, og MET × minutter er lineær. En el-sykkeltur på 2 t 20 min
+	 * der 25 var i bevegelse ga ~800 kcal i fantomaktivitet.
+	 */
+	movingSeconds?: number | null;
 	/** Brukes bare for løping, til å utlede farten. */
 	distanceMeters?: number | null;
 }
@@ -130,7 +137,10 @@ export function estimateWorkoutKcal(
 	workout: WorkoutForEstimate,
 	weightKg: number
 ): WorkoutEstimate | null {
-	const seconds = workout.durationSeconds;
+	// Bevegelsestid vinner. Farten for løping utledes av det samme tallet, så et
+	// stopp midtveis ikke både forkorter minuttene og senker MET-en.
+	const moving = typeof workout.movingSeconds === 'number' && workout.movingSeconds > 0 ? workout.movingSeconds : null;
+	const seconds = moving ?? workout.durationSeconds;
 	if (typeof seconds !== 'number' || seconds <= 0) return null;
 	if (!Number.isFinite(weightKg) || weightKg <= 0) return null;
 

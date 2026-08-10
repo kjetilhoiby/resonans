@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
-import { parseWorkoutFile, downsampleTrack, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
+import { parseWorkoutFile, downsampleTrack, movingDurationFor, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { pushSession } from '$lib/server/services/strava-sync-service';
@@ -163,6 +163,10 @@ async function handleWorkoutUpload(
 	// slik at autocheck/effort/analyse kjenner den igjen.
 	parsed.sportType = normalizeSportType(parsed.sportType);
 
+	// Etter normaliseringen, ikke før: terskelen for «i bevegelse» er per
+	// sportsfamilie, og en el-sykkeltur parset som «running» ville fått feil.
+	const movingDuration = movingDurationFor(parsed);
+
 	const result = await SensorEventService.write(
 		{
 			userId: ctx.userId,
@@ -173,6 +177,8 @@ async function handleWorkoutUpload(
 			data: {
 				sportType: parsed.sportType,
 				duration: parsed.duration,
+				// Ved siden av elapsed, aldri i stedet for — se `movingDurationFor`.
+				...(movingDuration !== undefined ? { movingDuration } : {}),
 				distance: parsed.distance,
 				elevation: parsed.elevation,
 				avgHeartRate: parsed.avgHeartRate,
@@ -245,7 +251,11 @@ async function handleWorkoutUpload(
 		inserted: result.inserted,
 		trackPoints: parsed.trackPoints.length,
 		distance: Math.round(parsed.distance),
-		duration: Math.round(parsed.duration)
+		duration: Math.round(parsed.duration),
+		// Ekko viser dette når det avviker fra `duration`, så brukeren ser at
+		// halen ble trukket fra — og ikke lurer på hvorfor Resonans sier noe
+		// annet enn stoppeklokka i appen.
+		movingDuration: movingDuration ?? null
 	});
 }
 
