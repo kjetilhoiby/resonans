@@ -10,6 +10,8 @@ import { parseWorkoutFile, downsampleTrack, MAX_STORED_TRACK_POINTS } from '$lib
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { pushSession } from '$lib/server/services/strava-sync-service';
+import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
+import { runInBackground } from '$lib/server/run-in-background';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
 const IMAGE_MIME_PREFIXES = ['image/'];
@@ -85,7 +87,7 @@ async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promis
 	return created.id;
 }
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, url }) => {
 	const userId = locals.userId;
 	if (!userId) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
@@ -109,7 +111,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	try {
 		if (isWorkoutFile(file)) {
-			return await handleWorkoutUpload(file, { userId, sensorId, app, sessionId, formData });
+			return await handleWorkoutUpload(file, { userId, sensorId, app, sessionId, formData, appUrl: url.origin });
 		}
 
 		if (isImageFile(file)) {
@@ -128,7 +130,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 async function handleWorkoutUpload(
 	file: File,
-	ctx: { userId: string; sensorId: string; app: ExternalAppConfig; sessionId: string | null; formData: FormData }
+	ctx: {
+		userId: string;
+		sensorId: string;
+		app: ExternalAppConfig;
+		sessionId: string | null;
+		formData: FormData;
+		appUrl: string;
+	}
 ) {
 	const sportType = ctx.formData.get('sportType') as string | null;
 	// Klienten kan be om Resonans-only (hopp over Strava-auto-push) — brukes når en økt lastes
@@ -188,6 +197,26 @@ async function handleWorkoutUpload(
 		},
 		{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 	);
+
+	// Etterbehandling: aggregater, autohaking, målprogresjon og push. Dette lå
+	// fram til august 2026 bare i Withings- og Dropbox-synken, så en tur lastet
+	// opp fra Ekko ble usynlig i formkurven til nattjobben og ga aldri varsel —
+	// se docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md.
+	//
+	// `runInBackground` (waitUntil) holder funksjonen i live til jobben er ferdig
+	// uten å forsinke svaret til Ekko: appen venter på dette kallet før den kan
+	// merke økta som opplastet.
+	if (result.event?.id) {
+		runInBackground(
+			runAfterWorkoutWrite({
+				userId: ctx.userId,
+				eventIds: [result.event.id],
+				timestamps: [parsed.startTime],
+				appUrl: ctx.appUrl,
+				source: `${ctx.app.id}_upload`
+			})
+		);
+	}
 
 	// Auto-push til Strava hvis brukeren er koblet til. pushSession er dedup-et
 	// (external_id = `<app>-<sessionId>`) og feiler aldri hardt — den bokfører

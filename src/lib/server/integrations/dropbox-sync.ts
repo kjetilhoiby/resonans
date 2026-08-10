@@ -8,8 +8,7 @@ import {
 	refreshDropboxAccessToken,
 	type DropboxListFolderEntry
 } from '$lib/server/integrations/dropbox';
-import { getWorkoutContextForUser, type WorkoutContextSummary } from '$lib/server/workout-context';
-import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
+import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 interface DropboxCredentials {
@@ -365,6 +364,7 @@ export async function syncDropboxWorkoutsForUser(
 	let skipped = 0;
 	let failed = 0;
 	const importedWorkoutIds: string[] = [];
+	const importedWorkoutTimestamps: Date[] = [];
 
 	for (const file of workoutFiles) {
 		const sourcePath = file.path_lower || file.path_display || file.name;
@@ -425,7 +425,10 @@ export async function syncDropboxWorkoutsForUser(
 			});
 
 			imported += 1;
-			if (insertedWorkout?.id) importedWorkoutIds.push(insertedWorkout.id);
+			if (insertedWorkout?.id) {
+				importedWorkoutIds.push(insertedWorkout.id);
+				importedWorkoutTimestamps.push(parsed.startTime);
+			}
 		} catch (error) {
 			failed += 1;
 			console.error('[dropbox-sync] import failed for file:', sourcePath, error);
@@ -449,18 +452,23 @@ export async function syncDropboxWorkoutsForUser(
 		})
 		.where(eq(sensors.id, sensor.id));
 
+	// Etterbehandlingen er felles med Ekko-opplastingen og Withings-synken, se
+	// docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md. Varslingen lå her
+	// alene fram til august 2026 — det var derfor en Ekko-opplastet tur bare ga
+	// push når Dropbox-fila for den samme turen tilfeldigvis kom fram etterpå.
+	// `runAfterWorkoutWrite` deduperer varselet mot de andre kildene.
 	let notified = 0;
-	if (options?.fullRescan !== true && options?.appUrl && importedWorkoutIds.length > 0) {
-		const importedWorkouts = (
-			await Promise.all(importedWorkoutIds.map((workoutId) => getWorkoutContextForUser(userId, workoutId)))
-		).filter((workout): workout is WorkoutContextSummary => workout !== null);
-
-		const notificationResult = await notifyUserAboutImportedWorkouts({
+	if (importedWorkoutIds.length > 0) {
+		const followup = await runAfterWorkoutWrite({
 			userId,
-			appUrl: options.appUrl,
-			workouts: importedWorkouts
+			eventIds: importedWorkoutIds,
+			timestamps: importedWorkoutTimestamps,
+			appUrl: options?.appUrl ?? null,
+			source: 'dropbox_sync',
+			// En rescan importerer hele mappa på nytt; da skal ingen telefon vibrere.
+			backfill: options?.fullRescan === true
 		});
-		notified = notificationResult.sent;
+		notified = followup.notified;
 	}
 
 	return {

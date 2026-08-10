@@ -1467,6 +1467,27 @@ export const webPushSubscriptions = pgTable('web_push_subscriptions', {
 	idxUserId: index('web_push_subscriptions_user_id_idx').on(table.userId)
 }));
 
+// Bokføring av hvilke øktvarsler som er sendt — se
+// docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md.
+//
+// Raden skrives per KILDE i klynga, ikke per klynge: `activityId` er klyngens
+// eldste evidence-event, og den flytter seg når en kilde med tidligere
+// tidsstempel lander etterpå. En dedup på activityId ville da sluppet varsel
+// nummer to gjennom for samme løpetur.
+export const workoutNotifications = pgTable('workout_notifications', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	sensorEventId: uuid('sensor_event_id').notNull(),
+	activityId: uuid('activity_id').notNull(),
+	/** Hvilken inngang som sendte varselet ('ekko_upload', 'dropbox', …). Kun for diagnose. */
+	source: text('source'),
+	notifiedAt: timestamp('notified_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserEvent: unique('workout_notifications_user_event_idx').on(table.userId, table.sensorEventId),
+	idxUserNotified: index('workout_notifications_user_notified_idx').on(table.userId, table.notifiedAt)
+}));
+
 // Definisjon av registrerbare typer (global katalog)
 export const recordTypeDefinitions = pgTable('record_type_definitions', {
 	id: uuid('id').primaryKey().defaultRandom(),
