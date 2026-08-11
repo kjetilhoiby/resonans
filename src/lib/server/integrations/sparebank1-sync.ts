@@ -232,19 +232,22 @@ async function writeRawAndCanonicalTransactions(
 	await pgClient.unsafe(
 		`INSERT INTO canonical_bank_transactions (
 			user_id, sensor_id, account_id, canonical_date, amount, currency, merchant_key,
-			description_display, latest_booking_status, status_rank, latest_posted_at,
+			description_display, type_text, latest_booking_status, status_rank, latest_posted_at,
 			first_seen_at, last_seen_at, evidence_count, is_active, paycheck_type, created_at, updated_at
 		)
 		SELECT
 			u, s::uuid, a, td::date, amt, cur, mk,
-			dr, NULLIF(bs, ''), sr, pa::timestamp,
+			dr, NULLIF(tt, ''), NULLIF(bs, ''), sr, pa::timestamp,
 			NOW(), NOW(), 1, TRUE, NULLIF(pt, ''), NOW(), NOW()
 		FROM UNNEST(
 			$1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[],
-			$8::text[], $9::text[], $10::int[], $11::text[], $12::text[]
-		) AS t(u, s, a, td, amt, cur, mk, dr, bs, sr, pa, pt)
+			$8::text[], $9::text[], $10::int[], $11::text[], $12::text[], $13::text[]
+		) AS t(u, s, a, td, amt, cur, mk, dr, bs, sr, pa, pt, tt)
 		ON CONFLICT (sensor_id, account_id, canonical_date, amount, merchant_key) DO UPDATE SET
 			currency = EXCLUDED.currency,
+			-- typeText fylles bare inn, aldri tømmes: en senere observasjon uten feltet
+			-- skal ikke slette kategoriteksten vi alt har.
+			type_text = COALESCE(EXCLUDED.type_text, canonical_bank_transactions.type_text),
 			description_display = CASE
 				WHEN EXCLUDED.status_rank > canonical_bank_transactions.status_rank THEN EXCLUDED.description_display
 				WHEN EXCLUDED.status_rank = canonical_bank_transactions.status_rank
@@ -278,7 +281,8 @@ async function writeRawAndCanonicalTransactions(
 			rows.map((r) => r.bookingStatus),
 			rows.map((r) => r.statusRank),
 			rows.map((r) => r.postedAt),
-			rows.map((r) => r.paycheckType ?? '')
+			rows.map((r) => r.paycheckType ?? ''),
+			rows.map((r) => r.typeText)
 		]
 	);
 

@@ -29,7 +29,7 @@
 
 	interface Props {
 		accounts: EconomicsAccount[]; totalBalance: number; currentMonth: string;
-		monthSpending: { totalSpending: number; totalFixed: number; totalVariable: number; totalIncome: number; categories: CategoryRow[] };
+		monthSpending: { totalSpending: number; totalFixed: number; totalVariable: number; totalIncome: number; internalTransferTotal?: number; categories: CategoryRow[] };
 		recentTransactions: RecentTx[]; paydaySpend: PaydaySpend;
 		generatedAt?: string | null; embedded?: boolean;
 	}

@@ -34,6 +34,8 @@ export interface EconomicsDashboardData {
 		totalFixed: number;
 		totalVariable: number;
 		totalIncome: number;
+		/** Flyttet mellom egne kontoer. Holdt utenfor totalSpending, men vist så tallet ikke forsvinner. */
+		internalTransferTotal?: number;
 		categories: Array<{ category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }>;
 	};
 	recentTransactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
