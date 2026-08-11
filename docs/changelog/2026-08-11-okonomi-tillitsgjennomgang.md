@@ -57,21 +57,64 @@ hver negativ transaksjon som forbruk, inkludert overføring til egen sparekonto 
 overføring er negativ på én konto og positiv på en annen, blåser den opp `totalSpending`
 **og** `totalIncome` samtidig.
 
-### «For lav» — den semantiske dedupe-nøkkelen mangler forekomstteller
+### «For lav» — bøtta er en mengde, ikke en multimengde
 
-Dette er den alvorligste. SB1 utsteder ikke stabile `transactionId`, så dedupen må være
-semantisk. Nøkkelen er `konto:dato:normalisert beskrivelse:beløp` — **uten teller for
-hvor mange ganger den forekom**. To like kjøp samme dag til samme beløp kollapser derfor
-til én: to kaffe à 45 kr, to bomstasjoner, to enkeltbilletter.
+Her sto det først i dette dokumentet at nøkkelen manglet en forekomstteller, og at
+rettelsen var å legge en inn. **Det var feil, og det er verdt å bevare hvorfor:** en
+teller i nøkkelen ville fått hver nye status til å se ut som «forekomst nummer 2» og
+opprettet en ny rad per statusovergang. Det er trippelregistreringen, ikke kuren mot den.
 
-Verre for nettopp overføringer: `normalizeTxDescription` kollapser
-«OVERØRSEL MELLOM EGNE KONTI…» til generisk `OVERØRSEL`. To *ulike* interne overføringer
-samme dag med samme beløp blir da én rad. Normaliseringen som skulle gjøre dedupen robust
-gjør den for aggressiv.
+Kravene trekker i motsatt retning, og begge må innfris samtidig:
 
-**Det holder ikke å rette JS-en.** `canonical_bank_transactions` håndhever samme
-kollisjon i et unikt indeks på `(sensorId, accountId, canonicalDate, amount, merchantKey)`.
-Rettelsen krever migrasjon og reprojeksjon.
+1. Samme transaksjon kommer flere ganger etter hverandre med **ny ID og ny status**
+   (reservert → behandles → ferdig). De tre skal bli **én**.
+2. Sju øl på samme utested samme kveld til samme pris skal bli **sju**.
+
+Maskineriet fra våren 2026 løser (1), og løser det ordentlig:
+
+- `ON CONFLICT (sensor_id, account_id, canonical_date, amount, merchant_key)` samler alle
+  observasjoner av samme transaksjon i én rad.
+- `status_rank = GREATEST(...)` løfter reservert → ferdig **i samme rad**, og
+  `latest_booking_status` følger bare oppover.
+- `description_display` velges fra høyeste status, med lengste tekst som tiebreak.
+- Alias-tabellen peker alle ID-ene mot samme canonical-rad.
+
+Det som gjenstår er (2). Bøtta er en **mengde**: sju øl gir én rad med
+`evidence_count: 7`, og én transaksjon gjennom tre statuser gir også én rad med
+`evidence_count: 7`. Fra attributtene alene er de to tilfellene identiske.
+
+**Det som skiller dem er hvor observasjonene ligger.** Sju øl er sju rader i *ett og
+samme* API-svar. Én transaksjon i overgang er én rad per svar, spredt over flere svar.
+Multiplisiteten er altså antallet innenfor én henting — ikke på tvers av hentinger. Med
+én presisering, siden både PENDING og BOOKED kan komme i samme batch (kommentaren på
+`sparebank1-sync.ts:649`): tell **per status og ta maks**, ikke summen. Sju øl som
+reservert gir maks 7; én transaksjon som dukker opp både som reservert og ferdig i samme
+svar gir maks 1.
+
+Signalet finnes i dataene i dag. Koden kaster det: `batchMap` kollapser på semantisk
+nøkkel **først**, før noe annet er avgjort, så de sju er én før vi har rukket å telle dem.
+
+### Og der lekkasjen sannsynligvis sitter: beløpet endrer seg underveis
+
+Sju øl er nettopp tilfellet der beløpet **endrer seg** mellom reservert og ferdig — tips
+legges på — og der datoen flytter seg, fordi fredagskvelden bokføres mandag. Da endres
+bøttenøkkelen, upserten finner ingen konflikt, og det opprettes **en ny rad ved siden av
+den gamle reservasjonen**. Altså dobbelttelling, stikk i strid med at mekanismen ellers
+virker.
+
+Alias-tabellen kan ikke bøte på det: dens `ON CONFLICT (sensor_id,
+external_transaction_id)` treffer aldri, fordi ID-en er ny hver gang. Den er et
+revisjonsspor, ikke en dedup-mekanisme — premisset den ble bygget på (stabile ID-er)
+holder ikke. Den er likevel nyttig her, som kilden til antall distinkte ID-er per bøtte
+per henting.
+
+### Uavklart: hvilke statuser finnes egentlig
+
+Brukeren beskriver **reservert / behandles / ferdig** (tre). Koden kjenner `BOOKED` og
+`PENDING` og gir alt annet `status_rank` 0, og batch-kollapsen sammenligner
+`=== 'BOOKED'` som ren streng. Enten mapper integrasjonen om underveis, eller så finnes
+det en tredje status som faller igjennom. **Dette avgjøres ikke ved å lese koden** — svaret
+ligger i `raw_bank_transaction_versions.payload`, som lagrer råsvarene.
 
 ### Øvrige funn, i lesingen
 
@@ -128,12 +171,28 @@ av `bank_transaction`/`bank_balance` vaktes med samme mekanisme som
 `sensor-event-access.ts` bruker for `workout`/`weight`/`sleep`, med `knownRawReaders` for
 de stedene der per-kilde-visning faktisk er poenget.
 
-### Fase 2: Rett dedupen
+### Fase 2: Multiplisitet uten å ødelegge statusovergangen
 
-Forekomstteller inn i den semantiske nøkkelen, unikt indeks endret tilsvarende
-(migrasjon), historikken reprojisert. Tester på den semantiske nøkkelen,
-BOOKED-over-PENDING, og eksplisitt på to like kjøp samme dag — det er nettopp den saken
-som er gal i dag.
+Dette er nøkkelen til tørre tall, og den må gjøres i denne rekkefølgen:
+
+1. **Mål først.** Hva statusene faktisk heter, hvor ofte beløpet endrer seg mellom
+   reservert og ferdig, hvor ofte datoen flytter seg, og hvor mange distinkte ID-er som
+   opptrer per bøtte per henting. Alt ligger i `raw_bank_transaction_versions.payload`.
+   Uten disse tallene er tersklene i punkt 3 gjetninger.
+2. **Behold bøttenøkkelen** for eksakte overganger — den virker. Legg til multiplisitet
+   utledet som maks-per-status innenfor én henting, oppdatert som
+   `GREATEST(eksisterende, ny observasjon)`. Alle lesere må gange beløp med multiplisitet.
+   `batchMap`-kollapsen må skje **etter** tellingen, ikke før.
+3. **Bundet uskarpt match** for en innkommende ferdig som ikke treffer eksakt: mot en
+   *ubrukt* reservert-rad på samme merchant innenfor ±N dager og ±X % beløp, før ny rad
+   opprettes. Dette er et tilordningsproblem, ikke en dedup — greedy, men bundet, og med
+   hver reservert-rad brukbar bare én gang.
+4. **Livsløp for reservasjoner.** En reservert-rad som aldri ble ferdig og ikke er sett i
+   de siste M hentingene settes `isActive = false` framfor å bli stående som forbruk.
+
+Tester på alle fire, og eksplisitt på begge sidene av tvetydigheten: sju like kjøp i én
+henting skal gi sju, og tre statusobservasjoner av ett kjøp over tre hentinger skal gi én.
+Det er det paret som avgjør om dette er riktig.
 
 ### Fase 3: Interne overføringer ut av forbruket
 
@@ -179,6 +238,14 @@ eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics
   ikke gjette hva en overføring til en venn var.
 - **Canonical er sannheten, ikke sensor_events.** Dedupen bor der. Alt som teller kroner
   må gå gjennom den, ellers driver flatene fra hverandre igjen.
+- **Multiplisitet er et eget felt, ikke en del av nøkkelen.** Nøkkelen må fortsette å
+  kollapse statusoverganger; det er antallet som må bæres ved siden av. Forslaget om en
+  teller *i* nøkkelen står bevart over med begrunnelsen, fordi det er den nærliggende og
+  gale rettelsen.
+- **Overganger måles før de modelleres.** Tersklene for det uskarpe matchet (±dager,
+  ±prosent) skal utledes av råsvarene, ikke velges. Samme grunn som `MET_CALIBRATION` er
+  utledet framfor valgt: et hardkodet tall arver stille feilen i det det en gang ble
+  tunet mot.
 
 ## Verifisering
 
@@ -187,6 +254,14 @@ entydige i lesingen, men **tallene i prod er ikke målt ennå**. Før fase 1:
 
 - Mål hvor mye de tre lagrene faktisk spriker for samme periode. Det tallet er både
   bevis på diagnosen og regresjonstesten etterpå.
-- Tell hvor mange canonical-rader som er tapt til nøkkelkollisjon (grupper rå-versjoner
-  på semantisk nøkkel og se hvor mange som har flere distinkte forekomster).
 - Mål hvor stor andel av «forbruk» som er interne overføringer.
+
+Og for fase 2, alt fra `raw_bank_transaction_versions.payload` — disse fire avgjør
+designet, og ingen av dem kan leses ut av koden:
+
+- Hvilke `bookingStatus`-verdier som faktisk forekommer (koden kjenner to, brukeren
+  beskriver tre).
+- Hvor ofte beløpet endrer seg mellom reservert og ferdig, og hvor mye. Gir ±X %.
+- Hvor ofte datoen flytter seg mellom reservert og ferdig, og hvor langt. Gir ±N dager.
+- Fordelingen av distinkte ID-er per bøtte per henting — altså hvor ofte den ekte
+  multiplisiteten er > 1, og dermed hvor mye tall det står om.
