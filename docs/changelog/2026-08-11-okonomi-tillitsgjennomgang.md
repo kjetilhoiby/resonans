@@ -226,8 +226,13 @@ Svaret ligger i `raw_bank_transaction_versions.booking_status` og `payload`, og 
   første per konto plukkes i JS.
 - **`grocery_spend` har ingen leser i `goal-progress`.** Metrikken står i katalogen, i
   viz-spec og i `create_goal`-beskrivelsen. Et mål opprettet på den viser ingen nåverdi.
-- **`query_economics` er ikke registrert i `server/assistant/shared-tools.ts`.** Ekko har
-  null økonomiverktøy og kan ikke svare på noe om penger.
+- ~~**`query_economics` er ikke registrert i `shared-tools.ts`.**~~ **Feil — den er
+  registrert** (`shared-tools.ts:3` og `:162`, via `adaptSharedTool(queryEconomicsTool)`).
+  Påstanden kom av et grep etter `name: '` og `query_`, som bare traff en kommentar om
+  `query_training`; verktøynavnet bor på verktøymodulen, ikke inline i registreringen.
+  **Søk etter symbolet, ikke etter navnestrengen.** Konsekvensen er god: siden begge flatene
+  deler modulen, gjelder rewiringen av `query-economics.ts` Ekko også — som er nettopp
+  grunnen til at beskrivelsen skal bo på verktøymodulen.
 - **`src/lib/domains/economics/index.ts` er 109 linjer død kode** med en konkurrerende
   14-kategori-taksonomi, egne regex-triggers og en `ECONOMICS_DOMAIN_PROMPT`. Ingenting
   importerer noen av symbolene. Den er en felle for neste agent, som vil tro det er
@@ -483,8 +488,8 @@ feilsøking:
 - **Avgjør `/economics`:** redirect til temaet eller slett. 1 730 linjer med én
   fallback-lenke inn. To flater med ulike tall er verre enn én.
 - **Hardkodede personnavn ut av `/api/economics/transfers`.**
-- **Registrer `query_economics` i `shared-tools.ts`** — Ekko har i dag null økonomiverktøy.
-  Beskrivelsen bor på verktøymodulen og gjenbrukes, ellers får de to flatene ulike instrukser.
+- ~~Registrer `query_economics` i `shared-tools.ts`~~ — **utgår, den var registrert hele
+  tiden.** Se rettelsen over.
 - **`grocery_spend`:** gi den en leser i `goal-progress` eller fjern metrikken. Den står i
   katalogen, viz-spec og `create_goal`-beskrivelsen, og et mål på den viser ingen nåverdi.
 - **`readMonthlySavings` har feil fortegn** (`Math.abs()` på hver rad, så uttak teller som

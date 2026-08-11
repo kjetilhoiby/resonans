@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { readTransactions } from '$lib/server/economics/transactions';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
@@ -265,15 +265,20 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const transactions = await queryCanonicalTransactions({
+				// Delt leser, samme som flaten. Interne overføringer merkes men listes ikke
+				// som forbruk — «hva brukte vi penger på» skal ikke svare «4 000 til egen
+				// sparekonto».
+				const { transactions: allInPeriod } = await readTransactions({
 					userId,
 					from,
 					to,
 					accountId,
-					category: normalizedCategory ?? undefined,
-					limit,
+					excludeInternalTransfers: true,
 					sortBy
 				});
+				const transactions = normalizedCategory
+					? allInPeriod.filter((tx) => tx.category === normalizedCategory).slice(0, limit)
+					: allInPeriod.slice(0, limit);
 
 				if (transactions.length === 0) {
 					return {
@@ -296,10 +301,10 @@ The tool returns actual data from your bank that you can trust.`,
 					success: true,
 					data: {
 						transactions: transactions.map(t => ({
-							date: t.timestamp.toISOString().split('T')[0],
+							date: t.date,
 							description: t.description,
 							amount: t.amount,
-							category: t.resolvedCategory
+							category: t.category
 						})),
 						count: transactions.length,
 						returnedCount: transactions.length,
@@ -343,22 +348,23 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const periodSpending = await queryCanonicalTransactions({
+				const { transactions: periodRows } = await readTransactions({
 					userId,
 					from,
 					to,
 					accountId,
-					spendingOnly: true,
+					excludeInternalTransfers: true,
 					sortBy: 'date'
 				});
+				const periodSpending = periodRows.filter((tx) => tx.amount < 0);
 
 				const transactions = normalizedCategory
-					? periodSpending.filter((tx) => tx.resolvedCategory === normalizedCategory)
+					? periodSpending.filter((tx) => tx.category === normalizedCategory)
 					: periodSpending;
 
 				if (transactions.length === 0) {
 					const likelyUncategorizedGrocery = normalizedCategory === 'dagligvarer'
-						? periodSpending.filter((tx) => tx.resolvedCategory === 'ukategorisert' && looksLikeGroceryDescription(tx.description)).length
+						? periodSpending.filter((tx) => tx.category === 'ukategorisert' && looksLikeGroceryDescription(tx.description)).length
 						: 0;
 
 					return {
@@ -383,7 +389,7 @@ The tool returns actual data from your bank that you can trust.`,
 				// Group by category
 				const byCategory = new Map<string, { total: number; count: number }>();
 				for (const tx of transactions) {
-					const cat = tx.resolvedCategory || 'ukategorisert';
+					const cat = tx.category || 'ukategorisert';
 					const current = byCategory.get(cat) || { total: 0, count: 0 };
 					byCategory.set(cat, {
 						total: current.total + (Number(tx.amount) || 0),
@@ -439,50 +445,27 @@ The tool returns actual data from your bank that you can trust.`,
 				to = new Date(year, mo, 1);
 			}
 
-			const fromDate = from.toISOString().slice(0, 10);
-			const toDate = to.toISOString().slice(0, 10);
-			const where = accountId
-				? and(
-						eq(canonicalBankTransactions.userId, userId),
-						eq(canonicalBankTransactions.isActive, true),
-						eq(canonicalBankTransactions.accountId, accountId),
-						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
-						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
-					)
-				: and(
-						eq(canonicalBankTransactions.userId, userId),
-						eq(canonicalBankTransactions.isActive, true),
-						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
-						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
-					);
-
-			const allTxs = await db
-				.select({
-					timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`,
-					amount: canonicalBankTransactions.amount,
-					description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-					typeText: sql<string>`''`,
-				})
-				.from(canonicalBankTransactions)
-				.where(where);
-
-			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
-
-			const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-				loadMerchantMappings(userId),
-				loadClassificationOverrides(userId, 'transaction'),
-				loadTransactionMatchingRules()
-			]);
+			// Delt leser: samme kategorisering, samme typeText-fallback og samme
+			// overføringshåndtering som flaten. Den forrige utgaven hardkodet typeText til ''
+			// og kategoriserte på nytt her, så et kategoritrend-svar kunne avvike fra
+			// forbrukskortet for samme måned.
+			const { transactions: trendRows } = await readTransactions({
+				userId,
+				from,
+				to,
+				accountId,
+				excludeInternalTransfers: true
+			});
 
 			const wantedCategory = normalizeCategoryId(category);
 
 			// Group matching transactions by month
 			const byMonth = new Map<string, number>();
-			for (const tx of spendingTxs) {
-				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
-				if (normalizeCategoryId(classified.category) !== wantedCategory) continue;
-				const monthKey = tx.timestamp.slice(0, 7); // YYYY-MM
-				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(Number(tx.amount)));
+			for (const tx of trendRows) {
+				if (tx.amount >= 0) continue;
+				if (normalizeCategoryId(tx.category) !== wantedCategory) continue;
+				const monthKey = tx.date.slice(0, 7); // YYYY-MM
+				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(tx.amount));
 			}
 
 			const monthRows = Array.from(byMonth.entries())
