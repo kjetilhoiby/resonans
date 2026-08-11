@@ -1161,9 +1161,39 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   opprettet en dupp tretten timer fram i tid. Bruk `validateNapStart`
   (`$lib/domain/sleep/nap-fields.ts`) på alle skrivinger med et brukeroppgitt klokkeslett.
 
-### Transaksjons-kategorisering
+### Økonomi: alt som teller kroner går gjennom én leser
 
-Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.
+`$lib/server/economics/transactions.ts` (`readTransactions`, `readLatestBalances`). Se
+`docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+
+- **`canonical_bank_transactions` er sannheten, ikke `sensor_events`.** SB1 gir ny
+  `transactionId` ved hver synk, og sikkerhetsnettet mot semantiske duplikater dekker bare
+  det ferske synkvinduet. Målt over 365 dager: **8 891 rå rader mot 2 245 canonical**, altså
+  6,0 mill. kr «forbruk» mot 1,58. Tolv lesesteder leste rått, og brukeren så «ulike tall på
+  ulike steder» og sluttet å åpne flaten. `bank_transaction` og `bank_balance` er nå vaktet
+  i `sensor-event-access.ts`.
+- **Interne overføringer MERKES, de fjernes ikke.** 68 % av «forbruket» var penger flyttet
+  mellom egne kontoer (1 084 033 av 1 583 723 kr) — reelt forbruk er ~42 000 kr/mnd, ikke
+  132 000. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
+  overføring, og det er signalet en spareflate trenger. Samme rader, to spørsmål.
+  `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
+- **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
+  (fingerprint) → LLM-merchant-mappings → DB-regler (keyword) → SB1 `typeText`-fallback.
+  Widget-endepunktet hadde en femte vei — et `ILIKE`-keyword-filter i SQL uten mappings og
+  uten brukerens overstyringer — så en forbruksdings kunne vise et annet tall enn
+  forbrukskortet for samme kategori.
+- **`typeText` bor på canonical** (migrasjon 0055). Uten feltet ble
+  `categorizeTransaction(desc, null, …)` kalt, og SB1-fallbacken var død på nettopp den
+  stien flaten og chatten bruker.
+- **`loadMerchantMappings` bor i `economics/merchant-mappings.ts`**, ikke hos
+  `spending-analyzer.ts`. Analysatoren *produserer* mappings, leseren *konsumerer* dem — lå
+  lasteren hos produsenten, importerte de to modulene hverandre.
+- **`categorized_events` betjener bare prosjektkoblinger nå.** Den bygges fortsatt fra rå
+  `sensor_events` og manglet 202 rader mot canonical; alt som teller kroner er flyttet av
+  den grunn. Å nøkle den på `canonicalId` er en migrasjon som står igjen.
+- Ren logikk i `$lib/domain/economics/`: `internal-transfers.ts` (parvis matching, **én-til-én**
+  — uten det spiser tre uttak på 500 samme innskudd) og `spending-summary.ts`.
+- **Månedsgrenser regnes i Oslo-tid** (`osloDayKey`), ikke med `toISOString()`.
 
 ---
 

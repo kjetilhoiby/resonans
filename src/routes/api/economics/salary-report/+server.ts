@@ -5,7 +5,11 @@ import { canonicalBankTransactions, goals, sensorEvents } from '$lib/db/schema';
 import { getAllGoalTracksByUser } from '$lib/server/goal-tracks';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
-import { readTransactions, summarizeSpending } from '$lib/server/economics/transactions';
+import {
+	readLatestBalances,
+	readTransactions,
+	summarizeSpending
+} from '$lib/server/economics/transactions';
 import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack } from '$lib/domain/goal-tracks';
 import type { SalaryMonthReport, GoalProgressItem, SalaryInsight } from '$lib/types/salary-report';
@@ -136,20 +140,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 		try {
 			const dailyBalances = await buildDailyBalances(userId, sourceAccountId);
 
-			// Get account name from latest bank_balance event
-			const accountNameRow = await db
-				.select({ accountName: sql<string>`data->>'accountName'` })
-				.from(sensorEvents)
-				.where(
-					and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'bank_balance'),
-						sql`data->>'accountId' = ${sourceAccountId}`
-					)
-				)
-				.orderBy(desc(sensorEvents.timestamp))
-				.limit(1);
-			const accountName = accountNameRow[0]?.accountName ?? sourceAccountId;
+			// Kontonavn fra siste saldoobservasjon, gjennom den delte leseren.
+			const balances = await readLatestBalances(userId);
+			const accountName =
+				balances.find((row) => row.accountId === sourceAccountId)?.accountName ?? sourceAccountId;
 
 			// Find balance on or after payday
 			const startRow = dailyBalances.find((r) => r.date >= currentSalaryDate);

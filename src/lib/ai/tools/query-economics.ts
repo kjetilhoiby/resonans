@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { readTransactions } from '$lib/server/economics/transactions';
+import { readTransactions, readLatestBalances } from '$lib/server/economics/transactions';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
@@ -132,28 +132,15 @@ The tool returns actual data from your bank that you can trust.`,
 		try {
 			// Get account list
 			if (queryType === 'account_list') {
-				const rows = await db
-					.select({
-						accountId: sql<string>`data->>'accountId'`,
-						accountName: sql<string>`data->>'accountName'`,
-						accountType: sql<string>`data->>'accountType'`,
-						balance: sql<number>`(data->>'balance')::numeric`,
-						currency: sql<string>`data->>'currency'`,
-						timestamp: sensorEvents.timestamp
-					})
-					.from(sensorEvents)
-					.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
-					.orderBy(desc(sensorEvents.timestamp));
-
-				// Dedup: keep only latest per accountId
-				const seen = new Set<string>();
-				const accounts = rows
-					.filter((r) => {
-						if (!r.accountId || seen.has(r.accountId)) return false;
-						seen.add(r.accountId);
-						return true;
-					})
-					.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+				// Delt leser, samme kilde som flaten.
+				const accounts = (await readLatestBalances(userId)).map((row) => ({
+					accountId: row.accountId,
+					accountName: row.accountName,
+					accountType: row.accountType,
+					balance: row.balance,
+					currency: row.currency,
+					timestamp: row.observedAt
+				}));
 
 				if (accounts.length === 0) {
 					return {
@@ -182,36 +169,20 @@ The tool returns actual data from your bank that you can trust.`,
 
 			// Get current balance(s)
 			if (queryType === 'balance') {
-				const rows = await db
-					.select({
-						accountId: sql<string>`data->>'accountId'`,
-						accountName: sql<string>`data->>'accountName'`,
-						balance: sql<number>`(data->>'balance')::numeric`,
-						availableBalance: sql<number>`(data->>'availableBalance')::numeric`,
-						currency: sql<string>`data->>'currency'`,
-						timestamp: sensorEvents.timestamp
-					})
-					.from(sensorEvents)
-					.where(
-						accountId
-							? and(
-									eq(sensorEvents.userId, userId),
-									eq(sensorEvents.dataType, 'bank_balance'),
-									sql`data->>'accountId' = ${accountId}`
-								)
-							: and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance'))
-					)
-					.orderBy(desc(sensorEvents.timestamp));
-
-				// Dedup
-				const seen = new Set<string>();
-				const balances = rows
-					.filter((r) => {
-						if (!r.accountId || seen.has(r.accountId)) return false;
-						seen.add(r.accountId);
-						return true;
-					})
-					.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+				// Delt leser. Hentet hver saldorad noensinne og deduperte i JS fram til
+				// august 2026.
+				const allBalances = await readLatestBalances(userId);
+				const balances = (accountId
+					? allBalances.filter((row) => row.accountId === accountId)
+					: allBalances
+				).map((row) => ({
+					accountId: row.accountId,
+					accountName: row.accountName,
+					balance: row.balance,
+					availableBalance: row.availableBalance,
+					currency: row.currency,
+					timestamp: row.observedAt
+				}));
 
 				if (balances.length === 0) {
 					return {

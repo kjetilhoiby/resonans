@@ -242,7 +242,9 @@ export async function readLatestBalances(
 		accountId: string;
 		accountName: string | null;
 		accountType: string | null;
+		accountNumber: string | null;
 		balance: number;
+		availableBalance: number | null;
 		currency: string | null;
 		observedAt: Date;
 	}>
@@ -257,7 +259,9 @@ export async function readLatestBalances(
 			data->>'accountId'   AS account_id,
 			data->>'accountName' AS account_name,
 			data->>'accountType' AS account_type,
+			data->>'accountNumber' AS account_number,
 			(data->>'balance')::numeric AS balance,
+			(data->>'availableBalance')::numeric AS available_balance,
 			data->>'currency'    AS currency,
 			timestamp            AS observed_at
 		FROM sensor_events
@@ -271,7 +275,9 @@ export async function readLatestBalances(
 		account_id: string;
 		account_name: string | null;
 		account_type: string | null;
+		account_number: string | null;
 		balance: string;
+		available_balance: string | null;
 		currency: string | null;
 		observed_at: string | Date;
 	}>(rows)
@@ -280,7 +286,9 @@ export async function readLatestBalances(
 			accountId: row.account_id,
 			accountName: row.account_name,
 			accountType: row.account_type,
+			accountNumber: row.account_number,
 			balance: Number(row.balance) || 0,
+			availableBalance: row.available_balance === null ? null : Number(row.available_balance),
 			currency: row.currency,
 			observedAt: row.observed_at instanceof Date ? row.observed_at : new Date(row.observed_at)
 		}))

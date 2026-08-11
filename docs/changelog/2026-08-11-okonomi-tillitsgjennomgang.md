@@ -1,7 +1,48 @@
 # Økonomi: tillitsgjennomgang og retning
 
 Dato: 2026-08-11
-Status: planlagt (målt mot prod — se Målingen)
+Status: fase 1 og 2 ferdig (dev-verifisering gjenstår) · fase 3–7 planlagt
+
+## Hva som er bygget
+
+**Fase 1 (én sannhet) og fase 2 (interne overføringer) er implementert.**
+
+`$lib/server/economics/transactions.ts` er nå eneste vei inn til banktransaksjoner:
+`readTransactions` leser canonical, kategoriserer én gang og **merker** interne overføringer;
+`readLatestBalances` gjør `DISTINCT ON` per konto med et vindu. Ren logikk i
+`$lib/domain/economics/` (`internal-transfers.ts`, `spending-summary.ts`) med 22 tester.
+
+Femten lesesteder flyttet: tema-dashboardet, `query_economics` (alle tre grenene, som også
+dekker Ekko siden verktøymodulen deles), `/api/economics/{spending,cumulative-spending,
+irregular,merchant-analysis,transfers,transactions,accounts}`, `/api/transactions`,
+`/api/accounts`, `/api/sensor-summary`, `/api/widget-data/[id]`, `balance-reconstructor`,
+`salary-nudge`, `salary-report`, `grocery-insights`, `spending-analyzer`, og målleserne
+`readCategorySpend`/`readMonthlySavings`.
+
+Feil rettet underveis, alle beskrevet under «Hva som faktisk er galt»:
+
+- `detectRecurring` var en no-op på dashboardet (fikk samme `month` på hver rad).
+- Dagligvarer ble målt på to måter i samme funksjon.
+- `typeText` manglet på canonical → SB1-fallbacken var død (migrasjon 0055 + backfill).
+- Månedsgrenser i UTC → Oslo.
+- Saldoene ble lest uten datofilter, fem steder.
+- `readMonthlySavings` summerte `Math.abs()`, så et uttak fra sparekontoen økte sparetallet.
+- `/api/economics/transfers` bar to personnavn og fem `ILIKE`-mønstre i kildekoden; navnene
+  leses nå fra `persons` (`self`/`partner`, med `aliases`), og `MoneyFlow` tar banenavnene
+  fra dataene.
+- Vakten i `sensor-event-access.ts` leste `NOT IN` som `IN` — en falsk positiv for alle
+  guardede typer, ikke bare bank.
+
+`bank_transaction` og `bank_balance` er lagt inn i vakten, så dette ikke driver tilbake.
+`npm run check`: 0 feil. `npm test`: 3 236 grønne i 239 filer.
+
+**Ikke gjort:** `categorized_events` er fortsatt nøklet på `sensorEventId` og bygges fra rå
+`sensor_events`. Den betjener nå bare prosjektkoblinger — alt som teller kroner er flyttet
+bort fra den — men å nøkle den på `canonicalId` er en migrasjon med FK-bytte som fortjener
+sin egen verifisering. Se fase 1 under.
+
+**Gjenstår å verifisere i prod:** kjør diagnosen på nytt og se at `stores[]` er enige, og at
+månedsforbruket lander rundt 42 000 kr framfor 132 000.
 
 ## Målingen
 
