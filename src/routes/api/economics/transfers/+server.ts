@@ -1,111 +1,126 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, asc, desc, sql } from 'drizzle-orm';
+import { persons } from '$lib/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
+import { readTransactions, readLatestBalances } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 /**
  * GET /api/economics/transfers?accountId=xxx
  *
- * Returns transfers on the given account that involve Kjetil Høiby or
- * Anita Grønningsæter Digernes by name in the description.
- * Each transfer is tagged with direction relative to the account:
- *   incoming = money arriving at the account  (green)
- *   outgoing = money leaving  the account     (red)
- * Also returns daily balance history for the account.
+ * Overføringer på kontoen som kan knyttes til en person i husholdningen, med retning
+ * relativt til kontoen (`incoming` = penger inn). Pluss en saldoserie for kontoen.
+ *
+ * To ting endret seg i august 2026 (se
+ * `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`):
+ *
+ * 1. **Navnene er ikke hardkodet lenger.** Endepunktet bar to personnavn og fem
+ *    ILIKE-mønstre i kildekoden. Nå leses `self` og `partner` fra `persons`, med `aliases`
+ *    som allerede finnes der for navnevarianter — så en ny husholdning virker uten en
+ *    kodeendring, og repoet bærer ikke persondata.
+ * 2. **Leser canonical, ikke rå `sensor_events`.** Den rå strømmen er ~3,8× duplisert, og
+ *    her ble den både listet og brukt til å bakprojisere en saldo.
  */
+
+const MONTHS_BACK = 18;
+
+/** Ord som er for generiske å matche på. «Ole» treffer «Olerud», og et fornavn på tre
+ *  bokstaver treffer halve kontoutskriften. */
+const MIN_NAME_TOKEN_LENGTH = 4;
+
+function nameTokensFor(person: { name: string; fullName: string | null; aliases: string[] }): string[] {
+	const raw = [person.name, ...(person.fullName?.split(/\s+/) ?? []), ...person.aliases];
+	return [
+		...new Set(
+			raw
+				.map((token) => token.trim().toLowerCase())
+				.filter((token) => token.length >= MIN_NAME_TOKEN_LENGTH)
+		)
+	];
+}
+
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	if (!accountId) return json({ error: 'Missing accountId' }, { status: 400 });
 
 	const cutoff = new Date();
-	cutoff.setMonth(cutoff.getMonth() - 18);
+	cutoff.setMonth(cutoff.getMonth() - MONTHS_BACK);
 
-	// Fetch transactions on this account + latest balance in parallel
-	const [rows, latestBalRows] = await Promise.all([
+	const [{ transactions: rows }, balances, household] = await Promise.all([
+		readTransactions({ userId, from: cutoff, accountId }),
+		readLatestBalances(userId),
 		db
 			.select({
-				date: sql<string>`timestamp::date`,
-				amount: sql<number>`(data->>'amount')::numeric`,
-				description: sql<string>`data->>'description'`
+				name: persons.name,
+				fullName: persons.fullName,
+				aliases: persons.aliases,
+				kind: persons.kind
 			})
-			.from(sensorEvents)
+			.from(persons)
 			.where(
 				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'bank_transaction'),
-					sql`data->>'accountId' = ${accountId}`,
-					sql`timestamp >= ${cutoff.toISOString()}`,
-					sql`(
-						data->>'description' ILIKE '%kjetil%' OR
-						data->>'description' ILIKE '%høiby%' OR
-						data->>'description' ILIKE '%anita%' OR
-						data->>'description' ILIKE '%grønning%' OR
-						data->>'description' ILIKE '%digernes%'
-					)`
+					eq(persons.userId, userId),
+					eq(persons.archived, false),
+					inArray(persons.kind, ['self', 'partner'])
 				)
 			)
-			.orderBy(asc(sensorEvents.timestamp)),
-
-		db
-			.select({ balance: sql<number>`(data->>'balance')::numeric` })
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'bank_balance'),
-					sql`data->>'accountId' = ${accountId}`
-				)
-			)
-			.orderBy(desc(sensorEvents.timestamp))
-			.limit(1)
 	]);
 
-	type Person = 'Kjetil' | 'Anita';
+	const people = household.map((person) => ({
+		name: person.name,
+		tokens: nameTokensFor(person)
+	}));
+
 	interface Transfer {
 		date: string;
-		person: Person;
+		person: string;
 		/** true = money arriving at the selected account */
 		incoming: boolean;
 		amount: number;
 		description: string;
+		/** Sann når motparten er en annen av brukerens egne kontoer. */
+		internal: boolean;
 	}
 
 	const transfers: Transfer[] = [];
 
 	for (const row of rows) {
-		const amt = Number(row.amount);
-		const desc = row.description ?? '';
-		const isKjetil = /kjetil|høiby/i.test(desc);
-		const isAnita = /anita|grønning|digernes/i.test(desc);
-		if (!isKjetil && !isAnita) continue;
-		// Skip micro savings round-ups
+		const desc = row.description;
+		const haystack = desc.toLowerCase();
+
+		// Småsparing/avrunding er ikke en overføring mellom folk.
 		if (/småsparing|avrunding/i.test(desc)) continue;
+
+		const match = people.find((person) => person.tokens.some((token) => haystack.includes(token)));
+		if (!match) continue;
 
 		transfers.push({
 			date: row.date,
-			person: isKjetil ? 'Kjetil' : 'Anita',
-			incoming: amt > 0, // positive = money came IN to this account
-			amount: Math.abs(amt),
-			description: desc
+			person: match.name,
+			incoming: row.amount > 0,
+			amount: Math.abs(row.amount),
+			description: desc,
+			internal: row.isInternalTransfer
 		});
 	}
 
-	// ── Balance sparkline back-projection ─────────────────────────────────────
+	// ── Saldoserie, bakprojisert fra siste kjente saldo ──────────────────────
+	// NB: dette er en serie over dagene som HAR en av overføringene over, ikke en daglig
+	// saldokurve — den bor i `buildDailyBalances`, som ankres på faktiske saldomålinger.
 	const balanceHistory: { date: string; balance: number }[] = [];
-	if (latestBalRows.length > 0) {
-		const latestBal = Number(latestBalRows[0].balance);
-		const txTotal = rows.reduce((s, r) => s + Number(r.amount), 0);
-		let running = latestBal - txTotal;
+	const latest = balances.find((b) => b.accountId === accountId);
+	if (latest) {
+		const txTotal = rows.reduce((sum, row) => sum + row.amount, 0);
+		let running = latest.balance - txTotal;
 
 		const txByDate = new Map<string, number>();
-		for (const r of rows) {
-			txByDate.set(r.date, (txByDate.get(r.date) ?? 0) + Number(r.amount));
+		for (const row of rows) {
+			txByDate.set(row.date, (txByDate.get(row.date) ?? 0) + row.amount);
 		}
-		for (const d of Array.from(txByDate.keys()).sort()) {
-			running += txByDate.get(d)!;
-			balanceHistory.push({ date: d, balance: running });
+		for (const date of [...txByDate.keys()].sort()) {
+			running += txByDate.get(date)!;
+			balanceHistory.push({ date, balance: running });
 		}
 	}
 

@@ -2,14 +2,14 @@
  * grocery-insights.ts — delt beregning av dagligvareforbruk for uke + baseline.
  * Brukes av economics_grocery_spend_weekly-signalet og mandagsnudgen, slik at
  * de to alltid viser samme tall. Én transaksjonsspørring over hele vinduet
- * (baseline + uke), splittet i JS — queryCanonicalTransactions laster
+ * (baseline + uke), splittet i JS — den delte leseren laster
  * merchant-mappings/overrides/regler per kall, så færre kall er billigere.
  */
 
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { foodSettings } from '$lib/db/schema';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { readTransactions } from '$lib/server/economics/transactions';
 
 const BASELINE_WEEKS = 4;
 
@@ -31,23 +31,24 @@ export async function getGroceryWeekSpend(
 ): Promise<GroceryWeekSpend> {
 	const baselineStart = new Date(weekStart.getTime() - BASELINE_WEEKS * 7 * 86400000);
 
-	const [rows, settingsRow] = await Promise.all([
-		queryCanonicalTransactions({
+	const [read, settingsRow] = await Promise.all([
+		readTransactions({
 			userId,
 			from: baselineStart,
 			to: weekEnd,
-			category: 'dagligvarer',
-			spendingOnly: true
+			excludeInternalTransfers: true
 		}),
 		db.query.foodSettings.findFirst({ where: eq(foodSettings.userId, userId) })
 	]);
+
+	const rows = read.transactions.filter((tx) => tx.category === 'dagligvarer' && tx.amount < 0);
 
 	let spend = 0;
 	let baselineTotal = 0;
 	let transactionCount = 0;
 	for (const row of rows) {
-		const amount = Math.abs(Number(row.amount) || 0);
-		const ts = row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp);
+		const amount = Math.abs(row.amount);
+		const ts = row.timestamp;
 		if (ts >= weekStart) {
 			spend += amount;
 			transactionCount += 1;
