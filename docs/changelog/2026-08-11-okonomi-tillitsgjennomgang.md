@@ -308,7 +308,62 @@ Trykk på en transaksjon i lista → rett kategori. Skriver en
 `categorizeTransaction`, og gjelder framover uten at brukeren må si det. Vipps-beløp over
 en terskel spørres det om i månedsgjennomgangen — ikke som avbrudd.
 
-### Fase 5: Månedsgjennomgangen som inngang
+### Fase 5: Sparekontoen over tid — går den ned, og når kniper det
+
+Bestilt av brukeren 2026-08-11: se at sparekontoen **ikke** går ned, og hvis den gjør det,
+få frekvens og størrelse på trekkene for å se hvor og når det kniper.
+
+**Designet finnes og er riktig. Inngangsdataene er korrupte.** `buildDailyBalances`
+(`balance-reconstructor.ts`) bruker alle `bank_balance`-snapshots som ankre og anvender
+transaksjoner forover mellom dem, med reset til ankeret — altså selvhelende mot drift. Det
+er den rette formen. Men transaksjonene leses fra rå `sensor_events`, som er ~3,8×
+duplisert:
+
+- Innenfor et ankergap drifter linja og snapper tilbake ved neste anker: en sagtann.
+  Ferske perioder har daglige ankre (synk hvert 5. minutt), så feilen er liten der. Den
+  PDF-importerte historikken har spredte ankre, og **der er formen innad i måneden søppel.**
+- **`uttak` er nøyaktig tallet brukeren ber om, og det er det som er ~4× galt.** Frekvensen
+  blåses opp, størrelsene er riktige. Det er verst mulige utfall for spørsmålet: flaten vil
+  si at sparekontoen raides fire ganger så ofte som den gjør.
+- `openingBalance = firstSnapshotBalance − txSumBeforeFirstSnapshot`. Duplikater før første
+  anker gjør åpningsbalansen feil med duplikatsummen, og serien starter ved første
+  *transaksjon* — potensielt langt før første anker. **Den eldste delen av kurven er derfor
+  den minst pålitelige**, som er stikk motsatt av hva «går den ned over tid» trenger.
+- Den samme funksjonen mater `salary-report`, `salary-month` og `salary-nudge` — altså den
+  månedsgjennomgangen brukeren har bedt om. Fase 1 er en forutsetning, ikke en parallell.
+
+**`monthly_savings` har feil fortegn og kan ikke brukes.** `readMonthlySavings` summerer
+`Math.abs()` av hver rad kategorisert `sparing`. Begge sidene av en intern overføring
+telles, så én overføring teller dobbelt — og et **uttak** fra sparekontoen teller som
+positiv sparing. Å tømme sparekontoen *øker* metrikken. Den leser dessuten
+`categorized_events`, som mangler 202 rader.
+
+**Tvingende føring på fase 2: klassifiser, ikke filtrer.** Et uttak fra sparekonto til
+brukskonto **er** en intern overføring — de samme radene fase 2 skal ta ut av forbruket. De
+er gale som *forbruk* og helt riktige som *sparebevegelse*. Samme rader, to spørsmål. Blir
+fase 2 en ren filtrering, mister denne funksjonen datagrunnlaget sitt. Overføringene skal
+merkes og beholdes, med motkontoen navngitt.
+
+**Aksen er lønnsmåned, ikke kalendermåned.** Et uttak tre dager etter lønn er planlagt; et
+uttak på dag 26 betyr at måneden ikke bar. «Når kniper det» er posisjon i lønnsperioden, og
+`detectGlobalPayday` gir allerede periodegrensene.
+
+**Kadens-fella, kjent fra livvidde:** ankertettheten er ikke konstant — daglig nå, månedlig
+i historikken. Et fast trendvindu kopiert fra vekt vil stille produsere ingenting eller
+tull på den historiske delen (`MIN_TREND_SAMPLES` slår inn). En saldo er dessuten et
+**nivå**, ikke en støyende måling: den trenger ikke glatting mot væskevekt, den trenger å
+skille «dippet og kom tilbake» fra «synker strukturelt». Månedsslutt-nivåer er den robuste
+primitiven her, ikke et etterslepende snitt over dager.
+
+Antakelser, siden de ikke er avklart: hver sparekonto følges **for seg** og i sum, og et
+uttak rapporteres som et faktum — dommen ligger i trenden, ikke i den enkelte hendelsen.
+Samme linje som `checkAgainstWeight`, som korrigerer ingenting og bare rapporterer avviket.
+
+Åpent spørsmål som endrer designet: **er sparekontoen en buffer som er *ment* å tas av,
+eller skal den være urørt?** Er den en buffer, er et uttak i seg selv ikke et varsel — bare
+en trend som ikke kommer tilbake er det. Er den urørlig, er hvert uttak verdt å si fra om.
+
+### Fase 6: Månedsgjennomgangen som inngang
 
 Fire spørsmål, i denne rekkefølgen, ved lønn:
 
@@ -319,7 +374,7 @@ Fire spørsmål, i denne rekkefølgen, ved lønn:
 
 Lønnsrapporten flyttes inn i Økonomi-temaet. Nudgen ved lønn er inngangen.
 
-### Fase 6: Rydding
+### Fase 7: Rydding
 
 Slett `src/lib/domains/economics/index.ts`. Avgjør `/economics`: redirect til temaet
 eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics` i
@@ -354,6 +409,14 @@ eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics
 - **Prioriter på kroner, ikke på hvor interessant feilen er.** Dedupen var den morsomme
   feilen og er den minste (93 000 kr i øvre anslag). Feil lager (4,4 mill.) og interne
   overføringer (1,08 mill.) er kjedelige og er nesten hele avviket.
+- **Interne overføringer klassifiseres, de slettes ikke.** De er feil som forbruk og
+  riktige som sparebevegelse. Fase 2 må derfor merke dem og beholde dem med motkonto, ikke
+  filtrere dem bort — ellers står fase 5 uten datagrunnlag. Føringen kom fra en bestilling
+  som landet *etter* at fase 2 var skrevet, og den ville vært dyr å oppdage etterpå.
+- **En saldo er et nivå, ikke en måling.** Trendapparatet fra vekt og livvidde skal ikke
+  kopieres hit uten videre: der glatter man mot målestøy, her skal man skille en dipp som
+  kom tilbake fra en varig nedgang. Ankertettheten varierer dessuten over historikken, og et
+  fast vindu ville vært stumt på de eldste årene — samme felle som livvidde gikk i.
 
 ## Verifisering
 
