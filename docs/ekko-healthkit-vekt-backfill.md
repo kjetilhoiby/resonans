@@ -202,3 +202,101 @@ appsiden: `ekko/HEALTHKIT_VEKT_BACKFILL.md`.
 
 **Avklares sammen:** ingenting kritisk. Si fra hvis 500 per bolk er upraktisk fra
 appsiden — taket er vårt valg og kan justeres.
+
+
+---
+
+# Tillegg: livvidde (2026-08-11)
+
+Denne briefen dekket opprinnelig bare vekt. **Livvidde var utelatt, og det var en
+forglemmelse** — funksjonen ble bygget etter at briefen gikk ut, og kontrakten ble
+aldri oppdatert.
+
+`HKQuantityTypeIdentifierWaistCircumference` er en standardtype i HealthKit. Har
+brukeren målt livvidde i en annen app, ligger det år med historikk på telefonen — og
+det er **eneste** vei inn til dem. Withings måler ikke livvidde i det hele tatt, og
+ingen sensor vi har kan hente den.
+
+## Endepunktet
+
+`POST /api/apps/healthkit/waist`
+
+Eget endepunkt, ikke en utvidelse av `/weight`. Grunnen er dedup: vekt har en
+konkurrerende kilde (Health Mate skriver Withings-veiingene til Apple Health, så
+eksporten inneholder rader vi alt har), og `/weight` hopper derfor over hele Oslo-dager
+som finnes fra før. **Livvidde har ingen slik kilde.** En manuell logging og en
+HealthKit-måling samme dag er to reelle målinger, og vi snitter dem — som er nøyaktig
+det måleprotokollen ber om.
+
+```json
+{
+  "samples": [
+    {
+      "timestamp": "2014-07-01T06:42:00Z",
+      "waistCm": 104.0,
+      "sourceName": "Weight Guru",
+      "sourceBundleId": "com.example.wg",
+      "uuid": "9C4D2A61-…"
+    }
+  ]
+}
+```
+
+| felt | påkrevd | enhet | merknad |
+|---|---|---|---|
+| `timestamp` | ja | ISO-8601 UTC | samplets `startDate` |
+| `waistCm` | ja | **centimeter**, 40–200 | se enhetsfella under |
+| `sourceName` | nei | tekst | lagres i metadata |
+| `sourceBundleId` | nei | tekst | samme |
+| `uuid` | nei | tekst | HealthKits `UUID` |
+
+Maks 500 per kall. Idempotent — samme bolk sendt to ganger oppdaterer framfor å
+duplisere.
+
+Svar:
+
+```json
+{
+  "received": 500,
+  "inserted": 493,
+  "skippedInvalid": 7,
+  "oldest": "2013-12-08",
+  "newest": "2017-10-12",
+  "warnings": []
+}
+```
+
+`warnings` er tekst ment for dere, og den navngir rettelsen når noe ble forkastet. Les
+den — et svar med `inserted: 0` og en tom `warnings` betyr noe helt annet enn
+`inserted: 0` med en enhetsadvarsel.
+
+## Enhetsfella, som er større her enn for vekt
+
+Livvidde er en **lengde**, og HealthKit gir den i den enheten dere ber om:
+
+```
+HKUnit.meterUnit(with: .centi)   → 94      ✅ dette vil vi ha
+HKUnit.meter()                   → 0.94    ❌ forkastes, flagges som METER
+HKUnit.inch()                    → 37      ❌ forkastes, flagges som TOMMER
+```
+
+Vi **konverterer ikke**. Å gange 0,94 med 100 ville gjort en gjetning til en måling, og
+— verre — gjort at feilen på appsiden aldri ble rettet. Radene forkastes, og `warnings`
+sier hvilken enhet det ser ut som og hva kallet skal være.
+
+**Vakten fanger ikke alt.** 41 tommer er 104 cm, men 41 er også et gyldig
+centimetertall. Tommer over 40 kan derfor ikke skilles fra centimeter, og da lagres et
+feil tall som om det var riktig. Det er grunnen til at enheten må være riktig hos dere —
+vakten er et sikkerhetsnett mot den åpenbare feilen, ikke en garanti.
+
+## Ellers
+
+Samme som for vekt: `Authorization: Bearer rsn_…`, `startDate` konsekvent, UTC-
+tidsstempler, bolker på 500 sendt sekvensielt, og rapporter til brukeren hva som faktisk
+ble sendt. HealthKit-lesetilgang er usynlig for appen, så null treff må se ut som et
+spørsmål og ikke som suksess.
+
+**Ta med `waistCircumference` i samme tillatelsesforespørsel** som de tre vekttypene, så
+brukeren bare spørres én gang.
+
+Dette er også en engangsjobb. Løpende livvidde logges i Resonans på Vekt-flaten, ukentlig.
