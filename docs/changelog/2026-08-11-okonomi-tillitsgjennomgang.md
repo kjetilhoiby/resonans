@@ -262,11 +262,46 @@ billige som fjerner nesten hele avviket, og dedup-forbedringen er flyttet til fa
 
 ### Fase 1: Én sannhet
 
-Alt som teller kroner leser `canonical_bank_transactions`, gjennom én delt leser.
-`categorized_events` reprojiseres fra canonical, ikke fra rå `sensor_events`. Rå lesing
-av `bank_transaction`/`bank_balance` vaktes med samme mekanisme som
-`sensor-event-access.ts` bruker for `workout`/`weight`/`sleep`, med `knownRawReaders` for
-de stedene der per-kilde-visning faktisk er poenget.
+Størst i kroner (~4,4 mill.) og enklest i form: alt som teller kroner leser
+`canonical_bank_transactions` gjennom **én delt leser**, og rå lesing vaktes etterpå.
+
+**Kallstedene som må flyttes** — alle leser rå `sensor_events` i dag:
+`/api/economics/spending`, `cumulative-spending`, `irregular`, `merchant-analysis`,
+`transfers`, `transactions`, `/api/transactions`, `/api/widget-data/[id]`,
+`/api/sensor-summary`, `spending-analyzer.ts` (LLM-merchant-mappingen),
+`metric-definition-service.ts` og `balance-reconstructor.ts`. Sistnevnte er den som mater
+lønnsrapporten og fase 5.
+
+Tre ting som ikke er en spørring å skrive om:
+
+**`categorized_events` er nøklet på `sensorEventId`** — unikt indeks *og* fremmednøkkel mot
+`sensor_events`. Å reprojisere fra canonical betyr å bytte nøkkel, altså en migrasjon:
+legg til `canonicalId` nullable, backfill, flytt det unike indekset, og behold FK-en til
+`sensor_events` bare så lenge noe trenger den. Ikke en rewrite av en `SELECT`.
+
+**`typeText` finnes ikke på canonical.** Rå-tabellen har `type_text`, canonical har det
+ikke, og derfor kalles `categorizeTransaction(desc, null, …)` med SB1-fallbacken død. Feltet
+er en egenskap ved den logiske transaksjonen og hører på canonical — bær det med i upserten
+fra `rows`, som allerede har verdien.
+
+**Canonical inneholder ikke PDF-importerte transaksjoner.** `import-statements` skriver bare
+`sensor_events` (`SensorEventService`, ingen canonical-skriving). «Alt leser canonical» ville
+derfor stille droppet kontoutskrift-historikken — nettopp den som ble lastet inn for å få
+historikk. Dette må avgjøres eksplisitt, ikke ved uhell:
+
+- Innenfor siste år er spriket forklart av duplikater alene (2 245 × 3,92 ≈ 8 800 ≈ 8 891
+  rader), så PDF-transaksjonene ligger **lenger tilbake**. Omfanget er altså ikke målt.
+- `buildDailyBalances` ekskluderer allerede PDF-transaksjoner (`source <> 'pdf_import'`,
+  fordi fortegnene er heuristisk gjettet) og bruker bare deres `bank_balance`-ankre. Fase 5
+  er derfor **ikke** truet — ankrene ligger i `sensor_events` og blir liggende.
+- Det som står på spill er transaksjonsnivå-historikk i forbruksvisningene. Enten backfilles
+  canonical fra PDF-importen, eller flaten sier at transaksjonshistorikken starter da
+  API-synken startet. Å la den forsvinne uten å si det er det ene uakseptable.
+- Utvid diagnosen med dekning per år per lager før valget tas.
+
+Til slutt: rå lesing av `bank_transaction`/`bank_balance` vaktes med samme mekanisme som
+`sensor-event-access.ts` bruker for `workout`/`weight`/`sleep`, med `knownRawReaders` for de
+stedene der per-kilde-visning faktisk er poenget (PDF-ankrene er ett).
 
 ### Fase 2: Interne overføringer ut av forbruket
 
@@ -303,10 +338,26 @@ dette er riktig. Reglene hører i `$lib/domain/` — rene og testbare, ikke inni
 
 ### Fase 4: Retting der du ser tallet
 
-Trykk på en transaksjon i lista → rett kategori. Skriver en
-`classification_overrides`-rad på fingerprint, som allerede har forrang i
-`categorizeTransaction`, og gjelder framover uten at brukeren må si det. Vipps-beløp over
-en terskel spørres det om i månedsgjennomgangen — ikke som avbrudd.
+Brukerens valg: trykke på transaksjonen der den vises, og at rettingen skal gjelde alle
+framtidige kjøp fra samme sted **uten at han sier det**.
+
+**Mekanismen finnes allerede og gjør presis det.**
+`buildTransactionFingerprint(description, typeText, amount)` bruker beløpet bare til å
+utlede retning — nøkkelen er `merchantKey|direction`. En `classification_overrides`-rad
+gjelder derfor merchanten, ikke det enkelte beløpet, og den har høyeste forrang i
+`categorizeTransaction`. Ingen ny datamodell trengs.
+
+- **Rettingen virker bakover også**, fordi overstyringen konsulteres når projeksjonen kjøres.
+  Det er samme reprojeksjon fase 1 trenger — bygg den én gang.
+- **Knappen hører i den delte lista, ikke per flate.** `TransactionList`,
+  `TransactionExplorer` og `PaydaySpendSection` rendrer alle transaksjoner. Samme regel som
+  for `ChatMessages`: et duplikat arver ikke rettelser.
+- **Verifiser at `normalizeText` faktisk generaliserer.** Beskrivelser bærer variable
+  suffikser — `normalizeTxDescription` i synken har egne COOP-hack nettopp derfor. Er
+  merchantKey ustabil mellom to Rema-kjøp, gjelder overstyringen bare det ene, og løftet til
+  brukeren brytes stille. Test med de faktiske beskrivelsene fra `raw_bank_transaction_versions`.
+- **Vipps-beløp over en terskel spørres det om i månedsgjennomgangen**, ikke som avbrudd.
+  Samme prinsipp som `log_hunger`: transkriber svaret, ikke gjett det.
 
 ### Fase 5: Sparekontoen over tid — går den ned, og når kniper det
 
@@ -388,20 +439,70 @@ brukeren ba om begge.
 
 ### Fase 6: Månedsgjennomgangen som inngang
 
-Fire spørsmål, i denne rekkefølgen, ved lønn:
+Brukeren valgte alle fire spørsmålene. Rekkefølgen er ikke tilfeldig — den går fra det som
+avgjør handling nå, til det som kan vente:
 
-1. Bærer måneden som kommer?
-2. Hva var uvanlig forrige måned?
-3. Gikk vi over noe vi hadde avtalt?
-4. Hva er én ting å gjøre noe med?
+**1. Bærer måneden som kommer?** Disponibelt etter lønn, minus faste utgifter, minus
+forventet variabelt forbruk basert på de foregående periodene. **Denne avhenger av at
+fast/variabelt-splitten virker, og den gjør den ikke i dag:** `detectRecurring` på
+dashboardet er en no-op (kalles med samme `month` på hver rad), så splitten hviler
+utelukkende på kategoriens `defaultFixed`. Enten rettes `detectRecurring` — den er riktig
+skrevet, den kalles galt — eller spørsmålet besvares på kategori alene og sier det.
+Kryssjekk: bufferens dekning i måneder fra fase 5.
 
-Lønnsrapporten flyttes inn i Økonomi-temaet. Nudgen ved lønn er inngangen.
+**2. Hva var uvanlig forrige måned?** Ikke hele fordelingen, bare avvikene: kategorier som
+skiller seg fra sitt eget 3-måneders­snitt. `readCategorySpend` regner allerede snittet, og
+`economics_budget_pressure_7d` finnes som signal. Terskelen for «uvanlig» må utledes av
+spredningen i historikken, ikke velges.
+
+**3. Gikk vi over noe vi hadde avtalt?** Oppgjør mot `category_spend`-målene og sparemålene.
+Her leses `categorized_events`, som i dag mangler 202 rader mot canonical — fase 1 er en
+forutsetning, ellers svarer gjennomgangen på et annet tallgrunnlag enn flaten viste hele
+måneden.
+
+**4. Hva er én ting å gjøre noe med?** Ett forslag, og **«ingenting» er et gyldig svar** —
+samme regel som øktvurderingen, der «avslutt med ett råd» tvang fram «løp mer» på hver økt.
+Kandidater: et abonnement uten bruk (`detectRecurring` over `medier_og_underholdning`), en
+kategori som har krøpet oppover tre måneder på rad, eller et Vipps-beløp som skal
+klassifiseres.
+
+**Det finnes allerede.** `/economics/lonnsmaned` har lønnsperiode, innsikter og refleksjon;
+`salary-nudge` varsler ved lønn. Arbeidet er å flytte rapporten inn i Økonomi-temaet, bytte
+de fire spørsmålene inn, og la nudgen være inngangen. `PageHeader` peker i dag tilbake til
+`/economics` og må følge flyttingen. NB: «Lønnsmåned»-fanen i `EconomicsDashboard` er noe
+*annet* (akkumulert forbruk per kategori) — de to skal ikke slås sammen ved et uhell.
 
 ### Fase 7: Rydding
 
-Slett `src/lib/domains/economics/index.ts`. Avgjør `/economics`: redirect til temaet
-eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics` i
-`shared-tools.ts`. Gi `grocery_spend` en leser eller fjern metrikken.
+Løse tråder som ikke hører i noen av fasene over, men som hver især vil koste noen en
+feilsøking:
+
+- **Slett `src/lib/domains/economics/index.ts`** — 109 linjer død kode med en konkurrerende
+  14-kategori-taksonomi. Ingen importerer symbolene. Verst av alt fordi den *ser* ut som
+  taksonomien.
+- **Avgjør `/economics`:** redirect til temaet eller slett. 1 730 linjer med én
+  fallback-lenke inn. To flater med ulike tall er verre enn én.
+- **Hardkodede personnavn ut av `/api/economics/transfers`.**
+- **Registrer `query_economics` i `shared-tools.ts`** — Ekko har i dag null økonomiverktøy.
+  Beskrivelsen bor på verktøymodulen og gjenbrukes, ellers får de to flatene ulike instrukser.
+- **`grocery_spend`:** gi den en leser i `goal-progress` eller fjern metrikken. Den står i
+  katalogen, viz-spec og `create_goal`-beskrivelsen, og et mål på den viser ingen nåverdi.
+- **`readMonthlySavings` har feil fortegn** (`Math.abs()` på hver rad, så uttak teller som
+  sparing). Rettes med fase 5 eller slettes.
+- **Månedsgrensa er UTC, ikke Oslo** i `economics-dashboard.ts` (`toISOString().slice(0,7)`).
+  Bruk `$lib/domain/oslo-time.ts`.
+- **Saldoene leses uten datofilter** — alle `bank_balance`-rader noensinne, sortert, første
+  per konto plukket i JS.
+- **Dagligvarer måles på to måter i samme funksjon:** `tx.category === 'dagligvarer'` for
+  inneværende periode, hardkodet `GROCERY_KEYWORDS` for sammenligningsperiodene.
+- **Navnekollisjon:** `buildDailyBalances` finnes i både
+  `server/integrations/balance-reconstructor.ts` (banksaldo) og
+  `domain/nutrition/daily-balances.ts` (energibalanse). Ett av dem bør døpes om.
+
+**Testdekning gjennom alle fasene.** Økonomi har 35 tester i 2 filer mot ~3 200 totalt, og
+ingen på dedupliseringen, dashboardet eller lønnsmåneden. Ny ren logikk — overføringsparing,
+statusmatching, multiplisitet, bunn-trend — hører i `$lib/domain/` med tester, ikke inni
+synken eller en `.svelte`-fil.
 
 ## Beslutninger
 
