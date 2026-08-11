@@ -68,6 +68,9 @@ Widget-eksempler for helse:
 
 	economics: `**ECONOMIC DATA - KRITISK REGEL:**
 ALLTID bruk query_economics når bruker spør om økonomi, bank, saldo, utgifter, transaksjoner, inntekt, lønn eller forbruk.
+
+**Sparekonto/buffer: bruk queryType='savings_buffer', IKKE 'balance'.** «Går sparekontoen ned?», «hvor lenge holder bufferen?», «hvor ofte tar vi av sparepengene?» og «når i måneden kniper det?» besvares av bunnivået per lønnsperiode, måneders dekning og uttaksmønsteret. 'balance' gir dagens saldo uten retning, og saldo alene skjuler at gulvet synker mens toppene står stille.
+Et enkelt uttak er IKKE et varsel — en buffer skal brukes. Videreformidle trendReason og withdrawalReason ordrett framfor å finne egne ord.
 ALDRI oppgi økonomisk data fra hukommelsen - hent ALLTID live data fra banken!
 
 **Query-eksempler:**

@@ -1195,6 +1195,28 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   — uten det spiser tre uttak på 500 samme innskudd) og `spending-summary.ts`.
 - **Månedsgrenser regnes i Oslo-tid** (`osloDayKey`), ikke med `toISOString()`.
 
+**Sparekontoen er en buffer, og det avgjør hva som måles** (`$lib/domain/economics/savings-buffer.ts`):
+
+- **Bunnene, ikke snittet.** En buffer som virker svinger, og lønna kommer inn hver måned —
+  så toppene kan se uendret ut mens gulvet synker. Trenden regnes på laveste saldo per
+  lønnsperiode, med minste kvadrater (ikke «siste minus første»: én avvikende måned ville
+  avgjort svaret). Inneværende periode holdes utenfor; bunnen der kan fortsatt bli lavere.
+- **Enheten er måneders dekning**, og den forutsetter fase 2: med overføringene inne ville
+  forbruket vært 132 000 kr/mnd mot reelle ~42 000, altså en tredjedel av dekningen. Et tall
+  som er 3× feil i pessimistisk retning er verre enn ingen tall. `runwayMonths` returnerer
+  **null** uten forbrukstall.
+- **Frekvens og posisjon i lønnsperioden skiller støtdemper fra kassekreditt**, og det er
+  hele diagnosen. Ett uttak på 12 000 og tolv på 1 000 gir samme nedgang og krever motsatt
+  handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
+- **Et uttak er ikke et varsel.** Bare erosjon får varselfarge — en buffer som brukes er ikke
+  et problem, og varsling per uttak ville blitt støy.
+- **Kontovalget er en heuristikk på navn/type, og flaten sier det.** `accountType` er SB1s
+  fritekst-`description`. «felles» hører IKKE i eksklusjonslista: dette er husholdningens
+  økonomi, så en felles sparekonto er nettopp bufferen.
+- Chatten svarer på det samme gjennom `query_economics` med `queryType: 'savings_buffer'` —
+  **samme loader som flaten**, ikke en egen beregning. Ordene («spare», «buffer», «dekning»,
+  «uttak») må stå i `detectPromptFocusModules`, ellers finnes ikke verktøyet for modellen.
+
 ---
 
 ## Database-konvensjoner

@@ -1,7 +1,7 @@
 # Økonomi: tillitsgjennomgang og retning
 
 Dato: 2026-08-11
-Status: fase 1 og 2 ferdig (dev-verifisering gjenstår) · fase 3–7 planlagt
+Status: fase 1, 2 og 5 ferdig (dev-verifisering gjenstår) · fase 3, 4, 6, 7 planlagt
 
 ## Hva som er bygget
 
@@ -41,8 +41,44 @@ Feil rettet underveis, alle beskrevet under «Hva som faktisk er galt»:
 bort fra den — men å nøkle den på `canonicalId` er en migrasjon med FK-bytte som fortjener
 sin egen verifisering. Se fase 1 under.
 
-**Gjenstår å verifisere i prod:** kjør diagnosen på nytt og se at `stores[]` er enige, og at
-månedsforbruket lander rundt 42 000 kr framfor 132 000.
+**Fase 5 (sparekontoen) er også implementert.** Beslutningene bor rent og testet i
+`$lib/domain/economics/savings-buffer.ts` (27 tester), datainnhentingen i
+`$lib/server/economics/savings-buffer.ts`, flaten i `SavingsTab.svelte` +
+`BufferFloorChart.svelte`, endepunktet på `GET /api/economics/sparing`, og chatten svarer på
+det samme gjennom `query_economics` med `queryType: 'savings_buffer'`.
+
+Fire ting som falt ut av «det er en buffer»:
+
+- **Bunnene, ikke snittet.** `troughsByPeriod` + `troughTrend` med minste kvadraters
+  stigningstall. Regresjon framfor «siste minus første» fordi én avvikende måned ellers
+  avgjør svaret. Testen `ser erosjon selv når toppene står stille` er den som fanger poenget.
+- **Dekning i måneder**, regnet mot forbruk der interne overføringer er ute. Returnerer
+  **null** uten forbrukstall framfor å dele på noe gjettet.
+- **Frekvens og posisjon i lønnsperioden** skiller støtdemper fra kassekreditt. Testen
+  `skiller tolv små fra ett stort — samme sum, motsatt diagnose` er hele begrunnelsen for at
+  funksjonen finnes.
+- **Bare erosjon får varselfarge.** En buffer som brukes er ikke et problem.
+
+To feil rettet i egen kode underveis, begge meningsfeil framfor typefeil:
+
+- `looksLikeSavingsAccount` ekskluderte «felles», som ville skjult husholdningens
+  **felles sparekonto** — altså nettopp den kontoen spørsmålet gjaldt. Brukeren styrer
+  husholdningens økonomi, ikke sin egen.
+- Uttakslista påsto «til brukskonto» uten å vite det. Fjernet framfor å gjette.
+
+Og én stille rutefeil: ordene brukeren faktisk skriver — «går sparekontoen ned», «hvor lenge
+holder bufferen», «dekning», «uttak» — traff ikke økonomimodulen i
+`detectPromptFocusModules`, så modellen ville ikke visst at verktøyet fantes. Samme klasse
+feil som «belastning» og «pulsfall» hadde i helse. Nå med test.
+
+**Gjenstår å verifisere i prod:**
+
+- Kjør diagnosen på nytt og se at `stores[]` er enige, og at månedsforbruket lander rundt
+  42 000 kr framfor 132 000.
+- Åpne Sparing-fanen og sjekk at **riktige kontoer** ble regnet som buffer. Heuristikken er
+  bevisst synlig på flaten: tar den feil, er det den som skal rettes, ikke tallene.
+- Sjekk at `trend.direction` ikke er `ukjent` — det betyr under tre hele lønnsperioder med
+  saldomålinger, og da er det ankerdekningen som mangler, ikke logikken.
 
 ## Målingen
 

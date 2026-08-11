@@ -4,6 +4,7 @@ import { canonicalBankTransactions } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { readTransactions, readLatestBalances } from '$lib/server/economics/transactions';
+import { loadSavingsBufferData } from '$lib/server/economics/savings-buffer';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
@@ -55,8 +56,8 @@ The tool returns actual data from your bank that you can trust.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
-		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list']).describe(
-			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category (optional category filter). category_trend: Monthly totals for a single category over a date range. account_list: List all accounts.'
+		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list', 'savings_buffer']).describe(
+			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category (optional category filter). category_trend: Monthly totals for a single category over a date range. account_list: List all accounts. savings_buffer: Sparekontoen som BUFFER — bunnivå per lønnsperiode (går den ned over tid?), måneders dekning ved dagens forbruk, og uttaksmønsteret som skiller en støtdemper fra en kassekreditt. Bruk denne på «går sparekontoen ned», «hvor lenge holder bufferen», «hvor ofte tar vi av sparepengene» og «når i måneden kniper det». IKKE bruk balance til de spørsmålene: den gir dagens saldo uten retning, og saldo alene skjuler at gulvet synker mens toppene står stille.'
 		),
 		category: z.string().optional().describe('Normalized category ID to filter by (e.g. "dagligvarer", "kafe_og_restaurant", "bil_og_transport"). Used in spending_summary and category_trend.'),
 		month: z.string().optional().describe('Month in YYYY-MM format (e.g., "2026-01")'),
@@ -73,7 +74,13 @@ The tool returns actual data from your bank that you can trust.`,
 
 	execute: async (args: {
 		userId: string;
-		queryType: 'balance' | 'transactions' | 'spending_summary' | 'category_trend' | 'account_list';
+		queryType:
+			| 'balance'
+			| 'transactions'
+			| 'spending_summary'
+			| 'category_trend'
+			| 'account_list'
+			| 'savings_buffer';
 		month?: string;
 		payPeriod?: 'current';
 		dateRange?: { start: string; end: string };
@@ -394,6 +401,60 @@ The tool returns actual data from your bank that you can trust.`,
 						: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
 				};
 			}
+
+		// Sparekontoen som buffer
+		if (queryType === 'savings_buffer') {
+			// Samme loader som Sparing-fanen. Et dashboard uten verktøy er data assistenten
+			// ikke har — og et verktøy med en EGEN beregning ville sagt noe annet enn skjermen.
+			const buffer = await loadSavingsBufferData(userId);
+
+			if (buffer.noSavingsAccountFound) {
+				return {
+					success: true,
+					data: { noSavingsAccountFound: true },
+					message:
+						'Fant ingen konto som ser ut som en sparekonto ut fra navn og type. Det er ikke det samme som at bufferen er tom — den er bare ikke identifisert. Kontonavn med «spar», «buffer», «BSU» eller «reserve» blir regnet med.'
+				};
+			}
+
+			// Sammendraget er et UTSNITT: hele saldoserien (opptil to år per konto) hører
+			// ikke i et verktøysvar.
+			const accounts = buffer.accounts.map((account) => ({
+				accountName: account.accountName,
+				balance: Math.round(account.balance),
+				runwayMonths: account.runwayMonths === null ? null : Number(account.runwayMonths.toFixed(1)),
+				trendDirection: account.trend.direction,
+				trendReason: account.trend.reason,
+				troughChangePerPeriod:
+					account.trend.perPeriod === null ? null : Math.round(account.trend.perPeriod),
+				latestTrough: account.troughs.at(-1)?.trough ?? null,
+				withdrawalVerdict: account.withdrawals.verdict,
+				withdrawalReason: account.withdrawals.reason,
+				withdrawalsPerPeriod: Number(account.withdrawals.perPeriod.toFixed(2)),
+				medianWithdrawal: account.withdrawals.medianAmount,
+				lateSharePct: Math.round(account.withdrawals.lateShare * 100)
+			}));
+
+			return {
+				success: true,
+				data: {
+					accounts,
+					totalBalance: Math.round(buffer.totalBalance),
+					totalRunwayMonths:
+						buffer.totalRunwayMonths === null ? null : Number(buffer.totalRunwayMonths.toFixed(1)),
+					monthlySpend: buffer.monthlySpend === null ? null : Math.round(buffer.monthlySpend),
+					periodsAnalyzed: buffer.periods.length,
+					guidance:
+						'Bunnivået er signalet, ikke saldoen: lønna kommer inn hver måned, så toppene kan se uendret ut mens gulvet synker. Et enkelt uttak er ikke et varsel — en buffer skal brukes. Det som betyr noe er om den kommer tilbake. «kassekreditt» betyr hyppige uttak sent i lønnsperioden, altså at måneden ikke bærer; «støtdemper» betyr at bufferen gjør jobben sin. Videreformidle begrunnelsene ordrett framfor å finne egne ord.'
+				},
+				message: buffer.accounts
+					.map(
+						(a) =>
+							`${a.accountName ?? 'Sparekonto'}: ${Math.round(a.balance).toLocaleString('nb-NO')} kr, ${a.trend.direction}${a.runwayMonths !== null ? `, ${a.runwayMonths.toFixed(1)} mnd dekning` : ''}. ${a.withdrawals.reason}`
+					)
+					.join(' | ')
+			};
+		}
 
 		// Get monthly trend for a single spending category
 		if (queryType === 'category_trend') {
