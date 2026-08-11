@@ -110,11 +110,19 @@ per henting.
 
 ### Uavklart: hvilke statuser finnes egentlig
 
-Brukeren beskriver **reservert / behandles / ferdig** (tre). Koden kjenner `BOOKED` og
-`PENDING` og gir alt annet `status_rank` 0, og batch-kollapsen sammenligner
-`=== 'BOOKED'` som ren streng. Enten mapper integrasjonen om underveis, eller så finnes
-det en tredje status som faller igjennom. **Dette avgjøres ikke ved å lese koden** — svaret
-ligger i `raw_bank_transaction_versions.payload`, som lagrer råsvarene.
+**Ingen vet.** Brukeren beskrev forløpet som «reservert → behandles → ferdig», men det var
+en beskrivelse av fenomenet, ikke av API-verdier — han kjenner ikke statusnavnene. Første
+utgave av dette dokumentet førte de tre ordene inn som om de var observerte strenger. Det
+er rettet, fordi det ville sendt neste agent på jakt etter navn som kanskje ikke finnes.
+
+Det vi vet fra koden: `bookingStatusRank` kjenner `BOOKED` (20) og `PENDING` (10) og gir
+alt annet 0, og batch-kollapsen sammenligner `=== 'BOOKED'` som ren streng. Er det en
+tredje status i dataene, deltar den ikke i `GREATEST`-løftet og treffes ikke av
+kollapsen — men om den finnes er **ikke** avgjort.
+
+Svaret ligger i `raw_bank_transaction_versions.booking_status` og `payload`, og hentes med
+`GET /api/admin/debug-sparebank1/dedup` (se Verifisering). Antall er ikke poenget: det er
+`unmapped`-flagget, altså statuser med rank 0 og mange rader.
 
 ### Øvrige funn, i lesingen
 
@@ -249,19 +257,32 @@ eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics
 
 ## Verifisering
 
-Gjenstår — dette er et planleggingsdokument. Feilene over er lest ut av koden og er
-entydige i lesingen, men **tallene i prod er ikke målt ennå**. Før fase 1:
+Feilene over er lest ut av koden og er entydige i lesingen, men **ingenting er målt i
+prod ennå.** Diagnosen finnes nå som endepunkt — samme mønster som
+`withings/debug/coverage`, der regelen er at spørsmålet besvares av et kall og ikke av å
+lese kode:
 
-- Mål hvor mye de tre lagrene faktisk spriker for samme periode. Det tallet er både
-  bevis på diagnosen og regresjonstesten etterpå.
-- Mål hvor stor andel av «forbruk» som er interne overføringer.
+```
+GET /api/admin/debug-sparebank1/dedup?days=365
+```
 
-Og for fase 2, alt fra `raw_bank_transaction_versions.payload` — disse fire avgjør
-designet, og ingen av dem kan leses ut av koden:
+Kun lesing: ingen SB1-kall, ingen skriving. Den svarer på alle fire designspørsmålene til
+fase 2, pluss de to som tallfester tillitsbruddet:
 
-- Hvilke `bookingStatus`-verdier som faktisk forekommer (koden kjenner to, brukeren
-  beskriver tre).
-- Hvor ofte beløpet endrer seg mellom reservert og ferdig, og hvor mye. Gir ±X %.
-- Hvor ofte datoen flytter seg mellom reservert og ferdig, og hvor langt. Gir ±N dager.
-- Fordelingen av distinkte ID-er per bøtte per henting — altså hvor ofte den ekte
-  multiplisiteten er > 1, og dermed hvor mye tall det står om.
+| Felt | Spørsmål det avgjør |
+|------|---------------------|
+| `statuses[].unmapped` | Finnes det en status med rank 0 og mange rader — altså en som faller igjennom `bookingStatusRank`? |
+| `multiplicity[]` | Hvor ofte er den ekte multiplisiteten > 1, og hvor mange kroner underrapporterer vi? Dette er «for lav», tallfestet. |
+| `drift.deltaDaysHistogram` / `deltaPctHistogram` | Driver dato og beløp mellom statuser? En **tett** klynge gir tersklene i fase 2 punkt 3. En diffus fordeling betyr at hypotesen er feil — og da skal ingen terskel velges. |
+| `drift.orphans` / `orphanNok` | Hvor mange reservasjoner ble aldri ferdige? Avgjør om livsløpsregelen i fase 2 punkt 4 er verdt å bygge. |
+| `stores[]` | Sprik i radtall og kroner mellom de tre lagrene for samme periode. Dette er «ulike tall på ulike steder», tallfestet — og regresjonstesten etter fase 1. |
+| `internalTransfers` | Hvor stor andel av «forbruket» er egne overføringer. Dette er «for høy», tallfestet. |
+
+To feller i lesingen av svaret:
+
+- **`multiplicity` er maks distinkte ID-er per (svar, status), ikke summen.** Begge
+  statuser kan komme i samme batch, og summen ville tolket én transaksjons to statuser som
+  to kjøp.
+- **`drift.samples` er kandidatpar, ikke bekreftede sammenhenger.** Er
+  `stalledWithCandidate` 0 fordi alle bøtter har samme toppstatus, gjelder ikke
+  driftshypotesen for lagrede data. Det er også et svar.
