@@ -254,21 +254,57 @@ export async function readLatestBalances(
 	const sinceDays = options.sinceDays ?? 365;
 	const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
 
+	// **Saldoen og NAVNET kommer fra ulike rader, med vilje.**
+	//
+	// PDF-importerte kontoutskrifter skriver `bank_balance`-ankre med bare `accountId`,
+	// `accountNumber`, `balance` og `currency` — ingen `accountName`, ingen `accountType`
+	// (`routes/api/admin/import-statements`). Et rent `DISTINCT ON … ORDER BY timestamp DESC`
+	// ville derfor gitt navn = null for enhver konto der det ferskeste ankeret er
+	// PDF-importert, og konsekvensen var stille: `looksLikeSavingsAccount` leser nettopp navn
+	// og type, så sparekontoen ville falt ut av bufferflaten uten et ord.
+	//
+	// Derfor: saldoen fra den nyeste raden, identiteten fra den nyeste raden som HAR den.
 	const rows = await db.execute(sql`
-		SELECT DISTINCT ON (data->>'accountId')
-			data->>'accountId'   AS account_id,
-			data->>'accountName' AS account_name,
-			data->>'accountType' AS account_type,
-			data->>'accountNumber' AS account_number,
-			(data->>'balance')::numeric AS balance,
-			(data->>'availableBalance')::numeric AS available_balance,
-			data->>'currency'    AS currency,
-			timestamp            AS observed_at
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'bank_balance'
-		  AND timestamp >= ${since.toISOString()}
-		ORDER BY data->>'accountId', timestamp DESC
+		WITH balance_rows AS (
+			SELECT
+				data->>'accountId'   AS account_id,
+				data->>'accountName' AS account_name,
+				data->>'accountType' AS account_type,
+				data->>'accountNumber' AS account_number,
+				(data->>'balance')::numeric AS balance,
+				(data->>'availableBalance')::numeric AS available_balance,
+				data->>'currency'    AS currency,
+				timestamp            AS observed_at
+			FROM sensor_events
+			WHERE user_id = ${userId}
+			  AND data_type = 'bank_balance'
+			  AND timestamp >= ${since.toISOString()}
+			  AND data->>'accountId' IS NOT NULL
+		),
+		latest AS (
+			SELECT DISTINCT ON (account_id)
+				account_id, balance, available_balance, currency, account_number, observed_at
+			FROM balance_rows
+			ORDER BY account_id, observed_at DESC
+		),
+		named AS (
+			SELECT DISTINCT ON (account_id)
+				account_id, account_name, account_type, account_number
+			FROM balance_rows
+			WHERE account_name IS NOT NULL
+			ORDER BY account_id, observed_at DESC
+		)
+		SELECT
+			l.account_id,
+			n.account_name,
+			n.account_type,
+			COALESCE(l.account_number, n.account_number) AS account_number,
+			l.balance,
+			l.available_balance,
+			l.currency,
+			l.observed_at
+		FROM latest l
+		LEFT JOIN named n ON n.account_id = l.account_id
 	`);
 
 	return rowsOf<{

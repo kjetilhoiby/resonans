@@ -56,6 +56,7 @@
 		totalRunwayMonths: number | null;
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
+		unnamedAccountCount?: number;
 	};
 	let savings = $state<SavingsData | null>(null);
 	let loadingSavings = $state(false);
@@ -274,6 +275,7 @@
 				totalRunwayMonths={savings.totalRunwayMonths}
 				monthlySpend={savings.monthlySpend}
 				noSavingsAccountFound={savings.noSavingsAccountFound}
+				unnamedAccountCount={savings.unnamedAccountCount ?? 0}
 				loading={loadingSavings}
 			/>
 		{:else}

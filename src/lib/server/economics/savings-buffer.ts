@@ -76,6 +76,15 @@ export type SavingsBufferData = {
 	 * en tom graf — «ingen bufferkonto funnet» er en annen beskjed enn «bufferen er tom».
 	 */
 	noSavingsAccountFound: boolean;
+	/**
+	 * Kontoer som ikke KUNNE vurderes, fordi ingen saldorad bærer et navn.
+	 *
+	 * PDF-importerte kontoutskrifter skriver ankre uten `accountName`/`accountType`, så en
+	 * konto som bare finnes i importert historikk har ingenting heuristikken kan lese. Det er
+	 * en annen situasjon enn «vurdert og forkastet», og flaten skal skille dem — ellers er
+	 * utelatelsen usynlig.
+	 */
+	unnamedAccountCount: number;
 	generatedAt: string;
 };
 
@@ -90,6 +99,9 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 	]);
 
 	const savingsAccounts = balances.filter(looksLikeSavingsAccount);
+	const unnamedAccountCount = balances.filter(
+		(account) => !account.accountName && !account.accountType
+	).length;
 
 	// Alle lønnsperioder, så de siste TREND_PERIODS HELE. Den inneværende perioden holdes
 	// utenfor trenden: bunnen der kan fortsatt bli lavere, og en halv periode ville lest
@@ -106,6 +118,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 			monthlySpend: null,
 			periods,
 			noSavingsAccountFound: true,
+			unnamedAccountCount,
 			generatedAt
 		};
 	}
@@ -166,6 +179,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 		monthlySpend,
 		periods,
 		noSavingsAccountFound: false,
+		unnamedAccountCount,
 		generatedAt
 	};
 }

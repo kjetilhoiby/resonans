@@ -57,6 +57,7 @@
 		totalRunwayMonths: number | null;
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
+		unnamedAccountCount?: number;
 		loading: boolean;
 	}
 
@@ -66,6 +67,7 @@
 		totalRunwayMonths,
 		monthlySpend,
 		noSavingsAccountFound,
+		unnamedAccountCount = 0,
 		loading
 	}: Props = $props();
 
@@ -125,6 +127,14 @@
 			som at bufferen er tom — vi finner den bare ikke. Kontonavn som inneholder «spar»,
 			«buffer», «BSU» eller «reserve» blir regnet med.
 		</p>
+		{#if unnamedAccountCount > 0}
+			<p class="st-note">
+				{unnamedAccountCount}
+				{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn og kunne ikke vurderes i
+				det hele tatt. Saldoankre fra importerte kontoutskrifter bærer bare kontonummer, så
+				en konto som bare finnes i importert historikk har ingenting å kjenne den igjen på.
+			</p>
+		{/if}
 	</SectionCard>
 {:else}
 	<div class="st-head">
@@ -207,7 +217,10 @@
 
 	<p class="st-note st-foot">
 		Kontoer regnes som buffer ut fra navn og type. Stemmer ikke lista, er det heuristikken
-		som tar feil — ikke tallene.
+		som tar feil — ikke tallene.{#if unnamedAccountCount > 0}
+			{' '}{unnamedAccountCount}
+			{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn og er ikke vurdert.
+		{/if}
 	</p>
 {/if}
 
