@@ -1,13 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, sql, asc } from 'drizzle-orm';
-import {
-	categorizeTransaction,
-	type CategoryId
-} from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import type { CategoryId } from '$lib/integrations/transaction-categories-client';
+import { readTransactions } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 // Categories excluded from this view
@@ -68,39 +61,16 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	cutoff.setDate(1);
 	cutoff.setHours(0, 0, 0, 0);
 
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`timestamp >= ${cutoff.toISOString()}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${cutoff.toISOString()}`
-			);
-
-	const rows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`
-		})
-		.from(sensorEvents)
-		.where(where)
-		.orderBy(asc(sensorEvents.timestamp));
+	const { transactions: rows } = await readTransactions({
+		userId,
+		from: cutoff,
+		accountId: accountId ?? undefined,
+		excludeInternalTransfers: true
+	});
 
 	if (rows.length === 0) {
 		return json({ merchants: [], monthsInRange: monthsBack, totalAmount: 0 } as IrregularResponse);
 	}
-
-	const [merchantMappings, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
 
 	// Build merchant groups
 	type TxRow = {
@@ -117,18 +87,18 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const merchantMap = new Map<string, TxRow[]>();
 
 	for (const r of rows) {
-		const amount = Number(r.amount) || 0;
+		const amount = r.amount;
 		if (amount >= 0) continue; // only spending (negative = outgoing)
 		const abs = Math.abs(amount);
 		if (abs < minAmount) continue;
 
-		const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappings, transactionOverrideCache, transactionRules);
+		const cat = { category: r.category, label: r.label, emoji: r.emoji };
 		if (EXCLUDED_CATEGORIES.includes(cat.category)) continue;
 
-		const key = (r.description ?? 'ukjent').toLowerCase().trim();
-		const date = r.timestamp.toISOString().slice(0, 10);
+		const key = (r.description || 'ukjent').toLowerCase().trim();
+		const date = r.date;
 		const month = date.slice(0, 7);
-		const dayOfMonth = r.timestamp.getDate();
+		const dayOfMonth = Number(date.slice(8, 10));
 
 		const tx: TxRow = {
 			date,
