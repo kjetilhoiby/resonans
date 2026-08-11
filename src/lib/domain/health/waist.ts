@@ -110,6 +110,35 @@ export function validateWaistCm(value: unknown): string | null {
 	return null;
 }
 
+/**
+ * Verdien fra et tekstfelt → et tall, eller null.
+ *
+ * ## Hvorfor den tar imot `string | number`
+ *
+ * `bind:value` mot en `<input type="number">` konverterer til **tall** — feltet
+ * starter som tom streng og er et number etter første tastetrykk. Kortet regnet
+ * først med en streng hele veien og kalte `.replace()` på verdien; den kastet
+ * `input.replace is not a function` inne i en `$derived`, og da stoppet hele den
+ * reaktive oppdateringen. Symptomet var at **Lagre-knappen aldri ble aktiv** — ikke
+ * en feilmelding, bare en knapp som ikke virket.
+ *
+ * Samme felle er dokumentert i `NutritionTargetsCard`. Den bor her nå, med en test,
+ * framfor i en komponent uten dekning.
+ *
+ * Komma godtas fordi et norsk talltastatur gir komma, og «102,3» er det brukeren
+ * skriver.
+ */
+export function parseWaistInput(value: unknown): number | null {
+	if (typeof value === 'number') {
+		return Number.isFinite(value) && value > 0 ? value : null;
+	}
+	if (typeof value !== 'string') return null;
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	const parsed = Number(trimmed.replace(',', '.'));
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function round1(value: number): number {
 	return Math.round(value * 10) / 10;
 }
