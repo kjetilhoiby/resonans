@@ -124,16 +124,33 @@ function rawFingerprintForEvent(event: any): string {
 	return createHash('sha256').update(payload).digest('hex');
 }
 
+/**
+ * Skriver rå-versjoner og canonical-rader.
+ *
+ * **`rawEvents` skal være PRE-kollaps, `canonicalEvents` POST-kollaps.** Fram til
+ * 2026-08 ble begge kalt med den kollapsede batchen, og det gjorde
+ * `raw_bank_transaction_versions` til noe annet enn navnet sier: `batchMap` kollapser på
+ * nøyaktig bøttenøkkelen (konto, dato, beskrivelse, beløp), så rå-tabellen kunne per
+ * konstruksjon aldri ha mer enn én rad per bøtte per svar. Antallet gjentatte kjøp — sju
+ * øl samme kveld — var da umulig å måle, og en diagnose mot tabellen ga alltid
+ * multiplisitet 1 uansett hva som faktisk hadde skjedd.
+ *
+ * Rå-strømmen er append-only og nøkles på `raw_fingerprint`, som inkluderer
+ * `externalTransactionId`. Sju separate kjøp har sju ulike ID-er og får derfor sju rader.
+ * Canonical er uendret: den upserter per bøtte, så flere rå-rader inn gir samme
+ * canonical-rad ut, bare med høyere `evidence_count`.
+ */
 async function writeRawAndCanonicalTransactions(
-	events: any[],
+	rawEvents: any[],
+	canonicalEvents: any[],
 	userId: string,
 	sensorId: string,
 	salaryProfile: SalaryProfile | null
 ): Promise<void> {
-	if (events.length === 0) return;
+	if (rawEvents.length === 0 && canonicalEvents.length === 0) return;
 
 	// Pre-compute all derived values in JS — no DB roundtrips here.
-	const rows = events.map((event) => {
+	const toRow = (event: any) => {
 		const txDate = event.timestamp.toISOString().split('T')[0];
 		const amount = Math.round((Number(event.data.amount ?? 0) || 0) * 100) / 100;
 		const descriptionRaw = String(event.data.description ?? '');
@@ -155,10 +172,14 @@ async function writeRawAndCanonicalTransactions(
 			payload: JSON.stringify(event.data ?? {}),
 			fingerprint, paycheckType
 		};
-	});
+	};
+
+	const rawRows = rawEvents.map(toRow);
+	const rows = canonicalEvents.map(toRow);
 
 	// 1. Batch INSERT raw_bank_transaction_versions — one query for all rows.
-	await pgClient.unsafe(
+	//    NB: bruker rawRows (pre-kollaps), ikke rows. Se doc-kommentaren over.
+	if (rawRows.length > 0) await pgClient.unsafe(
 		`INSERT INTO raw_bank_transaction_versions (
 			user_id, sensor_id, account_id, external_transaction_id, booking_status, status_rank,
 			transaction_date, posted_at, amount, currency, description_raw, description_normalized,
@@ -185,26 +206,29 @@ async function writeRawAndCanonicalTransactions(
 			merchant_key = EXCLUDED.merchant_key,
 			updated_at = NOW()`,
 		[
-			rows.map((r) => r.userId),
-			rows.map((r) => r.sensorId),
-			rows.map((r) => r.accountId),
-			rows.map((r) => r.externalId),
-			rows.map((r) => r.bookingStatus),
-			rows.map((r) => r.statusRank),
-			rows.map((r) => r.txDate),
-			rows.map((r) => r.postedAt),
-			rows.map((r) => r.amount),
-			rows.map((r) => r.currency),
-			rows.map((r) => r.descriptionRaw),
-			rows.map((r) => r.descriptionNorm),
-			rows.map((r) => r.typeText),
-			rows.map((r) => r.fingerprint),
-			rows.map((r) => r.payload)
+			rawRows.map((r) => r.userId),
+			rawRows.map((r) => r.sensorId),
+			rawRows.map((r) => r.accountId),
+			rawRows.map((r) => r.externalId),
+			rawRows.map((r) => r.bookingStatus),
+			rawRows.map((r) => r.statusRank),
+			rawRows.map((r) => r.txDate),
+			rawRows.map((r) => r.postedAt),
+			rawRows.map((r) => r.amount),
+			rawRows.map((r) => r.currency),
+			rawRows.map((r) => r.descriptionRaw),
+			rawRows.map((r) => r.descriptionNorm),
+			rawRows.map((r) => r.typeText),
+			rawRows.map((r) => r.fingerprint),
+			rawRows.map((r) => r.payload)
 		]
 	);
 
 	// 2. Batch UPSERT canonical_bank_transactions — one query for all rows.
 	//    paycheck_type is computed in JS and included here to avoid a separate UPDATE pass.
+	//    NB: bruker rows (post-kollaps). Flere rå-rader i samme bøtte skal bli én
+	//    canonical-rad; det er nettopp arbeidsdelingen mellom de to tabellene.
+	if (rows.length === 0) return;
 	await pgClient.unsafe(
 		`INSERT INTO canonical_bank_transactions (
 			user_id, sensor_id, account_id, canonical_date, amount, currency, merchant_key,
@@ -690,7 +714,16 @@ export async function syncAllSparebank1Data(
 			salaryProfile = await buildSalaryProfile(userId).catch(() => null);
 		}
 
-		await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id, salaryProfile);
+		// Rå-strømmen får ALLE observasjonene fra dette svaret (transactionEvents),
+		// canonical får den kollapsede batchen. Se doc-kommentaren på funksjonen: kalles
+		// begge med uniqueNewEvents, blir multiplisiteten umålelig.
+		await writeRawAndCanonicalTransactions(
+			transactionEvents,
+			uniqueNewEvents,
+			userId,
+			sensor.id,
+			salaryProfile
+		);
 
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 

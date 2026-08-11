@@ -1,7 +1,90 @@
 # Økonomi: tillitsgjennomgang og retning
 
 Dato: 2026-08-11
-Status: planlagt
+Status: planlagt (målt mot prod — se Målingen)
+
+## Målingen
+
+`GET /api/admin/debug-sparebank1/dedup?days=365` kjørt mot prod 2026-08-11, vindu
+2025-08-11 → 2026-08-10. Tallene under er grunnlaget for prioriteringen, og de flyttet
+den.
+
+### De tre lagrene er ikke i nærheten av hverandre
+
+| Lager | Rader | Forbruk |
+|-------|------:|--------:|
+| `sensor_events` | 8 891 | **6 008 834 kr** |
+| `canonical_bank_transactions` | 2 245 | **1 583 723 kr** |
+| `categorized_events` | 2 043 | **1 481 802 kr** |
+
+`sensor_events` har **3,8× canonicals kroner**. Hele `/api/economics/*`-familien og
+widget-data leser der, og viser altså rundt fire ganger virkeligheten. Sikkerhetsnettet i
+synken («remove semantic duplicates in the recent sync window») dekker bare det ferske
+vinduet, så historikken står med duplikatene sine.
+
+`categorized_events` mangler 202 rader og 102 000 kr mot canonical. Målene leser der.
+Kategoritak måles altså mot et tall som er 6 % lavere enn flatens.
+
+### Interne overføringer er den største enkeltfeilen
+
+**319 par, 1 084 033 kr — altså 68 % av canonicals «forbruk».** Reelt forbruk blir
+~500 000 kr på et år, ~42 000 kr/mnd for en husholdning. Det er et plausibelt tall. De
+1,58 mill. dashboardet ville summert er 132 000 kr/mnd, og de 6,0 mill. `/economics` ville
+vist er 500 000 kr/mnd. Ingen av dem er i nærheten, og det er nok alene til å forklare at
+brukeren la fra seg flaten.
+
+### Statusspørsmålet er avklart: to statuser, ingen som faller igjennom
+
+`BOOKED` (7 713 versjoner, rank 20) og `PENDING` (1 091, rank 10). Ingen `unmapped`.
+`bookingStatusRank` har altså ikke et hull, og det er ingen tredje status.
+
+**Men PENDING finnes bare fra 2026-04-27.** Før det er alt BOOKED, og da eksisterer ikke
+statusovergangen i det hele tatt. Hele overgangsproblemet er dermed avgrenset til de siste
+~3,5 månedene — det er langt mindre historikk å reparere enn antatt.
+
+### Tips-hypotesen er avkreftet. Det er datoen som flytter seg, ikke beløpet
+
+Dette var den viktigste korreksjonen målingen ga. Hypotesen var at reservasjoner får tips
+lagt på, så beløpet driver. **Den er feil.**
+
+`deltaPct`-histogrammet har sin klare modus på **eksakt 0** (22 av 43 par). Overgangs­
+populasjonen er altså *identisk beløp*. Det som flytter seg er datoen:
+`deltaDays` fordeler seg −1 (9), 0 (12), +1 (9), +2 (9), +3 (4).
+
+Merk fortegnet: **BOOKED kan være datert TIDLIGERE enn PENDING.** Reservasjonen bærer et
+provisorisk tidspunkt, bokføringen får kjøpets faktiske dato. Et vindu som bare ser
+framover ville mistet 9 av 43.
+
+De store prosentavvikene i uttrekket (+710 %, −94 %) er **artefakter av diagnosens egen
+join**, ikke drift. Joinen sorterte på nær dato før likt beløp, og flere kjøp hos samme
+merchant samme dag er vanlig: tre Rema-kjøp 9. august (−417,15, −354,71, −114) ble alle
+paret med samme −923,96, og fire Tesla-ladinger 30. juli med samme −104,32. Rettet — joinen
+prioriterer nå eksakt beløp først. **Les eldre uttrekk med det i mente.**
+
+Konsekvens for designet: **beløpstoleransen skal være null.** En prosenttoleranse ville
+ikke bare vært unødvendig, den ville vært skadelig — den ville slått sammen de fire
+Tesla-ladingene til én.
+
+### Multiplisitetsmålingen var tom, og hvorfor
+
+Alle 2 247 bøtter kom ut med `multiplicity: 1` og 0 kr underrapportert. **Det er ikke et
+funn, det er en tautologi.** `writeRawAndCanonicalTransactions` ble kalt med den
+*kollapsede* batchen for begge tabellene, og `batchMap` kollapser på nøyaktig bøttenøkkelen
+— så `raw_bank_transaction_versions` kunne per konstruksjon aldri ha mer enn én rad per
+bøtte per svar. Tabellen het «append-only evidence stream» og var det ikke.
+
+Rettet: rå-strømmen får nå alle observasjonene fra svaret, canonical får den kollapsede
+batchen. Canonical er uendret — den upserter per bøtte uansett. **Multiplisitet kan først
+måles på data synket etter 2026-08-11.**
+
+At `avgFetches` er 3,92 er derimot reelt og nyttig: samme transaksjon observeres i snitt
+fire svar, hver gang med ny ID. Det er nettopp derfor alias-tabellen ikke kan bære dedupen.
+
+### Foreldreløse reservasjoner: 97 bøtter, 93 248 kr
+
+Et **øvre** anslag: noen er ekte ubokførte (NYT, GIRO, en IKEA-reservasjon på 4 026), andre
+er samme-merchant-samme-dag-tilfeller der joinen brukte opp motparten. Materielt nok til at
+livsløpsregelen skal bygges, men en størrelsesorden mindre enn de to feilene over.
 
 ## Kontekst
 
@@ -171,6 +254,12 @@ Rekkefølgen er ikke forhandlingsbar: **tall før flate.** Å bygge månedsgjenn
 oppå tre uenige lagre ville gitt en rapport med samme feil, bare mer selvsikkert
 formulert.
 
+**Målingen flyttet rekkefølgen innad.** Første utgave satte dedup-forbedringen som fase 2,
+før overføringene. Det var galt målt i kroner: dedup-restene er ~93 000 kr i øvre anslag,
+mens interne overføringer er 1 084 000 kr og feil lager er 4,4 mill. Dedupen er den
+intellektuelt interessante feilen; den er ikke den store. Fase 1 og 2 under er derfor de to
+billige som fjerner nesten hele avviket, og dedup-forbedringen er flyttet til fase 3.
+
 ### Fase 1: Én sannhet
 
 Alt som teller kroner leser `canonical_bank_transactions`, gjennom én delt leser.
@@ -179,34 +268,38 @@ av `bank_transaction`/`bank_balance` vaktes med samme mekanisme som
 `sensor-event-access.ts` bruker for `workout`/`weight`/`sleep`, med `knownRawReaders` for
 de stedene der per-kilde-visning faktisk er poenget.
 
-### Fase 2: Multiplisitet uten å ødelegge statusovergangen
+### Fase 2: Interne overføringer ut av forbruket
 
-Dette er nøkkelen til tørre tall, og den må gjøres i denne rekkefølgen:
+Den største enkeltfeilen: 1 084 033 kr av 1 583 723, altså 68 %. Parvis matching — negativ
+på konto A og positiv på konto B, samme dag, samme beløp → merkes intern, ekskluderes fra
+både forbruk og inntekt. Brukerens valg var utvetydig: sparing er **ikke** forbruk.
 
-1. **Mål først.** Hva statusene faktisk heter, hvor ofte beløpet endrer seg mellom
-   reservert og ferdig, hvor ofte datoen flytter seg, og hvor mange distinkte ID-er som
-   opptrer per bøtte per henting. Alt ligger i `raw_bank_transaction_versions.payload`.
-   Uten disse tallene er tersklene i punkt 3 gjetninger.
-2. **Behold bøttenøkkelen** for eksakte overganger — den virker. Legg til multiplisitet
-   utledet som maks-per-status innenfor én henting, oppdatert som
-   `GREATEST(eksisterende, ny observasjon)`. Alle lesere må gange beløp med multiplisitet.
-   `batchMap`-kollapsen må skje **etter** tellingen, ikke før.
-3. **Bundet uskarpt match** for en innkommende ferdig som ikke treffer eksakt: mot en
-   *ubrukt* reservert-rad på samme merchant innenfor ±N dager og ±X % beløp, før ny rad
-   opprettes. Dette er et tilordningsproblem, ikke en dedup — greedy, men bundet, og med
-   hver reservert-rad brukbar bare én gang.
-4. **Livsløp for reservasjoner.** En reservert-rad som aldri ble ferdig og ikke er sett i
-   de siste M hentingene settes `isActive = false` framfor å bli stående som forbruk.
+Regnestykket som skal stemme etterpå: ~42 000 kr/mnd for husholdningen. Er tallet
+132 000, er overføringene fortsatt med.
 
-Tester på alle fire, og eksplisitt på begge sidene av tvetydigheten: sju like kjøp i én
-henting skal gi sju, og tre statusobservasjoner av ett kjøp over tre hentinger skal gi én.
-Det er det paret som avgjør om dette er riktig.
+### Fase 3: Statusovergang og multiplisitet
 
-### Fase 3: Interne overføringer ut av forbruket
+Nå med tall bak. Merk at PENDING bare finnes fra 2026-04-27, så det er ~3,5 måneder
+historikk å reparere, ikke et år.
 
-Parvis matching: negativ på konto A og positiv på konto B, samme dag, samme beløp →
-merkes intern, ekskluderes fra både forbruk og inntekt. Brukerens valg var utvetydig:
-sparing er **ikke** forbruk og skal ut av tallet.
+1. **Behold bøttenøkkelen** for eksakte overganger — den virker.
+2. **Match på eksakt beløp + samme merchant + ±3 dager, i BEGGE retninger.** Beløps­
+   toleransen er **null** — målingen viser modus på `deltaPct` = 0, og en prosenttoleranse
+   ville slått sammen fire separate Tesla-ladinger. Vinduet må se bakover også: 9 av 43
+   par har BOOKED datert *før* PENDING.
+3. **Én-til-én tilordning.** Hver PENDING-rad kan brukes opp av høyst én BOOKED. Uten det
+   spiser én bokføring tre reservasjoner, som er nøyaktig feilen diagnosens egen join
+   gjorde før den ble rettet.
+4. **Multiplisitet** som eget felt, utledet som maks distinkte ID-er per (svar, status),
+   oppdatert med `GREATEST`. Krever at rå-strømmen er rå — rettet 2026-08-11, så data fra
+   den datoen og framover kan måles. `batchMap`-kollapsen må skje **etter** tellingen.
+5. **Livsløp for reservasjoner.** En PENDING-rad som aldri ble booket og ikke er sett i de
+   siste M svarene settes `isActive = false` framfor å stå som forbruk. Øvre anslag på hva
+   det er verdt: 93 248 kr.
+
+Tester på begge sidene av tvetydigheten: sju like kjøp i ett svar skal gi sju, og tre
+statusobservasjoner av ett kjøp over tre svar skal gi én. Det er det paret som avgjør om
+dette er riktig. Reglene hører i `$lib/domain/` — rene og testbare, ikke inni synken.
 
 ### Fase 4: Retting der du ser tallet
 
@@ -250,10 +343,17 @@ eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics
   kollapse statusoverganger; det er antallet som må bæres ved siden av. Forslaget om en
   teller *i* nøkkelen står bevart over med begrunnelsen, fordi det er den nærliggende og
   gale rettelsen.
-- **Overganger måles før de modelleres.** Tersklene for det uskarpe matchet (±dager,
-  ±prosent) skal utledes av råsvarene, ikke velges. Samme grunn som `MET_CALIBRATION` er
-  utledet framfor valgt: et hardkodet tall arver stille feilen i det det en gang ble
-  tunet mot.
+- **Overganger måles før de modelleres.** Dette var ikke retorikk: målingen avkreftet
+  hypotesen den skulle kalibrere. Tips-teorien var plausibel, og beløpstoleransen den
+  krevde ville aktivt slått sammen separate kjøp. Svaret var ±3 dager og **null**
+  beløpstoleranse. Samme grunn som `MET_CALIBRATION` er utledet framfor valgt.
+- **En diagnose kan lyve, og gjorde det to ganger her.** Multiplisitetsmålingen leste en
+  tabell der signalet var fjernet oppstrøms, og drift-joinen mispairet fordi den sorterte
+  på dato før beløp. Begge ga *plausible* svar — 1,0 og «beløpet driver 22–710 %». En
+  måling som bekrefter det du trodde skal kontrolleres like hardt som en som avviser det.
+- **Prioriter på kroner, ikke på hvor interessant feilen er.** Dedupen var den morsomme
+  feilen og er den minste (93 000 kr i øvre anslag). Feil lager (4,4 mill.) og interne
+  overføringer (1,08 mill.) er kjedelige og er nesten hele avviket.
 
 ## Verifisering
 
