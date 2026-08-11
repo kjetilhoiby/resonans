@@ -355,13 +355,36 @@ tull på den historiske delen (`MIN_TREND_SAMPLES` slår inn). En saldo er dessu
 skille «dippet og kom tilbake» fra «synker strukturelt». Månedsslutt-nivåer er den robuste
 primitiven her, ikke et etterslepende snitt over dager.
 
-Antakelser, siden de ikke er avklart: hver sparekonto følges **for seg** og i sum, og et
-uttak rapporteres som et faktum — dommen ligger i trenden, ikke i den enkelte hendelsen.
-Samme linje som `checkAgainstWeight`, som korrigerer ingenting og bare rapporterer avviket.
+Hver sparekonto følges **for seg** og i sum, og et uttak rapporteres som et faktum — dommen
+ligger i mønsteret, ikke i den enkelte hendelsen. Samme linje som `checkAgainstWeight`, som
+korrigerer ingenting og bare rapporterer avviket.
 
-Åpent spørsmål som endrer designet: **er sparekontoen en buffer som er *ment* å tas av,
-eller skal den være urørt?** Er den en buffer, er et uttak i seg selv ikke et varsel — bare
-en trend som ikke kommer tilbake er det. Er den urørlig, er hvert uttak verdt å si fra om.
+#### Kontoen er en buffer, og det avgjør hva som måles
+
+Avklart med brukeren 2026-08-11. Konsekvensene er ikke kosmetiske:
+
+**Et uttak er ikke et varsel. Et uttak som ikke kommer tilbake er det.** En buffer som
+virker svinger; den står ikke stille. Å varsle per uttak ville gjort flaten til støy, og
+støy blir slått av — samme grunn som `sendFuelNudge` gater på én per dag.
+
+**Primitiven er bunnene, ikke snittet.** En fungerende buffer oscillerer rundt et stabilt
+gulv. En buffer som eroderes har en **synkende følge av bunnpunkter**, selv om toppene ser
+uendret ut fordi lønna kommer inn hver måned. Mål derfor laveste saldo per lønnsperiode og
+se på trenden i *de* tallene. Et etterslepende snitt over daglige saldoer ville blandet
+toppene inn og dempet nettopp signalet.
+
+**Enheten er måneders dekning, ikke kroner** — det er det en buffer er *til*. Og her møtes
+fase 2 og fase 5: dekning = saldo ÷ reelt månedsforbruk. Med dagens oppblåste forbrukstall
+(132 000 kr/mnd) ville bufferen sett ut som en tredjedel av det den er. **Dekning kan ikke
+regnes før fase 2 er gjort**, og et tall som er 3× feil i pessimistisk retning er verre enn
+ingen tall — det ville fått en sunn buffer til å se ut som en krise.
+
+**Frekvens og posisjon skiller buffer fra kassekreditt, og det er hele diagnosen.** Ett
+uttak til en bilreparasjon er bufferen som gjør jobben sin. Uttak hver måned rundt dag 26 er
+et budsjett som ikke balanserer, der bufferen subsidierer ordinært forbruk. **De to ser
+identiske ut i en saldokurve** — samme nedgang, samme beløp — og krever helt ulik handling.
+Det er nettopp frekvensen og posisjonen i lønnsperioden som skiller dem, og det er derfor
+brukeren ba om begge.
 
 ### Fase 6: Månedsgjennomgangen som inngang
 
@@ -417,6 +440,12 @@ eller slett. Hardkodede personnavn ut av `transfers`. Registrer `query_economics
   kopieres hit uten videre: der glatter man mot målestøy, her skal man skille en dipp som
   kom tilbake fra en varig nedgang. Ankertettheten varierer dessuten over historikken, og et
   fast vindu ville vært stumt på de eldste årene — samme felle som livvidde gikk i.
+- **Bufferen måles på bunnene, ikke på snittet.** En buffer som virker svinger, så et snitt
+  over daglige saldoer blander lønnsinnskuddene inn og demper signalet. Trenden i laveste
+  saldo per lønnsperiode er det som avslører erosjon.
+- **Buffer og kassekreditt ser identiske ut i en saldokurve.** Ett stort uttak og tolv små på
+  dag 26 gir samme nedgang og krever motsatt handling. Frekvens og posisjon i lønnsperioden
+  er det eneste som skiller dem — derfor er de ikke pynt på saldografen, de er diagnosen.
 
 ## Verifisering
 
