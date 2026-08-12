@@ -731,7 +731,26 @@ lese kode:
 GET /api/admin/debug-sparebank1/dedup?days=365
 ```
 
-Kun lesing: ingen SB1-kall, ingen skriving. Den svarer på alle fire designspørsmålene til
+Kun lesing: ingen SB1-kall, ingen skriving. Diagnosen har også en **knapp** i
+`/settings/sources` (`EconomyDiagnosticsCard`, ved siden av `EffortReprojectCard`), med
+vindu 90 dager / 365 dager / 2 år. Kortet er ikke en JSON-visning: det tolker svaret, fordi
+et tall herfra er verdiløst uten å vite hva et *friskt* svar ser ut som. Tre tolkninger bor
+i kortet framfor i hodet til den som leser:
+
+- **Lagrene.** `sensor_events` skal fortsatt være mangedoblet mot canonical — vi sletter
+  aldri en versjon der. Avviket er bare et problem hvis en *flate* leser der, og det er
+  ikke noe dette kallet kan se. Kortet sier det, så forholdstallet ikke leses som en
+  regresjon.
+- **Månedsforbruket, brutto ved siden av netto.** Nettotallet skal lande rundt 42 000 kr.
+  Bruttotallet (~132 000) er det flaten viste før fase 2, og står med nettopp fordi det er
+  gjenkjennelig: ser du det på økonomi-flaten, er overføringene fortsatt med et sted.
+- **Multiplisitet på 1 er ikke et funn.** Rå-strømmen ble skrevet post batch-kollaps fram
+  til 11. august 2026, så tabellen kunne per konstruksjon aldri vise mer enn 1. Kortet
+  skiller «målt til 1» fra «ikke målbart» og peker på `Periode`-kolonnen for å avgjøre
+  hvilket det er. Uten det skillet ville fase 3 sett ferdig ut.
+
+Kortet er gated på `isAdmin`, siden endepunktet er det. En knapp som gir 403 ser ut som en
+feil i diagnosen framfor manglende tilgang. Den svarer på alle fire designspørsmålene til
 fase 2, pluss de to som tallfester tillitsbruddet:
 
 | Felt | Spørsmål det avgjør |
