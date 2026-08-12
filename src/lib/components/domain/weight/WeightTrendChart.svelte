@@ -28,6 +28,18 @@
 
   x-aksen er **tidsproporsjonal**, ikke indeksbasert: to uker uten veiing skal
   være et bredt tomrom, ikke to punkter ved siden av hverandre.
+
+  ## Hvorfor livvidde tegnes HER, og ikke i sitt eget kort
+
+  «Vekta står stille, men livvidda faller» er hele grunnen til at livvidde måles.
+  Setningen kan bare leses av en graf hvis de to panelene har samme x-akse — samme
+  dato på samme piksel.
+
+  To selvstendige komponenter ville måttet *avtale* det, og avtalen ville brutt
+  første gang noen endret en padding. Her deler panelene `plotWidth`, `PAD`,
+  periodevelgeren og vinduet fra `sharedChartWindow` — justeringen følger av
+  konstruksjonen. Kg og cm får hver sin y-akse; de har ingen felles skala, og et
+  forsøk på å binde dem ble bygget og forkastet for vekt mot energi (se CLAUDE.md).
 -->
 <script lang="ts">
 	import SectionLabel from '../../ui/SectionLabel.svelte';
@@ -36,7 +48,7 @@
 		seriesForRange,
 		trendSegments,
 		axisForSeries,
-		dayNumber,
+		buildMetricSeries,
 		WEIGHT_METRICS,
 		WEIGHT_RANGES,
 		weightMetric,
@@ -45,15 +57,35 @@
 		type WeightRangeId,
 		type MetricPoint
 	} from '$lib/domain/health/weight-series';
+	import {
+		clipToWindow,
+		sharedChartWindow,
+		xInWindow,
+		type ChartWindow
+	} from '$lib/domain/health/body-chart-window';
+	import {
+		buildWaistSeries,
+		waistAxis,
+		waistTrendSegments,
+		type WaistDay
+	} from '$lib/domain/health/waist';
+	import { dayNumber, type TrendPoint } from '$lib/domain/health/trailing-trend';
 
 	interface Props {
 		days: WeightDay[];
+		/** Livviddemålinger. Tom liste skjuler panelet — det finnes da ingenting å justere mot. */
+		waistDays?: WaistDay[];
 		goalKg?: number | null;
 		/** Startperiode. 90 dager viser en trend uten å bli et arkiv. */
 		initialRange?: WeightRangeId;
 	}
 
-	let { days, goalKg = null, initialRange = '90d' }: Props = $props();
+	let { days, waistDays = [], goalKg = null, initialRange = '90d' }: Props = $props();
+
+	/** Livviddefargen. Blågrønn framfor beinhvit, så de to panelene ikke forveksles. */
+	const WAIST_COLOR = '#5fb3a1';
+	const WAIST_RAW_COLOR = 'rgba(95, 179, 161, 0.42)';
+	const WAIST_HEIGHT = 96;
 
 	const TREND_COLOR = '#e8e2d4';
 	const RAW_COLOR = 'rgba(232, 226, 212, 0.42)';
@@ -70,7 +102,34 @@
 	const HEIGHT = 196;
 
 	const metric = $derived(weightMetric(metricId));
-	const series = $derived(seriesForRange(days, metricId, range));
+	/**
+	 * Vinduet BEGGE panelene tegner i.
+	 *
+	 * Ankeret er den seneste målingen på tvers av vekt og livvidde. Regnet hver for
+	 * seg ville «90 dager» blitt to ulike 90 dager — vekta måles daglig, livvidda
+	 * ukentlig — og panelene forskjøvet noen dager i forhold til hverandre. Den
+	 * feilen ser helt riktig ut, og det er derfor vinduet er delt kode med tester.
+	 */
+	const rangeDays = $derived(WEIGHT_RANGES.find((r) => r.id === range)!.days);
+	const chartWindow: ChartWindow | null = $derived(
+		sharedChartWindow([days.map((d) => d.date), waistDays.map((d) => d.date)], rangeDays)
+	);
+
+	function xOf(date: string): number {
+		if (!chartWindow) return PAD.left;
+		return xInWindow(date, chartWindow, { padLeft: PAD.left, innerWidth });
+	}
+
+	/**
+	 * Trenden regnes på HELE historikken, og klippes så til det delte vinduet.
+	 * Motsatt rekkefølge gir en periode uten trend den første uka — samme grunn som
+	 * `seriesForRange` gjør det slik.
+	 */
+	const fullSeries = $derived(buildMetricSeries(days, metricId));
+	const series = $derived({
+		...fullSeries,
+		points: clipToWindow(fullSeries.points, chartWindow)
+	});
 	/** Mållinja gjelder bare vekt — det finnes ingen målverdi for muskelmasse. */
 	const activeGoal = $derived(metricId === 'weight' ? goalKg : null);
 	const axis = $derived(axisForSeries(series, { goal: activeGoal }));
@@ -78,23 +137,6 @@
 
 	const innerWidth = $derived(Math.max(40, plotWidth - PAD.left - PAD.right));
 	const innerHeight = HEIGHT - PAD.top - PAD.bottom;
-
-	/**
-	 * Tidsdomenet. Ett målepunkt gir ingen bredde, så vi later som det er en dag
-	 * bredt framfor å dele på null.
-	 */
-	const timeDomain = $derived.by(() => {
-		if (series.points.length === 0) return null;
-		const first = dayNumber(series.points[0].date);
-		const last = dayNumber(series.points.at(-1)!.date);
-		return { first, last: last === first ? first + 1 : last };
-	});
-
-	function xOf(date: string): number {
-		if (!timeDomain) return PAD.left;
-		const span = timeDomain.last - timeDomain.first;
-		return PAD.left + ((dayNumber(date) - timeDomain.first) / span) * innerWidth;
-	}
 
 	function yOf(value: number): number {
 		if (!axis) return PAD.top;
@@ -132,12 +174,13 @@
 	 * i veiingene ville hver fjerde måling gitt ujevne mellomrom på aksen.
 	 */
 	const xLabels = $derived.by(() => {
-		if (!timeDomain || series.points.length === 0) return [];
+		if (!chartWindow || series.points.length === 0) return [];
 		const count = Math.min(4, series.points.length);
 		const seen = new Set<string>();
 		const labels: Array<{ date: string; x: number }> = [];
 		for (let i = 0; i < count; i++) {
-			const targetDay = timeDomain.first + ((timeDomain.last - timeDomain.first) * i) / (count - 1 || 1);
+			const targetDay =
+				chartWindow.firstDay + ((chartWindow.lastDay - chartWindow.firstDay) * i) / (count - 1 || 1);
 			let nearest = series.points[0];
 			for (const point of series.points) {
 				if (Math.abs(dayNumber(point.date) - targetDay) < Math.abs(dayNumber(nearest.date) - targetDay)) {
@@ -173,7 +216,7 @@
 	 * ingen etikett.
 	 */
 	const nadirLabelVisible = $derived.by(() => {
-		if (!visibleNadir || !timeDomain) return false;
+		if (!visibleNadir || !chartWindow) return false;
 		return (xOf(visibleNadir.date) - PAD.left) / innerWidth < 0.82;
 	});
 
@@ -203,6 +246,65 @@
 		WEIGHT_METRICS.filter((m) => days.some((day) => m.valueOf(day) !== null)).map((m) => m.label)
 	);
 
+	/**
+	 * Livvidde i det SAMME vinduet. Egen y-akse: cm og kg har ingen felles skala.
+	 *
+	 * Panelet vises så snart det finnes livviddemålinger i det hele tatt — også når
+	 * perioden er tom. Et panel som forsvinner ser ut som en funksjon som ikke
+	 * finnes, og det er verre enn en linje som sier «ingen måling i denne perioden».
+	 */
+	const waistFull = $derived(buildWaistSeries(waistDays));
+	const waistSeries = $derived({
+		...waistFull,
+		points: clipToWindow(waistFull.points, chartWindow)
+	});
+	const waistAxisValues = $derived(
+		waistSeries.points.length > 0 ? waistAxis({ ...waistSeries, range: rangeOf(waistSeries.points) }) : null
+	);
+	const waistSegments = $derived(waistTrendSegments(waistSeries.points));
+	const waistInnerHeight = WAIST_HEIGHT - PAD.top - PAD.bottom;
+
+	/** Spennet en klippet serie dekker. `buildWaistSeries` regner det for hele. */
+	function rangeOf(points: TrendPoint[]): { min: number; max: number } | null {
+		if (points.length === 0) return null;
+		let min = Number.POSITIVE_INFINITY;
+		let max = Number.NEGATIVE_INFINITY;
+		for (const p of points) {
+			min = Math.min(min, p.raw);
+			max = Math.max(max, p.raw);
+			if (p.trend !== null) {
+				min = Math.min(min, p.trend);
+				max = Math.max(max, p.trend);
+			}
+		}
+		return { min, max };
+	}
+
+	function waistY(value: number): number {
+		if (!waistAxisValues) return PAD.top;
+		const span = waistAxisValues.max - waistAxisValues.min || 1;
+		return PAD.top + (1 - (value - waistAxisValues.min) / span) * waistInnerHeight;
+	}
+
+	function waistPath(points: TrendPoint[]): string {
+		return points
+			.map(
+				(p, i) =>
+					`${i === 0 ? 'M' : 'L'} ${xOf(p.date).toFixed(1)} ${waistY(p.trend!).toFixed(1)}`
+			)
+			.join(' ');
+	}
+
+	const showWaistPanel = $derived(waistDays.length > 0);
+
+	const waistSummary = $derived(
+		waistSeries.points.length === 0
+			? 'Ingen livviddemåling i perioden'
+			: `Livvidde fra ${shortDate(waistSeries.points[0].date)} til ${shortDate(
+					waistSeries.points.at(-1)!.date
+				)}: ${waistSeries.points.length} målinger, siste ${waistSeries.points.at(-1)!.raw} cm`
+	);
+
 	const summary = $derived(
 		series.points.length === 0
 			? 'Ingen målinger i perioden'
@@ -212,7 +314,7 @@
 	);
 </script>
 
-<section class="chart">
+<section class="chart" id="vekt-utvikling">
 	<header>
 		<SectionLabel tag="h2">Utvikling</SectionLabel>
 		<div class="filters">
@@ -236,6 +338,9 @@
 		<span class="key"><span class="swatch" style:background={TREND_COLOR} style:opacity="0.42"></span>Måling</span>
 		{#if activeGoal !== null}
 			<span class="key"><span class="swatch swatch--dashed" style:color={GOAL_COLOR}></span>Mål</span>
+		{/if}
+		{#if showWaistPanel}
+			<span class="key"><span class="swatch swatch--line" style:background={WAIST_COLOR}></span>Livvidde</span>
 		{/if}
 	</div>
 
@@ -361,8 +466,10 @@
 					<circle cx={xOf(hovered.date)} cy={yOf(hovered.raw)} r="3.5" fill={TREND_COLOR} />
 				{/if}
 
-				<!-- Ytterste etiketter ankres innover, ellers klippes «3. aug» av kanten. -->
-				{#each xLabels as label, i (label.date)}
+				<!-- Ytterste etiketter ankres innover, ellers klippes «3. aug» av kanten.
+				     Vises her bare når vekt er nederste panel; ellers bærer livvidde-
+				     panelet den felles aksen. -->
+				{#each showWaistPanel ? [] : xLabels as label, i (label.date)}
 					<text
 						x={label.x}
 						y={HEIGHT - 5}
@@ -388,6 +495,71 @@
 			{/if}
 		{/if}
 	</div>
+
+	{#if showWaistPanel}
+		<!--
+		  Livvidde-panelet. Samme bredde, samme PAD og samme vindu som vekta over —
+		  derfor ligger samme dato på samme piksel, og «vekta står stille mens
+		  livvidda faller» blir lesbart.
+
+		  Egen y-akse: cm og kg har ingen felles skala. Et forsøk på å binde dem ble
+		  bygget og forkastet for vekt mot energi; se CLAUDE.md.
+		-->
+		<div class="waist-panel">
+			<span class="panel-label">Livvidde · cm</span>
+			{#if !waistAxisValues || waistSeries.points.length === 0}
+				<p class="note">Ingen livviddemåling i denne perioden.</p>
+			{:else}
+				<svg
+					viewBox={`0 0 ${plotWidth} ${WAIST_HEIGHT}`}
+					width="100%"
+					height={WAIST_HEIGHT}
+					role="img"
+					aria-label={waistSummary}
+				>
+					{#each waistAxisValues.ticks as tick (tick)}
+						<line
+							x1={PAD.left}
+							x2={PAD.left + innerWidth}
+							y1={waistY(tick)}
+							y2={waistY(tick)}
+							stroke="#2a2a2a"
+							stroke-width="1"
+						/>
+						<text x={PAD.left - 6} y={waistY(tick) + 3} text-anchor="end" class="tick">{tick}</text>
+					{/each}
+
+					{#each waistSeries.points as point (point.date)}
+						<circle cx={xOf(point.date)} cy={waistY(point.raw)} r="2.6" fill={WAIST_RAW_COLOR} />
+					{/each}
+
+					{#each waistSegments as segment, i (i)}
+						{#if segment.length > 1}
+							<path
+								d={waistPath(segment)}
+								fill="none"
+								stroke={WAIST_COLOR}
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						{/if}
+					{/each}
+
+					{#each xLabels as label, i (label.date)}
+						<text
+							x={label.x}
+							y={WAIST_HEIGHT - 4}
+							text-anchor={i === 0 ? 'start' : i === xLabels.length - 1 ? 'end' : 'middle'}
+							class="tick"
+						>
+							{shortDate(label.date)}
+						</text>
+					{/each}
+				</svg>
+			{/if}
+		</div>
+	{/if}
 
 	<p class="note">
 		Punktene er de faktiske veiingene, linja er et etterslepende sjudagerssnitt. Spriket mellom
@@ -464,6 +636,22 @@
 	svg {
 		display: block;
 		touch-action: pan-y;
+	}
+
+	.waist-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin-top: 4px;
+		padding-top: 10px;
+		border-top: 1px solid #202020;
+	}
+
+	.panel-label {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #6c6c6c;
 	}
 
 	.tick {

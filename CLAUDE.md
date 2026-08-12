@@ -589,6 +589,24 @@ loggen i `$lib/server/health/waist-log.ts`, endepunktene under `/api/helse/livvi
   en **lengde**: `HKUnit.meter()` gir 0,94 og tommer gir 37. Vi forkaster og flagger,
   aldri konverterer. **Tommer over 40 kan ikke skilles fra centimeter**, så vakten er et
   sikkerhetsnett mot den åpenbare feilen, ikke en garanti.
+- **Vekt og livvidde deler x-akse, og det er derfor livvidde tegnes i
+  `WeightTrendChart`.** «Vekta står stille mens livvidda faller» er hele grunnen til at
+  livvidde måles, og setningen kan bare leses av en graf når samme dato ligger på samme
+  piksel. To selvstendige komponenter måtte *avtalt* det, og avtalen brytes første gang
+  noen endrer en padding. Vinduet er delt kode med tester
+  (`$lib/domain/health/body-chart-window.ts`): ankeret er den seneste målingen på tvers
+  av seriene, fordi `filterByRange` måler bakover fra hver series egen siste måling — og
+  «90 dager» ble da to ulike 90 dager, med paneler forskjøvet noen dager i forhold til
+  hverandre. Den feilen ser helt riktig ut. **Y-aksene er separate**; kg og cm har ingen
+  felles skala, samme lærdom som vekt mot energi.
+- **`measurementsUntilTrend` teller i trendVINDUET, ikke i historikken.** Første utgave
+  brukte `days.length` og sa «0 målinger til før trenden regnes» til en bruker med tolv
+  målinger og ingen trend — fordi de tre siste lå spredt over mer enn vinduet. Et tall
+  som ikke svarer på hvorfor trenden mangler, er en beskjed uten innhold.
+- **`WAIST_FRESH_DAYS` (60) styrer om livvidda får stå i sammendraget øverst.** Vekta
+  måles daglig og er alltid fersk; en livvidde fra i vår er ikke «nå». Tallene i
+  sammendraget er lenker til `#vekt-utvikling` — det man skanner er inngangen til det man
+  undersøker.
 - **`listWaistMeasurements` filtrerer på bruker + datatype, ikke på sensor.** Første
   utgave slo opp `body_log`-sensoren og returnerte tom liste hvis den manglet — en
   fungerende bug som ventet på HealthKit-importen, som skriver under `healthkit`-

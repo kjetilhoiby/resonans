@@ -13,7 +13,9 @@ import {
 	WAIST_MIN_TREND_SAMPLES,
 	MIN_WAIST_AXIS_SPAN_CM,
 	WAIST_NOISE_CM,
-	WAIST_STALE_DAYS
+	WAIST_STALE_DAYS,
+	WAIST_FRESH_DAYS,
+	WAIST_TREND_WINDOW_DAYS
 } from './waist';
 
 /** Datoer n dager etter en fast start, så testene ikke avhenger av i dag. */
@@ -203,6 +205,42 @@ describe('summarizeWaist', () => {
 		const days = dailyWaist(weekly([96]));
 		const status = summarizeWaist(days, { heightCm: height, today: date(0) });
 		expect(status.measurementsUntilTrend).toBe(WAIST_MIN_TREND_SAMPLES - 1);
+	});
+
+	it('teller i trendVINDUET, ikke i historikken', () => {
+		/**
+		 * Regresjonen: tolv målinger spredt over et halvår ga «0 målinger til før
+		 * trenden regnes» samtidig som trenden manglet — fordi tellingen brukte
+		 * `days.length`. Tallet skal svare på HVORFOR trenden mangler.
+		 */
+		const spread = dailyWaist([
+			{ date: date(0), waistCm: 105 },
+			{ date: date(40), waistCm: 99 },
+			{ date: date(80), waistCm: 102 },
+			{ date: date(120), waistCm: 103 }
+		]);
+		const status = summarizeWaist(spread, { heightCm: height, today: date(120) });
+		expect(status.trendCm).toBeNull();
+		expect(status.measurementsUntilTrend).toBeGreaterThan(0);
+	});
+
+	it('sier 0 igjen først når trenden faktisk finnes', () => {
+		const days = dailyWaist(weekly([96, 95.5, 95]));
+		const status = summarizeWaist(days, { heightCm: height, today: date(14) });
+		expect(status.trendCm).not.toBeNull();
+		expect(status.measurementsUntilTrend).toBe(0);
+	});
+
+	it('markerer en fersk måling som «nå», og en gammel som ikke det', () => {
+		const days = dailyWaist(weekly([96]));
+		expect(summarizeWaist(days, { heightCm: height, today: date(10) }).fresh).toBe(true);
+		expect(
+			summarizeWaist(days, { heightCm: height, today: date(WAIST_FRESH_DAYS + 1) }).fresh
+		).toBe(false);
+	});
+
+	it('har et trendvindu som rommer flere ukentlige målinger', () => {
+		expect(WAIST_TREND_WINDOW_DAYS).toBeGreaterThanOrEqual(21);
 	});
 
 	it('er ikke due dagen etter en måling', () => {

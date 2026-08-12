@@ -74,6 +74,16 @@ export const MIN_WAIST_AXIS_SPAN_CM = 4;
 export const WAIST_CADENCE_DAYS = 7;
 
 /**
+ * Hvor gammel siste måling kan være og fortsatt kalles «nå».
+ *
+ * Sammendraget øverst på flaten viser vekt og livvidde side om side. Vekta måles
+ * daglig og er alltid fersk; livvidda kan være uker gammel, og et tall presentert
+ * som nåtilstand må være i nærheten av nå. Over grensa faller livvidda ut av
+ * sammendraget — grafen og loggekortet viser den fortsatt.
+ */
+export const WAIST_FRESH_DAYS = 60;
+
+/**
  * Hvor gammel siste måling kan være før serien regnes som avbrutt.
  *
  * Over dette sier statusen «vi vet ikke hva den gjør nå» framfor å presentere en
@@ -271,8 +281,18 @@ export interface WaistStatus {
 	due: boolean;
 	/** Sann når siste måling er så gammel at trenden ikke sier noe om nå. */
 	stale: boolean;
-	/** Hvor mange målinger som gjenstår før trenden kan regnes. */
+	/**
+	 * Hvor mange målinger som gjenstår før trenden kan regnes.
+	 *
+	 * Målt i trendVINDUET, ikke i historikken. Første utgave regnet
+	 * `MIN_TREND_SAMPLES - days.length`, og flaten sa da «0 målinger til før trenden
+	 * regnes» til en bruker med tolv målinger og ingen trend — fordi de tre siste
+	 * lå spredt over mer enn vinduet. Et tall som ikke svarer på hvorfor trenden
+	 * mangler, er en beskjed uten innhold.
+	 */
 	measurementsUntilTrend: number;
+	/** Sann når siste måling er ny nok til å kalles «nå». Se `WAIST_FRESH_DAYS`. */
+	fresh: boolean;
 }
 
 export function summarizeWaist(
@@ -282,6 +302,16 @@ export function summarizeWaist(
 	const series = buildWaistSeries(days);
 	const latest = series.latest;
 	const daysSinceLast = latest ? daysBetween(latest.date, today) : null;
+
+	/**
+	 * Målinger innenfor trendvinduet, regnet fra SISTE måling.
+	 *
+	 * Fra siste måling og ikke fra i dag: det er nøyaktig vinduet `trailingTrend`
+	 * bruker for det siste punktet, så tallet stemmer med om trenden finnes.
+	 */
+	const inTrendWindow = latest
+		? days.filter((day) => daysBetween(day.date, latest.date) < WAIST_TREND_WINDOW_DAYS).length
+		: 0;
 
 	return {
 		latestCm: latest?.raw ?? null,
@@ -296,7 +326,8 @@ export function summarizeWaist(
 		// med et kort som ber om den første.
 		due: daysSinceLast === null || daysSinceLast >= WAIST_CADENCE_DAYS,
 		stale: daysSinceLast !== null && daysSinceLast > WAIST_STALE_DAYS,
-		measurementsUntilTrend: Math.max(0, WAIST_MIN_TREND_SAMPLES - days.length)
+		measurementsUntilTrend: Math.max(0, WAIST_MIN_TREND_SAMPLES - inTrendWindow),
+		fresh: daysSinceLast !== null && daysSinceLast <= WAIST_FRESH_DAYS
 	};
 }
 

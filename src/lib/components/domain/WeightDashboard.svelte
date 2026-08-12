@@ -45,6 +45,7 @@
 <div class="weight-dashboard">
 	<WeightStatusCard
 		latest={data.latest}
+		waist={data.waist}
 		trendKg={latestTrend}
 		composition={data.composition}
 		today={data.today}
@@ -60,7 +61,7 @@
 
 	<!-- Under grafen, ikke over: uteliggeren oppdages VED å se grafen, og kortet er
 	     svaret på «hva gjør jeg med den» — ikke noe man leter etter først. -->
-	<WeightTrendChart days={data.days} goalKg={data.goalKg} />
+	<WeightTrendChart days={data.days} waistDays={data.waistDays} goalKg={data.goalKg} />
 
 	<WeightOutliersCard onDeleted={onDataChanged} />
 
