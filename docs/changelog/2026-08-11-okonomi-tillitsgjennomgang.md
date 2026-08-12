@@ -80,6 +80,39 @@ feil som «belastning» og «pulsfall» hadde i helse. Nå med test.
 - Sjekk at `trend.direction` ikke er `ukjent` — det betyr under tre hele lønnsperioder med
   saldomålinger, og da er det ankerdekningen som mangler, ikke logikken.
 
+## Sett i prod: «OpenAI» som kategori
+
+Skjermbilder fra main 2026-08-12 (før fase 1–5 var deployet) viste en kategori **«OpenAI —
+15 153 kr, 6 trans.»** der bare **61 kr** faktisk var OpenAI. De fem andre radene var to
+Nettgiro, to eFaktura AvtaleGiro og en intern overføring på 4 000 kr til brukeren selv.
+
+Årsaken: **`merchant_mappings.category` ble skrevet med LLM-ens rå output uten validering**
+(`category: c.category`) og lest med en `as CategoryId`-cast. Modellen svarte iblant med et
+*butikknavn* der den skulle svart med en CategoryId — og siden merchant-mappings har nest
+høyeste prioritet i `categorizeTransaction` (bare manuelle overstyringer slår dem),
+overstyrte den ugyldige verdien alle keyword-reglene.
+
+Samme skjermbilde viste at merchant-labeler lekket inn på kategori-aksen («Rema Bøler – …»,
+«AvtaleGi…» som kategorier). Det kom av at `/api/economics/spending` brukte
+`classified.label` — butikkens navn — som *kategoriens* navn.
+
+Tre rettelser:
+
+- **Validering på vei inn:** `normalizeCategoryId(c.category)` i upserten.
+- **Normalisering på vei ut:** treffer mappingens kategori ingen kjent kategori, faller
+  `categorizeTransaction` gjennom til reglene framfor å bruke navnet. En ugyldig mapping er
+  verre enn ingen mapping.
+- **Migrasjon 0056** sletter eksisterende rader med ugyldig kategori. Sletting framfor
+  omskriving til `ukategorisert`: en slik rad ville fortsatt overstyrt reglene, bare med et
+  tommere svar. Slettes den, tar reglene over umiddelbart og `analyzeSpending` klassifiserer
+  butikken på nytt — nå validert.
+
+Kategori-aksen er allerede rettet av fase 1: `summarizeSpending` bruker `CATEGORIES[...]`
+for navn og emoji, så en merchant-label kan ikke bli en kategori.
+
+Og den interne overføringen på 4 000 kr som sto som OpenAI-forbruk er nettopp typen rad fase
+2 nå merker — samme beløp som i `OVERFØRSEL`-parene i diagnosen.
+
 ## Målingen
 
 `GET /api/admin/debug-sparebank1/dedup?days=365` kjørt mot prod 2026-08-11, vindu

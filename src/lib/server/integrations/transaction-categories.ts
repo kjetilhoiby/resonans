@@ -73,17 +73,35 @@ export function categorizeTransaction(
 	}
 
 	// --- Fast path: check per-user LLM-generated mappings first ---
+	//
+	// **Kategorien normaliseres, den castes ikke.** `merchant_mappings.category` ble skrevet
+	// med LLM-ens rå output, og modellen svarte iblant med et BUTIKKNAVN der den skulle
+	// svart med en CategoryId. Siden merchant-mappings har nest høyeste prioritet,
+	// overstyrte den alle reglene: i prod august 2026 sto «OpenAI» som en egen kategori på
+	// 15 153 kr, der bare 61 kr faktisk var OpenAI — resten var Nettgiro, eFaktura og en
+	// intern overføring som havnet der fordi mappingen deres bar samme ugyldige kategori.
+	//
+	// En ugyldig mapping er verre enn ingen mapping. Treffer den ikke en kjent kategori,
+	// faller vi gjennom til reglene framfor å bruke navnet som kategori. Labelen beholdes
+	// bare når kategorien holder.
 	if (mappings && description) {
 		const key = description.toLowerCase().trim();
 		const m = mappings.get(key);
 		if (m) {
-			return {
-				category: m.category as CategoryId,
-				label: m.label,
-				emoji: m.emoji ?? '📦',
-				isFixed: m.isFixed,
-				subcategory: m.subcategory
-			};
+			const normalized = normalizeCategoryId(m.category);
+			const mappingCategoryIsReal = m.category?.trim().toLowerCase() in CATEGORIES ||
+				normalized !== 'ukategorisert';
+			if (mappingCategoryIsReal) {
+				const cat = CATEGORIES[normalized];
+				return {
+					category: normalized,
+					label: m.label,
+					emoji: m.emoji ?? cat.emoji,
+					isFixed: m.isFixed,
+					subcategory: m.subcategory
+				};
+			}
+			// Faller gjennom til reglene under.
 		}
 	}
 

@@ -1179,6 +1179,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
 - **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
   (fingerprint) → LLM-merchant-mappings → DB-regler (keyword) → SB1 `typeText`-fallback.
+- **`merchant_mappings.category` valideres i BEGGE ender.** Den ble skrevet med LLM-ens rå
+  output og lest med en cast, så et *butikknavn* kunne stå som kategori — og siden mappings
+  slår keyword-reglene, dro den alt annet med seg: «OpenAI» sto som en kategori på 15 153 kr
+  i prod der 61 kr faktisk var OpenAI, resten Nettgiro, eFaktura og en intern overføring.
+  Treffer mappingens kategori ingen kjent CategoryId, faller `categorizeTransaction` gjennom
+  til reglene. **En ugyldig mapping er verre enn ingen mapping.**
   Widget-endepunktet hadde en femte vei — et `ILIKE`-keyword-filter i SQL uten mappings og
   uten brukerens overstyringer — så en forbruksdings kunne vise et annet tall enn
   forbrukskortet for samme kategori.

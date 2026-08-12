@@ -14,6 +14,7 @@ import { db } from '$lib/db';
 import { invalidateMerchantMappings } from '$lib/server/economics/merchant-mappings';
 import { readTransactions } from '$lib/server/economics/transactions';
 import { merchantMappings } from '$lib/db/schema';
+import { normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 import { and, eq, sql, inArray } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { DEFAULT_USER_ID } from '$lib/server/users';
@@ -204,7 +205,11 @@ export async function analyzeSpending(
 			.values({
 				userId,
 				merchantKey: c.merchantKey,
-				category: c.category,
+				// **Valideres på VEI INN.** Modellen svarte iblant med et butikknavn der den
+				// skulle svart med en CategoryId, og siden mappings overstyrer reglene ble
+				// navnet stående som en kategori på flaten. Se normaliseringen i
+				// `categorizeTransaction` og migrasjon 0056.
+				category: normalizeCategoryId(c.category),
 				subcategory: c.subcategory,
 				label: c.label,
 				emoji: c.emoji,
