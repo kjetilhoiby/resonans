@@ -582,6 +582,19 @@ loggen i `$lib/server/health/waist-log.ts`, endepunktene under `/api/helse/livvi
 - **`WHTR_REFERENCE` (0,5) er en tommelfingerregel, ikke en vurdering**, og flaten sier
   det. Vi måler livvidde og høyde; vi diagnostiserer ingenting. Høyden hentes fra
   `metricSettings.profile` — mangler den, blir forholdstallet null framfor gjettet.
+- **Livvidde kan også komme fra Apple Health** (`POST /api/apps/healthkit/waist`,
+  `$lib/domain/health/healthkit-waist.ts`). Eget endepunkt, ikke en utvidelse av
+  `/healthkit/weight`: vekt har en konkurrerende kilde og dagnivå-dedup, livvidde har
+  ingen — Withings måler den ikke. Enhetsfella er større enn for vekt, siden livvidde er
+  en **lengde**: `HKUnit.meter()` gir 0,94 og tommer gir 37. Vi forkaster og flagger,
+  aldri konverterer. **Tommer over 40 kan ikke skilles fra centimeter**, så vakten er et
+  sikkerhetsnett mot den åpenbare feilen, ikke en garanti.
+- **`listWaistMeasurements` filtrerer på bruker + datatype, ikke på sensor.** Første
+  utgave slo opp `body_log`-sensoren og returnerte tom liste hvis den manglet — en
+  fungerende bug som ventet på HealthKit-importen, som skriver under `healthkit`-
+  sensoren. En bruker uten manuelle målinger ville fått en usynlig import: data i basen,
+  tom flate, ingen feilmelding. Alle vektleserne i repoet gjør det samme; gjør det du
+  også.
 
 ### Puls-baseline (HRR)
 
