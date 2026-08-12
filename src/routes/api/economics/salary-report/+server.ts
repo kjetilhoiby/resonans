@@ -12,7 +12,13 @@ import {
 } from '$lib/server/economics/transactions';
 import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack } from '$lib/domain/goal-tracks';
-import type { SalaryMonthReport, GoalProgressItem, SalaryInsight } from '$lib/types/salary-report';
+import type {
+	SalaryMonthReport,
+	GoalProgressItem,
+	SalaryInsight,
+	MonthReview
+} from '$lib/types/salary-report';
+import { buildMonthReview } from '$lib/server/economics/month-review';
 import type { RequestHandler } from './$types';
 
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
@@ -236,7 +242,29 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// Non-fatal
 	}
 
-	// 9. Generate insights
+	// 9. Månedsgjennomgangen — de fire spørsmålene (fase 6). Ikke-fatal: en rapport uten
+	//     gjennomgang er dårligere, men en gjennomgang som velter rapporten er verre.
+	let review: MonthReview | undefined;
+	try {
+		review = await buildMonthReview({
+			userId,
+			// Alle lønnsdatoene, ikke bare de to siste: gjennomgangen trenger flere hele
+			// perioder for å vite hva som er «vanlig».
+			paydayDates: payDay?.paydayDates ?? [currentSalaryDate],
+			salaryAmount: salaryAmount > 0 ? salaryAmount : null,
+			brokenTargets: goalProgress
+				.filter((item) => item.type === 'track' && !item.achieved && item.targetValue > 0)
+				.map((item) => ({
+					label: item.label,
+					overBy: Math.max(0, item.actualValue - item.targetValue)
+				}))
+				.filter((item) => item.overBy > 0)
+		});
+	} catch (error) {
+		console.error('[salary-report] month review failed', error);
+	}
+
+	// 10. Generate insights
 	const insights = generateInsights({
 		currentSalaryDate,
 		prevSalaryDate,
@@ -252,6 +280,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 
 	const report: SalaryMonthReport = {
+		review,
 		currentSalaryDate,
 		prevSalaryDate,
 		salaryAmount,

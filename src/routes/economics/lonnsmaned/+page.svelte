@@ -6,6 +6,7 @@
 	import { tick } from 'svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import type { SalaryMonthReport, SalaryInsight } from '$lib/types/salary-report';
+	import MonthReviewCard from '$lib/components/domain/economics/MonthReviewCard.svelte';
 
 	interface RichMsg {
 		role: 'user' | 'assistant';
@@ -179,7 +180,9 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title="Lønnsrapport" titleHref="/economics" />
+	<!-- Tilbake til Økonomi-TEMAET, ikke til den orfane /economics-siden. Sideruta
+	     /tema/[id] tar bevisst imot navn. -->
+	<PageHeader title="Lønnsrapport" titleHref="/tema/økonomi" />
 
 	{#if !report}
 		<div class="empty-state">
@@ -194,6 +197,12 @@
 			<p class="empty-body">Synkroniser bankkontoen og prøv igjen.</p>
 		</div>
 	{:else}
+		<!-- Månedsgjennomgangen først: de fire spørsmålene skal kunne LESES uten å gå
+		     gjennom veiviseren. Veiviseren er for å snakke om dem. -->
+		{#if report.review}
+			<MonthReviewCard review={report.review} goalProgress={report.goalProgress ?? []} />
+		{/if}
+
 		<!-- Progress -->
 		<div class="progress-row">
 			<div class="progress-bar">
