@@ -22,6 +22,7 @@ import {
 	efficiencyTrend,
 	type EfficiencySession
 } from '$lib/domain/health/aerobic-efficiency';
+import { distanceRecords, type RecordWorkout } from '$lib/domain/health/distance-records';
 import { pickHrRecoveryMetric, type HrRecoverySample } from '$lib/domain/health/hr-recovery';
 import { averagePaceSecPerKm, estimateVdotFromBestEfforts } from '$lib/server/workouts/vdot';
 import { db } from '$lib/db';
@@ -280,18 +281,49 @@ async function loadAerobicEfficiency(userId: string) {
 	};
 }
 
+/**
+ * Distanserekorder: beste tid per distanse over hele historikken.
+ *
+ * `bestEfforts` har vært regnet og lagret på hver økt hele tiden, men bare brukt
+ * til VDOT-estimering — ingen flate viste dem. Se
+ * `$lib/domain/health/distance-records.ts`.
+ */
+async function loadDistanceRecords(userId: string) {
+	// Ingen datogrense: en rekord er en rekord uansett hvor gammel den er, og et
+	// vindu ville gjort at den forsvant fra lista den dagen den ble for gammel.
+	const rows = await db.query.canonicalWorkouts.findMany({
+		where: eq(canonicalWorkouts.userId, userId),
+		columns: { id: true, startTime: true, sportFamily: true, bestEfforts: true }
+	});
+
+	const workouts: RecordWorkout[] = rows.map((row) => ({
+		activityId: row.id,
+		startTime: row.startTime,
+		sportFamily: row.sportFamily,
+		bestEfforts: (row.bestEfforts as Partial<Record<string, number>> | null) ?? null
+	}));
+
+	return distanceRecords(workouts).map((r) => ({
+		key: r.key,
+		label: r.label,
+		seconds: r.seconds,
+		date: r.date.toISOString()
+	}));
+}
+
 export async function loadTrainingDashboardData(
 	userId: string,
 	opts: { evaluateMilestones?: boolean } = {}
 ) {
 	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
 	// balanse er verdt å se også i oppsett-modus.
-	const [plan, dailyEffort, vo2max, hrRecovery, aerobicEfficiency] = await Promise.all([
+	const [plan, dailyEffort, vo2max, hrRecovery, aerobicEfficiency, distanceRecordList] = await Promise.all([
 		getActivePlan(userId),
 		loadDailyEffort(userId),
 		loadVo2max(userId).catch(() => null),
 		loadHrRecovery(userId).catch(() => null),
-		loadAerobicEfficiency(userId).catch(() => null)
+		loadAerobicEfficiency(userId).catch(() => null),
+		loadDistanceRecords(userId).catch(() => [])
 	]);
 
 	if (!plan) {
@@ -306,6 +338,7 @@ export async function loadTrainingDashboardData(
 			vo2max,
 			hrRecovery,
 			aerobicEfficiency,
+			distanceRecords: distanceRecordList,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -421,6 +454,7 @@ export async function loadTrainingDashboardData(
 		vo2max,
 		hrRecovery,
 		aerobicEfficiency,
+		distanceRecords: distanceRecordList,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

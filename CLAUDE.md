@@ -862,6 +862,27 @@ Se `docs/changelog/2026-08-11-pwa-varselnavigasjon.md`.
 - `/_app/immutable/` caches bevisst ikke — kommentaren i service workeren sier
   hvorfor: blandede versjoner bryter hydrering.
 
+### Distanserekorder: «satte PR» flytter seg ikke
+
+Se `docs/changelog/2026-08-11-distanserekorder.md`. Logikken i
+`$lib/domain/health/distance-records.ts`.
+
+- **`bestEfforts` lå lagret på `canonical_workouts` hele tiden**, men ble bare
+  brukt til VDOT — ingen flate viste tallene. Rekordlista er «min over alle
+  økter» av data som alt fantes.
+- **«Satte PR» måles mot øktene FØR økta, aldri mot hele settet.** Et
+  holder-rekorden-flagg flytter seg når du slår den, og merket ville forsvunnet
+  fra en økt du husker som god. Samme prinsipp som at en median holder dagens
+  observasjon utenfor seg selv.
+- **Første gang en distanse løpes er ikke en PR** — uten et tall å slå ville hver
+  ny distanse gitt et flagg.
+- **100 m regnes IKKE, med vilje.** Sporet nedsamples til 2000 punkter og
+  GPS-feilen er 2–5 m; en 100-meter varer 24 sekunder. Resultatet blir en rekord
+  i GPS-støy. 400 m tåler det. Veien til 100 m går gjennom Ekkos banerunder.
+- **Nye distanser krever reanalyse.** `BEST_EFFORT_DISTANCES_M` gjelder bare
+  økter som analyseres etterpå — gamle rader beholder de gamle nøklene til
+  `POST /api/sensors/workouts/reanalyze` har kjørt.
+
 ### Fart per hjerteslag slår VO2max på formspørsmålet
 
 Se `docs/changelog/2026-08-11-efficiency-factor.md`. Logikken i

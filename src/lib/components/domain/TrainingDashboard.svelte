@@ -20,6 +20,7 @@
 	import EffortWeightCard from '$lib/components/domain/health/EffortWeightCard.svelte';
 	import HealthActivityList from '$lib/components/domain/health/HealthActivityList.svelte';
 	import AerobicEfficiencyCard from '$lib/components/domain/health/AerobicEfficiencyCard.svelte';
+	import DistanceRecordsCard from '$lib/components/domain/health/DistanceRecordsCard.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import { formatEvent } from '$lib/components/domain/health/health-data';
 	import { computeTrainingLoad } from '$lib/util/training-load';
@@ -299,6 +300,8 @@
 		     fart på rolige økter, mens VDOT antar maksimal innsats og gir et
 		     fantomfall i uker uten hard løping. -->
 		<AerobicEfficiencyCard data={data.aerobicEfficiency ?? null} />
+
+		<DistanceRecordsCard records={data.distanceRecords ?? []} />
 
 		<Vo2maxCard metric={data.vo2max ?? null} />
 
