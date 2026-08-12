@@ -57,6 +57,17 @@
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
 		unnamedAccountCount?: number;
+		candidates?: Array<{
+			accountId: string;
+			accountName: string | null;
+			accountType: string | null;
+			balance: number;
+			isBuffer: boolean;
+			role: 'auto' | 'buffer' | 'ignore';
+			basis: string;
+			autoWouldInclude: boolean;
+			reason: string;
+		}>;
 		payday?: {
 			dateCount: number;
 			completePeriods: number;
@@ -193,6 +204,19 @@
 		}
 	}
 
+	/**
+	 * Hent på nytt etter at kontovalget er endret.
+	 *
+	 * Bufferen, dekningen, bunntrenden og uttaksmønsteret regnes ALLE av kontoutvalget, så en
+	 * lokal justering av lista ville gjort at tallene over den ikke stemte. Serveren er den
+	 * ene som vet — samme grunn til at valget lagres der og ikke i localStorage: chatten leser
+	 * samme loader, og et valg bare klienten kjente ville gitt to ulike svar på samme spørsmål.
+	 */
+	function reloadSavings() {
+		savingsLoaded = false;
+		void loadSavings();
+	}
+
 	async function loadCumulative(cat: CategoryId) {
 		loadingCumCats = [...loadingCumCats, cat];
 		try {
@@ -282,7 +306,9 @@
 				monthlySpend={savings.monthlySpend}
 				noSavingsAccountFound={savings.noSavingsAccountFound}
 				unnamedAccountCount={savings.unnamedAccountCount ?? 0}
+				candidates={savings.candidates ?? []}
 				payday={savings.payday}
+				onAccountsChanged={reloadSavings}
 				loading={loadingSavings}
 			/>
 		{:else}

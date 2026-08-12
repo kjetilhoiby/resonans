@@ -2207,6 +2207,28 @@ export const canonicalBankTransactions = pgTable('canonical_bank_transactions', 
 
 // Salary profile derived from historical paycheck detection.
 // One active row per user; deactivated (active=false) when employer changes.
+/**
+ * Per-konto innstillinger for bankkontoer.
+ *
+ * `savingsRole` er tri-tilstand og ikke en boolean: `auto` lar heuristikken bestemme, så en
+ * NY konto virker uten at noen må huske å slå den på. Se
+ * `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+ */
+export const bankAccountSettings = pgTable('bank_account_settings', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	accountId: text('account_id').notNull(),
+	/** 'auto' | 'buffer' | 'ignore' — se `$lib/domain/economics/savings-buffer.ts`. */
+	savingsRole: text('savings_role').notNull().default('auto'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserAccount: uniqueIndex('bank_account_settings_user_account_idx').on(
+		table.userId,
+		table.accountId
+	)
+}));
+
 export const userSalaryProfiles = pgTable('user_salary_profiles', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),

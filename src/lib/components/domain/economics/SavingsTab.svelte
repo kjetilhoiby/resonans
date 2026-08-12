@@ -13,6 +13,8 @@
 	import SectionCard from '$lib/components/ui/SectionCard.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import BufferFloorChart from '$lib/components/charts/BufferFloorChart.svelte';
+	import SavingsAccountPicker from './SavingsAccountPicker.svelte';
+	import type { SavingsRole } from '$lib/client/savings-account-role';
 
 	type Trend = {
 		direction: 'eroderer' | 'stabil' | 'vokser' | 'ukjent';
@@ -36,6 +38,17 @@
 		largestAmount: number | null;
 		lateShare: number;
 		outsidePeriods: number;
+		reason: string;
+	};
+	type Candidate = {
+		accountId: string;
+		accountName: string | null;
+		accountType: string | null;
+		balance: number;
+		isBuffer: boolean;
+		role: SavingsRole;
+		basis: string;
+		autoWouldInclude: boolean;
 		reason: string;
 	};
 	type Payday = {
@@ -65,7 +78,10 @@
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
 		unnamedAccountCount?: number;
+		candidates?: Candidate[];
 		payday?: Payday;
+		/** Kalles når kontovalget er endret, så flaten kan hente på nytt. */
+		onAccountsChanged?: () => void;
 		loading: boolean;
 	}
 
@@ -76,7 +92,9 @@
 		monthlySpend,
 		noSavingsAccountFound,
 		unnamedAccountCount = 0,
+		candidates = [],
 		payday,
+		onAccountsChanged,
 		loading
 	}: Props = $props();
 
@@ -164,6 +182,14 @@
 			</p>
 		{/if}
 	</SectionCard>
+
+	<!--
+		Velgeren står HER også, og det er her den betyr mest: har heuristikken ikke funnet
+		bufferen, er det eneste nyttige å kunne peke på den selv.
+	-->
+	{#if onAccountsChanged}
+		<SavingsAccountPicker {candidates} onChanged={onAccountsChanged} />
+	{/if}
 {:else}
 	<div class="st-head">
 		<div class="st-total">
@@ -268,13 +294,22 @@
 		</SectionCard>
 	{/each}
 
-	<p class="st-note st-foot">
-		Kontoer regnes som buffer ut fra navn og type. Stemmer ikke lista, er det heuristikken
-		som tar feil — ikke tallene.{#if unnamedAccountCount > 0}
-			{' '}{unnamedAccountCount}
-			{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn og er ikke vurdert.
-		{/if}
-	</p>
+	<!--
+		Erstatter fotnoten «stemmer ikke lista, er det heuristikken som tar feil». Den var sann
+		og uten en vei videre — brukeren måtte spørre om han kunne justere den.
+	-->
+	{#if onAccountsChanged}
+		<SavingsAccountPicker {candidates} onChanged={onAccountsChanged} />
+	{/if}
+
+	{#if unnamedAccountCount > 0}
+		<p class="st-note st-foot">
+			{unnamedAccountCount}
+			{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn i saldodataene og kan
+			ikke vurderes på navn. Saldoankre fra importerte kontoutskrifter bærer bare
+			kontonummer.
+		</p>
+	{/if}
 {/if}
 
 <style>

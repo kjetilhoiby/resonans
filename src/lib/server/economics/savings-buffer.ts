@@ -21,14 +21,16 @@ import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reco
 import { osloDayKey } from '$lib/domain/oslo-time';
 import {
 	describeWithdrawalPattern,
-	looksLikeSavingsAccount,
 	periodsFromPaydays,
+	resolveSavingsAccounts,
 	runwayMonths,
 	troughTrend,
 	troughsByPeriod,
 	type BalancePoint,
 	type Period,
 	type PeriodTrough,
+	type SavingsBasis,
+	type SavingsRole,
 	type TroughTrend,
 	type WithdrawalPattern
 } from '$lib/domain/economics/savings-buffer';
@@ -37,6 +39,7 @@ import {
 	type InternalTransferLink
 } from '$lib/domain/economics/internal-transfers';
 import { readLatestBalances, readTransactions } from '$lib/server/economics/transactions';
+import { readChildNameTokens, readSavingsRoles } from '$lib/server/economics/account-settings';
 
 /** Hvor mange hele lønnsperioder som tegnes og regnes trend på. */
 const TREND_PERIODS = 6;
@@ -62,6 +65,20 @@ export type SavingsAccountSummary = {
 	series: BalancePoint[];
 };
 
+/** En konto slik kontovelgeren viser den. */
+export type SavingsAccountCandidateView = {
+	accountId: string;
+	accountName: string | null;
+	accountType: string | null;
+	balance: number;
+	isBuffer: boolean;
+	role: SavingsRole;
+	basis: SavingsBasis;
+	/** Hva heuristikken ville sagt. Kontovelgeren trenger den for å kunne gå tilbake til `auto`. */
+	autoWouldInclude: boolean;
+	reason: string;
+};
+
 export type SavingsBufferData = {
 	/** Kontoene som ble regnet som buffer — heuristikken er synlig, ikke skjult. */
 	accounts: SavingsAccountSummary[];
@@ -84,6 +101,14 @@ export type SavingsBufferData = {
 	 * en annen situasjon enn «vurdert og forkastet», og flaten skal skille dem — ellers er
 	 * utelatelsen usynlig.
 	 */
+	/**
+	 * ALLE kontoer med saldo, med om de teller som buffer og hvorfor.
+	 *
+	 * Hele lista, ikke bare bufferkontoene: uten dem som ble latt ute kan brukeren bare
+	 * trekke fra og aldri legge til, og en heuristikk man ikke kan rette er en heuristikk man
+	 * slutter å stole på.
+	 */
+	candidates: SavingsAccountCandidateView[];
 	unnamedAccountCount: number;
 	/**
 	 * Hvordan lønnsperiodene ble til.
@@ -112,15 +137,31 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 	const todayKey = osloDayKey(now);
 	const generatedAt = now.toISOString();
 
-	const [balances, payday] = await Promise.all([
+	const [balances, payday, roles, childNameTokens] = await Promise.all([
 		readLatestBalances(userId),
-		detectGlobalPayday(userId)
+		detectGlobalPayday(userId),
+		readSavingsRoles(userId),
+		readChildNameTokens(userId)
 	]);
 
-	const savingsAccounts = balances.filter(looksLikeSavingsAccount);
-	const unnamedAccountCount = balances.filter(
-		(account) => !account.accountName && !account.accountType
-	).length;
+	// Brukerens valg slår heuristikken; barnas kontoer er ute som standard. Beslutningen bor
+	// rent i `resolveSavingsAccounts`.
+	const decisions = resolveSavingsAccounts(balances, { roles, childNameTokens });
+	const savingsAccounts = decisions.filter((d) => d.isBuffer).map((d) => d.account);
+
+	const candidates: SavingsAccountCandidateView[] = decisions.map((decision) => ({
+		accountId: decision.account.accountId,
+		accountName: decision.account.accountName,
+		accountType: decision.account.accountType,
+		balance: decision.account.balance,
+		isBuffer: decision.isBuffer,
+		role: decision.role,
+		basis: decision.basis,
+		autoWouldInclude: decision.autoWouldInclude,
+		reason: decision.reason
+	}));
+
+	const unnamedAccountCount = decisions.filter((d) => d.basis === 'uten-navn').length;
 
 	// Alle lønnsperioder, så de siste TREND_PERIODS HELE. Den inneværende perioden holdes
 	// utenfor trenden: bunnen der kan fortsatt bli lavere, og en halv periode ville lest
@@ -143,6 +184,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 			totalRunwayMonths: null,
 			monthlySpend: null,
 			periods,
+			candidates,
 			noSavingsAccountFound: true,
 			unnamedAccountCount,
 			payday: paydayDiagnostics,
@@ -205,6 +247,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 		totalRunwayMonths: runwayMonths(totalBalance, monthlySpend),
 		monthlySpend,
 		periods,
+		candidates,
 		noSavingsAccountFound: false,
 		unnamedAccountCount,
 		payday: paydayDiagnostics,

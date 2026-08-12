@@ -136,6 +136,155 @@ export function looksLikeSavingsAccount(account: {
 	return SAVINGS_TERMS.some((term) => haystack.includes(term));
 }
 
+// ── Overstyring: brukeren bestemmer, heuristikken foreslår ───────────────────
+
+/**
+ * Hva brukeren har sagt om en konto.
+ *
+ * **Tri-tilstand, ikke en boolean.** `auto` lar heuristikken bestemme, og det er standarden
+ * — så en NY konto virker uten at noen må huske å slå den på. En ren inkluderingsliste ville
+ * gjort at nye kontoer stille falt ut; en ren ekskluderingsliste at en konto heuristikken
+ * ikke fanget aldri kunne legges til. Begge feilene er tause, som er det verste slaget.
+ */
+export type SavingsRole = 'auto' | 'buffer' | 'ignore';
+
+export function isSavingsRole(value: unknown): value is SavingsRole {
+	return value === 'auto' || value === 'buffer' || value === 'ignore';
+}
+
+/** Hvorfor kontoen ble tatt med eller latt ute. Vises på flaten — aldri bare et ja/nei. */
+export type SavingsBasis =
+	/** Brukeren har valgt den inn. */
+	| 'valgt'
+	/** Brukeren har valgt den ut. */
+	| 'utelatt'
+	/** Navnet matcher et barn i husholdningen. */
+	| 'barn'
+	/** Heuristikken kjente igjen et sparekontonavn. */
+	| 'navn'
+	/** Heuristikken kjente ikke igjen noe. */
+	| 'ukjent-navn'
+	/** Ingen saldorad bærer navn — heuristikken har ingenting å lese. */
+	| 'uten-navn';
+
+export type SavingsAccountCandidate = {
+	accountId: string;
+	accountName?: string | null;
+	accountType?: string | null;
+};
+
+export type SavingsAccountDecision<T extends SavingsAccountCandidate> = {
+	account: T;
+	isBuffer: boolean;
+	/** Tilstanden som er lagret. `auto` betyr at heuristikken avgjorde. */
+	role: SavingsRole;
+	basis: SavingsBasis;
+	/**
+	 * Hva `auto` VILLE gitt, uavhengig av om et valg overstyrer den nå.
+	 *
+	 * Uten dette feltet kan en veksleknapp ikke gå tilbake til `auto`: har brukeren valgt
+	 * kontoen ut, er `basis` «utelatt», og da vet ikke flaten om heuristikken var enig.
+	 * Resultatet ville vært at et trykk lagret et *eksplisitt* valg identisk med standarden —
+	 * en usynlig lås som ikke ville fulgt en senere endring i heuristikken.
+	 */
+	autoWouldInclude: boolean;
+	/** Én setning, til flaten. */
+	reason: string;
+};
+
+const BASIS_REASON: Record<SavingsBasis, string> = {
+	valgt: 'Du har valgt denne inn som buffer.',
+	utelatt: 'Du har holdt denne utenfor.',
+	barn: 'Navnet matcher et barn i husholdningen, så den regnes ikke som husholdningens buffer.',
+	navn: 'Navnet ser ut som en sparekonto.',
+	'ukjent-navn': 'Navnet ser ikke ut som en sparekonto.',
+	'uten-navn': 'Kontoen har ikke noe navn i saldodataene, så navnet kan ikke leses.'
+};
+
+/**
+ * Avgjør hvilke kontoer som er buffer, og hvorfor.
+ *
+ * Rekkefølgen er prioritert, og **brukerens valg slår alt**: en heuristikk som overkjører et
+ * eksplisitt valg er en heuristikk brukeren slutter å rette. Se
+ * `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+ *
+ * Barnenavn kommer FØR navneheuristikken, ikke etter: barnas konto heter nettopp «SPAREKONTO
+ * UNG» og treffer `spar`, så en sjekk etterpå ville aldri sett den. Den er likevel bare en
+ * `auto`-avgjørelse — er kontoen faktisk husholdningens, velges den inn, og valget står.
+ *
+ * Returnerer en beslutning per konto, ikke en filtrert liste: flaten må kunne vise også dem
+ * som ble latt ute, ellers kan man bare trekke fra og aldri legge til.
+ */
+export function resolveSavingsAccounts<T extends SavingsAccountCandidate>(
+	accounts: readonly T[],
+	options: {
+		roles?: ReadonlyMap<string, SavingsRole>;
+		/** Navnetokens for barn i husholdningen. Se `person-name-tokens.ts`. */
+		childNameTokens?: readonly string[];
+	} = {}
+): Array<SavingsAccountDecision<T>> {
+	const roles = options.roles ?? new Map<string, SavingsRole>();
+	const childTokens = options.childNameTokens ?? [];
+
+	return accounts.map((account) => {
+		const role = roles.get(account.accountId) ?? 'auto';
+		const auto = autoDecision(account, childTokens);
+
+		if (role === 'buffer') {
+			return {
+				account,
+				isBuffer: true,
+				role,
+				basis: 'valgt' as SavingsBasis,
+				autoWouldInclude: auto.isBuffer,
+				reason: BASIS_REASON.valgt
+			};
+		}
+		if (role === 'ignore') {
+			return {
+				account,
+				isBuffer: false,
+				role,
+				basis: 'utelatt' as SavingsBasis,
+				autoWouldInclude: auto.isBuffer,
+				reason: BASIS_REASON.utelatt
+			};
+		}
+
+		return {
+			account,
+			isBuffer: auto.isBuffer,
+			role,
+			basis: auto.basis,
+			autoWouldInclude: auto.isBuffer,
+			reason: BASIS_REASON[auto.basis]
+		};
+	});
+}
+
+/**
+ * Avgjørelsen uten brukervalg — heuristikken alene.
+ *
+ * Regnes ALLTID, også når et valg overstyrer den, fordi `autoWouldInclude` trenger den.
+ */
+function autoDecision(
+	account: SavingsAccountCandidate,
+	childTokens: readonly string[]
+): { isBuffer: boolean; basis: SavingsBasis } {
+	const name = `${account.accountName ?? ''} ${account.accountType ?? ''}`.trim();
+	if (!name) return { isBuffer: false, basis: 'uten-navn' };
+
+	// Barnenavnet FØR navneheuristikken: kontoen heter nettopp «SPAREKONTO UNG» og treffer
+	// `spar`, så en sjekk etterpå ville aldri sett den.
+	const haystack = name.toLowerCase();
+	if (childTokens.some((token) => haystack.includes(token))) {
+		return { isBuffer: false, basis: 'barn' };
+	}
+
+	const looksLike = looksLikeSavingsAccount(account);
+	return { isBuffer: looksLike, basis: looksLike ? 'navn' : 'ukjent-navn' };
+}
+
 // ── Bunnpunkter ─────────────────────────────────────────────────────────────
 
 /**
