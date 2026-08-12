@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
+	import { saveCategoryOverride } from '$lib/client/transaction-category';
 
 	interface Tx {
 		date: string;
@@ -8,6 +9,8 @@
 		category: string;
 		emoji: string;
 		label: string;
+		/** SB1s kategoritekst. Sendes med en retting — den er fingerprint-fallback. */
+		typeText?: string | null;
 	}
 
 	interface Props {
@@ -22,6 +25,8 @@
 	let selectedCategory = $state<string | null>(null);
 	let editingTxIndex = $state<number | null>(null);
 	let savingOverride = $state(false);
+	let overrideError = $state<string | null>(null);
+	let appliedNote = $state<string | null>(null);
 
 	const categories = $derived(
 		[...new Map(transactions.map((t) => [t.category, { id: t.category, label: t.label, emoji: t.emoji }])).values()]
@@ -64,32 +69,26 @@
 		}
 
 		savingOverride = true;
+		overrideError = null;
 		try {
-			const res = await fetch('/api/classification-overrides', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					domain: 'transaction',
-					description: tx.description,
-					amount: tx.amount,
-					correctedCategory: newCategoryId
-				})
+			// Delt skrivevei. Lå duplisert her og i TransactionExplorer fram til august 2026,
+			// og lista glemte `typeText` — som er fingerprint-fallback for tomme beskrivelser.
+			const saved = await saveCategoryOverride({
+				description: tx.description,
+				typeText: tx.typeText ?? null,
+				amount: tx.amount,
+				category: newCategoryId
 			});
 
-			if (!res.ok) {
-				const data = await res.json();
-				throw new Error(data.error || 'Kunde ikke lagre overstyring');
-			}
-
-			// Oppdater lokal visning
-			const newCat = CATEGORIES[newCategoryId];
-			tx.category = newCat.id;
-			tx.emoji = newCat.emoji;
-			tx.label = newCat.label;
+			tx.category = saved.category;
+			tx.emoji = saved.emoji;
+			tx.label = saved.label;
 			editingTxIndex = null;
+			// Brukeren ba om at rettingen skal gjelde framover uten å si det. Da må flaten
+			// bekrefte at det er det som skjedde.
+			appliedNote = saved.appliesTo;
 		} catch (err) {
-			console.error('Failed to save override:', err);
-			alert('Kunne ikke lagre kategori-endring. Prøv igjen.');
+			overrideError = err instanceof Error ? err.message : 'Kunne ikke lagre kategori-endring';
 		} finally {
 			savingOverride = false;
 		}
@@ -109,6 +108,13 @@
 			<p class="tl-subtitle">{filtered.length} transaksjoner · {formatNOK(totalFiltered)}</p>
 		</div>
 	</div>
+
+	{#if overrideError}
+		<!-- Serverens melding, ikke en generisk tekst. Den vanligste feilen her er konkret. -->
+		<p class="tl-banner tl-banner-error" role="alert">{overrideError}</p>
+	{:else if appliedNote}
+		<p class="tl-banner tl-banner-ok" role="status">{appliedNote}</p>
+	{/if}
 
 	<!-- Search -->
 	<div class="tl-search-wrap">
@@ -209,6 +215,22 @@
 </div>
 
 <style>
+	.tl-banner {
+		margin: 0 1rem 0.5rem;
+		padding: 0.5rem 0.7rem;
+		border-radius: 8px;
+		font-size: 0.82rem;
+		line-height: 1.4;
+	}
+	.tl-banner-error {
+		background: rgba(220, 38, 38, 0.14);
+		color: #fca5a5;
+	}
+	.tl-banner-ok {
+		background: rgba(22, 163, 74, 0.14);
+		color: #86efac;
+	}
+
 	.tl-overlay {
 		position: fixed;
 		inset: 0;
