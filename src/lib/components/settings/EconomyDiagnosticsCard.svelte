@@ -35,6 +35,20 @@
 		underreportedNok: number;
 	};
 	type StoreRow = { store: string; rows: number; spendNok: number };
+	type Lifecycle = {
+		seenCountHistogram: Array<{ seenCount: number; rows: number }>;
+		fingerprintStableAcrossFetches: boolean;
+		multiSeenRows: number;
+		singleSeenRows: number;
+		disappeared: Array<{ bookingStatus: string | null; rows: number; nok: number }>;
+		disappearedWithoutMatch: number;
+		superseded: Array<{
+			deltaDays: number | null;
+			merchantKeyChanged: boolean;
+			pairs: number;
+			nok: number;
+		}>;
+	};
 	type Result = {
 		window: { days: number; fromDate: string };
 		statuses: StatusRow[];
@@ -49,6 +63,7 @@
 		};
 		stores: StoreRow[];
 		internalTransfers: { pairs: number; nok: number };
+		lifecycle?: Lifecycle;
 	};
 
 	let days = $state('365');
@@ -100,6 +115,39 @@
 	const multiplicityMeasurable = $derived(
 		result?.multiplicity.some((row) => row.multiplicity > 1) ?? false
 	);
+
+	/**
+	 * Kan forsvinning måles i det hele tatt?
+	 *
+	 * Dette er PORTEN for hele livsløpsseksjonen, og den må stå først. `raw_fingerprint`
+	 * inneholder `externalTransactionId`; minter SB1 en ny id per henting, får hver henting
+	 * en ny rad, `seen_count` blir alltid 1, og «forsvunnet» betyr da ingenting — bare at
+	 * ID-en skiftet. Uten dette skillet ville tallene under blitt lest som et funn.
+	 */
+	const lifecycleGate = $derived.by(() => {
+		const cycle = result?.lifecycle;
+		if (!cycle) return null;
+		if (!cycle.fingerprintStableAcrossFetches) {
+			return {
+				ok: false,
+				text: `Ingen rad er sett mer enn én gang (${cycle.singleSeenRows.toLocaleString('nb-NO')} rader, alle med seen_count 1). Da minter SB1 en ny transaksjons-ID ved hver henting, og siden ID-en er del av raw_fingerprint lager hver synk en ny rad. «Forsvunnet» kan ikke skilles fra «fikk ny ID», så tallene under betyr ingenting. Veien videre er å nøkle rå-strømmen på attributter uten ID-en — ikke å tolke disse tallene.`
+			};
+		}
+		return {
+			ok: true,
+			text: `${cycle.multiSeenRows.toLocaleString('nb-NO')} rader er sett flere ganger og ${cycle.singleSeenRows.toLocaleString('nb-NO')} bare én gang. Fingerprinten er altså stabil på tvers av synker, og en rad som slutter å bli sett har faktisk forsvunnet fra bankens svar.`
+		};
+	});
+
+	/** Kroner som ville forsvunnet fra forbruket om erstatningene ble deaktivert. */
+	const supersededTotal = $derived.by(() => {
+		const rows = result?.lifecycle?.superseded ?? [];
+		return {
+			pairs: rows.reduce((sum, r) => sum + r.pairs, 0),
+			nok: rows.reduce((sum, r) => sum + r.nok, 0),
+			mkChangedPairs: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.pairs, 0)
+		};
+	});
 
 	async function run() {
 		running = true;
@@ -253,6 +301,96 @@
 				mer enn 1. Bare data synket etter den datoen kan måles — sammenlign
 				<code>Periode</code> på statusene over.
 			</p>
+		{/if}
+
+		<!-- Livsløp: brukerens hypotese om at forrige status forsvinner -->
+		{#if result.lifecycle}
+			<h3>Livsløp</h3>
+			{#if lifecycleGate}
+				<p class:warn={!lifecycleGate.ok} class:meta={lifecycleGate.ok}>
+					{lifecycleGate.text}
+				</p>
+			{/if}
+
+			{#if lifecycleGate?.ok}
+				{#if result.lifecycle.disappeared.length > 0}
+					<div class="table-scroll">
+						<table>
+							<thead>
+								<tr><th>Forsvant, status</th><th class="num">Rader</th><th class="num">Beløp</th></tr>
+							</thead>
+							<tbody>
+								{#each result.lifecycle.disappeared as row (row.bookingStatus)}
+									<tr>
+										<td><code>{row.bookingStatus ?? '(tom)'}</code></td>
+										<td class="num">{row.rows.toLocaleString('nb-NO')}</td>
+										<td class="num">{nok(row.nok)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					<p class="meta">
+						Rader som sluttet å bli sett mens andre rader på samme konto og dato fortsatt ble
+						hentet. Sammenligningen er mot samme dato, ikke mot nå — en transaksjon slutter å
+						bli hentet når den faller ut av synkvinduet, og det er en godartet grunn.
+					</p>
+				{:else}
+					<p class="meta">
+						Ingen rader har sluttet å bli sett. Da erstatter ikke banken forrige status, og
+						dobbelttellingen har en annen årsak.
+					</p>
+				{/if}
+
+				{#if supersededTotal.pairs > 0}
+					<p class="summary">
+						<strong>{supersededTotal.pairs}</strong> erstatningspar funnet,
+						{nok(supersededTotal.nok)} som telles to ganger i dag.
+					</p>
+					<div class="table-scroll">
+						<table>
+							<thead>
+								<tr>
+									<th class="num">Datoforskjell</th><th>Beskrivelse</th>
+									<th class="num">Par</th><th class="num">Beløp</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each result.lifecycle.superseded as row (`${row.deltaDays}-${row.merchantKeyChanged}`)}
+									<tr>
+										<td class="num">{row.deltaDays === null ? '—' : `${row.deltaDays} d`}</td>
+										<td>{row.merchantKeyChanged ? 'endret' : 'uendret'}</td>
+										<td class="num">{row.pairs.toLocaleString('nb-NO')}</td>
+										<td class="num">{nok(row.nok)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					<p class="meta">
+						Matchet på <strong>beløp alene</strong> — uten dato, uten beskrivelse. Det er trygt
+						her fordi forsvinningen alt har fastslått at raden ble erstattet; samme matching
+						uten det kravet ville slått sammen to ekte kjøp på samme beløp.
+						{#if supersededTotal.mkChangedPairs > 0}
+							{supersededTotal.mkChangedPairs} av parene endret beskrivelse
+							(«SEK ICA NARA HAGA» → «ICA NARA HAGA»), og de er per konstruksjon usynlige for
+							statusdriften under, som krever samme merchant_key.
+						{/if}
+					</p>
+				{:else}
+					<p class="meta">Ingen erstatningspar med samme beløp funnet etter en forsvinning.</p>
+				{/if}
+
+				{#if result.lifecycle.disappearedWithoutMatch > 0}
+					<p class="meta">
+						{result.lifecycle.disappearedWithoutMatch.toLocaleString('nb-NO')} forsvunne rader
+						fant <strong>ingen</strong> beløpslik etterfølger. To grunner, med motsatt
+						handling: beløpet endret seg mellom versjonene (valutakurs på et utenlandskjøp,
+						eller tips), eller raden var en kansellert reservasjon som aldri ble noe. Er
+						tallet stort, dekker ikke beløpsmatching alene fenomenet.
+					</p>
+				{/if}
+			{/if}
 		{/if}
 
 		<!-- Drift -->
