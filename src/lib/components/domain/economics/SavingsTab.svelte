@@ -35,7 +35,14 @@
 		medianAmount: number | null;
 		largestAmount: number | null;
 		lateShare: number;
+		outsidePeriods: number;
 		reason: string;
+	};
+	type Payday = {
+		dateCount: number;
+		completePeriods: number;
+		source: 'keyword' | 'largest-inflow' | null;
+		candidateCount: number;
 	};
 	type Account = {
 		accountId: string;
@@ -58,6 +65,7 @@
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
 		unnamedAccountCount?: number;
+		payday?: Payday;
 		loading: boolean;
 	}
 
@@ -68,8 +76,28 @@
 		monthlySpend,
 		noSavingsAccountFound,
 		unnamedAccountCount = 0,
+		payday,
 		loading
 	}: Props = $props();
+
+	/**
+	 * Hvorfor det er så få lønnsperioder.
+	 *
+	 * «Trenger 3 hele lønnsperioder, har 1» er sant og uten vei videre — og brukeren måtte
+	 * spørre hvorfor. De to årsakene krever motsatt handling: for kort banksynk er å vente på,
+	 * en detektor som ikke fant lønna er en feil. `source` skiller dem.
+	 */
+	const paydayNote = $derived.by(() => {
+		if (!payday || payday.completePeriods >= 3) return null;
+		const base = `${payday.dateCount} lønnsdato${payday.dateCount === 1 ? '' : 'er'} funnet, altså ${payday.completePeriods} hel${payday.completePeriods === 1 ? '' : 'e'} periode${payday.completePeriods === 1 ? '' : 'r'}.`;
+		if (payday.dateCount === 0) {
+			return `${base} Ingen lønnsutbetaling er kjent igjen i transaksjonene, så perioder kan ikke bygges.`;
+		}
+		if (payday.source === 'largest-inflow') {
+			return `${base} Lønna ble gjettet på største månedlige innskudd — ingen transaksjon bar ordet «lønn». Blir det feil, er det her det sitter.`;
+		}
+		return `${base} Lønna er kjent igjen på ordet, blant ${payday.candidateCount} inntekter på kontoen — så dette er kort historikk, ikke en gjenkjenningsfeil.`;
+	});
 
 	function formatNOK(amount: number): string {
 		return new Intl.NumberFormat('nb-NO', {
@@ -179,6 +207,11 @@
 
 			<p class="st-reason">{account.trend.reason}</p>
 
+			<!-- Står rett under «trenger 3 hele lønnsperioder, har 1», fordi det er svaret på det. -->
+			{#if paydayNote}
+				<p class="st-note">{paydayNote}</p>
+			{/if}
+
 			{#if account.troughs.length > 0}
 				<BufferFloorChart series={account.series} troughs={account.troughs} />
 				<p class="st-note">
@@ -201,7 +234,27 @@
 					{/if}
 					<div><span>Sent i måneden</span><strong>{Math.round(account.withdrawals.lateShare * 100)} %</strong></div>
 				</div>
+			{/if}
 
+			<!--
+				Uttak utenfor de komplette periodene holdes ute av raten, men de skjedde — så de
+				sies med ord framfor å forsvinne. Typisk er de i den inneværende måneden, som
+				ikke er omme.
+			-->
+			{#if account.withdrawals.outsidePeriods > 0}
+				<p class="st-note">
+					{account.withdrawals.outsidePeriods}
+					{account.withdrawals.outsidePeriods === 1 ? 'uttak' : 'uttak'} ligger utenfor de
+					målte periodene — som regel i måneden som ikke er omme. De vises i lista, men
+					holdes utenfor raten.
+				</p>
+			{/if}
+
+			<!--
+				Lista er gated på lista, ikke på raten: er alle uttakene i den ufullstendige
+				perioden, er `count` 0, og en gating på den ville skjult uttak som faktisk finnes.
+			-->
+			{#if account.withdrawalEvents.length > 0}
 				<CompactRecordList
 					title="Uttak"
 					items={account.withdrawalEvents.slice(0, 8).map((w, i) => ({

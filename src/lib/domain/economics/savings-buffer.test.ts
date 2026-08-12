@@ -292,4 +292,48 @@ describe('describeWithdrawalPattern', () => {
 
 		expect(pattern.perPeriod).toBeCloseTo(1);
 	});
+
+	// Regresjon: prod viste «11 uttak over 1 lønnsperioder … Uttak per måned 11,0».
+	// Uttakslista leses over et bredere spenn enn de KOMPLETTE periodene dekker, så
+	// teller og nevner var målt over ulike vinduer.
+	it('holder uttak utenfor periodene ute av raten, og teller dem', () => {
+		const pattern = describeWithdrawalPattern(
+			[
+				{ date: '2026-06-01', amount: 1000 }, // inne i periode 2
+				{ date: '2026-09-02', amount: 4000 }, // etter siste periode
+				{ date: '2026-09-14', amount: 4000 },
+				{ date: '2026-05-01', amount: 4000 } // før første periode
+			],
+			periods
+		);
+
+		expect(pattern.count).toBe(1);
+		expect(pattern.outsidePeriods).toBe(3);
+		expect(pattern.perPeriod).toBeCloseTo(1 / 3);
+		// Beløpsstatistikken kommer fra samme utvalg som raten.
+		expect(pattern.medianAmount).toBe(1000);
+		expect(pattern.largestAmount).toBe(1000);
+	});
+
+	it('sier «urørt» når alle uttakene ligger utenfor periodene', () => {
+		const pattern = describeWithdrawalPattern([{ date: '2026-09-02', amount: 4000 }], periods);
+
+		expect(pattern.verdict).toBe('urørt');
+		expect(pattern.count).toBe(0);
+		expect(pattern.outsidePeriods).toBe(1);
+	});
+
+	it('teller alle uttakene som utenfor når det ikke finnes perioder', () => {
+		const pattern = describeWithdrawalPattern(
+			[
+				{ date: '2026-06-28', amount: 5000 },
+				{ date: '2026-07-28', amount: 5000 }
+			],
+			[]
+		);
+
+		expect(pattern.verdict).toBe('ukjent');
+		expect(pattern.count).toBe(0);
+		expect(pattern.outsidePeriods).toBe(2);
+	});
 });

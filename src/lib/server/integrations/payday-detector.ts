@@ -5,13 +5,26 @@ import { and, eq, asc, sql } from 'drizzle-orm';
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
 const SALARY_MIN_AMOUNT = 10_000;
 
-type SalaryCandidate = {
+export type SalaryCandidate = {
 	accountId: string;
 	amount: number;
 	description: string;
 	typeText: string;
 	timestamp: Date;
 };
+
+/**
+ * Treffer lønnsordene — på beskrivelsen OG `typeText`.
+ *
+ * `typeText` er SB1s `category`-felt («Lønn», «Nettgiro», «eFaktura», «OVERFØRSEL»), og for
+ * en lønnsutbetaling er det ofte det ENESTE stedet ordet «lønn» står: `descriptionDisplay`
+ * bærer arbeidsgivers navn. Samme felle som `categorizeTransaction` hadde fram til
+ * migrasjon 0055 — se CLAUDE.md.
+ */
+function matchesSalaryKeyword(tx: SalaryCandidate): boolean {
+	const text = `${tx.description ?? ''} ${tx.typeText ?? ''}`.toLowerCase();
+	return SALARY_KEYWORDS.some((kw) => text.includes(kw));
+}
 
 export function toIsoDate(d: Date): string {
 	return d.toISOString().split('T')[0];
@@ -60,7 +73,8 @@ export function businessDayDom(d: Date): number {
 	return copy.getUTCDate();
 }
 
-function pickBestPerMonth(candidates: SalaryCandidate[], preferredFingerprint: string | null): string[] {
+/** Én lønnsdato per kalendermåned, valgt på score. Eksportert for test. */
+export function pickBestPerMonth(candidates: SalaryCandidate[], preferredFingerprint: string | null): string[] {
 	if (candidates.length === 0) return [];
 
 	const fingerprintBaseline = preferredFingerprint
@@ -108,10 +122,121 @@ function pickBestPerMonth(candidates: SalaryCandidate[], preferredFingerprint: s
 	return [...perMonth.values()].map((tx) => toIsoDate(tx.timestamp)).sort();
 }
 
+export type PaydaySourceSelection = {
+	sourceAccountId: string;
+	/** Kandidatene lønnsdatoene plukkes fra — ALLE inntekter på kontoen, ikke bare treffene. */
+	candidates: SalaryCandidate[];
+	/** Fingeravtrykket lønna kjennes igjen på, utledet av nøkkelordtreffene når de finnes. */
+	preferredFingerprint: string | null;
+	/** Hvordan kontoen ble valgt. Til diagnose — «hvorfor bare to lønnsdatoer». */
+	source: 'keyword' | 'largest-inflow';
+};
+
+/**
+ * Velger hvilken konto lønna kommer inn på, og hvilke rader lønnsdatoene skal plukkes fra.
+ *
+ * Ren funksjon, uten DB, fordi dette er stedet feilen satt. Se
+ * `docs/changelog/2026-08-12-lonnsperioder-og-uttaksvindu.md`.
+ *
+ * **Nøkkelordene velger KONTOEN og FINGERAVTRYKKET, aldri kandidatsettet.** Fram til august
+ * 2026 var det motsatt: traff noen rader et lønnsord, ble kandidatene *begrenset* til
+ * nettopp de radene. To tilfeldige treff — en overføring med «lønn» i teksten — slo dermed
+ * ut et helt år med regelmessige innskudd, og resultatet var to lønnsdatoer, altså **én**
+ * hel lønnsperiode. Sparekontoflaten krever tre og var derfor stum.
+ *
+ * Feilen var lett å overse fordi den var inverse: den SVAKE signalveien (fallbacken, som
+ * ikke fant noe nøkkelord) fikk det rike kandidatsettet — alle inntekter på kontoen — mens
+ * den STERKE fikk det fattige. Nøkkelordtreff gjorde altså resultatet dårligere.
+ *
+ * Å utvide kandidatsettet er trygt fordi `pickBestPerMonth` gir fingeravtrykket +120 i
+ * score: i måneder der lønnsraden finnes, vinner den fortsatt. Utvidelsen gir bare *dekning*
+ * i månedene der ordet mangler — som er hver måned der SB1 ikke fylte `category`.
+ */
+export function selectPaydaySource(
+	incomes: readonly SalaryCandidate[]
+): PaydaySourceSelection | null {
+	if (incomes.length === 0) return null;
+
+	const keywordTxs = incomes.filter(matchesSalaryKeyword);
+
+	// Kontoen med flest KALENDERMÅNEDER med nøkkelordtreff. Måneder og ikke rader: en konto
+	// med tolv treff i én måned er ikke en lønnskonto.
+	const monthsByAccount = new Map<string, Set<string>>();
+	for (const tx of keywordTxs) {
+		if (!tx.accountId) continue;
+		const months = monthsByAccount.get(tx.accountId) ?? new Set<string>();
+		months.add(monthKey(tx.timestamp));
+		monthsByAccount.set(tx.accountId, months);
+	}
+
+	let sourceAccountId: string | null = null;
+	let source: 'keyword' | 'largest-inflow' = 'keyword';
+
+	if (monthsByAccount.size > 0) {
+		sourceAccountId = [...monthsByAccount.entries()].sort((a, b) => b[1].size - a[1].size)[0][0];
+	} else {
+		// Ingen nøkkelord noe sted: kontoen som vinner flest måneder på største innskudd.
+		source = 'largest-inflow';
+		const monthBest = new Map<string, { accountId: string; amount: number }>();
+		for (const tx of incomes) {
+			const month = monthKey(tx.timestamp);
+			const current = monthBest.get(month);
+			if (!current || tx.amount > current.amount) {
+				monthBest.set(month, { accountId: tx.accountId, amount: tx.amount });
+			}
+		}
+		if (monthBest.size < 2) return null;
+
+		const wins = new Map<string, number>();
+		for (const best of monthBest.values()) {
+			wins.set(best.accountId, (wins.get(best.accountId) ?? 0) + 1);
+		}
+		sourceAccountId = [...wins.entries()].sort((a, b) => b[1] - a[1])[0][0];
+	}
+
+	if (!sourceAccountId) return null;
+
+	const candidates = incomes.filter((tx) => tx.accountId === sourceAccountId);
+	if (candidates.length < 2) return null;
+
+	// Fingeravtrykket utledes av nøkkelordtreffene på kontoen når de finnes. Uten den
+	// innsnevringen ville et hyppigere innskudd — en fast intern overføring — kunne bli
+	// «lønna», og da flytter alle lønnsdatoene seg.
+	const fingerprintBasis = keywordTxs.filter((tx) => tx.accountId === sourceAccountId);
+	const preferredFingerprint = mostStableFingerprint(
+		fingerprintBasis.length > 0 ? fingerprintBasis : candidates
+	);
+
+	return { sourceAccountId, candidates, preferredFingerprint, source };
+}
+
+/** Fingeravtrykket som opptrer i flest kalendermåneder. */
+function mostStableFingerprint(txs: readonly SalaryCandidate[]): string | null {
+	const months = new Map<string, Set<string>>();
+	for (const tx of txs) {
+		const key = fingerprintKey(tx);
+		const set = months.get(key) ?? new Set<string>();
+		set.add(monthKey(tx.timestamp));
+		months.set(key, set);
+	}
+	if (months.size === 0) return null;
+	return [...months.entries()].sort((a, b) => b[1].size - a[1].size)[0][0];
+}
+
 export type GlobalPayday = {
 	paydayDates: string[];           // YYYY-MM-DD, sorted
 	detectedPaydayDom: number;       // typical day-of-month
 	sourceAccountId: string | null;  // which account the salary was found on
+	/**
+	 * Hvordan kontoen ble funnet, og hvor mange inntekter den ble valgt blant.
+	 *
+	 * Til diagnose på flatene. Sparekontoflaten var stum med «trenger 3 hele lønnsperioder,
+	 * har 1» og ingen vei videre — antallet lønnsdatoer er det som avgjør, og uten det tallet
+	 * kan ingen se om det er dataene eller detektoren som mangler.
+	 */
+	source: 'keyword' | 'largest-inflow';
+	/** Antall inntektsrader på kildekontoen som lønnsdatoene ble plukket fra. */
+	candidateCount: number;
 };
 
 /**
@@ -126,7 +251,12 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 			accountId: canonicalBankTransactions.accountId,
 			amount: canonicalBankTransactions.amount,
 			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-			typeText: sql<string>`''`,
+			// **`typeText` MÅ leses.** Feltet bor på canonical siden migrasjon 0055 og er SB1s
+			// `category` — for en lønnsutbetaling er det ofte det eneste stedet ordet «lønn»
+			// står, siden beskrivelsen bærer arbeidsgivers navn. Her sto det hardkodet `''`,
+			// altså samme døde sti `categorizeTransaction` hadde: nøkkelordsøket lette i et
+			// felt som alltid var tomt.
+			typeText: sql<string>`COALESCE(${canonicalBankTransactions.typeText}, '')`,
 			timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`
 		})
 		.from(canonicalBankTransactions)
@@ -152,80 +282,12 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 
 	if (normalizedTransactions.length === 0) return null;
 
-	// ── Step 1: prefer keyword-matched salary transactions ───────────────────
-	const salaryTxs = normalizedTransactions.filter((t) => {
-		const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
-		return SALARY_KEYWORDS.some((kw) => text.includes(kw));
-	});
+	// Kontovalg, kandidatsett og fingeravtrykk bor rent i `selectPaydaySource` — der er de
+	// testbare, og der satt feilen som ga én lønnsperiode.
+	const selection = selectPaydaySource(normalizedTransactions);
+	if (!selection) return null;
 
-	// ── Step 2: score each account by number of salary-keyword months ─────────
-	// An account scores one point per calendar month it received a keyword-matched tx
-	const accountScore = new Map<string, Set<string>>();
-	for (const tx of salaryTxs) {
-		const aid = tx.accountId;
-		if (!aid) continue;
-		const month = monthKey(tx.timestamp);
-		if (!accountScore.has(aid)) accountScore.set(aid, new Set());
-		accountScore.get(aid)!.add(month);
-	}
-
-	let sourceAccountId: string | null = null;
-	let sourceTxs: SalaryCandidate[] = salaryTxs;
-
-	if (accountScore.size > 0) {
-		// Pick the account with the most salary months
-		sourceAccountId = [...accountScore.entries()]
-			.sort((a, b) => b[1].size - a[1].size)[0][0];
-		sourceTxs = salaryTxs.filter((t) => t.accountId === sourceAccountId);
-	} else {
-		// Fallback: find account with the largest single monthly inflow.
-		const monthBest = new Map<string, { accountId: string; amount: number }>();
-		for (const tx of normalizedTransactions) {
-			const amount = Number(tx.amount);
-			const month = monthKey(tx.timestamp);
-			const cur = monthBest.get(month);
-			if (!cur || amount > cur.amount) {
-				monthBest.set(month, {
-					accountId: tx.accountId,
-					amount
-				});
-			}
-		}
-
-		if (monthBest.size < 2) return null;
-
-		// Tally which account wins the most months
-		const fallbackScore = new Map<string, number>();
-		for (const v of monthBest.values()) {
-			fallbackScore.set(v.accountId, (fallbackScore.get(v.accountId) ?? 0) + 1);
-		}
-		sourceAccountId = [...fallbackScore.entries()]
-			.sort((a, b) => b[1] - a[1])[0][0];
-		sourceTxs = normalizedTransactions.filter((t) => t.accountId === sourceAccountId);
-	}
-
-	if (!sourceAccountId) return null;
-
-	const sourceCandidates = sourceTxs.length > 0
-		? sourceTxs
-		: normalizedTransactions.filter((t) => t.accountId === sourceAccountId);
-
-	if (sourceCandidates.length < 2) return null;
-
-	// Find the most stable fingerprint across months (description + amount bucket).
-	const fingerprintMonths = new Map<string, Set<string>>();
-	for (const tx of sourceCandidates) {
-		const key = fingerprintKey(tx);
-		if (!fingerprintMonths.has(key)) fingerprintMonths.set(key, new Set());
-		fingerprintMonths.get(key)!.add(monthKey(tx.timestamp));
-	}
-
-	const preferredFingerprint = fingerprintMonths.size > 0
-		? [...fingerprintMonths.entries()]
-			.sort((a, b) => b[1].size - a[1].size)[0][0]
-		: null;
-
-	const paydayDates = pickBestPerMonth(sourceCandidates, preferredFingerprint);
+	const paydayDates = pickBestPerMonth(selection.candidates, selection.preferredFingerprint);
 	if (paydayDates.length < 2) return null;
 
 	// Use robust median of business-day-normalized dates to avoid drift.
@@ -233,5 +295,11 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 	const domNoLate = doms.filter((d) => d <= 25);
 	const detectedPaydayDom = Math.round(median(domNoLate.length > 0 ? domNoLate : doms));
 
-	return { paydayDates, detectedPaydayDom, sourceAccountId };
+	return {
+		paydayDates,
+		detectedPaydayDom,
+		sourceAccountId: selection.sourceAccountId,
+		source: selection.source,
+		candidateCount: selection.candidates.length
+	};
 }

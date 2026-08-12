@@ -85,6 +85,25 @@ export type SavingsBufferData = {
 	 * utelatelsen usynlig.
 	 */
 	unnamedAccountCount: number;
+	/**
+	 * Hvordan lønnsperiodene ble til.
+	 *
+	 * Hele flaten hviler på dem: uten tre HELE perioder er det ingen trend, og uten perioder
+	 * i det hele tatt kan ikke «sent i måneden» måles. Da sa flaten «Trenger 3 hele
+	 * lønnsperioder, har 1» og stoppet der — sant, men uten en vei videre. Antall lønnsdatoer
+	 * og hvordan de ble funnet er det som skiller «for kort historikk» fra «detektoren fant
+	 * ikke lønna», og de to krever motsatt handling.
+	 */
+	payday: {
+		/** Lønnsdatoer funnet i det hele tatt. Perioder = datoer − 1. */
+		dateCount: number;
+		/** Hele perioder tilgjengelig, før vinduet på TREND_PERIODS. */
+		completePeriods: number;
+		/** `keyword` = lønna ble kjent igjen på ordet. `largest-inflow` = gjettet på beløp. */
+		source: 'keyword' | 'largest-inflow' | null;
+		/** Inntektsrader på kildekontoen som datoene ble plukket fra. */
+		candidateCount: number;
+	};
 	generatedAt: string;
 };
 
@@ -110,6 +129,13 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 	const completePeriods = allPeriods.slice(0, -1);
 	const periods = completePeriods.slice(-TREND_PERIODS);
 
+	const paydayDiagnostics = {
+		dateCount: payday?.paydayDates.length ?? 0,
+		completePeriods: completePeriods.length,
+		source: payday?.source ?? null,
+		candidateCount: payday?.candidateCount ?? 0
+	};
+
 	if (savingsAccounts.length === 0) {
 		return {
 			accounts: [],
@@ -119,6 +145,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 			periods,
 			noSavingsAccountFound: true,
 			unnamedAccountCount,
+			payday: paydayDiagnostics,
 			generatedAt
 		};
 	}
@@ -180,6 +207,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 		periods,
 		noSavingsAccountFound: false,
 		unnamedAccountCount,
+		payday: paydayDiagnostics,
 		generatedAt
 	};
 }

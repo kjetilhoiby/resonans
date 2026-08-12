@@ -88,6 +88,7 @@ export type WithdrawalEvent = {
 
 export type WithdrawalPattern = {
 	verdict: 'urørt' | 'støtdemper' | 'kassekreditt' | 'blandet' | 'ukjent';
+	/** Uttak INNENFOR de målte periodene. Se `outsidePeriods`. */
 	count: number;
 	/** Uttak per lønnsperiode. */
 	perPeriod: number;
@@ -95,6 +96,12 @@ export type WithdrawalPattern = {
 	largestAmount: number | null;
 	/** Andel av uttakene som skjer i siste tredjedel av lønnsperioden. */
 	lateShare: number;
+	/**
+	 * Uttak som falt utenfor de målte periodene — typisk i den inneværende, ufullstendige.
+	 *
+	 * De holdes utenfor raten med vilje, og telles her så utelatelsen ikke er usynlig.
+	 */
+	outsidePeriods: number;
 	reason: string;
 };
 
@@ -271,6 +278,15 @@ function dayDiff(fromKey: string, toKey: string): number {
  * tolv på 1 000 gir samme nedgang. Det er **frekvensen** og **posisjonen i lønnsperioden**
  * som skiller dem — et uttak tre dager etter lønn er planlagt, et uttak på dag 26 betyr at
  * måneden ikke bar.
+ *
+ * **Teller og nevner må komme fra samme vinduet.** Uttakslista leses over et bredere spenn
+ * enn `periods` dekker — kallerens hensikt er at flaten skal kunne vise ferske uttak, også
+ * dem i den inneværende, ufullstendige perioden. Fram til august 2026 delte denne funksjonen
+ * *alle* uttakene på *de komplette* periodene, og prod viste da «11 uttak over 1
+ * lønnsperioder … Uttak per måned 11,0» — der de fleste av de elleve lå i halen utenfor
+ * perioden. Samme klasse feil som effort-ankeret: en rate der de to leddene er målt over
+ * ulike vinduer. Uttak som ikke kan plasseres i en periode telles derfor i
+ * `outsidePeriods` og holdes ute av raten.
  */
 export function describeWithdrawalPattern(
 	withdrawals: readonly WithdrawalEvent[],
@@ -279,19 +295,33 @@ export function describeWithdrawalPattern(
 	if (periods.length === 0) {
 		return {
 			verdict: 'ukjent',
-			count: withdrawals.length,
+			count: 0,
 			perPeriod: 0,
-			medianAmount: median(withdrawals.map((w) => w.amount)),
-			largestAmount: withdrawals.length > 0 ? Math.max(...withdrawals.map((w) => w.amount)) : null,
+			medianAmount: null,
+			largestAmount: null,
 			lateShare: 0,
+			outsidePeriods: withdrawals.length,
 			reason: 'Ingen lønnsperioder funnet, så posisjonen i måneden kan ikke måles.'
 		};
 	}
 
-	const amounts = withdrawals.map((w) => w.amount);
-	const perPeriod = withdrawals.length / periods.length;
+	// Plasser hvert uttak i sin lønnsperiode. Bare de plasserte teller i raten.
+	const placed: Array<{ event: WithdrawalEvent; positionShare: number }> = [];
+	let outsidePeriods = 0;
+	for (const withdrawal of withdrawals) {
+		const period = periods.find((p) => withdrawal.date >= p.start && withdrawal.date < p.end);
+		const length = period ? dayDiff(period.start, period.end) : 0;
+		if (!period || length <= 0) {
+			outsidePeriods += 1;
+			continue;
+		}
+		placed.push({
+			event: withdrawal,
+			positionShare: dayDiff(period.start, withdrawal.date) / length
+		});
+	}
 
-	if (withdrawals.length === 0) {
+	if (placed.length === 0) {
 		return {
 			verdict: 'urørt',
 			count: 0,
@@ -299,22 +329,15 @@ export function describeWithdrawalPattern(
 			medianAmount: null,
 			largestAmount: null,
 			lateShare: 0,
+			outsidePeriods,
 			reason: `Ingen uttak i de siste ${periods.length} lønnsperiodene.`
 		};
 	}
 
-	let late = 0;
-	let placed = 0;
-	for (const withdrawal of withdrawals) {
-		const period = periods.find((p) => withdrawal.date >= p.start && withdrawal.date < p.end);
-		if (!period) continue;
-		const length = dayDiff(period.start, period.end);
-		if (length <= 0) continue;
-		placed += 1;
-		if (dayDiff(period.start, withdrawal.date) / length >= LATE_PERIOD_SHARE) late += 1;
-	}
-
-	const lateShare = placed === 0 ? 0 : late / placed;
+	const amounts = placed.map((p) => p.event.amount);
+	const perPeriod = placed.length / periods.length;
+	const late = placed.filter((p) => p.positionShare >= LATE_PERIOD_SHARE).length;
+	const lateShare = late / placed.length;
 
 	const frequent = perPeriod >= OVERDRAFT_FREQUENCY;
 	const mostlyLate = lateShare >= OVERDRAFT_LATE_SHARE;
@@ -322,36 +345,39 @@ export function describeWithdrawalPattern(
 	if (frequent && mostlyLate) {
 		return {
 			verdict: 'kassekreditt',
-			count: withdrawals.length,
+			count: placed.length,
 			perPeriod,
 			medianAmount: median(amounts),
 			largestAmount: Math.max(...amounts),
 			lateShare,
-			reason: `${withdrawals.length} uttak over ${periods.length} lønnsperioder, og ${Math.round(lateShare * 100)} % av dem sent i perioden. Det ser ut som at måneden ikke bærer, ikke som enkelthendelser.`
+			outsidePeriods,
+			reason: `${placed.length} uttak over ${periods.length} lønnsperioder, og ${Math.round(lateShare * 100)} % av dem sent i perioden. Det ser ut som at måneden ikke bærer, ikke som enkelthendelser.`
 		};
 	}
 
 	if (!frequent && !mostlyLate) {
 		return {
 			verdict: 'støtdemper',
-			count: withdrawals.length,
+			count: placed.length,
 			perPeriod,
 			medianAmount: median(amounts),
 			largestAmount: Math.max(...amounts),
 			lateShare,
-			reason: `${withdrawals.length} uttak over ${periods.length} lønnsperioder, spredt utover måneden. Det er en buffer som gjør jobben sin.`
+			outsidePeriods,
+			reason: `${placed.length} uttak over ${periods.length} lønnsperioder, spredt utover måneden. Det er en buffer som gjør jobben sin.`
 		};
 	}
 
 	return {
 		verdict: 'blandet',
-		count: withdrawals.length,
+		count: placed.length,
 		perPeriod,
 		medianAmount: median(amounts),
 		largestAmount: Math.max(...amounts),
 		lateShare,
+		outsidePeriods,
 		reason: frequent
-			? `${withdrawals.length} uttak over ${periods.length} lønnsperioder, men ikke samlet sent i måneden.`
+			? `${placed.length} uttak over ${periods.length} lønnsperioder, men ikke samlet sent i måneden.`
 			: `Få uttak, men ${Math.round(lateShare * 100)} % av dem sent i perioden.`
 	};
 }

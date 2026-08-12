@@ -57,6 +57,12 @@
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
 		unnamedAccountCount?: number;
+		payday?: {
+			dateCount: number;
+			completePeriods: number;
+			source: 'keyword' | 'largest-inflow' | null;
+			candidateCount: number;
+		};
 	};
 	let savings = $state<SavingsData | null>(null);
 	let loadingSavings = $state(false);
@@ -276,6 +282,7 @@
 				monthlySpend={savings.monthlySpend}
 				noSavingsAccountFound={savings.noSavingsAccountFound}
 				unnamedAccountCount={savings.unnamedAccountCount ?? 0}
+				payday={savings.payday}
 				loading={loadingSavings}
 			/>
 		{:else}
