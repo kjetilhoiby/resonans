@@ -18,6 +18,15 @@ export interface TrackPoint {
 }
 
 export interface BestEfforts {
+	/**
+	 * Raskeste sammenhengende 400 m.
+	 *
+	 * Kortere enn dette regnes ikke: sporet nedsamples til 2000 punkter, og
+	 * GPS-posisjonsfeilen er 2–5 m. En «beste 100 m» skannet ut av et slikt spor
+	 * finner den bratteste nedoverbakken med mest støy — en rekord i GPS-feil,
+	 * ikke i løping. 400 m tar 90+ sekunder og tåler et par meters feil.
+	 */
+	'400m'?: number;
 	'1k'?: number; // sekunder for raskeste sammenhengende 1 km
 	'3k'?: number;
 	'5k'?: number;
@@ -41,7 +50,17 @@ export interface WorkoutAnalyticsResult {
 	hrZoneDistribution?: HrZoneDistribution;
 }
 
-export const BEST_EFFORT_DISTANCES_M = [1000, 3000, 5000, 10000] as const;
+export const BEST_EFFORT_DISTANCES_M = [400, 1000, 3000, 5000, 10000] as const;
+
+/**
+ * Nøkkelen en distanse lagres under. Under kilometeren brukes meter.
+ *
+ * NB: `1k`/`3k`/`5k`/`10k` er lagret i prod fra før og må ikke endres — en ny
+ * form ville gjort all historikk usynlig for lesere som spør etter den gamle.
+ */
+export function bestEffortKey(distanceMeters: number): keyof BestEfforts {
+	return (distanceMeters < 1000 ? `${distanceMeters}m` : `${distanceMeters / 1000}k`) as keyof BestEfforts;
+}
 
 /**
  * Bygger en strukturert tids- og distanse-array av trackPoints.
@@ -113,8 +132,7 @@ export function computeBestEfforts(points: TrackPoint[]): BestEfforts | undefine
 		if (totalDist < distM) continue;
 		const best = sliceBestForDistance(cum, distM);
 		if (best != null) {
-			const key = `${distM / 1000}k` as keyof BestEfforts;
-			result[key] = Math.round(best);
+			result[bestEffortKey(distM)] = Math.round(best);
 		}
 	}
 	return Object.keys(result).length > 0 ? result : undefined;
