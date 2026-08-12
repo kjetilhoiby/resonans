@@ -8,7 +8,7 @@
  *   "Overført til neste side  XX.XXX,XX"               ← page-end running balance
  *   "Utgående saldo / saldo pr. DD.MM.YYYY  XX.XXX,XX" ← closing balance
  *
- * These give buildDailyBalances() concrete anchor points rather than
+ * These give buildDailyAccountBalances() concrete anchor points rather than
  * having to reconstruct everything from current-balance minus transactions.
  *
  * Transactions are also imported (mostly useful for description/category),

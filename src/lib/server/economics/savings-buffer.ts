@@ -6,7 +6,7 @@
  *
  * Tre kilder møtes:
  *
- * 1. **Saldoserien** fra `buildDailyBalances`, som ankres på faktiske `bank_balance`-målinger
+ * 1. **Saldoserien** fra `buildDailyAccountBalances`, som ankres på faktiske `bank_balance`-målinger
  *    og selvhelende resetter til hvert anker. PDF-importerte kontoutskrifter gir ankre år
  *    tilbake — det er de som gjør «over tid» mulig.
  * 2. **Uttakene** fra `readTransactions`, som *merker* interne overføringer framfor å fjerne
@@ -17,7 +17,7 @@
  */
 
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
+import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reconstructor';
 import { osloDayKey } from '$lib/domain/oslo-time';
 import {
 	describeWithdrawalPattern,
@@ -135,7 +135,7 @@ export async function loadSavingsBufferData(userId: string): Promise<SavingsBuff
 	const accounts: SavingsAccountSummary[] = [];
 
 	for (const account of savingsAccounts) {
-		const daily = await buildDailyBalances(userId, account.accountId);
+		const daily = await buildDailyAccountBalances(userId, account.accountId);
 		const cutoff = osloDayKey(new Date(now.getTime() - HISTORY_DAYS * 86400000));
 		const series: BalancePoint[] = daily
 			.filter((row) => row.date >= cutoff)

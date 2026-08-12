@@ -11,16 +11,16 @@ export type DailyBalance = {
 };
 
 /**
- * Reconstructs a daily balance series using ALL stored bank_balance snapshots
- * as anchor points. Between two consecutive anchors, transactions are applied
- * forward from the earlier one. When the next anchor is reached, the running
- * balance is reset to that snapshot's value — correcting any accumulated drift
- * from missing or incorrect transactions.
+ * Bygger en daglig SALDOSERIE for én bankkonto, ankret på alle lagrede
+ * `bank_balance`-snapshots. Mellom to ankre anvendes transaksjonene forover; ved neste anker
+ * resettes den løpende saldoen til den målte verdien, så drift ikke akkumulerer.
  *
- * This is significantly more accurate than single-anchor reconstruction for
- * periods months in the past.
+ * NB: het `buildDailyBalances` fram til august 2026, i kollisjon med
+ * `$lib/domain/nutrition/daily-balances.ts`, som betyr noe helt annet (energibalanse per dag).
+ * To funksjoner med samme navn og ulik betydning er en feilkilde når begge importeres fra
+ * serverkode — «account» i navnet sier hvilken balanse det er snakk om.
  */
-export async function buildDailyBalances(
+export async function buildDailyAccountBalances(
 	userId: string,
 	accountId: string
 ): Promise<DailyBalance[]> {

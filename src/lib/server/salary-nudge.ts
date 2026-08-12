@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { canonicalBankTransactions, nudgeEvents, users } from '$lib/db/schema';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
+import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reconstructor';
 import { readTransactions } from '$lib/server/economics/transactions';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 import {
@@ -143,7 +143,7 @@ export async function sendSalaryReceivedNudge(
 	let savingsChange = 0;
 	if (sourceAccountId) {
 		try {
-			const dailyBalances = await buildDailyBalances(userId, sourceAccountId);
+			const dailyBalances = await buildDailyAccountBalances(userId, sourceAccountId);
 			const startRow = dailyBalances.find((r) => r.date >= mostRecentPayday);
 			const endRow = dailyBalances[dailyBalances.length - 1];
 			if (startRow && endRow) {

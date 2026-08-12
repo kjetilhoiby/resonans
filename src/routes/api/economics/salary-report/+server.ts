@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { canonicalBankTransactions, goals, sensorEvents } from '$lib/db/schema';
 import { getAllGoalTracksByUser } from '$lib/server/goal-tracks';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
+import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reconstructor';
 import {
 	readLatestBalances,
 	readTransactions,
@@ -144,7 +144,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const savingsChanges: SalaryMonthReport['savingsChanges'] = [];
 	if (sourceAccountId) {
 		try {
-			const dailyBalances = await buildDailyBalances(userId, sourceAccountId);
+			const dailyBalances = await buildDailyAccountBalances(userId, sourceAccountId);
 
 			// Kontonavn fra siste saldoobservasjon, gjennom den delte leseren.
 			const balances = await readLatestBalances(userId);
