@@ -283,7 +283,18 @@
 		{/if}
 
 	{:else}
-		<!-- Lønnsmåned: cumulative spending per category within salary periods -->
+		<!-- Lønnsmåned: cumulative spending per category within salary periods.
+		     NB: dette er noe ANNET enn lønnsrapporten (månedsgjennomgangen), som bor på
+		     /economics/lonnsmaned. De to skal ikke slås sammen — se fase 6 i changeloggen. -->
+		<button class="ed-review-link" onclick={() => goto('/economics/lonnsmaned')}>
+			<span class="ed-review-icon">📋</span>
+			<span class="ed-review-copy">
+				<strong>Månedsgjennomgang</strong>
+				<span>Bærer måneden? Hva var uvanlig? Gikk vi over noe? Én ting å gjøre.</span>
+			</span>
+			<span class="ed-review-chevron">›</span>
+		</button>
+
 		<div class="ed-cat-chips">
 			{#each CUMULATIVE_CATS as cat}
 				{@const def = CATEGORIES[cat]}
@@ -330,6 +341,42 @@
 {/if}
 
 <style>
+	.ed-review-link {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		width: 100%;
+		text-align: left;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 12px;
+		padding: 0.75rem 0.85rem;
+		margin-bottom: 1rem;
+		color: inherit;
+		cursor: pointer;
+	}
+	.ed-review-icon {
+		font-size: 1.25rem;
+	}
+	.ed-review-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		flex: 1;
+	}
+	.ed-review-copy strong {
+		font-size: 0.92rem;
+	}
+	.ed-review-copy span {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		line-height: 1.35;
+	}
+	.ed-review-chevron {
+		color: var(--text-secondary);
+		font-size: 1.2rem;
+	}
+
 	.economics-dashboard { display: flex; flex-direction: column; gap: 18px; }
 	.ed-embedded { padding-top: 4px; }
 	.ed-header { display: flex; flex-direction: column; gap: 4px; }

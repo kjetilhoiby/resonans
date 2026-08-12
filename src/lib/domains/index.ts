@@ -1,7 +1,6 @@
 // Domains Layer — Domain-spesifikke semantikker, valideringer og hjelperfunksjoner
 
 export * from './health/index';
-export * from './economics/index';
 export * from './food/index';
 export * from './family/index';
 export * from './family/family-tree';

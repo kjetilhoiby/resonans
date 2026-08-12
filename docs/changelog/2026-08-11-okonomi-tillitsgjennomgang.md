@@ -1,7 +1,7 @@
 # Økonomi: tillitsgjennomgang og retning
 
 Dato: 2026-08-11
-Status: fase 1, 2 og 5 ferdig (dev-verifisering gjenstår) · fase 3, 4, 6, 7 planlagt
+Status: fase 1, 2, 4, 5, 6 og 7 ferdig (dev-verifisering gjenstår) · fase 3 planlagt
 
 ## Hva som er bygget
 
@@ -79,6 +79,63 @@ feil som «belastning» og «pulsfall» hadde i helse. Nå med test.
   bevisst synlig på flaten: tar den feil, er det den som skal rettes, ikke tallene.
 - Sjekk at `trend.direction` ikke er `ukjent` — det betyr under tre hele lønnsperioder med
   saldomålinger, og da er det ankerdekningen som mangler, ikke logikken.
+
+## Fase 4, 6 og 7 — bygget 2026-08-12
+
+**Fase 4 (retting der du ser tallet).** Knappen fantes allerede i begge transaksjonslistene,
+men som **duplikat** — og de to gjorde ikke det samme: Explorer sendte `typeText` og
+underkategori, `TransactionList` gjorde ikke. Konsekvensen traff nøkkelen selv, siden
+`buildTransactionFingerprint` faller tilbake på `typeText` når beskrivelsen er tom: en retting
+fra lista på en tom beskrivelse fikk fingerprint `ukjent|out` og ville overstyrt **alle**
+transaksjoner uten beskrivelse. Nå én skrivevei i `$lib/client/transaction-category.ts`.
+
+Serversiden validerer `correctedCategory`. En manuell overstyring har **høyeste** prioritet —
+høyere enn merchant-mappings — så en ugyldig verdi der er verre enn den samme feilen noe annet
+sted. Feilmeldingene vises nå med serverens tekst; begge flatene brukte
+`alert('Prøv igjen')`, og Explorer kastet til og med serverens melding. Flaten bekrefter hva
+rettingen gjelder («Gjelder alle kjøp fra Rema Bøler framover») — brukeren ba om at det skulle
+virke framover uten å si det, og da må flaten si at det er det som skjedde.
+
+`setTimeout(2000)` i Explorer er fjernet: den ventet på bakgrunnsreprojeksjonen og lastet lista
+på nytt, altså et kappløp forkledd som en forsinkelse. Kategoriseringen skjer ved lesing nå.
+
+**Fase 6 (månedsgjennomgangen).** Ren logikk i `$lib/domain/economics/month-review.ts`
+(18 tester), flate i `MonthReviewCard` øverst på lønnsrapporten — svarene skal kunne *leses*
+uten å gå gjennom veiviseren; veiviseren er for å snakke om dem.
+
+- `assessMonthAhead`: **`carries: null` er ikke `false`.** «Vet ikke» og «bærer ikke» er ulike
+  beskjeder. Bufferen nevnes bare når måneden ikke bærer — den er svaret på «hva skjer da»,
+  ikke på «går det bra».
+- `findUnusualCategories`: terskelen er **kategoriens egen spredning** (medianavvik), ikke en
+  fast prosent. Dagligvarer svinger lite og hobby svinger mye; en fast prosent ville rapportert
+  de volatile hver måned og blitt bakgrunnsstøy. Kronegulv på 500 så en kategori på 200 kr som
+  dobler seg ikke konkurrerer med husleia. Finner også uvanlig **lave** kategorier — «hva var
+  uvanlig» er ikke «hvor sprakk budsjettet».
+- `pickOneThing`: **«ingenting» er et gyldig svar.** Bevisst gjentakelse av lærdommen fra
+  øktvurderingen, der «avslutt med ett råd» tvang fram «løp mer» på hver økt.
+
+Historikken hentes per **lønnsperiode**, ikke per kalendermåned — en blanding ville sammenlignet
+31 dager med 28. Spørsmål 1 forutsetter fast/variabelt-splitten, som virker etter at
+`detectRecurring` ble rettet i fase 1.
+
+Nudgen ved lønn pekte allerede på `/economics/lonnsmaned`, så inngangen var på plass; det som
+manglet var en vei dit fra temaet, og at `PageHeader` pekte tilbake til den orfane
+`/economics`-siden.
+
+**Fase 7 (rydding).**
+
+- Slettet `src/lib/domains/economics/index.ts` — 109 linjer død kode med en konkurrerende
+  14-kategori-taksonomi. Verifisert dødt før sletting.
+- `/economics` redirigerer nå til Økonomi-temaet, og index-sidens 864 linjer Svelte er slettet.
+  Den ble i praksis aldri rendret: ruta redirigerte videre til `/economics/[konto]/saldo` så
+  snart det fantes én konto. Undersidene lever videre, lenket fra temaet.
+- `grocery_spend` har fått en leser. Den ER `category_spend` for dagligvarer, så den deler
+  leseren med kategorien bundet — framfor et duplikat.
+- `buildDailyBalances` → `buildDailyAccountBalances` i bank-varianten. Den kolliderte med
+  `$lib/domain/nutrition/daily-balances.ts`, som betyr noe helt annet.
+
+Fortsatt igjen: `readMonthlySavings` er rettet (fase 1), UTC-månedsgrenser er rettet (fase 1),
+og den doble dagligvare-definisjonen er borte (fase 1). Fase 3 står som eneste hele fase.
 
 ## Sett i prod: «OpenAI» som kategori
 

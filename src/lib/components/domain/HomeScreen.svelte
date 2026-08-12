@@ -898,7 +898,7 @@
 		const econMetrics = ['amount'];
 		if (w.metricType === 'trainingBalance') { startNavMetric('home', 'trening'); void goto('/trening'); }
 		else if (healthMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse'); if (t) { startNavMetric('home', 'tema'); void goto(`/tema/${t.id}`); } }
-		else if (econMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi'); startNavMetric('home', 'tema'); void goto(t ? `/tema/${t.id}` : '/economics'); }
+		else if (econMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi'); startNavMetric('home', 'tema'); void goto(t ? `/tema/${t.id}` : '/tema/økonomi'); }
 		else void goto('/');
 	}
 

@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { canonicalBankTransactions } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
+import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reconstructor';
 import type { RequestHandler } from './$types';
 
 /**
@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!accountId) return json({ error: 'Missing accountId' }, { status: 400 });
 
 	// ─── Build multi-anchor daily balance map ─────────────────────────────────
-	const dailyRows = await buildDailyBalances(userId, accountId);
+	const dailyRows = await buildDailyAccountBalances(userId, accountId);
 	if (dailyRows.length === 0) return json({ periods: [], medianCurve: [], detectedPaydayDom: null });
 
 	const dailyBalance = new Map<string, number>(dailyRows.map((r) => [r.date, r.balance]));
