@@ -13,6 +13,8 @@
 	import SectionCard from '$lib/components/ui/SectionCard.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import BufferFloorChart from '$lib/components/charts/BufferFloorChart.svelte';
+	import SavingsAccountPicker from './SavingsAccountPicker.svelte';
+	import type { SavingsRole } from '$lib/client/savings-account-role';
 
 	type Trend = {
 		direction: 'eroderer' | 'stabil' | 'vokser' | 'ukjent';
@@ -35,7 +37,25 @@
 		medianAmount: number | null;
 		largestAmount: number | null;
 		lateShare: number;
+		outsidePeriods: number;
 		reason: string;
+	};
+	type Candidate = {
+		accountId: string;
+		accountName: string | null;
+		accountType: string | null;
+		balance: number;
+		isBuffer: boolean;
+		role: SavingsRole;
+		basis: string;
+		autoWouldInclude: boolean;
+		reason: string;
+	};
+	type Payday = {
+		dateCount: number;
+		completePeriods: number;
+		source: 'keyword' | 'largest-inflow' | null;
+		candidateCount: number;
 	};
 	type Account = {
 		accountId: string;
@@ -58,6 +78,10 @@
 		monthlySpend: number | null;
 		noSavingsAccountFound: boolean;
 		unnamedAccountCount?: number;
+		candidates?: Candidate[];
+		payday?: Payday;
+		/** Kalles når kontovalget er endret, så flaten kan hente på nytt. */
+		onAccountsChanged?: () => void;
 		loading: boolean;
 	}
 
@@ -68,8 +92,30 @@
 		monthlySpend,
 		noSavingsAccountFound,
 		unnamedAccountCount = 0,
+		candidates = [],
+		payday,
+		onAccountsChanged,
 		loading
 	}: Props = $props();
+
+	/**
+	 * Hvorfor det er så få lønnsperioder.
+	 *
+	 * «Trenger 3 hele lønnsperioder, har 1» er sant og uten vei videre — og brukeren måtte
+	 * spørre hvorfor. De to årsakene krever motsatt handling: for kort banksynk er å vente på,
+	 * en detektor som ikke fant lønna er en feil. `source` skiller dem.
+	 */
+	const paydayNote = $derived.by(() => {
+		if (!payday || payday.completePeriods >= 3) return null;
+		const base = `${payday.dateCount} lønnsdato${payday.dateCount === 1 ? '' : 'er'} funnet, altså ${payday.completePeriods} hel${payday.completePeriods === 1 ? '' : 'e'} periode${payday.completePeriods === 1 ? '' : 'r'}.`;
+		if (payday.dateCount === 0) {
+			return `${base} Ingen lønnsutbetaling er kjent igjen i transaksjonene, så perioder kan ikke bygges.`;
+		}
+		if (payday.source === 'largest-inflow') {
+			return `${base} Lønna ble gjettet på største månedlige innskudd — ingen transaksjon bar ordet «lønn». Blir det feil, er det her det sitter.`;
+		}
+		return `${base} Lønna er kjent igjen på ordet, blant ${payday.candidateCount} inntekter på kontoen — så dette er kort historikk, ikke en gjenkjenningsfeil.`;
+	});
 
 	function formatNOK(amount: number): string {
 		return new Intl.NumberFormat('nb-NO', {
@@ -136,6 +182,14 @@
 			</p>
 		{/if}
 	</SectionCard>
+
+	<!--
+		Velgeren står HER også, og det er her den betyr mest: har heuristikken ikke funnet
+		bufferen, er det eneste nyttige å kunne peke på den selv.
+	-->
+	{#if onAccountsChanged}
+		<SavingsAccountPicker {candidates} onChanged={onAccountsChanged} />
+	{/if}
 {:else}
 	<div class="st-head">
 		<div class="st-total">
@@ -179,6 +233,11 @@
 
 			<p class="st-reason">{account.trend.reason}</p>
 
+			<!-- Står rett under «trenger 3 hele lønnsperioder, har 1», fordi det er svaret på det. -->
+			{#if paydayNote}
+				<p class="st-note">{paydayNote}</p>
+			{/if}
+
 			{#if account.troughs.length > 0}
 				<BufferFloorChart series={account.series} troughs={account.troughs} />
 				<p class="st-note">
@@ -201,7 +260,27 @@
 					{/if}
 					<div><span>Sent i måneden</span><strong>{Math.round(account.withdrawals.lateShare * 100)} %</strong></div>
 				</div>
+			{/if}
 
+			<!--
+				Uttak utenfor de komplette periodene holdes ute av raten, men de skjedde — så de
+				sies med ord framfor å forsvinne. Typisk er de i den inneværende måneden, som
+				ikke er omme.
+			-->
+			{#if account.withdrawals.outsidePeriods > 0}
+				<p class="st-note">
+					{account.withdrawals.outsidePeriods}
+					{account.withdrawals.outsidePeriods === 1 ? 'uttak' : 'uttak'} ligger utenfor de
+					målte periodene — som regel i måneden som ikke er omme. De vises i lista, men
+					holdes utenfor raten.
+				</p>
+			{/if}
+
+			<!--
+				Lista er gated på lista, ikke på raten: er alle uttakene i den ufullstendige
+				perioden, er `count` 0, og en gating på den ville skjult uttak som faktisk finnes.
+			-->
+			{#if account.withdrawalEvents.length > 0}
 				<CompactRecordList
 					title="Uttak"
 					items={account.withdrawalEvents.slice(0, 8).map((w, i) => ({
@@ -215,13 +294,22 @@
 		</SectionCard>
 	{/each}
 
-	<p class="st-note st-foot">
-		Kontoer regnes som buffer ut fra navn og type. Stemmer ikke lista, er det heuristikken
-		som tar feil — ikke tallene.{#if unnamedAccountCount > 0}
-			{' '}{unnamedAccountCount}
-			{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn og er ikke vurdert.
-		{/if}
-	</p>
+	<!--
+		Erstatter fotnoten «stemmer ikke lista, er det heuristikken som tar feil». Den var sann
+		og uten en vei videre — brukeren måtte spørre om han kunne justere den.
+	-->
+	{#if onAccountsChanged}
+		<SavingsAccountPicker {candidates} onChanged={onAccountsChanged} />
+	{/if}
+
+	{#if unnamedAccountCount > 0}
+		<p class="st-note st-foot">
+			{unnamedAccountCount}
+			{unnamedAccountCount === 1 ? 'konto' : 'kontoer'} mangler navn i saldodataene og kan
+			ikke vurderes på navn. Saldoankre fra importerte kontoutskrifter bærer bare
+			kontonummer.
+		</p>
+	{/if}
 {/if}
 
 <style>

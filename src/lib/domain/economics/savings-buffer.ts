@@ -88,6 +88,7 @@ export type WithdrawalEvent = {
 
 export type WithdrawalPattern = {
 	verdict: 'urørt' | 'støtdemper' | 'kassekreditt' | 'blandet' | 'ukjent';
+	/** Uttak INNENFOR de målte periodene. Se `outsidePeriods`. */
 	count: number;
 	/** Uttak per lønnsperiode. */
 	perPeriod: number;
@@ -95,6 +96,12 @@ export type WithdrawalPattern = {
 	largestAmount: number | null;
 	/** Andel av uttakene som skjer i siste tredjedel av lønnsperioden. */
 	lateShare: number;
+	/**
+	 * Uttak som falt utenfor de målte periodene — typisk i den inneværende, ufullstendige.
+	 *
+	 * De holdes utenfor raten med vilje, og telles her så utelatelsen ikke er usynlig.
+	 */
+	outsidePeriods: number;
 	reason: string;
 };
 
@@ -127,6 +134,155 @@ export function looksLikeSavingsAccount(account: {
 	const haystack = `${account.accountName ?? ''} ${account.accountType ?? ''}`.toLowerCase();
 	if (NOT_SAVINGS_TERMS.some((term) => haystack.includes(term))) return false;
 	return SAVINGS_TERMS.some((term) => haystack.includes(term));
+}
+
+// ── Overstyring: brukeren bestemmer, heuristikken foreslår ───────────────────
+
+/**
+ * Hva brukeren har sagt om en konto.
+ *
+ * **Tri-tilstand, ikke en boolean.** `auto` lar heuristikken bestemme, og det er standarden
+ * — så en NY konto virker uten at noen må huske å slå den på. En ren inkluderingsliste ville
+ * gjort at nye kontoer stille falt ut; en ren ekskluderingsliste at en konto heuristikken
+ * ikke fanget aldri kunne legges til. Begge feilene er tause, som er det verste slaget.
+ */
+export type SavingsRole = 'auto' | 'buffer' | 'ignore';
+
+export function isSavingsRole(value: unknown): value is SavingsRole {
+	return value === 'auto' || value === 'buffer' || value === 'ignore';
+}
+
+/** Hvorfor kontoen ble tatt med eller latt ute. Vises på flaten — aldri bare et ja/nei. */
+export type SavingsBasis =
+	/** Brukeren har valgt den inn. */
+	| 'valgt'
+	/** Brukeren har valgt den ut. */
+	| 'utelatt'
+	/** Navnet matcher et barn i husholdningen. */
+	| 'barn'
+	/** Heuristikken kjente igjen et sparekontonavn. */
+	| 'navn'
+	/** Heuristikken kjente ikke igjen noe. */
+	| 'ukjent-navn'
+	/** Ingen saldorad bærer navn — heuristikken har ingenting å lese. */
+	| 'uten-navn';
+
+export type SavingsAccountCandidate = {
+	accountId: string;
+	accountName?: string | null;
+	accountType?: string | null;
+};
+
+export type SavingsAccountDecision<T extends SavingsAccountCandidate> = {
+	account: T;
+	isBuffer: boolean;
+	/** Tilstanden som er lagret. `auto` betyr at heuristikken avgjorde. */
+	role: SavingsRole;
+	basis: SavingsBasis;
+	/**
+	 * Hva `auto` VILLE gitt, uavhengig av om et valg overstyrer den nå.
+	 *
+	 * Uten dette feltet kan en veksleknapp ikke gå tilbake til `auto`: har brukeren valgt
+	 * kontoen ut, er `basis` «utelatt», og da vet ikke flaten om heuristikken var enig.
+	 * Resultatet ville vært at et trykk lagret et *eksplisitt* valg identisk med standarden —
+	 * en usynlig lås som ikke ville fulgt en senere endring i heuristikken.
+	 */
+	autoWouldInclude: boolean;
+	/** Én setning, til flaten. */
+	reason: string;
+};
+
+const BASIS_REASON: Record<SavingsBasis, string> = {
+	valgt: 'Du har valgt denne inn som buffer.',
+	utelatt: 'Du har holdt denne utenfor.',
+	barn: 'Navnet matcher et barn i husholdningen, så den regnes ikke som husholdningens buffer.',
+	navn: 'Navnet ser ut som en sparekonto.',
+	'ukjent-navn': 'Navnet ser ikke ut som en sparekonto.',
+	'uten-navn': 'Kontoen har ikke noe navn i saldodataene, så navnet kan ikke leses.'
+};
+
+/**
+ * Avgjør hvilke kontoer som er buffer, og hvorfor.
+ *
+ * Rekkefølgen er prioritert, og **brukerens valg slår alt**: en heuristikk som overkjører et
+ * eksplisitt valg er en heuristikk brukeren slutter å rette. Se
+ * `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+ *
+ * Barnenavn kommer FØR navneheuristikken, ikke etter: barnas konto heter nettopp «SPAREKONTO
+ * UNG» og treffer `spar`, så en sjekk etterpå ville aldri sett den. Den er likevel bare en
+ * `auto`-avgjørelse — er kontoen faktisk husholdningens, velges den inn, og valget står.
+ *
+ * Returnerer en beslutning per konto, ikke en filtrert liste: flaten må kunne vise også dem
+ * som ble latt ute, ellers kan man bare trekke fra og aldri legge til.
+ */
+export function resolveSavingsAccounts<T extends SavingsAccountCandidate>(
+	accounts: readonly T[],
+	options: {
+		roles?: ReadonlyMap<string, SavingsRole>;
+		/** Navnetokens for barn i husholdningen. Se `person-name-tokens.ts`. */
+		childNameTokens?: readonly string[];
+	} = {}
+): Array<SavingsAccountDecision<T>> {
+	const roles = options.roles ?? new Map<string, SavingsRole>();
+	const childTokens = options.childNameTokens ?? [];
+
+	return accounts.map((account) => {
+		const role = roles.get(account.accountId) ?? 'auto';
+		const auto = autoDecision(account, childTokens);
+
+		if (role === 'buffer') {
+			return {
+				account,
+				isBuffer: true,
+				role,
+				basis: 'valgt' as SavingsBasis,
+				autoWouldInclude: auto.isBuffer,
+				reason: BASIS_REASON.valgt
+			};
+		}
+		if (role === 'ignore') {
+			return {
+				account,
+				isBuffer: false,
+				role,
+				basis: 'utelatt' as SavingsBasis,
+				autoWouldInclude: auto.isBuffer,
+				reason: BASIS_REASON.utelatt
+			};
+		}
+
+		return {
+			account,
+			isBuffer: auto.isBuffer,
+			role,
+			basis: auto.basis,
+			autoWouldInclude: auto.isBuffer,
+			reason: BASIS_REASON[auto.basis]
+		};
+	});
+}
+
+/**
+ * Avgjørelsen uten brukervalg — heuristikken alene.
+ *
+ * Regnes ALLTID, også når et valg overstyrer den, fordi `autoWouldInclude` trenger den.
+ */
+function autoDecision(
+	account: SavingsAccountCandidate,
+	childTokens: readonly string[]
+): { isBuffer: boolean; basis: SavingsBasis } {
+	const name = `${account.accountName ?? ''} ${account.accountType ?? ''}`.trim();
+	if (!name) return { isBuffer: false, basis: 'uten-navn' };
+
+	// Barnenavnet FØR navneheuristikken: kontoen heter nettopp «SPAREKONTO UNG» og treffer
+	// `spar`, så en sjekk etterpå ville aldri sett den.
+	const haystack = name.toLowerCase();
+	if (childTokens.some((token) => haystack.includes(token))) {
+		return { isBuffer: false, basis: 'barn' };
+	}
+
+	const looksLike = looksLikeSavingsAccount(account);
+	return { isBuffer: looksLike, basis: looksLike ? 'navn' : 'ukjent-navn' };
 }
 
 // ── Bunnpunkter ─────────────────────────────────────────────────────────────
@@ -271,6 +427,15 @@ function dayDiff(fromKey: string, toKey: string): number {
  * tolv på 1 000 gir samme nedgang. Det er **frekvensen** og **posisjonen i lønnsperioden**
  * som skiller dem — et uttak tre dager etter lønn er planlagt, et uttak på dag 26 betyr at
  * måneden ikke bar.
+ *
+ * **Teller og nevner må komme fra samme vinduet.** Uttakslista leses over et bredere spenn
+ * enn `periods` dekker — kallerens hensikt er at flaten skal kunne vise ferske uttak, også
+ * dem i den inneværende, ufullstendige perioden. Fram til august 2026 delte denne funksjonen
+ * *alle* uttakene på *de komplette* periodene, og prod viste da «11 uttak over 1
+ * lønnsperioder … Uttak per måned 11,0» — der de fleste av de elleve lå i halen utenfor
+ * perioden. Samme klasse feil som effort-ankeret: en rate der de to leddene er målt over
+ * ulike vinduer. Uttak som ikke kan plasseres i en periode telles derfor i
+ * `outsidePeriods` og holdes ute av raten.
  */
 export function describeWithdrawalPattern(
 	withdrawals: readonly WithdrawalEvent[],
@@ -279,19 +444,33 @@ export function describeWithdrawalPattern(
 	if (periods.length === 0) {
 		return {
 			verdict: 'ukjent',
-			count: withdrawals.length,
+			count: 0,
 			perPeriod: 0,
-			medianAmount: median(withdrawals.map((w) => w.amount)),
-			largestAmount: withdrawals.length > 0 ? Math.max(...withdrawals.map((w) => w.amount)) : null,
+			medianAmount: null,
+			largestAmount: null,
 			lateShare: 0,
+			outsidePeriods: withdrawals.length,
 			reason: 'Ingen lønnsperioder funnet, så posisjonen i måneden kan ikke måles.'
 		};
 	}
 
-	const amounts = withdrawals.map((w) => w.amount);
-	const perPeriod = withdrawals.length / periods.length;
+	// Plasser hvert uttak i sin lønnsperiode. Bare de plasserte teller i raten.
+	const placed: Array<{ event: WithdrawalEvent; positionShare: number }> = [];
+	let outsidePeriods = 0;
+	for (const withdrawal of withdrawals) {
+		const period = periods.find((p) => withdrawal.date >= p.start && withdrawal.date < p.end);
+		const length = period ? dayDiff(period.start, period.end) : 0;
+		if (!period || length <= 0) {
+			outsidePeriods += 1;
+			continue;
+		}
+		placed.push({
+			event: withdrawal,
+			positionShare: dayDiff(period.start, withdrawal.date) / length
+		});
+	}
 
-	if (withdrawals.length === 0) {
+	if (placed.length === 0) {
 		return {
 			verdict: 'urørt',
 			count: 0,
@@ -299,22 +478,15 @@ export function describeWithdrawalPattern(
 			medianAmount: null,
 			largestAmount: null,
 			lateShare: 0,
+			outsidePeriods,
 			reason: `Ingen uttak i de siste ${periods.length} lønnsperiodene.`
 		};
 	}
 
-	let late = 0;
-	let placed = 0;
-	for (const withdrawal of withdrawals) {
-		const period = periods.find((p) => withdrawal.date >= p.start && withdrawal.date < p.end);
-		if (!period) continue;
-		const length = dayDiff(period.start, period.end);
-		if (length <= 0) continue;
-		placed += 1;
-		if (dayDiff(period.start, withdrawal.date) / length >= LATE_PERIOD_SHARE) late += 1;
-	}
-
-	const lateShare = placed === 0 ? 0 : late / placed;
+	const amounts = placed.map((p) => p.event.amount);
+	const perPeriod = placed.length / periods.length;
+	const late = placed.filter((p) => p.positionShare >= LATE_PERIOD_SHARE).length;
+	const lateShare = late / placed.length;
 
 	const frequent = perPeriod >= OVERDRAFT_FREQUENCY;
 	const mostlyLate = lateShare >= OVERDRAFT_LATE_SHARE;
@@ -322,36 +494,39 @@ export function describeWithdrawalPattern(
 	if (frequent && mostlyLate) {
 		return {
 			verdict: 'kassekreditt',
-			count: withdrawals.length,
+			count: placed.length,
 			perPeriod,
 			medianAmount: median(amounts),
 			largestAmount: Math.max(...amounts),
 			lateShare,
-			reason: `${withdrawals.length} uttak over ${periods.length} lønnsperioder, og ${Math.round(lateShare * 100)} % av dem sent i perioden. Det ser ut som at måneden ikke bærer, ikke som enkelthendelser.`
+			outsidePeriods,
+			reason: `${placed.length} uttak over ${periods.length} lønnsperioder, og ${Math.round(lateShare * 100)} % av dem sent i perioden. Det ser ut som at måneden ikke bærer, ikke som enkelthendelser.`
 		};
 	}
 
 	if (!frequent && !mostlyLate) {
 		return {
 			verdict: 'støtdemper',
-			count: withdrawals.length,
+			count: placed.length,
 			perPeriod,
 			medianAmount: median(amounts),
 			largestAmount: Math.max(...amounts),
 			lateShare,
-			reason: `${withdrawals.length} uttak over ${periods.length} lønnsperioder, spredt utover måneden. Det er en buffer som gjør jobben sin.`
+			outsidePeriods,
+			reason: `${placed.length} uttak over ${periods.length} lønnsperioder, spredt utover måneden. Det er en buffer som gjør jobben sin.`
 		};
 	}
 
 	return {
 		verdict: 'blandet',
-		count: withdrawals.length,
+		count: placed.length,
 		perPeriod,
 		medianAmount: median(amounts),
 		largestAmount: Math.max(...amounts),
 		lateShare,
+		outsidePeriods,
 		reason: frequent
-			? `${withdrawals.length} uttak over ${periods.length} lønnsperioder, men ikke samlet sent i måneden.`
+			? `${placed.length} uttak over ${periods.length} lønnsperioder, men ikke samlet sent i måneden.`
 			: `Få uttak, men ${Math.round(lateShare * 100)} % av dem sent i perioden.`
 	};
 }

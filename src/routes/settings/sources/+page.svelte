@@ -8,7 +8,8 @@
 		StravaSourceCard,
 		TeslaSourceCard,
 		EmailRulesCard,
-		EffortReprojectCard
+		EffortReprojectCard,
+		EconomyDiagnosticsCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -108,6 +109,14 @@
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
 		<EffortReprojectCard />
+		<!--
+			Bankdiagnosen står rett under bank-kortet i ånden, men til sist blant kortene:
+			endepunktet er admin-gated, så for alle andre ville den bare vært en knapp som gir
+			403. Vi skjuler den framfor å vise en feil.
+		-->
+		{#if data.user?.isAdmin}
+			<EconomyDiagnosticsCard />
+		{/if}
 	</div>
 	</PageSection>
 </AppPage>

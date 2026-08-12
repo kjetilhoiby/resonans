@@ -1229,9 +1229,39 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
 - **Et uttak er ikke et varsel.** Bare erosjon får varselfarge — en buffer som brukes er ikke
   et problem, og varsling per uttak ville blitt støy.
-- **Kontovalget er en heuristikk på navn/type, og flaten sier det.** `accountType` er SB1s
-  fritekst-`description`. «felles» hører IKKE i eksklusjonslista: dette er husholdningens
-  økonomi, så en felles sparekonto er nettopp bufferen.
+- **Kontovalget er en heuristikk brukeren kan overstyre**, og beslutningen bor i
+  `resolveSavingsAccounts`. `accountType` er SB1s fritekst-`description`, så heuristikken kan
+  ta feil — «felles» hører IKKE i eksklusjonslista: dette er husholdningens økonomi, så en
+  felles sparekonto er nettopp bufferen. Se
+  `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+  **`savingsRole` er tri-tilstand** (`auto`/`buffer`/`ignore`) i `bank_account_settings`, og
+  `auto` sletter raden. En boolean, eller en ren inkluderings- eller ekskluderingsliste, feiler
+  stille: nye kontoer faller ut til noen slår dem på, eller en konto heuristikken ikke fanget
+  kan aldri legges til. `autoWouldInclude` på beslutningen finnes fordi en veksleknapp ellers
+  ikke kan gå TILBAKE til `auto` og da lagrer en usynlig lås.
+  **Barnas kontoer er ute som standard**, på navn fra `persons` (`kind='child'`) — og sjekken
+  må skje FØR navneheuristikken, siden kontoen heter «SPAREKONTO UNG» og treffer `spar`.
+  Navnetokens deles med overføringsflaten gjennom
+  `$lib/domain/economics/person-name-tokens.ts`: `MIN_NAME_TOKEN_LENGTH` er et
+  kalibreringstall og får ikke finnes to steder.
+  **Valget lagres på serveren, aldri i localStorage** — chatten leser samme loader, og et valg
+  bare klienten kjente ville gitt to ulike svar på samme spørsmål. Skriv gjennom
+  `setSavingsRole`, ikke mot tabellen.
+- **Lønnsperiodene kan ikke erstattes av kalendermåneder.** Lønn lander rundt dag 12–15, så
+  «sent i perioden» ville blitt rett etter neste lønn og kassekreditt lest som støtdemper. En
+  stum flate er bedre enn en invertert diagnose; derfor sier flaten i stedet hvor mange
+  lønnsdatoer som finnes og om lønna ble *kjent igjen* eller *gjettet*. Se
+  `docs/changelog/2026-08-12-lonnsperioder-og-uttaksvindu.md`.
+- **`describeWithdrawalPattern` teller bare uttak den kan PLASSERE i en periode.** Uttakslista
+  leses over et bredere spenn enn de komplette periodene dekker, så en rate over de to
+  vinduene ga «11 uttak over 1 lønnsperioder · 11,0 per måned» i prod. Resten telles i
+  `outsidePeriods` og sies med ord.
+- **`detectGlobalPayday`: nøkkelordene velger KONTOEN og FINGERAVTRYKKET, aldri
+  kandidatsettet.** Gjorde de det, slo to tilfeldige treff ut et helt år med regelmessige
+  innskudd. Feilen var inverse — fallbacken uten nøkkelordtreff fikk det rike kandidatsettet —
+  så et lønnsordtreff gjorde resultatet dårligere. Utvelgelsen bor rent i `selectPaydaySource`.
+  Og `typeText` **må** leses: det er SB1s `category` og ofte det eneste stedet ordet «lønn»
+  står.
 - Chatten svarer på det samme gjennom `query_economics` med `queryType: 'savings_buffer'` —
   **samme loader som flaten**, ikke en egen beregning. Ordene («spare», «buffer», «dekning»,
   «uttak») må stå i `detectPromptFocusModules`, ellers finnes ikke verktøyet for modellen.
