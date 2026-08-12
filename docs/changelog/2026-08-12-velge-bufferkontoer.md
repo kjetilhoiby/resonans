@@ -101,10 +101,12 @@ samme spørsmål. Det er hele feilklassen tillitsgjennomgangen handlet om.
 - **Flaten henter på nytt etter en endring** framfor å justere lista lokalt. Alle tallene over
   velgeren — buffer, dekning, bunntrend, uttaksmønster — er utledet av utvalget, så en lokal
   justering ville gjort at de ikke stemte med lista under.
-- **BSU står fortsatt som sparekonto i heuristikken.** Det er en reell innvending at BSU ikke
-  kan røres uten å miste skattefradraget, og at den derfor overdriver dekningen som *buffer*.
-  Defaulten er ikke endret, siden det er en vurdering av brukerens penger og ikke en feil —
-  men den kan nå velges ut, og det er svaret.
+- **BSU-innvendingen gjelder ikke denne husholdningen.** `bsu` står i `SAVINGS_TERMS`, og jeg
+  reiste at BSU ikke kan røres uten å miste skattefradraget og derfor overdriver dekningen som
+  *buffer*. Brukeren bekreftet 2026-08-12 at han **ikke har BSU**, så termen er inert — den kan
+  bare treffe en konto som ikke finnes. Den står igjen fordi den ville vært riktig hvis en slik
+  konto kom, og fordi et framtidig BSU sannsynligvis ville vært et barns og dermed fanget av
+  barneregelen. Skulle den bli aktuell, er svaret å velge kontoen ut, ikke å endre defaulten.
 - **Chatten kan lese, ikke skrive.** `query_economics` får riktig utvalg automatisk gjennom
   den delte loaderen. Et `manage_savings_accounts`-verktøy er ikke bygget; klientskriveren
   ligger i `$lib/client` nettopp for at en andre inngang ikke skal få sin egen validering, som
