@@ -105,7 +105,7 @@
 	// Transfers state
 	type Transfer = {
 		date: string;
-		person: 'Kjetil' | 'Anita';
+		person: string;
 		incoming: boolean;
 		amount: number;
 		description: string;

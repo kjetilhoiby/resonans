@@ -1174,9 +1174,67 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   opprettet en dupp tretten timer fram i tid. Bruk `validateNapStart`
   (`$lib/domain/sleep/nap-fields.ts`) på alle skrivinger med et brukeroppgitt klokkeslett.
 
-### Transaksjons-kategorisering
+### Økonomi: alt som teller kroner går gjennom én leser
 
-Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.
+`$lib/server/economics/transactions.ts` (`readTransactions`, `readLatestBalances`). Se
+`docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+
+- **`canonical_bank_transactions` er sannheten, ikke `sensor_events`.** SB1 gir ny
+  `transactionId` ved hver synk, og sikkerhetsnettet mot semantiske duplikater dekker bare
+  det ferske synkvinduet. Målt over 365 dager: **8 891 rå rader mot 2 245 canonical**, altså
+  6,0 mill. kr «forbruk» mot 1,58. Tolv lesesteder leste rått, og brukeren så «ulike tall på
+  ulike steder» og sluttet å åpne flaten. `bank_transaction` og `bank_balance` er nå vaktet
+  i `sensor-event-access.ts`.
+- **Interne overføringer MERKES, de fjernes ikke.** 68 % av «forbruket» var penger flyttet
+  mellom egne kontoer (1 084 033 av 1 583 723 kr) — reelt forbruk er ~42 000 kr/mnd, ikke
+  132 000. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
+  overføring, og det er signalet en spareflate trenger. Samme rader, to spørsmål.
+  `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
+- **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
+  (fingerprint) → LLM-merchant-mappings → DB-regler (keyword) → SB1 `typeText`-fallback.
+- **`merchant_mappings.category` valideres i BEGGE ender.** Den ble skrevet med LLM-ens rå
+  output og lest med en cast, så et *butikknavn* kunne stå som kategori — og siden mappings
+  slår keyword-reglene, dro den alt annet med seg: «OpenAI» sto som en kategori på 15 153 kr
+  i prod der 61 kr faktisk var OpenAI, resten Nettgiro, eFaktura og en intern overføring.
+  Treffer mappingens kategori ingen kjent CategoryId, faller `categorizeTransaction` gjennom
+  til reglene. **En ugyldig mapping er verre enn ingen mapping.**
+  Widget-endepunktet hadde en femte vei — et `ILIKE`-keyword-filter i SQL uten mappings og
+  uten brukerens overstyringer — så en forbruksdings kunne vise et annet tall enn
+  forbrukskortet for samme kategori.
+- **`typeText` bor på canonical** (migrasjon 0055). Uten feltet ble
+  `categorizeTransaction(desc, null, …)` kalt, og SB1-fallbacken var død på nettopp den
+  stien flaten og chatten bruker.
+- **`loadMerchantMappings` bor i `economics/merchant-mappings.ts`**, ikke hos
+  `spending-analyzer.ts`. Analysatoren *produserer* mappings, leseren *konsumerer* dem — lå
+  lasteren hos produsenten, importerte de to modulene hverandre.
+- **`categorized_events` betjener bare prosjektkoblinger nå.** Den bygges fortsatt fra rå
+  `sensor_events` og manglet 202 rader mot canonical; alt som teller kroner er flyttet av
+  den grunn. Å nøkle den på `canonicalId` er en migrasjon som står igjen.
+- Ren logikk i `$lib/domain/economics/`: `internal-transfers.ts` (parvis matching, **én-til-én**
+  — uten det spiser tre uttak på 500 samme innskudd) og `spending-summary.ts`.
+- **Månedsgrenser regnes i Oslo-tid** (`osloDayKey`), ikke med `toISOString()`.
+
+**Sparekontoen er en buffer, og det avgjør hva som måles** (`$lib/domain/economics/savings-buffer.ts`):
+
+- **Bunnene, ikke snittet.** En buffer som virker svinger, og lønna kommer inn hver måned —
+  så toppene kan se uendret ut mens gulvet synker. Trenden regnes på laveste saldo per
+  lønnsperiode, med minste kvadrater (ikke «siste minus første»: én avvikende måned ville
+  avgjort svaret). Inneværende periode holdes utenfor; bunnen der kan fortsatt bli lavere.
+- **Enheten er måneders dekning**, og den forutsetter fase 2: med overføringene inne ville
+  forbruket vært 132 000 kr/mnd mot reelle ~42 000, altså en tredjedel av dekningen. Et tall
+  som er 3× feil i pessimistisk retning er verre enn ingen tall. `runwayMonths` returnerer
+  **null** uten forbrukstall.
+- **Frekvens og posisjon i lønnsperioden skiller støtdemper fra kassekreditt**, og det er
+  hele diagnosen. Ett uttak på 12 000 og tolv på 1 000 gir samme nedgang og krever motsatt
+  handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
+- **Et uttak er ikke et varsel.** Bare erosjon får varselfarge — en buffer som brukes er ikke
+  et problem, og varsling per uttak ville blitt støy.
+- **Kontovalget er en heuristikk på navn/type, og flaten sier det.** `accountType` er SB1s
+  fritekst-`description`. «felles» hører IKKE i eksklusjonslista: dette er husholdningens
+  økonomi, så en felles sparekonto er nettopp bufferen.
+- Chatten svarer på det samme gjennom `query_economics` med `queryType: 'savings_buffer'` —
+  **samme loader som flaten**, ikke en egen beregning. Ordene («spare», «buffer», «dekning»,
+  «uttak») må stå i `detectPromptFocusModules`, ellers finnes ikke verktøyet for modellen.
 
 ---
 

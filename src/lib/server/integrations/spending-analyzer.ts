@@ -11,7 +11,10 @@
  */
 
 import { db } from '$lib/db';
-import { sensorEvents, merchantMappings } from '$lib/db/schema';
+import { invalidateMerchantMappings } from '$lib/server/economics/merchant-mappings';
+import { readTransactions } from '$lib/server/economics/transactions';
+import { merchantMappings } from '$lib/db/schema';
+import { normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 import { and, eq, sql, inArray } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { DEFAULT_USER_ID } from '$lib/server/users';
@@ -71,19 +74,13 @@ const BATCH_SIZE = 50;
 const MAX_PARALLEL = 3;
 /** Re-analyze a merchant if its mapping is older than this many days */
 const RECLASSIFY_AFTER_DAYS = 30;
-const MERCHANT_MAPPINGS_CACHE_TTL_MS = 60 * 1000;
-
-const merchantMappingsCache = new Map<
-	string,
-	{
-		cachedAt: number;
-		data: Map<string, { category: string; subcategory: string | null; label: string; emoji: string | null; isFixed: boolean }>;
-	}
->();
-
-export function invalidateMerchantMappingsCache(userId: string) {
-	merchantMappingsCache.delete(userId);
-}
+/**
+ * Lasteren og cachen bor i `$lib/server/economics/merchant-mappings.ts`. Denne fila
+ * PRODUSERER mappings; transaksjonsleseren KONSUMERER dem. Bodde lasteren her, ville de to
+ * modulene importert hverandre.
+ */
+export { loadMerchantMappings } from '$lib/server/economics/merchant-mappings';
+export { invalidateMerchantMappings as invalidateMerchantMappingsCache };
 
 // ─── Main entry points ────────────────────────────────────────────────────────
 
@@ -115,29 +112,27 @@ export async function analyzeSpending(
 	const staleThreshold = new Date();
 	staleThreshold.setDate(staleThreshold.getDate() - RECLASSIFY_AFTER_DAYS);
 
-	// 2. Load raw transactions
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`timestamp >= ${cutoff.toISOString()}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${cutoff.toISOString()}`
-			);
-
-	const rows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`
-		})
-		.from(sensorEvents)
-		.where(where);
+	// 2. Load transactions — gjennom den delte leseren, ikke rå `sensor_events`.
+	//    Den rå strømmen er ~3,8x duplisert, og her brukes den til å regne `txCount`,
+	//    `monthsActive` og `avgMonthlyAmount` per butikk. De tallene er ikke pynt: de går
+	//    inn i LLM-prompten som klassifiserer butikken, og de driver
+	//    abonnementsdeteksjonen. Fire ganger for mange kjøp hos samme butikk endrer
+	//    hvilken kategori modellen foreslår.
+	//
+	//    Interne overføringer holdes utenfor: en flytting til egen sparekonto er ikke en
+	//    «butikk» som skal klassifiseres.
+	const readerRows = await readTransactions({
+		userId,
+		from: cutoff,
+		accountId: accountId ?? undefined,
+		excludeInternalTransfers: true
+	});
+	const rows = readerRows.transactions.map((tx) => ({
+		timestamp: tx.timestamp,
+		amount: tx.amount,
+		description: tx.description,
+		typeText: tx.typeText
+	}));
 
 	console.log(`[analyzeSpending] Loaded ${rows.length} transactions in ${Date.now() - t0}ms`);
 
@@ -210,7 +205,11 @@ export async function analyzeSpending(
 			.values({
 				userId,
 				merchantKey: c.merchantKey,
-				category: c.category,
+				// **Valideres på VEI INN.** Modellen svarte iblant med et butikknavn der den
+				// skulle svart med en CategoryId, og siden mappings overstyrer reglene ble
+				// navnet stående som en kategori på flaten. Se normaliseringen i
+				// `categorizeTransaction` og migrasjon 0056.
+				category: normalizeCategoryId(c.category),
 				subcategory: c.subcategory,
 				label: c.label,
 				emoji: c.emoji,
@@ -241,7 +240,7 @@ export async function analyzeSpending(
 		if (isUpdate) updatedMappings++;
 		else newMappings++;
 	}
-	invalidateMerchantMappingsCache(userId);
+	invalidateMerchantMappings(userId);
 	console.log(`[analyzeSpending] DB upsert: ${Date.now() - t2}ms | Total: ${Date.now() - t0}ms`);
 
 	return {
@@ -265,28 +264,20 @@ export async function generateSpendingInsights(
 	const cutoff = new Date();
 	cutoff.setMonth(cutoff.getMonth() - 13);
 
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`timestamp >= ${cutoff.toISOString()}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${cutoff.toISOString()}`
-			);
-
-	const rows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`
-		})
-		.from(sensorEvents)
-		.where(where);
+	// Samme kilde som `analyzeSpending`. Innsiktene og klassifiseringen må se identiske
+	// tall — ellers kan et innsiktsavsnitt påstå noe profilene ikke støtter.
+	const insightRead = await readTransactions({
+		userId,
+		from: cutoff,
+		accountId: accountId ?? undefined,
+		excludeInternalTransfers: true
+	});
+	const rows = insightRead.transactions.map((tx) => ({
+		timestamp: tx.timestamp,
+		amount: tx.amount,
+		description: tx.description,
+		typeText: tx.typeText
+	}));
 
 	if (rows.length === 0) {
 		return {
@@ -332,37 +323,6 @@ export async function generateSpendingInsights(
 		insights,
 		topMerchants
 	};
-}
-
-// ─── Load all mappings for a user (for use in categorizeTransaction) ──────────
-
-export async function loadMerchantMappings(
-	userId: string
-): Promise<Map<string, { category: string; subcategory: string | null; label: string; emoji: string | null; isFixed: boolean }>> {
-	const cached = merchantMappingsCache.get(userId);
-	if (cached && Date.now() - cached.cachedAt < MERCHANT_MAPPINGS_CACHE_TTL_MS) {
-		return new Map(cached.data);
-	}
-
-	const rows = await db
-		.select({
-			merchantKey: merchantMappings.merchantKey,
-			category: merchantMappings.category,
-			subcategory: merchantMappings.subcategory,
-			label: merchantMappings.label,
-			emoji: merchantMappings.emoji,
-			isFixed: merchantMappings.isFixed
-		})
-		.from(merchantMappings)
-		.where(eq(merchantMappings.userId, userId));
-
-	const mapped = new Map(rows.map((r) => [r.merchantKey, r]));
-	merchantMappingsCache.set(userId, {
-		cachedAt: Date.now(),
-		data: mapped
-	});
-
-	return new Map(mapped);
 }
 
 // ─── Merchant key resolution via prefix-grouping + LLM ───────────────────────

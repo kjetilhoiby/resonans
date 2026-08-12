@@ -1,7 +1,13 @@
 <script lang="ts">
 	interface Transfer {
 		date: string;
-		person: 'Kjetil' | 'Anita';
+		/**
+		 * Navnet kommer fra `persons`, ikke fra en union i koden. Grafen har to baner og
+		 * viser de to personene som faktisk forekommer i dataene — `lanes` under.
+		 * Hardkodede navn her betydde at en ny husholdning krevde en kodeendring, og at
+		 * repoet bar persondata.
+		 */
+		person: string;
 		incoming: boolean;
 		amount: number;
 		description: string;
@@ -28,9 +34,9 @@
 	const SVG_TOTAL_H = MT + ARC_H + SEP + BAL_H + X_AXIS_H + 8;
 
 	// Row Y positions inside transfer section
-	const Y_ANITA   = MT + 28;
+	const Y_SECONDARY = MT + 28;
 	const Y_ACCOUNT = MT + ARC_H / 2;
-	const Y_KJETIL  = MT + ARC_H - 28;
+	const Y_PRIMARY = MT + ARC_H - 28;
 
 	// Balance section bounds
 	const BAL_TOP = MT + ARC_H + SEP;
@@ -67,9 +73,23 @@
 		return ML + ((ms - minMs) / (maxMs - minMs || 1)) * innerW;
 	}
 
-	// ── Transfer line helpers ──────────────────────────────────────────────────
-	function personY(person: 'Kjetil' | 'Anita') {
-		return person === 'Kjetil' ? Y_KJETIL : Y_ANITA;
+	// ── Baner ─────────────────────────────────────────────────────────────────
+	// Rekkefølgen er den personen først dukker opp i dataene. Stabil så lenge samme
+	// vindu vises; grafen påstår ingen rangering.
+	const lanes = $derived.by(() => {
+		const seen: string[] = [];
+		for (const t of transfers) {
+			if (!seen.includes(t.person)) seen.push(t.person);
+			if (seen.length === 2) break;
+		}
+		return {
+			primary: seen[0] ?? '—',
+			secondary: seen[1] ?? '—'
+		};
+	});
+
+	function personY(person: string) {
+		return person === lanes.primary ? Y_PRIMARY : Y_SECONDARY;
 	}
 	function strokeW(amount: number): number {
 		return Math.min(7, Math.max(1.5, Math.sqrt(amount) * 0.1));
@@ -102,20 +122,20 @@
 	 */
 	const cumulativeNets = $derived.by(() => {
 		const sortedTx = [...transfers].sort((a, b) => a.date.localeCompare(b.date));
-		const kjetil: { date: string; value: number }[] = [];
-		const anita:  { date: string; value: number }[] = [];
-		let kNet = 0, aNet = 0;
+		const primary: { date: string; value: number }[] = [];
+		const secondary: { date: string; value: number }[] = [];
+		let pNet = 0, sNet = 0;
 		for (const t of sortedTx) {
 			const delta = t.incoming ? t.amount : -t.amount;
-			if (t.person === 'Kjetil') {
-				kNet += delta;
-				kjetil.push({ date: t.date, value: kNet });
+			if (t.person === lanes.primary) {
+				pNet += delta;
+				primary.push({ date: t.date, value: pNet });
 			} else {
-				aNet += delta;
-				anita.push({ date: t.date, value: aNet });
+				sNet += delta;
+				secondary.push({ date: t.date, value: sNet });
 			}
 		}
-		return { kjetil, anita };
+		return { primary, secondary };
 	});
 
 	/** Map a value in [vMin,vMax] to Y in balance section */
@@ -132,8 +152,8 @@
 		};
 
 		const balPts  = balanceHistory.filter((b) => inRange(b.date));
-		const kPts    = cumulativeNets.kjetil.filter((b) => inRange(b.date));
-		const aPts    = cumulativeNets.anita.filter((b) => inRange(b.date));
+		const kPts    = cumulativeNets.primary.filter((b) => inRange(b.date));
+		const aPts    = cumulativeNets.secondary.filter((b) => inRange(b.date));
 
 		const allVals = [
 			...balPts.map((b) => b.balance),
@@ -189,7 +209,7 @@
 	const summary = $derived.by(() => {
 		let inK = 0, outK = 0, inA = 0, outA = 0;
 		for (const t of transfers) {
-			if (t.person === 'Kjetil') {
+			if (t.person === lanes.primary) {
 				t.incoming ? (inK += t.amount) : (outK += t.amount);
 			} else {
 				t.incoming ? (inA += t.amount) : (outA += t.amount);
@@ -206,16 +226,16 @@
 			<span class="leg-item"><span class="leg-line green"></span>Inn</span>
 			<span class="leg-item"><span class="leg-line red"></span>Ut</span>
 			<span class="leg-item"><span class="leg-swatch" style="background:#0284c7"></span>Saldo</span>
-			<span class="leg-item"><span class="leg-swatch" style="background:#7c3aed"></span>Anita netto</span>
-			<span class="leg-item"><span class="leg-swatch" style="background:#2563eb"></span>Kjetil netto</span>
+			<span class="leg-item"><span class="leg-swatch" style="background:#7c3aed"></span>{lanes.secondary} netto</span>
+			<span class="leg-item"><span class="leg-swatch" style="background:#2563eb"></span>{lanes.primary} netto</span>
 		</div>
 	</div>
 
 	<div class="summary">
-		<span class="pill in">↓ Kjetil {fmt(summary.inK)}</span>
-		<span class="pill out">↑ Kjetil {fmt(summary.outK)}</span>
-		<span class="pill in">↓ Anita {fmt(summary.inA)}</span>
-		<span class="pill out">↑ Anita {fmt(summary.outA)}</span>
+		<span class="pill in">↓ {lanes.primary} {fmt(summary.inK)}</span>
+		<span class="pill out">↑ {lanes.primary} {fmt(summary.outK)}</span>
+		<span class="pill in">↓ {lanes.secondary} {fmt(summary.inA)}</span>
+		<span class="pill out">↑ {lanes.secondary} {fmt(summary.outA)}</span>
 	</div>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -239,9 +259,9 @@
 
 			<!-- ── Row tracks ─────────────────────────────────────────────────── -->
 			{#each [
-				{ y: Y_ANITA,   label: 'Anita',    color: '#7c3aed' },
+				{ y: Y_SECONDARY, label: lanes.secondary, color: '#7c3aed' },
 				{ y: Y_ACCOUNT, label: accountName, color: '#0284c7' },
-				{ y: Y_KJETIL,  label: 'Kjetil',   color: '#2563eb' }
+				{ y: Y_PRIMARY, label: lanes.primary, color: '#2563eb' }
 			] as row}
 				<!-- solid track line -->
 				<line x1={ML} y1={row.y} x2={ML + innerW} y2={row.y}
@@ -341,7 +361,7 @@
 				/>
 			{/if}
 
-			<!-- Kjetil cumulative net line -->
+			<!-- Kumulativ netto, bane 1 -->
 			{#if balanceMeta.kPts.length >= 2}
 				<path
 					d={linePath(balanceMeta.kPts, balanceMeta.vMin, balanceMeta.vMax)}
@@ -350,7 +370,7 @@
 				/>
 			{/if}
 
-			<!-- Anita cumulative net line -->
+			<!-- Kumulativ netto, bane 2 -->
 			{#if balanceMeta.aPts.length >= 2}
 				<path
 					d={linePath(balanceMeta.aPts, balanceMeta.vMin, balanceMeta.vMax)}

@@ -3,10 +3,7 @@ import { db } from '$lib/db';
 import { canonicalBankTransactions, nudgeEvents, users } from '$lib/db/schema';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
-import {
-	ensureCategorizedEventsForRange,
-	queryCategorizedEvents
-} from '$lib/server/integrations/categorized-events';
+import { readTransactions } from '$lib/server/economics/transactions';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 import {
 	getGoogleChatWebhooksForRoutes,
@@ -126,9 +123,18 @@ export async function sendSalaryReceivedNudge(
 	const to = now;
 	let totalSpending = 0;
 	try {
-		await ensureCategorizedEventsForRange({ userId, from, to });
-		const txRows = await queryCategorizedEvents({ userId, from, to, spendingOnly: true });
-		totalSpending = txRows.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
+		// Delt leser, med interne overføringer ute: «du brukte X siden sist lønn» skal ikke
+		// inkludere det du satte av til sparing. Leste `categorized_events` fram til august
+		// 2026, altså en projeksjon bygget fra den dupliserte rå-strømmen.
+		const { transactions } = await readTransactions({
+			userId,
+			from,
+			to,
+			excludeInternalTransfers: true
+		});
+		totalSpending = transactions
+			.filter((tx) => tx.amount < 0)
+			.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 	} catch {
 		// Non-fatal — nudge still sends without spending total
 	}
@@ -154,9 +160,15 @@ export async function sendSalaryReceivedNudge(
 		try {
 			const prevFrom = new Date(`${prevPaydayDate}T00:00:00.000Z`);
 			const prevTo = paydayDate;
-			await ensureCategorizedEventsForRange({ userId, from: prevFrom, to: prevTo });
-			const prevTxRows = await queryCategorizedEvents({ userId, from: prevFrom, to: prevTo, spendingOnly: true });
-			const prevSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
+			const { transactions: prevTxRows } = await readTransactions({
+				userId,
+				from: prevFrom,
+				to: prevTo,
+				excludeInternalTransfers: true
+			});
+			const prevSpending = prevTxRows
+				.filter((tx) => tx.amount < 0)
+				.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 			if (prevSpending > 0) {
 				spendingTrend = ((totalSpending - prevSpending) / prevSpending) * 100;
 			}

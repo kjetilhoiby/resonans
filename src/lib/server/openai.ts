@@ -298,7 +298,9 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
       )
    )
       modules.add('health');
-   if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank/.test(text)) modules.add('economics');
+   // NB: «spare|buffer|dekning» må stå her, ellers treffer ikke «går sparekontoen ned»
+   // eller «hvor lenge holder bufferen» økonomimodulen i det hele tatt.
+   if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank|spare|buffer|dekning|uttak/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
    // Sult og inntak treffer BEGGE: loggen bor under Helse (Ernæring er undertema),
    // mens forslag om hva man skal spise trenger lager og ukemeny fra food.

@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { readTransactions, readLatestBalances } from '$lib/server/economics/transactions';
+import { loadSavingsBufferData } from '$lib/server/economics/savings-buffer';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
@@ -55,8 +56,8 @@ The tool returns actual data from your bank that you can trust.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
-		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list']).describe(
-			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category (optional category filter). category_trend: Monthly totals for a single category over a date range. account_list: List all accounts.'
+		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list', 'savings_buffer']).describe(
+			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category (optional category filter). category_trend: Monthly totals for a single category over a date range. account_list: List all accounts. savings_buffer: Sparekontoen som BUFFER — bunnivå per lønnsperiode (går den ned over tid?), måneders dekning ved dagens forbruk, og uttaksmønsteret som skiller en støtdemper fra en kassekreditt. Bruk denne på «går sparekontoen ned», «hvor lenge holder bufferen», «hvor ofte tar vi av sparepengene» og «når i måneden kniper det». IKKE bruk balance til de spørsmålene: den gir dagens saldo uten retning, og saldo alene skjuler at gulvet synker mens toppene står stille.'
 		),
 		category: z.string().optional().describe('Normalized category ID to filter by (e.g. "dagligvarer", "kafe_og_restaurant", "bil_og_transport"). Used in spending_summary and category_trend.'),
 		month: z.string().optional().describe('Month in YYYY-MM format (e.g., "2026-01")'),
@@ -73,7 +74,13 @@ The tool returns actual data from your bank that you can trust.`,
 
 	execute: async (args: {
 		userId: string;
-		queryType: 'balance' | 'transactions' | 'spending_summary' | 'category_trend' | 'account_list';
+		queryType:
+			| 'balance'
+			| 'transactions'
+			| 'spending_summary'
+			| 'category_trend'
+			| 'account_list'
+			| 'savings_buffer';
 		month?: string;
 		payPeriod?: 'current';
 		dateRange?: { start: string; end: string };
@@ -132,28 +139,15 @@ The tool returns actual data from your bank that you can trust.`,
 		try {
 			// Get account list
 			if (queryType === 'account_list') {
-				const rows = await db
-					.select({
-						accountId: sql<string>`data->>'accountId'`,
-						accountName: sql<string>`data->>'accountName'`,
-						accountType: sql<string>`data->>'accountType'`,
-						balance: sql<number>`(data->>'balance')::numeric`,
-						currency: sql<string>`data->>'currency'`,
-						timestamp: sensorEvents.timestamp
-					})
-					.from(sensorEvents)
-					.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
-					.orderBy(desc(sensorEvents.timestamp));
-
-				// Dedup: keep only latest per accountId
-				const seen = new Set<string>();
-				const accounts = rows
-					.filter((r) => {
-						if (!r.accountId || seen.has(r.accountId)) return false;
-						seen.add(r.accountId);
-						return true;
-					})
-					.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+				// Delt leser, samme kilde som flaten.
+				const accounts = (await readLatestBalances(userId)).map((row) => ({
+					accountId: row.accountId,
+					accountName: row.accountName,
+					accountType: row.accountType,
+					balance: row.balance,
+					currency: row.currency,
+					timestamp: row.observedAt
+				}));
 
 				if (accounts.length === 0) {
 					return {
@@ -182,36 +176,20 @@ The tool returns actual data from your bank that you can trust.`,
 
 			// Get current balance(s)
 			if (queryType === 'balance') {
-				const rows = await db
-					.select({
-						accountId: sql<string>`data->>'accountId'`,
-						accountName: sql<string>`data->>'accountName'`,
-						balance: sql<number>`(data->>'balance')::numeric`,
-						availableBalance: sql<number>`(data->>'availableBalance')::numeric`,
-						currency: sql<string>`data->>'currency'`,
-						timestamp: sensorEvents.timestamp
-					})
-					.from(sensorEvents)
-					.where(
-						accountId
-							? and(
-									eq(sensorEvents.userId, userId),
-									eq(sensorEvents.dataType, 'bank_balance'),
-									sql`data->>'accountId' = ${accountId}`
-								)
-							: and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance'))
-					)
-					.orderBy(desc(sensorEvents.timestamp));
-
-				// Dedup
-				const seen = new Set<string>();
-				const balances = rows
-					.filter((r) => {
-						if (!r.accountId || seen.has(r.accountId)) return false;
-						seen.add(r.accountId);
-						return true;
-					})
-					.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
+				// Delt leser. Hentet hver saldorad noensinne og deduperte i JS fram til
+				// august 2026.
+				const allBalances = await readLatestBalances(userId);
+				const balances = (accountId
+					? allBalances.filter((row) => row.accountId === accountId)
+					: allBalances
+				).map((row) => ({
+					accountId: row.accountId,
+					accountName: row.accountName,
+					balance: row.balance,
+					availableBalance: row.availableBalance,
+					currency: row.currency,
+					timestamp: row.observedAt
+				}));
 
 				if (balances.length === 0) {
 					return {
@@ -265,15 +243,20 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const transactions = await queryCanonicalTransactions({
+				// Delt leser, samme som flaten. Interne overføringer merkes men listes ikke
+				// som forbruk — «hva brukte vi penger på» skal ikke svare «4 000 til egen
+				// sparekonto».
+				const { transactions: allInPeriod } = await readTransactions({
 					userId,
 					from,
 					to,
 					accountId,
-					category: normalizedCategory ?? undefined,
-					limit,
+					excludeInternalTransfers: true,
 					sortBy
 				});
+				const transactions = normalizedCategory
+					? allInPeriod.filter((tx) => tx.category === normalizedCategory).slice(0, limit)
+					: allInPeriod.slice(0, limit);
 
 				if (transactions.length === 0) {
 					return {
@@ -296,10 +279,10 @@ The tool returns actual data from your bank that you can trust.`,
 					success: true,
 					data: {
 						transactions: transactions.map(t => ({
-							date: t.timestamp.toISOString().split('T')[0],
+							date: t.date,
 							description: t.description,
 							amount: t.amount,
-							category: t.resolvedCategory
+							category: t.category
 						})),
 						count: transactions.length,
 						returnedCount: transactions.length,
@@ -343,22 +326,23 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const periodSpending = await queryCanonicalTransactions({
+				const { transactions: periodRows } = await readTransactions({
 					userId,
 					from,
 					to,
 					accountId,
-					spendingOnly: true,
+					excludeInternalTransfers: true,
 					sortBy: 'date'
 				});
+				const periodSpending = periodRows.filter((tx) => tx.amount < 0);
 
 				const transactions = normalizedCategory
-					? periodSpending.filter((tx) => tx.resolvedCategory === normalizedCategory)
+					? periodSpending.filter((tx) => tx.category === normalizedCategory)
 					: periodSpending;
 
 				if (transactions.length === 0) {
 					const likelyUncategorizedGrocery = normalizedCategory === 'dagligvarer'
-						? periodSpending.filter((tx) => tx.resolvedCategory === 'ukategorisert' && looksLikeGroceryDescription(tx.description)).length
+						? periodSpending.filter((tx) => tx.category === 'ukategorisert' && looksLikeGroceryDescription(tx.description)).length
 						: 0;
 
 					return {
@@ -383,7 +367,7 @@ The tool returns actual data from your bank that you can trust.`,
 				// Group by category
 				const byCategory = new Map<string, { total: number; count: number }>();
 				for (const tx of transactions) {
-					const cat = tx.resolvedCategory || 'ukategorisert';
+					const cat = tx.category || 'ukategorisert';
 					const current = byCategory.get(cat) || { total: 0, count: 0 };
 					byCategory.set(cat, {
 						total: current.total + (Number(tx.amount) || 0),
@@ -418,6 +402,60 @@ The tool returns actual data from your bank that you can trust.`,
 				};
 			}
 
+		// Sparekontoen som buffer
+		if (queryType === 'savings_buffer') {
+			// Samme loader som Sparing-fanen. Et dashboard uten verktøy er data assistenten
+			// ikke har — og et verktøy med en EGEN beregning ville sagt noe annet enn skjermen.
+			const buffer = await loadSavingsBufferData(userId);
+
+			if (buffer.noSavingsAccountFound) {
+				return {
+					success: true,
+					data: { noSavingsAccountFound: true },
+					message:
+						'Fant ingen konto som ser ut som en sparekonto ut fra navn og type. Det er ikke det samme som at bufferen er tom — den er bare ikke identifisert. Kontonavn med «spar», «buffer», «BSU» eller «reserve» blir regnet med.'
+				};
+			}
+
+			// Sammendraget er et UTSNITT: hele saldoserien (opptil to år per konto) hører
+			// ikke i et verktøysvar.
+			const accounts = buffer.accounts.map((account) => ({
+				accountName: account.accountName,
+				balance: Math.round(account.balance),
+				runwayMonths: account.runwayMonths === null ? null : Number(account.runwayMonths.toFixed(1)),
+				trendDirection: account.trend.direction,
+				trendReason: account.trend.reason,
+				troughChangePerPeriod:
+					account.trend.perPeriod === null ? null : Math.round(account.trend.perPeriod),
+				latestTrough: account.troughs.at(-1)?.trough ?? null,
+				withdrawalVerdict: account.withdrawals.verdict,
+				withdrawalReason: account.withdrawals.reason,
+				withdrawalsPerPeriod: Number(account.withdrawals.perPeriod.toFixed(2)),
+				medianWithdrawal: account.withdrawals.medianAmount,
+				lateSharePct: Math.round(account.withdrawals.lateShare * 100)
+			}));
+
+			return {
+				success: true,
+				data: {
+					accounts,
+					totalBalance: Math.round(buffer.totalBalance),
+					totalRunwayMonths:
+						buffer.totalRunwayMonths === null ? null : Number(buffer.totalRunwayMonths.toFixed(1)),
+					monthlySpend: buffer.monthlySpend === null ? null : Math.round(buffer.monthlySpend),
+					periodsAnalyzed: buffer.periods.length,
+					guidance:
+						'Bunnivået er signalet, ikke saldoen: lønna kommer inn hver måned, så toppene kan se uendret ut mens gulvet synker. Et enkelt uttak er ikke et varsel — en buffer skal brukes. Det som betyr noe er om den kommer tilbake. «kassekreditt» betyr hyppige uttak sent i lønnsperioden, altså at måneden ikke bærer; «støtdemper» betyr at bufferen gjør jobben sin. Videreformidle begrunnelsene ordrett framfor å finne egne ord.'
+				},
+				message: buffer.accounts
+					.map(
+						(a) =>
+							`${a.accountName ?? 'Sparekonto'}: ${Math.round(a.balance).toLocaleString('nb-NO')} kr, ${a.trend.direction}${a.runwayMonths !== null ? `, ${a.runwayMonths.toFixed(1)} mnd dekning` : ''}. ${a.withdrawals.reason}`
+					)
+					.join(' | ')
+			};
+		}
+
 		// Get monthly trend for a single spending category
 		if (queryType === 'category_trend') {
 			if (!category) {
@@ -439,50 +477,27 @@ The tool returns actual data from your bank that you can trust.`,
 				to = new Date(year, mo, 1);
 			}
 
-			const fromDate = from.toISOString().slice(0, 10);
-			const toDate = to.toISOString().slice(0, 10);
-			const where = accountId
-				? and(
-						eq(canonicalBankTransactions.userId, userId),
-						eq(canonicalBankTransactions.isActive, true),
-						eq(canonicalBankTransactions.accountId, accountId),
-						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
-						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
-					)
-				: and(
-						eq(canonicalBankTransactions.userId, userId),
-						eq(canonicalBankTransactions.isActive, true),
-						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
-						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
-					);
-
-			const allTxs = await db
-				.select({
-					timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`,
-					amount: canonicalBankTransactions.amount,
-					description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-					typeText: sql<string>`''`,
-				})
-				.from(canonicalBankTransactions)
-				.where(where);
-
-			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
-
-			const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-				loadMerchantMappings(userId),
-				loadClassificationOverrides(userId, 'transaction'),
-				loadTransactionMatchingRules()
-			]);
+			// Delt leser: samme kategorisering, samme typeText-fallback og samme
+			// overføringshåndtering som flaten. Den forrige utgaven hardkodet typeText til ''
+			// og kategoriserte på nytt her, så et kategoritrend-svar kunne avvike fra
+			// forbrukskortet for samme måned.
+			const { transactions: trendRows } = await readTransactions({
+				userId,
+				from,
+				to,
+				accountId,
+				excludeInternalTransfers: true
+			});
 
 			const wantedCategory = normalizeCategoryId(category);
 
 			// Group matching transactions by month
 			const byMonth = new Map<string, number>();
-			for (const tx of spendingTxs) {
-				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
-				if (normalizeCategoryId(classified.category) !== wantedCategory) continue;
-				const monthKey = tx.timestamp.slice(0, 7); // YYYY-MM
-				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(Number(tx.amount)));
+			for (const tx of trendRows) {
+				if (tx.amount >= 0) continue;
+				if (normalizeCategoryId(tx.category) !== wantedCategory) continue;
+				const monthKey = tx.date.slice(0, 7); // YYYY-MM
+				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(tx.amount));
 			}
 
 			const monthRows = Array.from(byMonth.entries())

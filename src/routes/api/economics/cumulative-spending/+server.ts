@@ -1,12 +1,13 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, asc, sql } from 'drizzle-orm';
-import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { readTransactions } from '$lib/server/economics/transactions';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import type { RequestHandler } from './$types';
+
+/**
+ * Hvor langt tilbake fallback-lønnsdeteksjonen ser. Den forrige utgaven leste hele
+ * kontohistorikken uten vindu for å finne to lønnsdatoer.
+ */
+const FALLBACK_HISTORY_DAYS = 3 * 365;
 
 /**
  * GET /api/economics/cumulative-spending
@@ -41,47 +42,35 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
 		const SALARY_MIN_AMOUNT = 10_000;
 
-		const transactions = await db
-			.select({
-				amount: sql<number>`(data->>'amount')::numeric`,
-				description: sql<string>`data->>'description'`,
-				typeText: sql<string>`data->>'category'`,
-				timestamp: sensorEvents.timestamp
-			})
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'bank_transaction'),
-					sql`data->>'accountId' = ${accountId}`
-				)
-			)
-			.orderBy(asc(sensorEvents.timestamp));
+		// Interne overføringer MÅ ut her: en flytting på 20 000 til egen sparekonto ser ut
+		// som en lønnsutbetaling for både nøkkelordsøket og størrelses-fallbacken.
+		const { transactions: accountRows } = await readTransactions({
+			userId,
+			from: new Date(Date.now() - FALLBACK_HISTORY_DAYS * 86400000),
+			accountId: accountId ?? undefined,
+			excludeInternalTransfers: true
+		});
 
-		const salaryTxs = transactions.filter((t) => {
-			const amount = Number(t.amount);
-			if (amount < SALARY_MIN_AMOUNT) return false;
-			const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
+		const salaryTxs = accountRows.filter((t) => {
+			if (t.amount < SALARY_MIN_AMOUNT) return false;
+			const text = `${t.description} ${t.typeText ?? ''}`.toLowerCase();
 			return SALARY_KEYWORDS.some((kw) => text.includes(kw));
 		});
 
 		if (salaryTxs.length >= 2) {
 			const perMonth = new Map<string, string>();
-			for (const tx of salaryTxs) {
-				const d = tx.timestamp.toISOString().split('T')[0];
-				const m = d.slice(0, 7);
-				if (!perMonth.has(m)) perMonth.set(m, d);
+			for (const tx of [...salaryTxs].sort((a, b) => a.date.localeCompare(b.date))) {
+				const m = tx.date.slice(0, 7);
+				if (!perMonth.has(m)) perMonth.set(m, tx.date);
 			}
 			paydayDates = [...perMonth.values()].sort();
 		} else {
 			const monthInflows = new Map<string, { date: string; amount: number }>();
-			for (const tx of transactions) {
-				const amount = Number(tx.amount);
-				if (amount < SALARY_MIN_AMOUNT) continue;
-				const d = tx.timestamp.toISOString().split('T')[0];
-				const m = d.slice(0, 7);
+			for (const tx of accountRows) {
+				if (tx.amount < SALARY_MIN_AMOUNT) continue;
+				const m = tx.date.slice(0, 7);
 				const cur = monthInflows.get(m);
-				if (!cur || amount > cur.amount) monthInflows.set(m, { date: d, amount });
+				if (!cur || tx.amount > cur.amount) monthInflows.set(m, { date: tx.date, amount: tx.amount });
 			}
 			paydayDates = [...monthInflows.values()].map((v) => v.date).sort();
 		}
@@ -112,46 +101,19 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		}
 	}
 
-	// ─── Fetch and categorize all transactions ───────────────────────────────
-	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
+	// ─── Transaksjonene, gjennom den delte leseren ───────────────────────────
+	// Vinduet starter ved den eldste lønnsdatoen vi skal tegne, ikke ved «alt».
+	const seriesFrom = extendedPaydays[Math.max(0, extendedPaydays.length - (maxPeriods + 1))];
+	const { transactions: categoryRows } = await readTransactions({
+		userId,
+		from: seriesFrom,
+		accountId: accountId ?? undefined,
+		excludeInternalTransfers: true
+	});
 
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction')
-			);
-
-	const rows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`,
-		})
-		.from(sensorEvents)
-		.where(where);
-
-	// Filter and categorize
-	const transactions = rows
-		.map((r) => {
-			const amount = Number(r.amount) || 0;
-			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-			return {
-				date: r.timestamp.toISOString().split('T')[0],
-				amount: Math.abs(amount),
-				category: cat.category,
-			};
-		})
-		.filter((t) => t.category === categoryFilter && t.amount > 0); // Only expenses for this category
+	const transactions = categoryRows
+		.filter((t) => t.category === categoryFilter && t.amount < 0)
+		.map((t) => ({ date: t.date, amount: Math.abs(t.amount), category: t.category }));
 
 	// ─── Build periods ────────────────────────────────────────────────────────
 	type DayPoint = { day: number; cumulative: number; dailySpent: number };
@@ -177,8 +139,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const dayMap = new Map<string, number>();
 		
 		for (const tx of transactions) {
-			const txDate = new Date(tx.date);
-			if (txDate >= start && txDate < end) {
+			if (tx.date >= startDate && tx.date < endDate) {
 				const current = dayMap.get(tx.date) || 0;
 				dayMap.set(tx.date, current + tx.amount);
 			}

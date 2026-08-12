@@ -1,41 +1,27 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { readLatestBalances } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 /**
  * GET /api/economics/accounts
- * Returns list of bank accounts with latest balance from bank_balance events
+ * Kontoer med siste kjente saldo.
+ *
+ * Hentet alle `bank_balance`-rader noensinne og plukket den ferskeste per konto i JS fram
+ * til august 2026. Nå `DISTINCT ON` med et ettårsvindu i den delte leseren.
  */
 export const GET: RequestHandler = async ({ locals }) => {
-	const userId = locals.userId;
+	const balances = await readLatestBalances(locals.userId);
 
-	// Get the latest bank_balance event per accountId
-	const rows = await db
-		.select({
-			accountId: sql<string>`data->>'accountId'`,
-			accountName: sql<string>`data->>'accountName'`,
-			accountType: sql<string>`data->>'accountType'`,
-			accountNumber: sql<string>`data->>'accountNumber'`,
-			balance: sql<number>`(data->>'balance')::numeric`,
-			availableBalance: sql<number>`(data->>'availableBalance')::numeric`,
-			currency: sql<string>`data->>'currency'`,
-			timestamp: sensorEvents.timestamp
-		})
-		.from(sensorEvents)
-		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
-		.orderBy(desc(sensorEvents.timestamp));
-
-	// Dedup: keep only latest per accountId
-	const seen = new Set<string>();
-	const accounts = rows
-		.filter((r) => {
-			if (!r.accountId || seen.has(r.accountId)) return false;
-			seen.add(r.accountId);
-			return true;
-		})
-		.sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0));
-
-	return json(accounts);
+	return json(
+		balances.map((row) => ({
+			accountId: row.accountId,
+			accountName: row.accountName,
+			accountType: row.accountType,
+			accountNumber: row.accountNumber,
+			balance: row.balance,
+			availableBalance: row.availableBalance,
+			currency: row.currency,
+			timestamp: row.observedAt
+		}))
+	);
 };

@@ -1,10 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { readTransactions } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 /**
@@ -26,34 +21,12 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	cutoff.setDate(1);
 	cutoff.setHours(0, 0, 0, 0);
 
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`timestamp >= ${cutoff.toISOString()}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${cutoff.toISOString()}`
-			);
-
-	const [rows, mappings, transactionOverrideCache, transactionRules] = await Promise.all([
-		db
-			.select({
-				timestamp: sensorEvents.timestamp,
-				amount: sql<number>`(data->>'amount')::numeric`,
-				description: sql<string>`data->>'description'`,
-				typeText: sql<string>`data->>'category'`,
-				transactionId: sql<string>`metadata->>'transactionId'`
-			})
-			.from(sensorEvents)
-			.where(where),
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
+	const { transactions: rows } = await readTransactions({
+		userId,
+		from: cutoff,
+		accountId: accountId ?? undefined,
+		excludeInternalTransfers: true
+	});
 
 	if (rows.length === 0) {
 		return json({ categories: [], risingFixed: [], clusters: [], subscriptions: [], summary: null });
@@ -86,23 +59,22 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	let totalIncome = 0;
 
 	for (const r of rows) {
-		const amount = Number(r.amount) || 0;
+		const amount = r.amount;
 		if (amount > 0) { totalIncome += amount; continue; } // skip income from spending views
 
-		const cat = categorizeTransaction(r.description, r.typeText, amount, mappings, transactionOverrideCache, transactionRules);
-		const subcategory = (mappings.get((r.description ?? '').toLowerCase().trim()) as any)?.subcategory ?? null;
-
 		txs.push({
-			transactionId: r.transactionId,
-			date: r.timestamp.toISOString().split('T')[0],
-			description: r.description ?? '',
+			// canonical-id-en, ikke provider-id-en: SB1 gir ny transactionId hver synk, så
+			// den var ustabil som nøkkel utad.
+			transactionId: r.id,
+			date: r.date,
+			description: r.description,
 			amount,
-			category: cat.category,
-			subcategory,
-			label: cat.label,
-			emoji: cat.emoji,
-			isFixed: cat.isFixed,
-			merchantKey: (r.description ?? '').toLowerCase().trim()
+			category: r.category,
+			subcategory: r.subcategory,
+			label: r.label,
+			emoji: r.emoji,
+			isFixed: r.isFixed,
+			merchantKey: r.description.toLowerCase().trim()
 		});
 	}
 

@@ -123,6 +123,48 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'routes/api/admin/debug-sleep/+server.ts',
 			'routes/api/tema/[id=uuid]/health-stats/+server.ts'
 		]
+	},
+	{
+		dataType: 'bank_transaction',
+		use: 'readTransactions fra $lib/server/economics/transactions',
+		why: 'SB1 gir ny transactionId ved hver synk, og sikkerhetsnettet mot semantiske duplikater dekker bare det ferske synkvinduet. Målt over 365 dager i august 2026: 8 891 rå rader mot 2 245 canonical, altså 6,0 mill. kr «forbruk» mot 1,58. Leseren dekker dessuten kategorisering og merking av interne overføringer — 68 % av forbruket var flytting mellom egne kontoer.',
+		knownRawReaders: [
+			// Synken selv: skriver rådataene og gjør sin egen semantiske dedup.
+			'lib/server/integrations/sparebank1-sync.ts',
+			// Projeksjonen bygges fra sensor_events. Den betjener nå bare
+			// prosjektkoblinger (categorized_events.projectId); alt som teller kroner
+			// leser canonical. Å nøkle den på canonicalId er en migrasjon som står igjen —
+			// se fase 1 i changeloggen.
+			'lib/server/integrations/categorized-events.ts',
+			// Kryssjekk mot canonical er hele poenget: spriket ER målingen.
+			'routes/api/admin/debug-sparebank1/dedup/+server.ts',
+			'routes/api/widget-data/[id]/+server.ts',
+			// Skrive-/vedlikeholdsstier som opererer på rå rader.
+			'routes/api/admin/db-stats/+server.ts',
+			'routes/api/admin/deduplicate-economics/+server.ts',
+			'routes/api/admin/import-history/+server.ts',
+			'routes/api/admin/import-statements/+server.ts',
+			'routes/api/admin/reset-economics/+server.ts'
+		]
+	},
+	{
+		dataType: 'bank_balance',
+		use: 'readLatestBalances fra $lib/server/economics/transactions (eller buildDailyBalances for en daglig serie)',
+		why: 'Saldo lagres som et snapshot per synk, altså hvert 5. minutt. Fem lesesteder hentet HVER saldorad noensinne og plukket den ferskeste i JS. Leseren gjør DISTINCT ON per konto med et vindu.',
+		knownRawReaders: [
+			'lib/server/integrations/sparebank1-sync.ts',
+			// Ankerpunktene til den daglige saldoserien: her er poenget nettopp alle
+			// snapshotene over tid, ikke det ferskeste.
+			'lib/server/integrations/balance-reconstructor.ts',
+			// Leseren selv.
+			'lib/server/economics/transactions.ts',
+			// Skrive-/vedlikeholdsstier.
+			'routes/api/admin/db-stats/+server.ts',
+			'routes/api/admin/deduplicate-economics/+server.ts',
+			'routes/api/admin/import-history/+server.ts',
+			'routes/api/admin/import-statements/+server.ts',
+			'routes/api/admin/reset-economics/+server.ts'
+		]
 	}
 ];
 
@@ -139,6 +181,13 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 export function readsRawDataType(source: string, dataType: string): boolean {
 	const escaped = dataType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	const quoted = `['"\`]${escaped}['"\`]`;
+
+	// `NOT IN` nøytraliseres først. `data_type NOT IN ('bank_balance', 'bank_transaction')`
+	// EKSKLUDERER typen — det er det motsatte av å lese den rått, og indeksdefinisjonen i
+	// `schema.ts` bruker nettopp den formen. Uten dette ville vakten krevd at
+	// tabelldefinisjonen sto på lista over rå lesere.
+	const normalized = source.replace(/\bNOT\s+IN\b/gi, 'NOT_IN');
+
 	const patterns = [
 		// data_type = 'workout'
 		new RegExp(`data_type\\s*=\\s*${quoted}`),
@@ -149,5 +198,5 @@ export function readsRawDataType(source: string, dataType: string): boolean {
 		// inArray(sensorEvents.dataType, ['workout', …])
 		new RegExp(`dataType\\s*,\\s*\\[[^\\]]*${quoted}`)
 	];
-	return patterns.some((pattern) => pattern.test(source));
+	return patterns.some((pattern) => pattern.test(normalized));
 }

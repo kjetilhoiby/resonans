@@ -15,7 +15,7 @@ import { json, error } from '@sveltejs/kit';
 import { db, sql } from '$lib/db';
 import { userWidgets, metricAggregateCache } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
+import { readTransactions } from '$lib/server/economics/transactions';
 import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-definition-service';
 import { minutesInWindow, normalizeHourWindow, type HourBucket, type HourWindow } from '$lib/server/services/screen-time-window';
@@ -225,46 +225,28 @@ async function fetchCategorizedAmountRows(
 	userId: string,
 	from: Date,
 	to: Date,
-	filterCategory: string,
+	filterCategory?: string | null,
 	filterSubcategory?: string | null,
 ): Promise<Array<{ timestamp: Date; value: number }>> {
-	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
+	// Gjennom den delte leseren, som flaten og chatten. Fram til august 2026 leste denne
+	// `categorized_events` med et keyword-filter i SQL som fallback — altså en TREDJE
+	// kategoriseringsvei, uten merchant-mappings og uten brukerens manuelle overstyringer.
+	// En forbruksdings kunne derfor vise et annet tall enn forbrukskortet for samme kategori.
+	// Se `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+	const wanted = filterCategory ? normalizeCategoryId(filterCategory) : null;
 
-	const wantedCategory = normalizeCategoryId(filterCategory);
-	if (!wantedCategory) return [];
+	const { transactions } = await readTransactions({
+		userId,
+		from,
+		to: new Date(to.getTime() + 1),
+		excludeInternalTransfers: true
+	});
 
-	const subcatClause = filterSubcategory ? `AND resolved_subcategory = $5` : '';
-	const params: unknown[] = [userId, from.toISOString(), to.toISOString(), wantedCategory];
-	if (filterSubcategory) params.push(filterSubcategory);
-
-	const rows = await sql(
-		`
-		SELECT
-			timestamp,
-			ABS(amount::numeric) AS value
-		FROM categorized_events
-		WHERE user_id = $1
-		  AND resolved_category = $4
-		  AND timestamp >= $2
-		  AND timestamp <= $3
-		  AND amount::numeric < 0
-		  ${subcatClause}
-		ORDER BY timestamp ASC
-		`,
-		params
-	) as unknown as Array<{ timestamp: Date; value: string | number }>;
-
-	const categorizedRows = rows.map((tx) => ({
-		timestamp: new Date(tx.timestamp),
-		value: Math.abs(Number(tx.value) || 0),
-	}));
-
-	if (categorizedRows.length > 0) {
-		return categorizedRows;
-	}
-
-	// Fallback: hvis mapping/kategorisering ikke treffer ennå, bruk keyword-filter
-	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+	return transactions
+		.filter((tx) => tx.amount < 0)
+		.filter((tx) => !wanted || tx.category === wanted)
+		.filter((tx) => !filterSubcategory || tx.subcategory === filterSubcategory)
+		.map((tx) => ({ timestamp: tx.timestamp, value: Math.abs(tx.amount) }));
 }
 
 /**
@@ -300,6 +282,17 @@ async function fetchHourWindowScreenTimeRows(
 	return result;
 }
 
+/**
+ * Diagnose for «hvorfor treffer ikke kategorifilteret mitt».
+ *
+ * Leser gjennom den delte leseren, samme kilde widgeten selv bruker. Fram til august 2026
+ * rapporterte den på `categorized_events` mens widgeten leste rå `sensor_events` med et
+ * keyword-filter — så diagnosen beskrev en annen sti enn den som produserte tallet, og
+ * kunne si «alt ser bra ut» om et filter som ikke virket.
+ *
+ * `sensorEventsTxCount` beholdes som kryssjekk: spriket mot `totalSpendTxCountInRange` er
+ * duplikatene i den rå strømmen, og det er nyttig å se.
+ */
 async function collectAmountFilterDebug(
 	userId: string,
 	from: Date,
@@ -307,67 +300,39 @@ async function collectAmountFilterDebug(
 	filterCategory: string,
 	filterSubcategory?: string | null,
 ): Promise<AmountFilterDebug> {
-	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
-
 	const wantedCategory = normalizeCategoryId(filterCategory);
 
-	const rows = await sql(
-		`
-		SELECT
-			resolved_category AS category,
-			COUNT(*)::int AS count
-		FROM categorized_events
-		WHERE user_id = $1
-		  AND timestamp >= $2
-		  AND timestamp <= $3
-		  AND amount::numeric < 0
-		GROUP BY resolved_category
-		ORDER BY count DESC
-		`,
-		[userId, from.toISOString(), to.toISOString()]
-	) as unknown as Array<{ category: string | null; count: number }>;
+	const { transactions } = await readTransactions({
+		userId,
+		from,
+		to: new Date(to.getTime() + 1),
+		excludeInternalTransfers: true
+	});
 
-	const totalSpendTxCountInRange = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
-	const categorizedMatchCount = rows
-		.filter((row) => normalizeCategoryId(row.category) === wantedCategory)
-		.reduce((sum, row) => sum + Number(row.count || 0), 0);
+	const spending = transactions.filter((tx) => tx.amount < 0);
 
-	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
-	const topClassifiedCategories = rows.slice(0, 5).map((row) => ({
-		category: row.category ?? 'ukategorisert',
-		count: Number(row.count || 0)
+	const byCategory = new Map<string, number>();
+	for (const tx of spending) {
+		byCategory.set(tx.category, (byCategory.get(tx.category) ?? 0) + 1);
+	}
+
+	const totalSpendTxCountInRange = spending.length;
+	const matches = spending
+		.filter((tx) => tx.category === wantedCategory)
+		.filter((tx) => !filterSubcategory || tx.subcategory === filterSubcategory);
+
+	const topClassifiedCategories = [...byCategory.entries()]
+		.map(([category, count]) => ({ category, count }))
+		.sort((a, b) => b.count - a.count)
+		.slice(0, 5);
+
+	const sampleMatches = matches.slice(0, 6).map((tx) => ({
+		date: tx.date,
+		description: tx.description || 'Ukjent',
+		amount: Math.abs(tx.amount),
 	}));
 
-	const sampleSubcatClause = filterSubcategory ? `AND resolved_subcategory = $5` : '';
-	const sampleParams: unknown[] = [userId, from.toISOString(), to.toISOString(), wantedCategory];
-	if (filterSubcategory) sampleParams.push(filterSubcategory);
-
-	const sampleRows = await sql(
-		`
-		SELECT
-			timestamp,
-			description,
-			amount::numeric AS amount
-		FROM categorized_events
-		WHERE user_id = $1
-		  AND timestamp >= $2
-		  AND timestamp <= $3
-		  AND amount::numeric < 0
-		  AND resolved_category = $4
-		  ${sampleSubcatClause}
-		ORDER BY timestamp DESC
-		LIMIT 6
-		`,
-		sampleParams
-	) as unknown as Array<{ timestamp: Date; description: string | null; amount: string | number }>;
-
-	const sampleMatches = sampleRows
-		.slice(0, 6)
-		.map((tx) => ({
-			date: new Date(tx.timestamp).toISOString().slice(0, 10),
-			description: tx.description ?? 'Ukjent',
-			amount: Math.abs(Number(tx.amount) || 0),
-		}));
+	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
 
 	const sensorCountRows = await sql(
 		`SELECT COUNT(*)::int AS count FROM sensor_events
@@ -382,7 +347,7 @@ async function collectAmountFilterDebug(
 		filterCategory,
 		filterCategoryNormalized: wantedCategory,
 		totalSpendTxCountInRange,
-		categorizedMatchCount,
+		categorizedMatchCount: matches.length,
 		keywordMatchCount: keywordRows.length,
 		projectionCoveragePct: totalSpendTxCountInRange === 0
 			? 100
@@ -458,7 +423,9 @@ async function fetchTimeSeries(
 	filterSubcategory?: string | null,
 	hourWindow?: HourWindow | null,
 ): Promise<{ bucket: string; value: number }[]> {
-	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
+	// Gjelder også UTEN kategorifilter: den generiske SQL-stien under leser rå
+	// sensor_events, som er ~3,8x duplisert.
+	if (metricConf.dataType === 'bank_transaction') {
 		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
 		return bucketRows(rows, period, aggregation);
 	}
@@ -509,7 +476,7 @@ async function fetchSingleValue(
 	filterSubcategory?: string | null,
 	hourWindow?: HourWindow | null,
 ): Promise<number | null> {
-	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
+	if (metricConf.dataType === 'bank_transaction') {
 		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
 		if (rows.length === 0) return null;
 		return aggregateValues(rows.map((row) => row.value), aggregation);

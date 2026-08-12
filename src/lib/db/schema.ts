@@ -2177,6 +2177,12 @@ export const canonicalBankTransactions = pgTable('canonical_bank_transactions', 
 	currency: text('currency').notNull().default('NOK'),
 	merchantKey: text('merchant_key').notNull(),
 	descriptionDisplay: text('description_display'),
+	/**
+	 * SB1s egen kategoritekst («MAT OG DRIKKE»). Bæres hit fordi kategoriseringen
+	 * bruker den som fallback — uten feltet kalte alle canonical-lesere
+	 * categorizeTransaction(desc, null, …) og mistet den. Se 0055-migrasjonen.
+	 */
+	typeText: text('type_text'),
 	latestBookingStatus: text('latest_booking_status'),
 	statusRank: integer('status_rank').notNull().default(0),
 	latestPostedAt: timestamp('latest_posted_at').notNull(),
