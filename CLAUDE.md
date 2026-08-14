@@ -351,6 +351,14 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
 - **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
   bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
   appen mistet resumption-handtaket.
+- **Token-profiler** (`voice-test`/`assistant`/`coach`, se
+  `docs/changelog/2026-08-14-gemini-token-profiler.md`): verktøyskjemaene bor i det
+  constrainede setupet i `gemini-live-profiles.ts` — **aldri i appen**. Ukjent/manglende
+  profil → `voice-test`, som svarer byte-identisk med tida før profilene fantes; bare
+  `assistant`/`coach` får `profile`-ekko, `capabilities` og `persona` i svaret. Kill
+  switch per profil: `GEMINI_LIVE_DISABLED_PROFILES` → 403 `profile_disabled`. Ratelimit
+  30 mint/døgn per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  Endrer du et verktøyskjema inkompatibelt, bump `TOOLSET_VERSION`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
   Vercel-logg eller i et JSON-svar.
@@ -1343,6 +1351,8 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 **Gemini realtime (Ekko):** `GEMINI_API_KEY` (påkrevd for `/api/apps/gemini/*`; uten den
 svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og appen skal
 ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
+`GEMINI_LIVE_COACH_MODEL` (valgfri) overstyrer modellen for coach-profilen.
+`GEMINI_LIVE_DISABLED_PROFILES` (valgfri, kommaseparert) er kill switch per token-profil.
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 
