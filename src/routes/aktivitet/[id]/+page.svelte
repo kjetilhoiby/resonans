@@ -6,8 +6,10 @@
 	import KmSplitsTable from '$lib/components/charts/KmSplitsTable.svelte';
 	import HrDistributionBar from '$lib/components/charts/HrDistributionBar.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import ChatThread from '$lib/components/ui/ChatThread.svelte';
-	import { goto } from '$app/navigation';
+	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import { tick } from 'svelte';
+	import { afterNavigate, goto } from '$app/navigation';
+	import { resolveSheetExit } from '$lib/domain/sheet-exit';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import {
 		cumulativeDistanceMeters,
@@ -17,10 +19,40 @@
 	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, assessment, assessmentContext, activityListThemeId } = data;
+	const { workout, trackPoints, assessment, activityListThemeId } = data;
+	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
 	let tab = $state<Tab>('detaljer');
+
+	let messagesEl = $state<HTMLElement | null>(null);
+
+	/**
+	 * Sann når arket ble nådd fra en side inne i appen.
+	 *
+	 * `afterNavigate` gir `from === null` ved første lasting, altså når brukeren kom
+	 * rett hit fra en push-varsling. Da finnes det ingen historikk å gå tilbake til,
+	 * og `history.back()` gjør ingenting — arket ble en blindvei. Se
+	 * `$lib/domain/sheet-exit.ts`.
+	 */
+	let cameFromApp = $state(false);
+	afterNavigate((nav) => {
+		if (nav.from) cameFromApp = true;
+	});
+
+	/** Lista arket hører hjemme i, når historikken ikke kan brukes. */
+	const listHref = $derived(activityListThemeId ? `/tema/${activityListThemeId}` : null);
+
+	function closeSheet() {
+		const exit = resolveSheetExit({ cameFromApp, fallbackHref: listHref });
+		if (exit.action === 'back') {
+			history.back();
+			return;
+		}
+		// `replaceState`: arket skal ikke bli liggende bak deg i historikken og kunne
+		// nås med en tilbake-sveip etter at du lukket det.
+		void goto(exit.href, { replaceState: true });
+	}
 
 	// Skjul-økt-tilstand (to-stegs bekreftelse — backend setter metadata.dismissed)
 	let hiding = $state(false);
@@ -44,10 +76,10 @@
 			const res = await fetch(`/api/workouts/${workout.id}/dismiss`, { method: 'POST' });
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			// Naviger til en fersk oversikt slik at den skjulte økten ikke vises fra cache
-			if (activityListThemeId) {
-				await goto(`/tema/${activityListThemeId}`, { invalidateAll: true });
+			if (listHref) {
+				await goto(listHref, { invalidateAll: true });
 			} else {
-				history.back();
+				closeSheet();
 			}
 		} catch {
 			hideError = 'Kunne ikke skjule økten. Prøv igjen.';
@@ -55,37 +87,45 @@
 		}
 	}
 
-	// Chatten får NØYAKTIG samme fakta som vurderingen, bygget på serveren
-	// ($lib/server/workouts/workout-assessment.ts). Siden bygde tidligere sitt eget
-	// vedlegg av et halvt dusin tall — med «/km» også for sykling, og med måltitler
-	// uten progresjon. To veier inn til de samme tallene driver fra hverandre.
-	const workoutContextNote = $derived(
-		assessmentContext
-			? assessment
-				? `${assessmentContext}\n\nVurdering gitt til brukeren: ${assessment}`
-				: assessmentContext
-			: `Treningsøkt: ${workout.title}`
-	);
+	// Build workout context note injected on the first chat message
+	const workoutContextNote = $derived.by(() => {
+		const lines: string[] = [
+			`Treningsøkt: ${workout.title}`,
+			`Dato: ${new Intl.DateTimeFormat('nb-NO', { dateStyle: 'full', timeStyle: 'short' }).format(new Date(workout.timestamp))}`,
+		];
+		if (workout.distanceKm != null) lines.push(`Distanse: ${workout.distanceKm.toFixed(2)} km`);
+		if (workout.durationSeconds != null) lines.push(`Varighet: ${Math.round(workout.durationSeconds / 60)} min`);
+		if (workout.paceSecondsPerKm != null) {
+			const m = Math.floor(workout.paceSecondsPerKm / 60);
+			const s = String(Math.round(workout.paceSecondsPerKm % 60)).padStart(2, '0');
+			lines.push(`Tempo: ${m}:${s} /km`);
+		}
+		if (workout.avgHeartRate != null) lines.push(`Snitt puls: ${Math.round(workout.avgHeartRate)} bpm`);
+		if (workout.maxHeartRate != null) lines.push(`Maks puls: ${Math.round(workout.maxHeartRate)} bpm`);
+		if (workout.elevationMeters != null) lines.push(`Høydemeter: ${Math.round(workout.elevationMeters)} m`);
+		if (assessment) lines.push(`\nVurdering: ${assessment}`);
+		if (healthGoals.length > 0) {
+			lines.push('\nAktive helsemål:');
+			for (const g of healthGoals) {
+				lines.push(`- ${g.title}${g.description ? `: ${g.description}` : ''}`);
+			}
+		}
+		return lines.join('\n');
+	});
 
 	const chat = new ChatState({
 		getOrCreateConversationId: async () => null, // samtale opprettes lazy av API
 		initialAttachment: { url: 'resonans://workout-context', kind: 'other' as const, contentText: workoutContextNote, note: 'Treningsøkt-kontekst' }
 	});
 
-	let chatDraft = $state('');
-	let chatInputKey = $state(0);
-
-	async function sendMessage(text: string) {
-		// ChatThread forankrer ved bunnen selv når en melding kommer til.
-		chatDraft = '';
-		await chat.send(text);
+	async function scrollToBottom() {
+		await tick();
+		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
 	}
 
-	// Stoppet svar: legg brukerens tekst tilbake i feltet. Nøkkelen remounter
-	// ChatInput, ellers ser ikke `initialValue`-effekten en uendret tekst.
-	function editStoppedMessage() {
-		chatDraft = chat.editStopped();
-		chatInputKey++;
+	async function sendMessage(text: string) {
+		await chat.send(text);
+		await scrollToBottom();
 	}
 
 	// Formatters
@@ -161,19 +201,24 @@
 	}
 </script>
 
+<!-- Escape ligger på VINDUET, ikke på bakteppet: en `div` med `tabindex="-1"` får
+     aldri tastetrykk med mindre noe har gitt den fokus, så Escape virket ikke i det
+     hele tatt. Må stå på toppnivå i malen. -->
+<svelte:window onkeydown={(e) => e.key === 'Escape' && closeSheet()} />
+
 <svelte:head>
 	<title>{workout.title} – Resonans</title>
 </svelte:head>
 
 <AppPage>
 	<PageSection>
-	<div class="backdrop" role="button" tabindex="-1" aria-label="Lukk" onclick={() => history.back()} onkeydown={(e) => e.key === 'Escape' && history.back()}></div>
+	<button type="button" class="backdrop" aria-label="Lukk økten" onclick={closeSheet}></button>
 
 	<div class="sheet" role="dialog" aria-modal="true" aria-label={workout.title}>
 	<div class="handle"></div>
 
 	<header class="sheet-header">
-		<button class="back-btn" onclick={() => history.back()} aria-label="Tilbake">
+		<button class="back-btn" onclick={closeSheet} aria-label="Tilbake">
 			<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 				<path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
 			</svg>
@@ -293,42 +338,55 @@
 
 	<div class="chat-section">
 		<p class="chat-label">Chat</p>
-		<ChatThread
-			class="chat-messages"
-			messages={chat.messages}
-			streamingText={chat.streamingText}
-			streamingSteps={chat.streamingSteps}
-			loading={chat.loading}
-			stopped={chat.stopped}
-			stoppedText={chat.stoppedText}
-			error={chat.error}
-			lastUserMsgId={chat.lastUserMsgId}
-			emptyText="Spør om denne økten…"
-			onRetry={() => chat.retry()}
-			onEditStopped={editStoppedMessage}
+		<div class="chat-messages" bind:this={messagesEl} aria-live="polite">
+			{#if chat.messages.length === 0 && !chat.loading}
+				<p class="chat-empty">Spør om denne økten…</p>
+			{/if}
+			{#each chat.messages as msg (msg.id)}
+				{#if msg.role === 'user'}
+					<div class="bubble-user">{msg.text}</div>
+				{:else}
+					<TriageCard text={msg.text} />
+				{/if}
+			{/each}
+			{#if chat.loading}
+				{#if chat.streamingText}
+					<TriageCard text={chat.streamingText} streaming={true} />
+				{:else}
+					<TriageCard loading={true} steps={chat.streamingSteps} />
+				{/if}
+			{/if}
+		</div>
+		<ChatInput
+			placeholder="Spør om denne økten…"
+			disabled={chat.loading}
+			onsubmit={sendMessage}
 		/>
-		{#key chatInputKey}
-			<ChatInput
-				placeholder="Spør om denne økten…"
-				disabled={chat.loading}
-				streaming={chat.loading}
-				onStop={() => chat.stop()}
-				initialValue={chatDraft}
-				onsubmit={sendMessage}
-			/>
-		{/key}
 	</div>
 </div>
 	</PageSection>
 </AppPage>
 
 <style>
+	/* En ekte knapp framfor en `div` med `role="button"`: den er fokuserbar og
+	   tastaturbetjent, så bakteppet er faktisk tilgjengelig og ikke bare merket som
+	   det. Nettleserens egne knappestiler nullstilles. */
 	:global(.backdrop) {
 		position: fixed;
 		inset: 0;
+		width: 100%;
+		height: 100%;
+		padding: 0;
+		border: none;
+		appearance: none;
 		background: rgba(0, 0, 0, 0.6);
 		z-index: 40;
 		cursor: pointer;
+	}
+
+	:global(.backdrop:focus-visible) {
+		outline: 2px solid #3987e5;
+		outline-offset: -4px;
 	}
 
 	:global(.sheet) {
@@ -618,7 +676,7 @@
 		flex-shrink: 0;
 	}
 
-	:global(.chat-messages) {
+	.chat-messages {
 		flex: 1;
 		overflow-y: auto;
 		padding: 0.5rem 1rem;
@@ -628,5 +686,21 @@
 		min-height: 0;
 	}
 
+	.chat-empty {
+		color: #444;
+		font-size: 0.85rem;
+		margin: 0.5rem 0;
+	}
+
+	.bubble-user {
+		align-self: flex-end;
+		background: #1e2a40;
+		color: #d0d8ff;
+		font-size: 0.88rem;
+		padding: 0.5rem 0.85rem;
+		border-radius: 14px 14px 2px 14px;
+		max-width: 80%;
+		line-height: 1.4;
+	}
 </style>
 
