@@ -1508,6 +1508,19 @@ export const workoutNotifications = pgTable('workout_notifications', {
 	idxUserNotified: index('workout_notifications_user_notified_idx').on(table.userId, table.notifiedAt)
 }));
 
+// Bokføring av Gemini Live-tokenminting, for ratelimit per bruker — se
+// scripts/db-migrations/0058_gemini_token_mints.sql for hvorfor.
+export const geminiTokenMints = pgTable('gemini_token_mints', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	/** 'voice-test' | 'assistant' | 'coach' — kun for diagnose og evt. per-profil-grenser senere. */
+	profile: text('profile').notNull(),
+	mintedAt: timestamp('minted_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserMinted: index('gemini_token_mints_user_minted_idx').on(table.userId, table.mintedAt)
+}));
+
 // Definisjon av registrerbare typer (global katalog)
 export const recordTypeDefinitions = pgTable('record_type_definitions', {
 	id: uuid('id').primaryKey().defaultRandom(),

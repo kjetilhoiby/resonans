@@ -51,6 +51,8 @@
  * `$lib/server/integrations/gemini-live.ts` for kallet.
  */
 
+import { toolsForProfile, type GeminiTool, type TokenProfile } from './gemini-live-profiles';
+
 /**
  * Standardmodellen — en **fallback**, ikke en anbefaling.
  *
@@ -151,6 +153,12 @@ export interface LiveTokenRequestOptions {
 	ttlSeconds?: number | null;
 	newSessionSeconds?: number | null;
 	uses?: number | null;
+	/**
+	 * Avgjør hvilke verktøy som låses inn i setupet. Utelatt → `voice-test`
+	 * (tom liste), byte-identisk med tida før profiler fantes. Se
+	 * `gemini-live-profiles.ts`.
+	 */
+	profile?: TokenProfile;
 }
 
 export interface AuthTokenRequestBody {
@@ -161,8 +169,12 @@ export interface AuthTokenRequestBody {
 	fieldMask: string;
 	bidiGenerateContentSetup: {
 		model: string;
-		/** Tom med vilje, og bindende gjennom masken. */
-		tools: never[];
+		/**
+		 * Profilens verktøy — tom for `voice-test` og `coach`, assistentens
+		 * functionDeclarations for `assistant`. Bindende gjennom masken uansett
+		 * innhold: det er masken som hindrer klienten i å legge til egne.
+		 */
+		tools: GeminiTool[];
 	};
 }
 
@@ -206,7 +218,7 @@ export function buildAuthTokenRequest(opts: LiveTokenRequestOptions): AuthTokenR
 		fieldMask: LOCKED_FIELDS.join(','),
 		bidiGenerateContentSetup: {
 			model: normalizeModelName(opts.model),
-			tools: []
+			tools: toolsForProfile(opts.profile ?? 'voice-test')
 		}
 	};
 }

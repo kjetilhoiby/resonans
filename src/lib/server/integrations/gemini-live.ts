@@ -12,6 +12,7 @@ import {
 	type LiveTokenRequestOptions,
 	type ParsedAuthToken
 } from '$lib/domain/ai/gemini-live-token';
+import type { TokenProfile } from '$lib/domain/ai/gemini-live-profiles';
 
 /**
  * Minter kortlevde Gemini Live-tokens på Ekkos vegne.
@@ -59,6 +60,19 @@ export function configuredLiveModel(): string | null {
 	return env.GEMINI_LIVE_MODEL?.trim() || null;
 }
 
+/**
+ * Coach-profilen kan trenge en annen modell enn assistenten (lavere latens
+ * veier tyngre enn resonnering når man løper). `GEMINI_LIVE_COACH_MODEL` er
+ * valgfri og faller tilbake til den vanlige modellkjeden — én env å sette den
+ * dagen behovet er målt, ingen kodeendring.
+ */
+function configuredModelForProfile(profile: TokenProfile): string | null {
+	if (profile === 'coach') {
+		return env.GEMINI_LIVE_COACH_MODEL?.trim() || configuredLiveModel();
+	}
+	return configuredLiveModel();
+}
+
 /** Feilteksten fra et Google-svar, uten at nøkkelen kan lekke med. */
 function describeGoogleError(status: number, body: string, key: string): string {
 	let detail = body.slice(0, 500);
@@ -79,11 +93,13 @@ export async function mintLiveToken(
 	opts: Omit<LiveTokenRequestOptions, 'now'> & { now?: Date } = {}
 ): Promise<MintedLiveToken> {
 	const key = readApiKey();
+	const profile = opts.profile ?? 'voice-test';
 	const body = buildAuthTokenRequest({
 		...opts,
 		// Miljøvariabelen er standarden; et eksplisitt valg fra kallstedet vinner.
-		model: opts.model ?? configuredLiveModel(),
-		now: opts.now ?? new Date()
+		model: opts.model ?? configuredModelForProfile(profile),
+		now: opts.now ?? new Date(),
+		profile
 	});
 
 	let response: Response;
