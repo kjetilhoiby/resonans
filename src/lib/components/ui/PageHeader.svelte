@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import IconButton from './IconButton.svelte';
 
+	/**
+	 * NB: det finnes ingen `backHref`.
+	 *
+	 * Tittelen ER tilbakeknappen (docs/DESIGN.md) — bruk `titleHref` eller
+	 * `onTitleClick`. Propen ble fjernet framfor å bli frarådet i en kommentar, så
+	 * regelen håndheves av typen og ikke av hukommelsen.
+	 */
 	interface Props {
 		title: string;
 		subtitle?: string;
 		emoji?: string | null;
-		backHref?: string;
-		backLabel?: string;
 		titleHref?: string;
 		titleLabel?: string;
 		onTitleClick?: () => void;
@@ -20,8 +24,6 @@
 		title,
 		subtitle = '',
 		emoji,
-		backHref,
-		backLabel = 'Tilbake',
 		titleHref,
 		titleLabel = title,
 		onTitleClick,
@@ -58,9 +60,6 @@
 
 <header class="page-header">
 	<div class="page-header-main">
-		{#if backHref}
-			<IconButton href={backHref} icon="back" variant="nav" ariaLabel={backLabel} />
-		{/if}
 		<div class="page-header-copy">
 			{#if titleHref}
 				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel}>

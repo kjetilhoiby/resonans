@@ -80,8 +80,8 @@
 		<PageHeader
 			title={ctx.hasPersistedConversation ? 'Samtale' : 'Samtaler'}
 			subtitle={ctx.hasPersistedConversation ? ctx.chatConversationTitle : ''}
-			backHref={ctx.hasPersistedConversation ? '/samtaler' : undefined}
-			backLabel="Alle samtaler"
+			titleHref={ctx.hasPersistedConversation ? '/samtaler' : undefined}
+			titleLabel={ctx.hasPersistedConversation ? 'Alle samtaler' : 'Lukk samtalen'}
 			onTitleClick={!ctx.hasPersistedConversation ? ctx.closeChat : undefined}
 		>
 			{#snippet actions()}

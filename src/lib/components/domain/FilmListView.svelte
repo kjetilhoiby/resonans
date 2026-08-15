@@ -80,11 +80,10 @@
 
 <div class="fl-listview">
 	<div class="fl-lv-head">
-		<button class="fl-close" onclick={onBack} aria-label="Tilbake">←</button>
-		<div class="fl-lv-titles">
+		<button class="fl-title-btn fl-lv-titles" onclick={onBack} aria-label="Tilbake til biblioteket">
 			<h1 class="fl-lv-title">{list.name}</h1>
 			<span class="fl-lv-kind">{kindLabel} · {items.length} filmer</span>
-		</div>
+		</button>
 	</div>
 	{#if list.description}<p class="fl-lv-desc">{list.description}</p>{/if}
 
@@ -138,6 +137,28 @@
 </div>
 
 <style>
+	/* Tittelen ER tilbakeknappen (docs/DESIGN.md). Ingen knappedrakt, men et
+	   treffområde for en tommel og et synlig fokusmerke. */
+	.fl-title-btn {
+		display: block;
+		flex: 1 1 auto;
+		min-width: 0;
+		margin: -4px -6px;
+		padding: 4px 6px;
+		background: none;
+		border: none;
+		border-radius: 8px;
+		text-align: left;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+	.fl-title-btn:focus-visible {
+		outline: 2px solid var(--film-accent, #d64545);
+		outline-offset: 2px;
+	}
+	.fl-title-btn:active { opacity: 0.7; }
+
 	.fl-listview {
 		flex: 1;
 		overflow-y: auto;
@@ -150,15 +171,6 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-	}
-	.fl-close {
-		background: none;
-		border: none;
-		color: var(--film-text-secondary, #999);
-		font-size: 1.4rem;
-		cursor: pointer;
-		padding: 0 4px;
-		line-height: 1;
 	}
 	.fl-lv-titles {
 		display: flex;
