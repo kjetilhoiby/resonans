@@ -3,10 +3,34 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { enqueueWorkoutProjectionRefresh, projectionWindowFromWorkoutTimestamp } from '$lib/server/workout-projection-refresh-queue';
 import { runInBackground } from '$lib/server/run-in-background';
+import { USER_OWNED_METADATA_KEYS } from '$lib/domain/sensor-event-metadata';
 
 function eventKey(sensorId: string | null, dataType: string | null, timestamp: Date): string {
 	return `${sensorId ?? 'null'}::${dataType ?? 'null'}::${timestamp.toISOString()}`;
 }
+
+/**
+ * `metadata` for ON CONFLICT DO UPDATE: synkens ferske metadata, med brukerens
+ * egne nøkler løftet tilbake fra raden som alt lå der.
+ *
+ * Uten dette overskrev hver upsert brukerens valg. Symptomet var en skjult økt
+ * som kom tilbake av seg selv: Withings henter sju dagers overlapp hvert femte
+ * minutt, så «Skjul» overlevde ikke natta. Se `$lib/domain/sensor-event-metadata`.
+ *
+ * `jsonb_strip_nulls` fjerner nøklene den gamle raden ikke hadde —
+ * `jsonb_build_object('dismissed', NULL)` gir `{"dismissed": null}`, og en
+ * eksplisitt null ville sett ut som en verdi for lesere som gjør `? 'dismissed'`.
+ *
+ * Nøkkelnavnene bindes som parametere, ikke interpoleres — og `::text` på begge
+ * er påkrevd, ikke pynt: `->` er overlastet for `jsonb -> text` og
+ * `jsonb -> integer`, så en utypet parameter kan gi «operator is not unique» fra
+ * Postgres. Det er en feil enhetstestene ikke ville fanget, siden vi ikke
+ * mocker databasen.
+ */
+const mergedMetadataOnConflict = sql`excluded.metadata || jsonb_strip_nulls(jsonb_build_object(${sql.join(
+	USER_OWNED_METADATA_KEYS.map((key) => sql`${key}::text, ${sensorEvents.metadata}->${key}::text`),
+	sql`, `
+)}))`;
 
 /**
  * Kjør projeksjonsjobben med en gang i stedet for å vente på cron.
@@ -113,10 +137,13 @@ export class SensorEventService {
 				.onConflictDoUpdate({
 					target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
 					targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
+					// Samme uttrykk som i writeMany: `excluded.*` er nøyaktig radene vi
+					// nettopp forsøkte å sette inn, så de to stiene kan ikke drive fra
+					// hverandre slik de gjorde da denne satte JS-verdiene direkte.
 					set: {
-						eventType: values.eventType,
-						data: values.data,
-						metadata: values.metadata
+						eventType: sql`excluded.event_type`,
+						data: sql`excluded.data`,
+						metadata: mergedMetadataOnConflict
 					}
 				})
 				.returning();
@@ -231,7 +258,7 @@ export class SensorEventService {
 					set: {
 						eventType: sql`excluded.event_type`,
 						data: sql`excluded.data`,
-						metadata: sql`excluded.metadata`
+						metadata: mergedMetadataOnConflict
 					}
 				})
 				.returning();

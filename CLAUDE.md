@@ -822,6 +822,16 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
 - **`wasExisting` på `SensorEventService.write`/`writeMany` er ikke pynt.** Den
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
+- **En upsert overskriver `metadata` i sin helhet — brukerens valg må løftes
+  tilbake.** Nøklene står i `USER_OWNED_METADATA_KEYS`
+  (`$lib/domain/sensor-event-metadata.ts`): `dismissed`, `sourceRejected`,
+  `preferGps`, `preferHr`. Fram til august 2026 satte `set` bare
+  `metadata = excluded.metadata`, så en økt brukeren hadde skjult var tilbake ved
+  neste synk av den samme raden — og med 7 dagers overlapp hvert 5. minutt kunne
+  ferske økter i praksis ikke skjules i det hele tatt. Feilen er usynlig i basen:
+  raden ser riktig ut, og «skjulte aldri» og «skjulte, men vi kastet valget» er
+  ikke til å skille fra hverandre. Legger du til en ny brukerstyrt metadata-nøkkel,
+  hører den i den lista. Se `docs/changelog/2026-08-15-skjul-okt-overlever-synken.md`.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 
