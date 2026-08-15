@@ -218,15 +218,14 @@
 	<div class="handle"></div>
 
 	<header class="sheet-header">
-		<button class="back-btn" onclick={closeSheet} aria-label="Tilbake">
-			<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-				<path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-			</svg>
+		<!-- Tittelen ER tilbakeknappen. Designsystemet har ingen separate
+		     tilbake-ikoner; se docs/DESIGN.md. Pilen som sto her var et levn. -->
+		<button class="title-btn" onclick={closeSheet} aria-label="Lukk {workout.title}">
+			<span class="header-text">
+				<h1>{workout.title}</h1>
+				<time>{formatDate(workout.timestamp)}</time>
+			</span>
 		</button>
-		<div class="header-text">
-			<h1>{workout.title}</h1>
-			<time>{formatDate(workout.timestamp)}</time>
-		</div>
 		<button
 			class="hide-btn"
 			class:confirm={confirmHide}
@@ -427,14 +426,35 @@
 		flex-shrink: 0;
 	}
 
-	:global(.back-btn) {
+	/* Tittelen som lukkeflate: ingen knappedrakt, men et treffområde som er stort
+	   nok for en tommel, og et synlig fokusmerke for tastatur. */
+	:global(.title-btn) {
+		display: block;
+		flex: 1 1 auto;
+		min-width: 0;
+		margin: -0.25rem -0.35rem;
+		padding: 0.25rem 0.35rem;
 		background: none;
 		border: none;
-		color: #888;
+		border-radius: 8px;
+		text-align: left;
+		color: inherit;
+		font: inherit;
 		cursor: pointer;
-		padding: 0.25rem;
-		flex-shrink: 0;
-		line-height: 0;
+	}
+
+	:global(.title-btn:focus-visible) {
+		outline: 2px solid #3987e5;
+		outline-offset: 2px;
+	}
+
+	:global(.title-btn:active) {
+		opacity: 0.7;
+	}
+
+	:global(.header-text) {
+		display: block;
+		min-width: 0;
 	}
 
 	:global(.header-text) h1 {
