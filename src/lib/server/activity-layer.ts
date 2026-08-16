@@ -1,6 +1,8 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { isWorkoutSuppressed } from '$lib/domain/health/workout-suppression';
+import { listWorkoutSuppressions } from '$lib/server/workouts/workout-suppressions';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -124,7 +126,18 @@ function titleForEvent(dataType: string | null, data: Record<string, unknown>): 
 	return titleize(effectiveType);
 }
 
-function sportFamily(value: string): string {
+/**
+ * Familien KLYNGINGEN bruker — og dermed den svartelista må bruke.
+ *
+ * NB: dette er ikke `workoutSportFamily` fra `$lib/domain/health/workout-sport`,
+ * og de er ikke enige: `hill` blir 'running' her og 'hill' der, mens `løp` blir
+ * 'løp' her og 'running' der. At de to finnes side om side er en kjent rest (se
+ * filhodet i workout-sport.ts), men så lenge de gjør det, må alt som skal matche
+ * en klynge bruke NØYAKTIG denne. Skriver man en svartelisting med den ene og
+ * filtrerer med den andre, treffer den aldri — og det er en stille feil, ikke en
+ * feilmelding.
+ */
+export function clusterSportFamily(value: string): string {
 	if (value.includes('running') || value === 'hill') return 'running';
 	if (value.includes('cycling') || value === 'e_bike' || value.includes('ebik')) return 'cycling';
 	if (value.includes('walking') || value === 'hiking') return 'walking';
@@ -339,6 +352,10 @@ export async function buildUnifiedWorkoutActivities(
 		};
 	});
 
+	// Svartelista hentes én gang per bygging. Vinduet padder bakover med
+	// toleransen, ellers slipper en økt i kanten av `since` gjennom.
+	const suppressions = await listWorkoutSuppressions(userId, options.since);
+
 	const clusterWindowMs = 2 * 60 * 60 * 1000;
 	const clusters: Array<{ sportFamily: string; startTime: Date; events: WorkoutEvidenceEvent[] }> = [];
 
@@ -348,7 +365,7 @@ export async function buildUnifiedWorkoutActivities(
 		// skjuler HELE økta (klynge-nivå, lenger ned). Avvises alle kilder, forsvinner økta.
 		if (event.metadata.sourceRejected === true || event.metadata.sourceRejected === 'true') continue;
 		const sport = normalizeSportType(event.data.sportType);
-		const family = sportFamily(sport);
+		const family = clusterSportFamily(sport);
 		let matchIndex = -1;
 		let bestDelta = Number.POSITIVE_INFINITY;
 
@@ -437,6 +454,21 @@ export async function buildUnifiedWorkoutActivities(
 		})
 		.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
 		.filter((w) => {
+			// Svartelistet: «denne økta skjedde ikke, uansett kilde». Sjekkes FØRST,
+			// og er den eneste av vaktene her som ikke hviler på en rad vi kontrollerer.
+			// Et `metadata`-flagg dekker bare den ene raden, og det holdt ikke: synken
+			// overskrev det, en sletting hos Withings propagerte aldri hit, og en rad
+			// med revidert starttidspunkt får ny id og arver ingenting. Se
+			// docs/changelog/2026-08-16-svarteliste-for-okter.md.
+			if (
+				suppressions.length > 0 &&
+				isWorkoutSuppressed(
+					{ startTime: new Date(w.startTime), sportFamily: clusterSportFamily(w.sportType) },
+					suppressions
+				)
+			) {
+				return false;
+			}
 			// Exclude clusters where any event has been dismissed — filter at cluster level so
 			// partial dismissals (e.g. events[0] removed from DB query) don't let the cluster re-emerge
 			if (w.evidence.some((e) => {

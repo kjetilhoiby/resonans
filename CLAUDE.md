@@ -795,6 +795,20 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   evidence-event — altså en ekte `sensor_events.id`. Rader skrevet før dedupliseringen
   (én per kilde) matcher derfor fortsatt, så en re-kjøring lager ikke nye duplikater av
   gammel historikk. Bytter du nøkkelform, skriver du hele historikken på nytt.
+- **«Skjul økt» er TO sperrer, og de er ikke alternativer.**
+  `metadata.dismissed` er rad-nivå; svartelista (`workout_suppressions`,
+  `$lib/domain/health/workout-suppression.ts`) er økt-nivå og matcher på
+  **tidspunkt + sportsfamilie**, ikke på rad-id. `setWorkoutDismissed` skriver
+  begge. Svartelista finnes fordi flagget kom tilbake på tre måter samme uke:
+  synken overskrev metadata, en sletting hos Withings propagerte aldri hit
+  (synken er additiv og fjerner ALDRI rader en kilde slutter å returnere), og en
+  rad med revidert starttidspunkt får ny id og arver ingenting. Se
+  `docs/changelog/2026-08-16-svarteliste-for-okter.md`.
+- **Matcher du noe mot en klynge, bruk `clusterSportFamily` fra
+  `activity-layer.ts`** — ikke `workoutSportFamily` fra `workout-sport.ts`. De
+  er ikke enige (`hill` og `løp` går hver sin vei), og en svartelisting skrevet
+  med den ene treffer aldri et filter som bruker den andre. Feilen gir ingen
+  feilmelding; økta bare kommer tilbake.
 - **Vi haker aldri AV automatisk.** To reelle økter innenfor klyngevinduet på to timer
   ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
   hake for mye er trygt; å fjerne opptjent framgang er det ikke.

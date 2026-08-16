@@ -6,6 +6,11 @@ import { projectionWindowFromWorkoutTimestamp } from '$lib/server/workout-projec
 import { aggregatePeriodsFrom } from '$lib/server/integrations/aggregation';
 import { aggregationStartDate } from '$lib/domain/health/workout-followup';
 import { metadataKeyForScope, type DismissScope } from '$lib/domain/health/workout-dismiss';
+import { clusterSportFamily } from '$lib/server/activity-layer';
+import {
+	addWorkoutSuppression,
+	removeWorkoutSuppression
+} from '$lib/server/workouts/workout-suppressions';
 
 /**
  * Skjuling og gjenåpning av en treningsøkt — ÉN implementasjon, delt av
@@ -82,6 +87,27 @@ async function resolveWorkoutEvent(
 }
 
 /**
+ * Sportsfamilien til raden vi nettopp merket — nøkkelen svartelista matcher på
+ * sammen med tidspunktet.
+ *
+ * Leses fra `sensor_events.data->>'sportType'` og normaliseres med
+ * `clusterSportFamily` — NØYAKTIG den funksjonen aktivitetslaget klynger og
+ * filtrerer med. Ikke `workoutSportFamily`: de to er ikke enige (`hill` og
+ * `løp` går hver sin vei), så en svartelisting skrevet med den ene ville aldri
+ * treffe et filter som bruker den andre. Den feilen gir ingen feilmelding —
+ * økta bare kommer tilbake.
+ */
+async function resolveSportFamily(userId: string, eventId: string): Promise<string | null> {
+	const row = await db.query.sensorEvents.findFirst({
+		columns: { data: true },
+		where: and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId))
+	});
+	const sportType = (row?.data as { sportType?: unknown } | null)?.sportType;
+	if (typeof sportType !== 'string' || !sportType.trim()) return null;
+	return clusterSportFamily(sportType.trim().toLowerCase());
+}
+
+/**
  * Re-materialiser projeksjonene rundt en skjult/gjenåpnet økt.
  *
  * To steg, og begge trengs. `refreshForRange` skriver `canonical_workouts` og
@@ -122,7 +148,7 @@ export async function refreshAfterDismissChange(userId: string, timestamp: Date)
 export async function setWorkoutDismissed(
 	userId: string,
 	id: string,
-	options: { hidden: boolean; scope?: DismissScope }
+	options: { hidden: boolean; scope?: DismissScope; source?: string }
 ): Promise<DismissWorkoutResult> {
 	const scope = options.scope ?? 'activity';
 	const key = metadataKeyForScope(scope);
@@ -141,6 +167,29 @@ export async function setWorkoutDismissed(
 		.returning({ id: sensorEvents.id, timestamp: sensorEvents.timestamp });
 
 	if (updated.length === 0) return { ok: false, reason: 'not_found' };
+
+	// Svartelista er det som gjør skjulingen varig. Flagget over dekker DENNE
+	// raden; svartelistingen dekker ØKTA, uansett hvilken kilde som beskriver
+	// den senere — inkludert en rad med revidert starttidspunkt og ny id.
+	//
+	// Gjelder bare `activity`. `source` avviser én kilde-registrering og skal
+	// nettopp IKKE skjule økta; svartelister vi der, forsvinner en økt brukeren
+	// bare ville bytte kilde på.
+	if (scope === 'activity') {
+		const sportFamily = await resolveSportFamily(userId, updated[0].id);
+		if (sportFamily) {
+			if (options.hidden) {
+				await addWorkoutSuppression({
+					userId,
+					startTime: updated[0].timestamp,
+					sportFamily,
+					source: options.source ?? null
+				});
+			} else {
+				await removeWorkoutSuppression({ userId, startTime: updated[0].timestamp, sportFamily });
+			}
+		}
+	}
 
 	await refreshAfterDismissChange(userId, updated[0].timestamp);
 
