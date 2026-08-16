@@ -207,6 +207,106 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		[userId, fromDate, DRIFT_WINDOW_DAYS]
 	);
 
+	// ── 5. Livsløp: forsvinner den forrige statusen når den neste kommer? ────
+	//
+	// Brukerens hypotese, og en bedre modell enn attributt-likhet: SB1 **erstatter**
+	// reservasjonen med den bokførte raden framfor å levere begge. Synken vår er additiv,
+	// så begge blir stående — én foreldreløs PENDING og én BOOKED — og telles to ganger.
+	//
+	// Er det sant, er forsvinning en OBSERVASJON og ikke en gjetning: da kan to rader
+	// matches på beløp alene, uten å risikere at to ekte kjøp slås sammen. Ekte kjøp
+	// fortsetter å bli sett; et erstattet gjør ikke.
+	//
+	// **Alt hviler på om `seen_count` beveger seg.** `raw_fingerprint` inneholder
+	// `externalTransactionId`, og SB1 minter nye ID-er. Er de nye ved HVER synk, får hver
+	// henting en ny rad, `last_seen_at` flytter seg aldri, og forsvinning kan ikke måles
+	// uten å endre fingerprinten. Er de stabile innenfor en status, virker hypotesen.
+	// Histogrammet under er hele svaret på det, og det kan ikke leses av koden.
+	const seenCounts = await pgClient.unsafe<{
+		seen_count: number;
+		rows: string;
+	}[]>(
+		`SELECT seen_count, COUNT(*)::text AS rows
+		 FROM raw_bank_transaction_versions
+		 WHERE user_id = $1 AND transaction_date >= $2::date
+		 GROUP BY seen_count
+		 ORDER BY seen_count
+		 LIMIT 40`,
+		[userId, fromDate]
+	);
+
+	// Forsvunne versjoner: `last_seen_at` henger etter det NYESTE tidspunktet noen rad på
+	// samme konto+dato ble sett.
+	//
+	// Sammenligningen må være mot samme DATO, ikke mot nå. En transaksjon slutter å bli
+	// hentet når den faller ut av synkvinduet, og da stopper `last_seen_at` av en helt
+	// godartet grunn. Ligger andre rader på samme dag og fortsatt ble sett etterpå, hentet
+	// vi fortsatt den dagen — og denne raden var ikke der.
+	const disappeared = await pgClient.unsafe<{
+		booking_status: string | null;
+		rows: string;
+		nok: string | null;
+	}[]>(
+		`WITH per_row AS (
+			SELECT booking_status, amount, last_seen_at,
+			       MAX(last_seen_at) OVER (PARTITION BY account_id, transaction_date) AS day_last_seen
+			FROM raw_bank_transaction_versions
+			WHERE user_id = $1 AND transaction_date >= $2::date
+		)
+		SELECT booking_status,
+		       COUNT(*)::text AS rows,
+		       ROUND(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0)::text AS nok
+		 FROM per_row
+		 WHERE last_seen_at < day_last_seen - INTERVAL '1 hour'
+		 GROUP BY booking_status
+		 ORDER BY COUNT(*) DESC`,
+		[userId, fromDate]
+	);
+
+	// Erstatningskandidater: en forsvunnet rad, og en rad med SAMME BELØP på samme konto
+	// som ble sett først ETTER at den forsvant.
+	//
+	// Matchingen er på beløp, som brukeren foreslo — og det er trygt nettopp fordi
+	// forsvinningen alt har fastslått at raden ble erstattet. Verken datoen eller
+	// beskrivelsen inngår, så både datodriften og `SEK `-prefikset blir irrelevante.
+	// `delta_days` og `mk_changed` rapporteres for å VISE hvor fritt de to beveger seg.
+	const superseded = await pgClient.unsafe<{
+		delta_days: number | null;
+		mk_changed: boolean;
+		pairs: string;
+		nok: string | null;
+	}[]>(
+		`WITH per_row AS (
+			SELECT id, account_id, transaction_date, amount, booking_status, status_rank,
+			       description_normalized AS mk, first_seen_at, last_seen_at,
+			       MAX(last_seen_at) OVER (PARTITION BY account_id, transaction_date) AS day_last_seen
+			FROM raw_bank_transaction_versions
+			WHERE user_id = $1 AND transaction_date >= $2::date
+		),
+		gone AS (
+			SELECT * FROM per_row WHERE last_seen_at < day_last_seen - INTERVAL '1 hour'
+		)
+		SELECT (s.transaction_date - g.transaction_date) AS delta_days,
+		       (s.mk IS DISTINCT FROM g.mk)              AS mk_changed,
+		       COUNT(*)::text                            AS pairs,
+		       ROUND(SUM(CASE WHEN g.amount < 0 THEN ABS(g.amount) ELSE 0 END), 0)::text AS nok
+		 FROM gone g
+		 JOIN LATERAL (
+		   SELECT p.* FROM per_row p
+		   WHERE p.id <> g.id
+		     AND p.account_id = g.account_id
+		     AND p.amount = g.amount
+		     AND p.first_seen_at >= g.last_seen_at
+		     AND p.last_seen_at >= g.day_last_seen - INTERVAL '1 hour'
+		   ORDER BY p.first_seen_at
+		   LIMIT 1
+		 ) s ON TRUE
+		 GROUP BY 1, 2
+		 ORDER BY COUNT(*) DESC
+		 LIMIT 100`,
+		[userId, fromDate]
+	);
+
 	// ── Sprik mellom lagrene ─────────────────────────────────────────────────
 	// «Ulike tall på ulike steder», tallfestet. De tre radene skal være enige om
 	// samme periode og er det ikke i dag.
@@ -311,6 +411,50 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			orphanNok: orphans[0]?.orphan_nok === null ? 0 : Number(orphans[0]?.orphan_nok ?? 0)
 		},
 
+		// Spørsmål 5: forsvinner den forrige statusen når den neste kommer?
+		//
+		// `fingerprintStableAcrossFetches` er PORTEN. Er den falsk, betyr ikke `disappeared`
+		// at noe forsvant — det betyr bare at SB1 minter en ny id per henting, så hver
+		// henting lager en ny rad og ingen rad blir sett to ganger. Da er hele
+		// forsvinningsmålingen meningsløs, og tallene under skal ikke leses.
+		lifecycle: {
+			seenCountHistogram: seenCounts.map((s) => ({
+				seenCount: Number(s.seen_count),
+				rows: Number(s.rows)
+			})),
+			fingerprintStableAcrossFetches: seenCounts.some(
+				(s) => Number(s.seen_count) > 1 && Number(s.rows) > 0
+			),
+			multiSeenRows: seenCounts
+				.filter((s) => Number(s.seen_count) > 1)
+				.reduce((sum, s) => sum + Number(s.rows), 0),
+			singleSeenRows: seenCounts
+				.filter((s) => Number(s.seen_count) === 1)
+				.reduce((sum, s) => sum + Number(s.rows), 0),
+			disappeared: disappeared.map((d) => ({
+				bookingStatus: d.booking_status,
+				rows: Number(d.rows),
+				nok: d.nok === null ? 0 : Number(d.nok)
+			})),
+			superseded: superseded.map((s) => ({
+				deltaDays: s.delta_days === null ? null : Number(s.delta_days),
+				merchantKeyChanged: s.mk_changed,
+				pairs: Number(s.pairs),
+				nok: s.nok === null ? 0 : Number(s.nok)
+			})),
+			/**
+			 * Forsvunne rader UTEN en beløpslik etterfølger. Restposten, og den skal sies.
+			 *
+			 * To grunner den kan være stor, og de krever motsatt handling: beløpet endret seg
+			 * mellom versjonene (valutakurs på et utenlandskjøp, eller tips), eller raden var en
+			 * kansellert reservasjon som aldri ble noe. Er den nær null, dekker
+			 * beløpsmatchingen hele fenomenet.
+			 */
+			disappearedWithoutMatch:
+				disappeared.reduce((sum, d) => sum + Number(d.rows), 0) -
+				superseded.reduce((sum, s) => sum + Number(s.pairs), 0)
+		},
+
 		// «Ulike tall på ulike steder», tallfestet.
 		stores: stores.map((s) => ({
 			store: s.store,
@@ -335,7 +479,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			'drift.samples er kandidatpar, ikke bekreftede sammenhenger. Tersklene skal leses av histogrammene, ikke velges.',
 			'Er drift.stalledWithCandidate 0 fordi alle bøtter har samme toppstatus, gjelder ikke driftshypotesen for lagrede data — det er også et svar.',
 			'drift-joinen prioriterer eksakt beløp foran nær dato. Første utgave gjorde det motsatt og mispairet flere kjøp hos samme merchant samme dag; les gamle uttrekk med det i mente.',
-			'multiplicity er meningsløs for data synket før 2026-08-11: rå-tabellen ble til da skrevet POST batch-kollaps, så den kunne per konstruksjon aldri vise mer enn 1. Måling krever data synket etter at rå-strømmen ble gjort rå.'
+			'multiplicity er meningsløs for data synket før 2026-08-11: rå-tabellen ble til da skrevet POST batch-kollaps, så den kunne per konstruksjon aldri vise mer enn 1. Måling krever data synket etter at rå-strømmen ble gjort rå.',
+			'lifecycle.fingerprintStableAcrossFetches er porten for hele livsløpsmålingen. raw_fingerprint inneholder externalTransactionId; minter SB1 en ny id per henting, får hver henting en ny rad, seen_count blir alltid 1, og «forsvunnet» betyr da ingenting.',
+			'lifecycle.disappeared sammenligner last_seen_at mot det nyeste tidspunktet noen rad på SAMME konto+dato ble sett — ikke mot nå. En transaksjon slutter å bli hentet når den faller ut av synkvinduet, og det er en godartet grunn til at last_seen_at stopper.',
+			'lifecycle.superseded matcher på BELØP alene, uten dato og uten beskrivelse. Det er trygt bare fordi forsvinningen alt har fastslått at raden ble erstattet — samme matching uten forsvinningskravet ville slått sammen to ekte kjøp på samme beløp.',
+			'superseded[].merchantKeyChanged = true betyr at beskrivelsen endret seg mellom de to versjonene (f.eks. «SEK ICA NARA HAGA» → «ICA NARA HAGA»). Slike par er per konstruksjon usynlige for drift-målingen over, som krever samme merchant_key.'
 		]
 	});
 };
