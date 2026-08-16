@@ -231,11 +231,23 @@ Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
 `/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
-`/api/apps/assistant`, `/api/apps/day`, `/api/apps/strava/*`, `/api/apps/tesla/*` og
-`/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
+`/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
+skjuling), `/api/apps/strava/*`, `/api/apps/tesla/*` og `/api/apps/gemini/*`
+(kortlevde Gemini Live-tokens).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
+
+**En økt kan skjules fra Ekko, aldri slettes** (`docs/ekko-skjul-okt.md`,
+`2026-08-15-skjul-okt-fra-ekko.md`). `GET /api/apps/workouts` lister dedupliserte
+økter fra ALLE kilder — en økt fra klokka finnes bare i Resonans, og uten lista er
+den uåtkommelig fra appen. `POST /api/apps/workouts/[id]/dismiss` skjuler.
+Sletting er ikke et alternativ vi valgte bort av forsiktighet: Withings henter sju
+dagers overlapp hvert 5. minutt, så en slettet rad er tilbake før brukeren rekker å
+se etter. Svaret sier derfor `hidden`/`reversible`, ikke `deleted` — appen skal
+kunne bruke et ord som holder. Både denne og web-flatens knapp går gjennom
+`setWorkoutDismissed` (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en
+andre skjulesti.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe

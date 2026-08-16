@@ -53,6 +53,9 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/withings-sync-notifications.ts',
 			'routes/settings/sources/+page.server.ts',
 			// Skrive-/vedlikeholdsstier som opererer på rå rader.
+			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
+			// oppslaget er én bestemt rad på id — ikke en telling over flere.
+			'lib/server/workouts/dismiss-workout.ts',
 			'routes/api/admin/cleanup-walking/+server.ts',
 			'routes/api/tema/[id=uuid]/trip/import-walk/+server.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så
