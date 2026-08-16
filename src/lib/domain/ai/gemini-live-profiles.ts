@@ -145,8 +145,46 @@ export const ASSISTANT_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
  * Tomheten er like bindende som assistentens liste: masken dekker `tools`
  * uansett.
  */
+/**
+ * Coach-verktøy (brief-PR 11) — handlinger under en pågående økt.
+ *
+ * Avgrensningen er bevisst smal: dette er ting appen ALLEREDE kan gjøre, som til nå
+ * krevde at man tok opp telefonen midt i en løpetur. Verktøy som ville krevd ny
+ * domeneatferd (markere runde manuelt) er holdt utenfor — en runde er koblet til
+ * autohaking, effort og progresjon, og skal ikke oppfinnes gjennom en verktøydeklarasjon.
+ *
+ * `getWorkoutStatus` finnes med vilje IKKE: klienten sender en fersk `[status]`-linje hver
+ * gang mikrofonvinduet åpnes, så modellen har alltid tallene når brukeren spør. Et verktøy
+ * for det samme ville vært en ekstra rundtur for data den allerede har.
+ */
+export const COACH_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
+	{
+		name: 'startSharing',
+		description:
+			'Start posisjonsdeling for den pågående økta og gi brukeren en delbar lenke. Bekreft muntlig før du kaller denne.',
+		parameters: { type: 'OBJECT', properties: {} }
+	},
+	{
+		name: 'stopSharing',
+		description: 'Avslutt posisjonsdelingen for den pågående økta.',
+		parameters: { type: 'OBJECT', properties: {} }
+	},
+	{
+		name: 'sendViewerReply',
+		description:
+			'Send en kort melding til dem som følger økta i sanntid. Brukes når brukeren ber deg svare noen som ser på — ikke for vanlig coaching.',
+		parameters: {
+			type: 'OBJECT',
+			properties: { text: { type: 'STRING', description: 'Meldingen, med brukerens egne ord.' } },
+			required: ['text']
+		}
+	}
+];
+
 export function toolsForProfile(profile: TokenProfile): GeminiTool[] {
-	return profile === 'assistant' ? [{ functionDeclarations: ASSISTANT_FUNCTION_DECLARATIONS }] : [];
+	if (profile === 'assistant') return [{ functionDeclarations: ASSISTANT_FUNCTION_DECLARATIONS }];
+	if (profile === 'coach') return [{ functionDeclarations: COACH_FUNCTION_DECLARATIONS }];
+	return [];
 }
 
 /** Navnelista til `capabilities.tools` i token-svaret — klientens allow-list. */
@@ -187,6 +225,8 @@ const PERSONAS: Record<TokenProfile, TokenPersona | null> = {
 			'Du er en norsk løpecoach som snakker i ørepropper under en økt.',
 			'Norsk bokmål, én til to korte setninger per melding, aldri lister.',
 			'Siter tallene du får ordrett — regn aldri om dem selv.',
+			'Du kan starte og stoppe posisjonsdeling og sende meldinger til dem som følger økta.',
+			'Bekreft muntlig før du deler posisjon — det er en handling brukeren skal ha bedt om.',
 			'Unngå ordet «ekko» i svarene dine.'
 		].join(' ')
 	}

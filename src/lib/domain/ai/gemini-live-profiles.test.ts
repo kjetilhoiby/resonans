@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	ASSISTANT_FUNCTION_DECLARATIONS,
+	COACH_FUNCTION_DECLARATIONS,
 	MINT_RATE_LIMIT_PER_DAY,
 	MINT_RATE_WINDOW_MS,
 	TOOLSET_VERSION,
@@ -33,9 +34,30 @@ describe('resolveTokenProfile', () => {
 });
 
 describe('toolsForProfile', () => {
-	it('voice-test og coach er tomme — coach-verktøyene designes i fase 3b', () => {
+	it('voice-test er tom — spiken skal være byte-identisk med før profilene fantes', () => {
 		expect(toolsForProfile('voice-test')).toEqual([]);
-		expect(toolsForProfile('coach')).toEqual([]);
+	});
+
+	it('coach får handlinger appen alt kan gjøre, ikke nye', () => {
+		// Avgrensningen er poenget: dette er ting som til nå krevde at man tok opp
+		// telefonen midt i en løpetur. `markLap` er utelatt fordi en runde henger
+		// sammen med autohaking, effort og progresjon — det skal ikke oppfinnes i en
+		// verktøydeklarasjon.
+		expect(toolNamesForProfile('coach')).toEqual([
+			'startSharing',
+			'stopSharing',
+			'sendViewerReply'
+		]);
+	});
+
+	it('getWorkoutStatus finnes ikke — klienten sender fersk status ved hvert mic-vindu', () => {
+		// Et verktøy for tall modellen allerede har er en ekstra rundtur midt i en økt.
+		expect(toolNamesForProfile('coach')).not.toContain('getWorkoutStatus');
+	});
+
+	it('deling krever muntlig bekreftelse i selve beskrivelsen', () => {
+		const share = COACH_FUNCTION_DECLARATIONS.find((d) => d.name === 'startSharing');
+		expect(share!.description).toContain('Bekreft muntlig');
 	});
 
 	it('assistant låser executor-verktøyene, med startWorkout.place', () => {
@@ -93,9 +115,13 @@ describe('buildAuthTokenRequest med profil', () => {
 		}
 	});
 
-	it('coach-profilen låser tom verktøyliste men ikke systemInstruction', () => {
+	it('coach-profilen låser coach-verktøyene men ikke systemInstruction', () => {
+		// systemInstruction må forbli klient-skrivbar: øktrammen (sport, mål, rute) og
+		// kald-oppstartens ferske tall bygges i appen og kan ikke ligge i tokenet.
 		const body = buildAuthTokenRequest({ now: NOW, profile: 'coach' });
-		expect(body.bidiGenerateContentSetup.tools).toEqual([]);
+		expect(body.bidiGenerateContentSetup.tools).toEqual([
+			{ functionDeclarations: COACH_FUNCTION_DECLARATIONS }
+		]);
 		expect(body.bidiGenerateContentSetup).not.toHaveProperty('systemInstruction');
 	});
 });
