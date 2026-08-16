@@ -4,6 +4,8 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { projectionWindowFromWorkoutTimestamp } from '$lib/server/workout-projection-refresh-queue';
+import { aggregatePeriodsFrom } from '$lib/server/integrations/aggregation';
+import { aggregationStartDate } from '$lib/domain/health/workout-followup';
 import type { RequestHandler } from './$types';
 
 /**
@@ -87,6 +89,16 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		await WorkoutProjectionService.refreshForRange(userId, fromDate, toDate);
 	} catch (error) {
 		console.error('[source-role] kunne ikke re-materialisere projeksjon:', error);
+	}
+
+	// Et kildebytte endrer distanse, tempo og puls for aktiviteten, altså også
+	// effort-skåren. Dagsraden i `sensor_aggregates` — den form- og
+	// belastningskortene leser — skrives bare av `aggregateDailyEffort`, ikke av
+	// projeksjonen over. Samme grunn som i /dismiss.
+	try {
+		await aggregatePeriodsFrom(userId, aggregationStartDate([row.timestamp], new Date()));
+	} catch (error) {
+		console.error('[source-role] kunne ikke re-aggregere dagsraden:', error);
 	}
 
 	return json({ success: true });

@@ -832,6 +832,14 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   raden ser riktig ut, og «skjulte aldri» og «skjulte, men vi kastet valget» er
   ikke til å skille fra hverandre. Legger du til en ny brukerstyrt metadata-nøkkel,
   hører den i den lista. Se `docs/changelog/2026-08-15-skjul-okt-overlever-synken.md`.
+- **Endrer du hva som TELLER som en økt, må dagsraden re-aggregeres — ikke bare
+  projeksjonen.** `WorkoutProjectionService.refreshForRange` skriver
+  `canonical_workouts` og `workout_daily_aggregates`, men CTL/ATL/TSB leser
+  dagsraden i `sensor_aggregates`, og den skrives bare av `aggregateDailyEffort`.
+  `/dismiss` og `/source-role` refreshet lenge bare projeksjonen: en skjult økt
+  forsvant fra lista med det samme og ble stående i formkurven til nattjobben kl.
+  03 UTC. Kall `aggregatePeriodsFrom` etterpå, slik `runAfterWorkoutWrite` alltid
+  har gjort på skrivesiden.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 

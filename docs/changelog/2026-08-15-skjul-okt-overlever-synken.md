@@ -69,6 +69,39 @@ eksplisitt null ville sett ut som en verdi for en leser som gjør `? 'dismissed'
 radene. De to skrivestiene hadde ellers ulike `set`-klausuler for samme operasjon,
 og det er nettopp slik den ene rekker å drive fra den andre.
 
+### Fase 3: Skjuling rydder også i form og belastning
+
+Da fase 1–2 var på plass, meldte brukeren at økta lå **inne i** form- og
+belastningstallene: CTL 61 (+16 på fjorten dager), TSB −45 «Veldig sliten»,
+«akutt belastning langt over form — skarpt behov for hvile».
+
+Det var en egen mangel, ikke bare et etterslep fra metadata-feilen.
+`refreshProjectionForEvent` bygde `canonical_workouts` og
+`workout_daily_aggregates` på nytt, men CTL/ATL/TSB leser **dagsraden i
+`sensor_aggregates`**, og den skrives bare av `aggregateDailyEffort`. En skjult
+økt forsvant derfor fra lista med det samme, men ble stående i formkurven til
+nattjobben kl. 03 UTC.
+
+Skrivestien hadde alltid gjort dette riktig — kommentaren i
+`runAfterWorkoutWrite` sier rett ut at «uten dette står dagsraden tom til
+nattjobben, og det er den form- og belastningskortene leser». Skjulestien er
+nøyaktig samme krav i motsatt retning, og manglet. `/dismiss` og
+`/source-role` kaller nå `aggregatePeriodsFrom` etter projeksjonen; et
+kildebytte endrer distanse og puls, altså også effort-skåren.
+
+Hvor mye økta faktisk forstyrret, regnet ut fra modellen:
+
+| | Effort |
+|---|---|
+| Søppeløkta (301 min, MET-stien) | **~457** |
+| Ekte rolig løpetur, 45 min på puls | ~77 |
+
+Altså omtrent seks reelle økter i én rad. Det som slipper den gjennom er
+**gulvet i pace-justeringen**: intensitetsfaktoren `(rolig pace / øktas pace)²`
+blir i praksis null ved 945 min/km, men klampes til 0,75 — så en økt i et
+umulig tempo beholder tre firedeler av en fem timers løpeskår. Klampen finnes
+for at enkeltøkter ikke skal stikke av; her er gulvet grunnen til at én gjør det.
+
 ## Beslutninger
 
 - **Brukerens valg gjelder AKTIVITETEN, ikke payloaden.** En revidert
@@ -82,14 +115,19 @@ og det er nettopp slik den ene rekker å drive fra den andre.
   kan gi «operator is not unique» fra Postgres. Enhetstestene ville ikke fanget
   det, siden vi ikke mocker databasen — samme klasse feil som
   `data || $1::jsonb`-konkateneringen i HRV-flettingen.
-- **Ingen automatisk filtrering av selve søppeløkta.** En 5-timers økt på 320 m
-  passerer dagens støyfiltre (`sportType === 'unknown'`, og under to minutter uten
-  spor). Fristelsen er å legge på en regel om urimelig lav fart. Den er avvist av
-  samme grunn som automatisk kutting av glemt sporing ble revet ut igjen, se
-  `2026-08-10-glemte-trackeren.md`: en sjelden hendelse skal ikke behandles som en
-  systematisk skjevhet, og en fartsgrense ville tatt gåturer, fjellturer og
-  økter der sporingen brøt sammen. Riktig svar er at brukeren skjuler den én
-  gang — og at skjulingen så holder.
+- **Ingen automatisk filtrering av selve søppeløkta, og gulvet i pace-justeringen
+  står.** En 5-timers økt på 320 m passerer dagens støyfiltre
+  (`sportType === 'unknown'`, og under to minutter uten spor). Fristelsen er
+  todelt: en regel om urimelig lav fart, eller å senke klampen på 0,75 slik at
+  et umulig tempo gir tilnærmet null effort. Begge er avvist av samme grunn som
+  automatisk kutting av glemt sporing ble revet ut igjen, se
+  `2026-08-10-glemte-trackeren.md`: en sjelden hendelse skal ikke behandles som
+  en systematisk skjevhet. En fartsgrense ville tatt gåturer, fjellturer og
+  økter der sporingen brøt sammen, og et lavere gulv ville priset ned hver eneste
+  økt med lange gåpauser — en kalibreringsendring med hele treningsmodellen som
+  nedslagsfelt, for noe som skjer et par ganger i året. Riktig svar er at
+  brukeren skjuler økta én gang, at skjulingen holder, og at den samme
+  handlingen nå også rydder i formkurven.
 - **Ingen datamigrasjon.** Ingenting er ødelagt i basen; valgene ble kastet, ikke
   korrumpert. Brukeren trykker «Skjul» én gang til, og denne gangen står det.
 
