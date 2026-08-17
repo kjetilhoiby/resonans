@@ -359,6 +359,14 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   switch per profil: `GEMINI_LIVE_DISABLED_PROFILES` → 403 `profile_disabled`. Ratelimit
   30 mint/døgn per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
   Endrer du et verktøyskjema inkompatibelt, bump `TOOLSET_VERSION`.
+- **Verdilistene i et verktøyskjema er en kontrakt mot appens parser, og de må stemme.**
+  `startWorkout.type` listet `løp|sykkel|gåtur|ski|tredemølle|yoga` mens Ekko kjente
+  `elsykkel` — så modellen bekreftet «på elsykkel» høyt til brukeren, sendte en verdi appen
+  ikke kjente, og `default: return .running` gjorde det til en løpeøkt: løpecoaching på en
+  elsykkeltur og «rekord» på 5 km i 12:25. **En stille default som gjetter en KONKRET verdi
+  er verre enn et avslag** — avslaget kan modellen rette seg selv på, i samme tur. Skillet
+  som må holdes er «ikke oppgitt» (default er riktig) mot «oppgitt, men ukjent» (avslå).
+  Se `docs/changelog/2026-08-17-rett-og-slett.md`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
   Vercel-logg eller i et JSON-svar.
