@@ -42,6 +42,10 @@ const UPDATE_CHUNK = 200;
 
 export type DeactivateResult = {
 	dryRun: boolean;
+	/** Retningen som ville blitt skrevet. Standard `out` — bare forbruk. */
+	direction: 'out' | 'in' | 'all';
+	/** Antall par innenfor `direction`. `pairs` er alt som ble FUNNET. */
+	selectedPairs: number;
 	window: { days: number; fromDate: string };
 	/** Aktive canonical-rader vurdert. */
 	rowsConsidered: number;
@@ -70,6 +74,10 @@ export type DeactivateResult = {
 		direction: 'out' | 'in';
 		deltaDays: number;
 		merchantKeyChanged: boolean;
+		reservationDate: string;
+		bookedDate: string;
+		reservationMerchantKey: string;
+		bookedMerchantKey: string;
 	}>;
 };
 
@@ -94,7 +102,20 @@ function normalizeStatus(value: string | null): 'pending' | 'booked' | 'unknown'
 
 export async function deactivateSupersededReservations(
 	userId: string,
-	options: { days: number; dryRun?: boolean; maxDeltaDays?: number }
+	options: {
+		days: number;
+		dryRun?: boolean;
+		maxDeltaDays?: number;
+		/**
+		 * Hvilken retning som skal deaktiveres. **Standard er `out`, altså bare forbruk.**
+		 *
+		 * Tørrkjøringen viste at `inn`-parene fortsatt bar preg av runde overføringsbeløp
+		 * (23 000 ×2, 15 000, 12 500) som ingen kunne sette navn på, mens `ut`-parene hadde
+		 * ujevne beløp som er signaturen på ekte reservasjon→bokføring. De to har ulik
+		 * troverdighet og skal derfor ikke skrives i samme operasjon.
+		 */
+		direction?: 'out' | 'in' | 'all';
+	}
 ): Promise<DeactivateResult> {
 	const dryRun = options.dryRun !== false;
 	const fromDate = new Date(Date.now() - options.days * 86400000).toISOString().slice(0, 10);
@@ -157,11 +178,16 @@ export async function deactivateSupersededReservations(
 		maxDeltaDays: options.maxDeltaDays
 	});
 
+	const direction = options.direction ?? 'out';
+	const selected = matches.filter(
+		(m) => direction === 'all' || m.direction === direction
+	);
+
 	const totals = doubleCountedTotals(matches);
 	let deactivated = 0;
 
-	if (!dryRun && matches.length > 0) {
-		const ids = matches.map((m) => m.reservationId);
+	if (!dryRun && selected.length > 0) {
+		const ids = selected.map((m) => m.reservationId);
 		for (let i = 0; i < ids.length; i += UPDATE_CHUNK) {
 			const chunk = ids.slice(i, i + UPDATE_CHUNK);
 			const updated = await db
@@ -180,12 +206,15 @@ export async function deactivateSupersededReservations(
 			deactivated += updated.length;
 		}
 		console.log(
-			`[deactivate-superseded] user=${userId} days=${options.days} pairs=${matches.length} deactivated=${deactivated} spend=${Math.round(totals.spend)} income=${Math.round(totals.income)}`
+			`[deactivate-superseded] user=${userId} days=${options.days} direction=${direction} selected=${selected.length} deactivated=${deactivated} spend=${Math.round(totals.spend)} income=${Math.round(totals.income)}`
 		);
 	}
 
 	return {
 		dryRun,
+		direction,
+		/** Par som VILLE blitt skrevet med gjeldende retning. Skiller funn fra handling. */
+		selectedPairs: selected.length,
 		window: { days: options.days, fromDate },
 		rowsConsidered: rows.length,
 		reservations: candidates.filter((c) => c.status === 'pending' && !c.internalTransfer).length,
@@ -215,6 +244,10 @@ function pickSamples(matches: readonly ReservationMatch[]): DeactivateResult['sa
 			amount: m.amount,
 			direction: m.direction,
 			deltaDays: m.deltaDays,
-			merchantKeyChanged: m.merchantKeyChanged
+			merchantKeyChanged: m.merchantKeyChanged,
+			reservationDate: m.reservationDate,
+			bookedDate: m.bookedDate,
+			reservationMerchantKey: m.reservationMerchantKey,
+			bookedMerchantKey: m.bookedMerchantKey
 		}));
 }

@@ -12,8 +12,11 @@
 	import { Button, Select } from '$lib/components/ui';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 
+	type Direction = 'out' | 'in' | 'all';
 	type Result = {
 		dryRun: boolean;
+		direction: Direction;
+		selectedPairs: number;
 		window: { days: number; fromDate: string };
 		rowsConsidered: number;
 		reservations: number;
@@ -30,10 +33,15 @@
 			direction: 'out' | 'in';
 			deltaDays: number;
 			merchantKeyChanged: boolean;
+			reservationDate: string;
+			bookedDate: string;
+			reservationMerchantKey: string;
+			bookedMerchantKey: string;
 		}>;
 	};
 
 	let days = $state('90');
+	let direction = $state<Direction>('out');
 	let running = $state(false);
 	let error = $state<string | null>(null);
 	let result = $state<Result | null>(null);
@@ -44,14 +52,14 @@
 
 	const totalPairs = $derived(result ? result.pairs.out + result.pairs.in : 0);
 
-	/** Skriveknappen vises bare etter en tørrkjøring som faktisk fant noe. */
-	const canWrite = $derived(result !== null && result.dryRun && totalPairs > 0);
+	/** Skriveknappen vises bare etter en tørrkjøring som faktisk fant noe å skrive. */
+	const canWrite = $derived(result !== null && result.dryRun && result.selectedPairs > 0);
 
 	async function run(dryRun: boolean) {
 		running = true;
 		error = null;
 		try {
-			const params = new URLSearchParams({ days, dryRun: String(dryRun) });
+			const params = new URLSearchParams({ days, direction, dryRun: String(dryRun) });
 			const res = await fetch(`/api/admin/economics/deaktiver-reservasjoner?${params}`, {
 				method: 'POST'
 			});
@@ -99,12 +107,21 @@
 			<option value="180">180 dager</option>
 			<option value="365">365 dager</option>
 		</Select>
+		<Select
+			bind:value={direction}
+			ariaLabel="Hvilken retning"
+			dataTrack="rydd-reservasjoner:retning"
+		>
+			<option value="out">Bare forbruk (anbefalt)</option>
+			<option value="in">Bare inntekt</option>
+			<option value="all">Begge</option>
+		</Select>
 		<Button variant="secondary" disabled={running} onClick={() => run(true)}>
 			{running ? 'Jobber…' : 'Se hva som skjer'}
 		</Button>
 		{#if canWrite}
 			<Button variant="warning" disabled={running} onClick={() => run(false)}>
-				Deaktiver {totalPairs} rader
+				Deaktiver {result?.selectedPairs} rader
 			</Button>
 		{/if}
 	</div>
@@ -116,9 +133,10 @@
 	{#if result}
 		<p class="summary" class:dry={result.dryRun}>
 			{#if result.dryRun}
-				<strong>Ingenting er skrevet.</strong> {result.pairs.out} forbrukspar
+				<strong>Ingenting er skrevet.</strong> Funnet: {result.pairs.out} forbrukspar
 				({nok(result.doubleCounted.spend)}) og {result.pairs.in} inntektspar
-				({nok(result.doubleCounted.income)}) ville blitt deaktivert.
+				({nok(result.doubleCounted.income)}). Med valgt retning ville
+				<strong>{result.selectedPairs}</strong> av dem blitt deaktivert.
 			{:else}
 				<strong>{result.deactivated} rader deaktivert.</strong>
 				{nok(result.doubleCounted.spend)} ut av forbruket og
@@ -160,17 +178,18 @@
 				<table>
 					<thead>
 						<tr>
-							<th class="num">Beløp</th><th>Retning</th><th class="num">Dager</th>
-							<th>Beskrivelse</th>
+							<th class="num">Beløp</th><th>Retning</th><th>Reservasjon</th>
+							<th>Bokført</th><th class="num">Dager</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each result.samples as row (row.reservationId)}
-							<tr>
+							<tr class:dim={row.direction !== result.direction && result.direction !== 'all'}>
 								<td class="num">{nok(row.amount)}</td>
 								<td>{row.direction === 'out' ? 'ut' : 'inn'}</td>
+								<td class="wrap">{row.reservationMerchantKey || '—'}<br /><span class="sub">{row.reservationDate}</span></td>
+								<td class="wrap">{row.bookedMerchantKey || '—'}<br /><span class="sub">{row.bookedDate}</span></td>
 								<td class="num">{row.deltaDays}</td>
-								<td>{row.merchantKeyChanged ? 'endret' : 'uendret'}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -270,6 +289,20 @@
 	.num {
 		text-align: right;
 		font-variant-numeric: tabular-nums;
+	}
+	/* Beskrivelsene skal kunne brytes — de er lange og skal leses, ikke skannes. */
+	.wrap {
+		white-space: normal;
+		min-width: 8rem;
+	}
+	.sub {
+		font-size: 0.72rem;
+		opacity: 0.7;
+	}
+	/* Utenfor valgt retning: synlig, men tydelig ikke i spill. */
+	.dim td,
+	tr.dim td {
+		opacity: 0.45;
 	}
 	.footer {
 		margin-top: 0.4rem;

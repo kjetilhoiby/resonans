@@ -94,6 +94,17 @@ export type ReservationMatch = {
 	deltaDays: number;
 	/** Sann når beskrivelsen endret seg — usynlig for en match som krever samme nøkkel. */
 	merchantKeyChanged: boolean;
+	/**
+	 * Datoene og beskrivelsene på begge sider, **så et par kan gjenkjennes av et menneske**.
+	 *
+	 * Tørrkjøringen viste «23 000 kr inn, 0 dager, endret» ×2, og verken jeg eller brukeren
+	 * kunne avgjøre om det var lønn i to versjoner eller to separate innskudd. Et par man ikke
+	 * kan sette navn på, kan man ikke godkjenne — og da er tørrkjøringen bare et tall.
+	 */
+	reservationDate: string;
+	bookedDate: string;
+	reservationMerchantKey: string;
+	bookedMerchantKey: string;
 };
 
 export type ReservationMatchResult = {
@@ -194,7 +205,11 @@ export function matchReservationsToBooked(
 			amount: Math.abs(reservation.amount),
 			direction: reservation.amount < 0 ? 'out' : 'in',
 			deltaDays: dayDiff(reservation.date, booked.date),
-			merchantKeyChanged: booked.merchantKey !== reservation.merchantKey
+			merchantKeyChanged: booked.merchantKey !== reservation.merchantKey,
+			reservationDate: reservation.date,
+			bookedDate: booked.date,
+			reservationMerchantKey: reservation.merchantKey,
+			bookedMerchantKey: booked.merchantKey
 		});
 	}
 

@@ -301,3 +301,22 @@ describe('rader som ikke skal matches i det hele tatt', () => {
 		expect(matches).toHaveLength(1);
 	});
 });
+
+describe('navn og datoer på paret', () => {
+	// Tørrkjøringen viste «23 000 kr inn, 0 dager, endret» ×2, og verken bruker eller agent
+	// kunne avgjøre om det var lønn i to versjoner eller to separate innskudd. Et par man
+	// ikke kan sette navn på, kan man ikke godkjenne.
+	it('bærer begge beskrivelsene og begge datoene', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-27', -74, 'sek ica nara'),
+			booked('b1', '2026-07-28', -74, 'ica nara haga')
+		]);
+
+		expect(matches[0]).toMatchObject({
+			reservationDate: '2026-07-27',
+			bookedDate: '2026-07-28',
+			reservationMerchantKey: 'sek ica nara',
+			bookedMerchantKey: 'ica nara haga'
+		});
+	});
+});
