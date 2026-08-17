@@ -1,7 +1,7 @@
 # Livsløp: måle at forrige status forsvinner
 
 Dato: 2026-08-12
-Status: pågår — målt 2026-08-16, porten var feil konstruert
+Status: pågår — målt to ganger 2026-08-16; matcher bygget, fix ikke bygget
 
 ## Kontekst
 
@@ -188,6 +188,67 @@ reservasjoner à 97 830 kr over 90 dager er ~10 % av alt «forbruk» i vinduet.
 3. Vindusavstemmingen (full henting uten `lastSync`) er en separat oppgave, og bare nødvendig
    hvis punkt 2 ikke dekker nok. Brukerens modell er verdt å teste, men den er ikke lenger
    forutsetningen for å fikse dette.
+
+## Andre måling 2026-08-16, etter at diagnosen var rettet
+
+| Felt | Verdi |
+|------|------:|
+| canonical, 90 dager | 1 136 rader, 942 406 kr |
+| interne overføringer (én-til-én) | 110 par, 386 132 kr |
+| nettoforbruk | **187 897 kr/mnd** |
+| reservasjon mot bokført | 271 par, 154 703 kr |
+| — av dem med endret beskrivelse | 110 par, 103 165 kr |
+| multiplisitet > 1 | 2 bøtter, 60 kr |
+
+### Rettelse: «~42 000 kr/mnd» var mitt eget feiltall
+
+Jeg har gjentatt gjennom hele dette arbeidet at reelt forbruk er **~42 000 kr/mnd** og at
+flatens «180 424 kr/mnd» derfor var 4,3× for høyt og en bug.
+
+**Det var galt, og feilen var min.** Tallet kom fra første måling:
+`(1 583 723 − 1 084 033) / 12 = 41 641`. Men `1 084 033` var overføringssummen fra
+mange-til-mange-joinen, altså kraftig overtelt. Med korrekt én-til-én-matching er
+nettoforbruket **187 897 kr/mnd**, og flatens 180 424 var i praksis riktig hele tiden.
+
+Konsekvenser som må rettes i hodet, ikke bare i koden:
+
+- **Dekningen på ~0,5 måneder på sparekontoflaten er ikke en åpenbar bug.** Den åpne saken jeg
+  førte opp — «180 424 er 4,3× for høyt» — er lukket, og lukket motsatt vei.
+- Trekker man fra de dobbelttalte reservasjonene (~52 000 kr/mnd) lander det på
+  ~136 000 kr/mnd. Fortsatt høyt, og nå er det et *spørsmål om hva som ligger i tallet*
+  (boliglån? begge kort? faste regninger?) framfor en mistanke om en dedupfeil.
+- Lærdommen: **et avledet tall arver feilen i grunnlaget uten å se usikkert ut.** 41 641 ser
+  like presist ut som 187 897.
+
+### Den samme én-til-én-feilen, gjentatt i samme fil
+
+`orphanMatches` var en LATERAL join med `LIMIT 1` per reservasjon. Den reserverer ikke
+motparten, så tre PENDING på 255 kr på samme konto kunne alle peke på det **samme** bokførte
+kjøpet. Nøyaktig samme feil som overføringstellingen hadde, gjentatt noen linjer unna i samme
+fil, i samme runde som jeg fikset den andre.
+
+Grunnen den overlever: en `JOIN LATERAL … LIMIT 1` *ser* ut som «velg én», og gjør det — per
+rad, ikke per motpart. Derfor er matchingen nå flyttet ut av SQL til
+`$lib/domain/economics/reservation-matching.ts`, ren og med 15 tester, hvorav én er nettopp
+denne regresjonen. Samme grep som `findInternalTransfers`: parring hører i domenelaget, ikke i
+en spørring.
+
+`271 par / 154 703 kr` fra forrige kjøring er derfor et **øvre anslag**. Det korrigerte tallet
+kommer av neste kjøring.
+
+### Modulen er fixens motor, ikke bare en måling
+
+`matchReservationsToBooked` er skrevet for å bli brukt av fixen:
+
+- **Eksakt beløp**, ingen toleranse — 33 av 35 par hadde 0 % avvik, og en toleranse ville
+  åpnet for å slå sammen ulike kjøp.
+- **`merchant_key` er preferanse, ikke krav.** Det er hele forskjellen fra drift-målingen, og
+  det er forsvarlig fordi ekte gjentak er målt til 2 av 1 136 bøtter.
+- **Én-til-én**, håndhevet ved at motparten fjernes fra puljen.
+- **Negativ datoforskjell tas med** — prod viste −1 og −2 dager, så retningen er ikke gitt.
+- `unmatched` rapporteres, så restposten ikke forsvinner stille.
+
+Fixen setter `is_active = false` på reservasjonen. **Aldri slett.**
 
 ## Verifisering
 

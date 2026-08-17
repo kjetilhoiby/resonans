@@ -2,6 +2,11 @@ import { json } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { pgClient } from '$lib/db';
 import { readTransactions } from '$lib/server/economics/transactions';
+import {
+	doubleCountedTotal,
+	matchReservationsToBooked,
+	type ReservationCandidate
+} from '$lib/domain/economics/reservation-matching';
 import type { RequestHandler } from './$types';
 
 /**
@@ -322,21 +327,23 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	// ── 6. Foreldreløs reservasjon mot bokført rad, UTEN merchant_key-kravet ─
 	//
-	// Dette er den målingen drift-spørringen over ikke kunne gjøre: den joiner på
-	// `f.mk = s.mk`, så et par der beskrivelsen endret seg — «SEK ICA NARA HAGA» mot
-	// «ICA NARA HAGA» — var per konstruksjon usynlig. Prod viste tre slike par i ett
-	// skjermbilde av dagligvarer, så mekanismen er reell.
+	// Dette er målingen drift-spørringen ikke kunne gjøre: den joiner på `f.mk = s.mk`, så et
+	// par der beskrivelsen endret seg — «SEK ICA NARA HAGA» mot «ICA NARA HAGA» — var per
+	// konstruksjon usynlig. Målt i prod: 110 av 271 par, 103 165 kr.
 	//
-	// **Multiplisitetsmålingen er det som gjør denne regelen forsvarlig.** Faren ved å
-	// matche på beløp uten beskrivelse er å slå sammen to ekte kjøp. Nå er hyppigheten
-	// målt: 2 av 1 125 bøtter hadde ekte gjentak (60 kr over 90 dager). I tillegg er
-	// PENDING-mot-BOOKED en tryggere par-form enn to vilkårlige rader — to reelle kjøp
-	// gir to BOOKED, ikke én PENDING og én BOOKED.
-	const orphanMatches = await pgClient.unsafe<{
-		delta_days: number | null;
-		mk_changed: boolean;
-		pairs: string;
-		nok: string | null;
+	// **RETTET 2026-08-16: matchingen er flyttet ut av SQL.** Første utgave var en LATERAL
+	// join som ga hver reservasjon sin nærmeste bokførte rad UTEN å reservere den, så tre
+	// PENDING på 255 kr kunne alle peke på samme bokførte kjøp. Det er nøyaktig samme
+	// én-til-én-feil overføringstellingen hadde, gjentatt i samme fil noen linjer unna, fordi
+	// en LATERAL join med `LIMIT 1` ser uskyldig ut. Nå henter SQL bare bøttene, og
+	// `matchReservationsToBooked` gjør parringen — rent og testet.
+	const buckets = await pgClient.unsafe<{
+		account_id: string;
+		transaction_date: string;
+		amount: string;
+		mk: string;
+		max_rank: number;
+		top_rank: number;
 	}[]>(
 		`WITH bucket AS (
 			SELECT account_id, transaction_date, amount, description_normalized AS mk,
@@ -345,29 +352,45 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			WHERE user_id = $1 AND transaction_date >= $2::date
 			GROUP BY 1, 2, 3, 4
 		),
-		top AS (SELECT MAX(max_rank) AS top_rank FROM bucket),
-		stalled AS (SELECT b.* FROM bucket b, top t WHERE b.max_rank < t.top_rank),
-		final AS (SELECT b.* FROM bucket b, top t WHERE b.max_rank = t.top_rank)
-		SELECT (f.transaction_date - s.transaction_date) AS delta_days,
-		       (f.mk IS DISTINCT FROM s.mk)              AS mk_changed,
-		       COUNT(*)::text                            AS pairs,
-		       ROUND(SUM(CASE WHEN s.amount < 0 THEN ABS(s.amount) ELSE 0 END), 0)::text AS nok
-		 FROM stalled s
-		 JOIN LATERAL (
-		   SELECT f.* FROM final f
-		   WHERE f.account_id = s.account_id
-		     -- Eksakt beløp, og INGEN mk-betingelse. Det er hele forskjellen.
-		     AND f.amount = s.amount
-		     AND f.transaction_date BETWEEN s.transaction_date - $3::int
-		                                AND s.transaction_date + $3::int
-		   ORDER BY ABS(f.transaction_date - s.transaction_date)
-		   LIMIT 1
-		 ) f ON TRUE
-		 GROUP BY 1, 2
-		 ORDER BY COUNT(*) DESC
-		 LIMIT 100`,
-		[userId, fromDate, DRIFT_WINDOW_DAYS]
+		top AS (SELECT MAX(max_rank) AS top_rank FROM bucket)
+		SELECT b.account_id,
+		       b.transaction_date::text AS transaction_date,
+		       b.amount::text           AS amount,
+		       b.mk,
+		       b.max_rank,
+		       t.top_rank
+		 FROM bucket b, top t`,
+		[userId, fromDate]
 	);
+
+	const reservationCandidates: ReservationCandidate[] = buckets.map((row, index) => ({
+		// Bøtta har ingen egen id — nøkkelen ER identiteten, og indeksen holder den unik.
+		id: `${row.account_id}|${row.transaction_date}|${row.amount}|${row.mk}|${index}`,
+		accountId: row.account_id,
+		date: row.transaction_date,
+		amount: Number(row.amount) || 0,
+		merchantKey: row.mk ?? '',
+		booked: Number(row.max_rank) >= Number(row.top_rank)
+	}));
+
+	const reservationResult = matchReservationsToBooked(reservationCandidates);
+
+	// Histogram på (datoforskjell, endret beskrivelse), som før — men nå fra par som ikke
+	// kan dele motpart.
+	const orphanBuckets = new Map<string, { deltaDays: number; mkChanged: boolean; pairs: number; nok: number }>();
+	for (const match of reservationResult.matches) {
+		const key = `${match.deltaDays}|${match.merchantKeyChanged}`;
+		const entry = orphanBuckets.get(key) ?? {
+			deltaDays: match.deltaDays,
+			mkChanged: match.merchantKeyChanged,
+			pairs: 0,
+			nok: 0
+		};
+		entry.pairs += 1;
+		entry.nok += match.amount;
+		orphanBuckets.set(key, entry);
+	}
+	const orphanRows = [...orphanBuckets.values()].sort((a, b) => b.pairs - a.pairs);
 
 	// ── Sprik mellom lagrene ─────────────────────────────────────────────────
 	// «Ulike tall på ulike steder», tallfestet. De tre radene skal være enige om
@@ -538,12 +561,19 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		// Spørsmål 6: foreldreløs reservasjon mot bokført rad UTEN merchant_key-kravet.
 		// Dette er kroner drift-målingen aldri kunne se, og etter multiplisitetsmålingen
 		// (2 av 1 125 bøtter med ekte gjentak) er beløpsmatching forsvarlig her.
-		orphanMatches: orphanMatches.map((m) => ({
-			deltaDays: m.delta_days === null ? null : Number(m.delta_days),
-			merchantKeyChanged: m.mk_changed,
-			pairs: Number(m.pairs),
-			nok: m.nok === null ? 0 : Number(m.nok)
+		orphanMatches: orphanRows.map((m) => ({
+			deltaDays: m.deltaDays,
+			merchantKeyChanged: m.mkChanged,
+			pairs: m.pairs,
+			nok: Math.round(m.nok)
 		})),
+		/**
+		 * Reservasjoner UTEN en ledig bokført motpart. Restposten, og den skal rapporteres:
+		 * de er enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+		 */
+		orphansUnmatched: reservationResult.unmatched.length,
+		/** Kroner som telles to ganger i dag — altså det fixen ville fjernet fra forbruket. */
+		doubleCountedNok: Math.round(doubleCountedTotal(reservationResult.matches)),
 
 		// «Ulike tall på ulike steder», tallfestet.
 		stores: stores.map((s) => ({
