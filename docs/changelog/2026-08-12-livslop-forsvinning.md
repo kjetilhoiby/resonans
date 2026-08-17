@@ -1,7 +1,7 @@
 # Livsløp: måle at forrige status forsvinner
 
 Dato: 2026-08-12
-Status: pågår — målt fire ganger 2026-08-16; fix bygget med tørrkjøring, ikke kjørt
+Status: pågår — tørrkjøringen avslørte to feil i fixen; rettet, ikke kjørt
 
 ## Kontekst
 
@@ -361,3 +361,79 @@ et negativt forbruk, et tall som gikk opp der det måtte gå ned, et histogram s
 til sin egen overskrift. Derfor er tre slike kryssjekker nå bygget inn i kortet — `impossible`
 på negativt nettoforbruk, retningen på lagerforholdet, og skillet mellom «målt til 1» og «ikke
 målbart».
+
+
+## Tørrkjøringen i prod fanget to feil FØR noe ble skrevet
+
+Planen foreslo 269 rader. Brukeren limte inn tabellen «Største par», og den var gal:
+
+```
+28 700 kr  ut   0  endret
+23 000 kr  inn  0  endret
+23 000 kr  inn  0  endret
+ 7 600 kr  inn  0  endret
+ 7 600 kr  ut   0  endret
+ 4 000 kr  ut   0  endret
+ 4 000 kr  inn  0  endret
+ 3 668 kr  ut/ut/inn
+ 2 500 kr  ut/inn/ut/inn
+ 2 000 kr  inn/ut
+```
+
+Runde beløp, som både `inn` og `ut`, 0 dager, «endret». **Det er signaturen på interne
+overføringer** — og diagnosen hadde selv målt 111 slike par til 388 132 kr.
+
+### Feil 1: ukjent status ble lest som reservasjon
+
+```ts
+booked: (Number(row.statusRank) || 0) >= topRank
+```
+
+`bookingStatusRank` gir **0 for manglende status**, så `booked` ble falsk og raden en
+«foreldreløs reservasjon». `latest_booking_status` er nullable, så rader skrevet før
+statuslogikken eller uten feltet fra banken havnet alle der.
+
+Det er samme felle som `startWorkout.type` hadde, dokumentert i CLAUDE.md: **en stille default
+som gjetter en KONKRET verdi er verre enn et avslag**, og skillet som må holdes er «ikke
+oppgitt» mot «oppgitt, men ukjent». Jeg siterte den lærdommen til brukeren tidligere i samme
+arbeid og gjorde den så selv.
+
+Rettelsen: `status` er tri-tilstand (`pending` | `booked` | `unknown`), lest av
+`latest_booking_status` som **tekst**, aldri utledet av rangen. `unknown` deltar ikke — verken
+som reservasjon eller som motpart. Typen nekter nå å representere feilen, som `savingsRole`.
+
+### Feil 2: lisensen var målt på en annen populasjon
+
+Jeg begrunnet beløpsmatching uten beskrivelse med at ekte gjentatte kjøp er målt til
+**2 av 1 141 bøtter**. Men multiplisiteten teller gjentatte kjøp **innenfor ett API-svar**,
+per (svar, status). To overføringer av 2 500 kr på ulike dager er to *separate bøtter*, ikke
+multiplisitet > 1.
+
+Så tallet sa ingenting om hvor ofte man flytter 2 500 kr — og det var nettopp det regelen ble
+anvendt på. **Et kalibreringstall målt på én populasjon er ikke en garanti for en annen.**
+
+Rettelsen: interne overføringer merkes med `findInternalTransfers` — den delte matchingen, ikke
+en egen variant — og holdes utenfor på begge sider.
+
+### Hva som virket
+
+Kortet viste **de største parene først**, med begrunnelsen «det er dem en feilaktig parring
+ville kostet mest». Det var det som gjorde feilen synlig: 28 700 kr og fire femsifrede
+`inn`-beløp øverst i en liste som skulle handle om dagligvarer.
+
+Hadde tabellen vist et tilfeldig utvalg, eller bare et totaltall, ville 269 rader blitt
+deaktivert. **Tørrkjøringen var ikke en formalitet — den var det som stoppet dette.**
+
+Utelatelsene sies nå med ord på flaten: `skippedUnknownStatus` og `skippedInternalTransfers`.
+En stille utelatelse ville sett ut som full dekning.
+
+### Sjette feil, og formen er den samme
+
+| Feil | Betingelsen jeg ikke så |
+|------|------------------------|
+| … (fem tidligere, se tabellen over) | |
+| Ukjent status som reservasjon | `bookingStatusRank` returnerer 0 for «ingen status» |
+| Overføringer paret med hverandre | multiplisiteten var målt per API-svar, ikke per dag |
+
+Den andre er ikke en kodefeil men en **resonneringsfeil**: jeg brukte et måletall som
+sikkerhetsargument utenfor det det målte.

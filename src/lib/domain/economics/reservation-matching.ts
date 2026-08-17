@@ -19,6 +19,17 @@
  * **Aldri slett, bare deaktiver.** Konsumenten skal sette `is_active = false` på
  * reservasjonen. Å telle for mye er trygt å rette; å fjerne noe brukeren faktisk gjorde er
  * det ikke — samme regel som for treningsøkter.
+ *
+ * **To ting holdes helt utenfor**, og begge ble oppdaget av tørrkjøringen i prod:
+ *
+ * 1. **Rader med ukjent status.** `bookingStatusRank` gir 0 for manglende status, og en
+ *    utledning `booked = rank >= topRank` gjorde «vi vet ikke» til «ubokført reservasjon».
+ * 2. **Interne overføringer.** De går i runde beløp som gjentas, og to separate overføringer
+ *    på 2 500 kr innen tre dager ville blitt paret som reservasjon + bokført.
+ *
+ * Lisensen for å matche på beløp uten beskrivelse kom fra multiplisitetsmålingen — gjentatte
+ * KJØP innenfor ett API-svar. Den gjelder ikke overføringer, og å anvende den der var å bruke
+ * et tall målt på én populasjon som garanti for en annen.
  */
 
 /** Standardvindu for datodrift mellom reservasjon og bokføring. */
@@ -34,8 +45,30 @@ export type ReservationCandidate = {
 	/** Negativ = ut av kontoen. Sammenlignes EKSAKT. */
 	amount: number;
 	merchantKey: string;
-	/** Sann når raden nådde toppstatus (BOOKED). Falsk = foreldreløs reservasjon. */
-	booked: boolean;
+	/**
+	 * Bokføringsstatusen, **tri-tilstand og ikke en boolean**.
+	 *
+	 * `unknown` deltar ikke i matchingen i det hele tatt — verken som reservasjon eller som
+	 * motpart. Første utgave hadde `booked: boolean` utledet av `statusRank >= topRank`, og
+	 * siden `bookingStatusRank` gir **0 for manglende status**, ble «vi vet ikke» behandlet som
+	 * «ubokført reservasjon». I prod ga det par som «7 600 kr inn / 0 dager» og
+	 * «2 500 kr ut ×2, 2 500 kr inn ×2» — runde beløp som er gjentatte overføringer, ikke to
+	 * versjoner av ett kjøp.
+	 *
+	 * Det er samme felle som `startWorkout.type` hadde: en stille default som gjetter en
+	 * KONKRET verdi er verre enn et avslag. Typen nekter nå å representere feilen.
+	 */
+	status: 'pending' | 'booked' | 'unknown';
+	/**
+	 * Sann når raden har en motpost på en annen egen konto samme dag.
+	 *
+	 * Interne overføringer holdes **utenfor matchingen**. De går i runde beløp som gjentas —
+	 * 2 500, 4 000, 7 600 — og to separate overføringer på samme beløp innen tre dager ville
+	 * blitt slått sammen til «reservasjon + bokført». Multiplisitetsmålingen som lisensierte
+	 * beløpsmatching gjaldt gjentatte KJØP innenfor ett API-svar, altså en annen populasjon;
+	 * den sier ingenting om hvor ofte man flytter 2 500 kr.
+	 */
+	internalTransfer?: boolean;
 };
 
 export type ReservationMatch = {
@@ -100,7 +133,7 @@ export function matchReservationsToBooked(
 	const maxDeltaDays = options.maxDeltaDays ?? DEFAULT_MAX_DELTA_DAYS;
 
 	const reservations = candidates
-		.filter((c) => !c.booked)
+		.filter((c) => c.status === 'pending' && !c.internalTransfer)
 		.slice()
 		.sort((a, b) => (a.date === b.date ? a.id.localeCompare(b.id) : a.date.localeCompare(b.date)));
 
@@ -108,7 +141,7 @@ export function matchReservationsToBooked(
 	// er billig og kan ikke matche på tvers av beløp ved et uhell.
 	const bookedByKey = new Map<string, ReservationCandidate[]>();
 	for (const candidate of candidates) {
-		if (!candidate.booked) continue;
+		if (candidate.status !== 'booked' || candidate.internalTransfer) continue;
 		const key = `${candidate.accountId}:${toCents(candidate.amount)}`;
 		const bucket = bookedByKey.get(key);
 		if (bucket) bucket.push(candidate);

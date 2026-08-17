@@ -29,6 +29,7 @@
 import { db } from '$lib/db';
 import { canonicalBankTransactions } from '$lib/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { findInternalTransfers } from '$lib/domain/economics/internal-transfers';
 import {
 	doubleCountedTotals,
 	matchReservationsToBooked,
@@ -44,8 +45,17 @@ export type DeactivateResult = {
 	window: { days: number; fromDate: string };
 	/** Aktive canonical-rader vurdert. */
 	rowsConsidered: number;
-	/** Rader uten toppstatus, altså kandidater til å være erstattet. */
+	/** Rader med status PENDING som ikke er interne overføringer. */
 	reservations: number;
+	/**
+	 * Rader hoppet over fordi statusen er UKJENT — verken PENDING eller BOOKED.
+	 *
+	 * Skal rapporteres. Første utgave regnet dem som reservasjoner (`statusRank >= topRank` er
+	 * falsk for rank 0), og tørrkjøringen i prod foreslo da å deaktivere overføringer.
+	 */
+	skippedUnknownStatus: number;
+	/** Rader hoppet over fordi de er interne overføringer. */
+	skippedInternalTransfers: number;
 	pairs: { out: number; in: number };
 	doubleCounted: { spend: number; income: number };
 	/** Reservasjoner uten en ledig bokført motpart — ekte ubokførte, eller endret beløp. */
@@ -65,6 +75,23 @@ export type DeactivateResult = {
 
 const MAX_SAMPLES = 25;
 
+function toDateKey(value: unknown): string {
+	return typeof value === 'string' ? value.slice(0, 10) : String(value).slice(0, 10);
+}
+
+/**
+ * Statusen som tri-tilstand. **Ukjent er ukjent** — den gjettes ikke til noen av sidene.
+ *
+ * `latestBookingStatus` er nullable, og rader skrevet før statuslogikken eller uten feltet fra
+ * banken havner der. Å regne dem som reservasjoner var feilen tørrkjøringen avslørte.
+ */
+function normalizeStatus(value: string | null): 'pending' | 'booked' | 'unknown' {
+	const status = (value ?? '').trim().toUpperCase();
+	if (status === 'BOOKED') return 'booked';
+	if (status === 'PENDING') return 'pending';
+	return 'unknown';
+}
+
 export async function deactivateSupersededReservations(
 	userId: string,
 	options: { days: number; dryRun?: boolean; maxDeltaDays?: number }
@@ -82,7 +109,9 @@ export async function deactivateSupersededReservations(
 			date: canonicalBankTransactions.canonicalDate,
 			amount: canonicalBankTransactions.amount,
 			merchantKey: canonicalBankTransactions.merchantKey,
-			statusRank: canonicalBankTransactions.statusRank
+			// **Statusen leses eksplisitt, ikke utledet av rangen.** `bookingStatusRank` gir 0
+			// for manglende status, så `rank < topRank` gjorde «ukjent» til «reservasjon».
+			bookingStatus: canonicalBankTransactions.latestBookingStatus
 		})
 		.from(canonicalBankTransactions)
 		.where(
@@ -93,19 +122,36 @@ export async function deactivateSupersededReservations(
 			)
 		);
 
-	// Toppstatus utledes av dataene, ikke hardkodet til 20. Kommer det en høyere rank senere,
-	// følger definisjonen av «bokført» med av seg selv — og med bare PENDING i vinduet blir
-	// ingenting regnet som bokført, altså ingen par, som er riktig.
-	const topRank = rows.reduce((max, row) => Math.max(max, Number(row.statusRank) || 0), 0);
+	// Interne overføringer identifiseres med DEN DELTE matchingen, ikke en egen variant.
+	// De går i runde beløp som gjentas (2 500, 4 000, 7 600), og to separate overføringer på
+	// samme beløp innen tre dager ville blitt paret som reservasjon + bokført.
+	const transfers = findInternalTransfers(
+		rows.map((row) => ({
+			id: row.id,
+			accountId: row.accountId,
+			date: toDateKey(row.date),
+			amount: Number(row.amount) || 0
+		}))
+	);
 
-	const candidates: ReservationCandidate[] = rows.map((row) => ({
-		id: row.id,
-		accountId: row.accountId,
-		date: typeof row.date === 'string' ? row.date.slice(0, 10) : String(row.date).slice(0, 10),
-		amount: Number(row.amount) || 0,
-		merchantKey: row.merchantKey ?? '',
-		booked: (Number(row.statusRank) || 0) >= topRank
-	}));
+	let skippedUnknownStatus = 0;
+	let skippedInternalTransfers = 0;
+
+	const candidates: ReservationCandidate[] = rows.map((row) => {
+		const status = normalizeStatus(row.bookingStatus);
+		const internalTransfer = transfers.internalIds.has(row.id);
+		if (status === 'unknown') skippedUnknownStatus += 1;
+		if (internalTransfer) skippedInternalTransfers += 1;
+		return {
+			id: row.id,
+			accountId: row.accountId,
+			date: toDateKey(row.date),
+			amount: Number(row.amount) || 0,
+			merchantKey: row.merchantKey ?? '',
+			status,
+			internalTransfer
+		};
+	});
 
 	const { matches, unmatched } = matchReservationsToBooked(candidates, {
 		maxDeltaDays: options.maxDeltaDays
@@ -142,7 +188,9 @@ export async function deactivateSupersededReservations(
 		dryRun,
 		window: { days: options.days, fromDate },
 		rowsConsidered: rows.length,
-		reservations: candidates.filter((c) => !c.booked).length,
+		reservations: candidates.filter((c) => c.status === 'pending' && !c.internalTransfer).length,
+		skippedUnknownStatus,
+		skippedInternalTransfers,
 		pairs: {
 			out: matches.filter((m) => m.direction === 'out').length,
 			in: matches.filter((m) => m.direction === 'in').length

@@ -17,6 +17,8 @@
 		window: { days: number; fromDate: string };
 		rowsConsidered: number;
 		reservations: number;
+		skippedUnknownStatus: number;
+		skippedInternalTransfers: number;
 		pairs: { out: number; in: number };
 		doubleCounted: { spend: number; income: number };
 		unmatched: number;
@@ -115,9 +117,22 @@
 		</p>
 		<p class="meta">
 			{result.rowsConsidered.toLocaleString('nb-NO')} aktive rader vurdert i vinduet, hvorav
-			{result.reservations.toLocaleString('nb-NO')} uten toppstatus.
-			{result.unmatched.toLocaleString('nb-NO')} reservasjoner fant ingen ledig motpart og står
-			urørt — de er enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+			{result.reservations.toLocaleString('nb-NO')} er reservasjoner (status PENDING).
+			{result.unmatched.toLocaleString('nb-NO')} av dem fant ingen ledig motpart og står urørt —
+			de er enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+		</p>
+		<!--
+			Utelatelsene sies med ord. Begge ble oppdaget av tørrkjøringen i prod: rader med ukjent
+			status ble regnet som reservasjoner, og overføringer i runde beløp ble paret med
+			hverandre.
+		-->
+		<p class="meta">
+			Holdt utenfor: {result.skippedUnknownStatus.toLocaleString('nb-NO')} rader med
+			<strong>ukjent status</strong> — verken PENDING eller BOOKED, så de kan ikke være en
+			reservasjon vi vet er erstattet — og
+			{result.skippedInternalTransfers.toLocaleString('nb-NO')} rader som er
+			<strong>interne overføringer</strong>. Overføringer går i runde beløp som gjentas, og to
+			separate flyttinger av 2 500 kr innen tre dager ville sett ut som ett kjøp i to versjoner.
 		</p>
 
 		{#if !result.dryRun && result.deactivated < totalPairs}
