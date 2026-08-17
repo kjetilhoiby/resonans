@@ -102,10 +102,46 @@ retting *kan* bygges senere; en sletting kan vi ikke se at API-et tilbyr.
 - `npm test`: 3430 tester i 249 filer, alle grønne — inkludert vakten mot rå sensorlesing,
   der `workout-cleanup.ts` er lagt inn i `knownRawReaders` med begrunnelse (den må se hver
   enkelt kilderad; en dedupliserende leser gir klyngen).
-- Ekko: kvitteringsteksten er dekket av `EkkoTests/WorkoutCascadeTests.swift`, og
-  kompileringen av `ios-pr.yml` (xcodebuild mot simulator).
+- Ekko: kvitteringsteksten er dekket av `EkkoTests/WorkoutCascadeTests.swift`. **NB:** da
+  dette ble skrevet kompilerte `ios-pr.yml` bare app-målet, så testfila var ikke engang
+  typesjekket av CI — se sidefunnet nederst.
 - Fortsatt ugjort: den faktiske søppeløkta fra 17. august står i prod. Den ryddes med
   `POST /api/helse/trening/slett-okt?date=2026-08-17&sport=running` (dryRun først) — eller
   nå: med «Rett idrett → Elsykkel» på økta i Ekko, som er hele poenget.
 - Fortsatt uavklart: **hvorfor** økta ble løping. Diagnoseloggen på telefonen svarer på det
   (`LiveDiagnostics`, Innstillinger → Live-stemme → Kopier).
+
+## Etterspill: hvorfor økta ble løping
+
+Diagnosen kom fra assistent-tråden i Live-debug samme ettermiddag. Rekkefølgen:
+
+1. Brukeren: «Kan du starte en sykkeltur fra barnehagen til jobb med elsykkel?»
+2. Modellen: «Skal jeg starte en sykkeløkt fra Barnehagen til Jobb **på elsykkel**? … Er du klar?»
+3. Brukeren: «Ja.»
+4. Modellen: «Beklager, det ble en feil …» — og det som startet, var en **løpeøkt**.
+
+Modellen forsto altså riktig og sa det høyt. Feilen satt i to lag som forsterket hverandre:
+
+- **Verktøyskjemaet listet ikke `elsykkel`.** `ASSISTANT_FUNCTION_DECLARATIONS` sa
+  `løp|sykkel|gåtur|ski|tredemølle|yoga`, mens `ASSISTANT_HYBRID_TOOLS.md` og appen begge
+  kjente `elsykkel`. Dokumentasjonen var riktig og skjemaet var kilden modellen leser.
+- **`AssistantToolExecutor.sport(from:)` hadde `default: return .running`.** En verdi som
+  ikke traff noen gren ble en KONKRET idrett, uten feil, uten logg. Derfra fulgte alt:
+  løpecoaching på en elsykkeltur, rundeknappen (rettet i #193), effort skåret som løping —
+  og «rekorden» på 5 km i 12:25.
+
+Rettet: `elsykkel` står i skjemaet, alle skrivemåtene modellen kan finne på (inkludert
+`ebiking`, appens egen rawValue) mapper til `.eBiking`, og en **oppgitt men ukjent** verdi
+avvises med `ukjent_idrett` og lista over kjente. Skillet mot «ikke oppgitt» er hele poenget:
+uten `type` er løping fortsatt riktig default.
+
+**En stille default som gjetter en konkret verdi er verre enn et avslag** — avslaget kan
+modellen rette seg selv på, i samme tur, mens brukeren hører på.
+
+### Sidefunn: Ekko-testene har aldri kjørt i CI
+
+`ios-pr.yml` kjørte `xcodebuild build`, som bare rører app-målet. `EkkoTests` ble verken
+kompilert eller kjørt, og minst én påstand hadde rotnet:
+`sport(from: "yoga") == .running`, stående igjen etter at yoga fikk sin egen gren.
+Workflowen bygger nå testmålet også (`build-for-testing`). Å faktisk *kjøre* dem krever en
+konkret simulator og en oppryddingsrunde først — det står igjen.

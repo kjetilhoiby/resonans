@@ -114,7 +114,15 @@ export const ASSISTANT_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
 		parameters: {
 			type: 'OBJECT',
 			properties: {
-				type: { type: 'STRING', description: 'løp|sykkel|gåtur|ski|tredemølle|yoga (default løp)' },
+				// NB: lista MÅ stemme med `AssistantToolExecutor.sport(from:)` i Ekko. Fram til
+				// 17. august 2026 manglet «elsykkel» her mens appen kjente den — og en modell som
+				// bare får se seks verdier finner sin egen syvende. Felttesten: brukeren ba om
+				// elsykkel, modellen bekreftet «sykkeløkt … på elsykkel» høyt, og økta ble LØPING,
+				// fordi verdien den sendte ikke traff noen gren i appen.
+				type: {
+					type: 'STRING',
+					description: 'løp|sykkel|elsykkel|gåtur|ski|tredemølle|yoga (default løp)'
+				},
 				distanceKm: { type: 'NUMBER' },
 				minutes: { type: 'NUMBER' },
 				shape: { type: 'STRING', description: 'tur-retur|én vei|rundtur' },
