@@ -387,12 +387,18 @@
 						258 117 kr i en tidligere måling.
 					</p>
 				{/if}
-				{#if monthlySpend}
+				{#if monthlySpend && monthlySpend.net > 0}
+					<!--
+						**Én nevner, ikke to.** Forrige utgave sa «X kr/mnd av et nettoforbruk på Y kr/mnd
+						— altså Z %», der Z var regnet mot BRUTTO. I prod ble det «51 674 av 189 037 —
+						altså 16 %», der svaret mot netto er 27 %. Samme feilform som alt annet i denne
+						diagnosen har hatt: to ledd i en brøk målt mot ulike grunnlag.
+					-->
 					<p class="meta">
 						Det er {nok(orphanTotal.nok / (result.window.days / 30.4))}/mnd av et nettoforbruk på
 						{nok(monthlySpend.net)}/mnd — altså {Math.round(
-							(orphanTotal.nok / (result.stores.find((x) => x.store === 'canonical_bank_transactions')?.spendNok || 1)) * 100
-						)} % av alt forbruk i vinduet.
+							(orphanTotal.nok / (result.window.days / 30.4) / monthlySpend.net) * 100
+						)} % av forbruket du faktisk ser.
 					</p>
 				{/if}
 				<div class="table-scroll">

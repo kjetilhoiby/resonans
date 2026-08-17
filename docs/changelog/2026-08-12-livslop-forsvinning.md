@@ -1,7 +1,7 @@
 # Livsløp: måle at forrige status forsvinner
 
 Dato: 2026-08-12
-Status: pågår — målt to ganger 2026-08-16; matcher bygget, fix ikke bygget
+Status: pågår — målt fire ganger 2026-08-16; fix bygget med tørrkjøring, ikke kjørt
 
 ## Kontekst
 
@@ -283,3 +283,81 @@ søkestrengen, traff ikke, og **en replace som ikke treffer er en no-op uten fei
 Commit-meldingen påsto at rettelsen var gjort. Bruk `assert` på at mønsteret finnes før
 erstatning — det er den samme klassen feil som resten av dette dokumentet handler om: et
 verktøy som rapporterer suksess uten å ha gjort noe.
+
+
+## Fjerde måling 2026-08-16: internt konsistent for første gang
+
+| | Par | Beløp |
+|---|---:|---:|
+| Forbruk | 249 | 152 982 kr |
+| Inntekt | 20 | 105 136 kr |
+| **Sum** | **269** | **258 118 kr** |
+| Uparet (restpost) | 33 | — |
+
+Tre kryssjekker, og alle holder:
+
+1. **Histogrammet summerer eksakt til overskriften** — 97+46+31+26+25+10+8+3+2+1 = 249 par, og
+   34 244+15 187+7 865+13 905+69 123+9 464+1 079+124+1 950+41 = 152 982 kr.
+2. **Forbruk + inntekt = 258 118 kr**, mot 258 117 i forrige kjøring. Fortegnsdelingen forklarer
+   altså *hele* spriket, og ingenting annet endret seg.
+3. **`0 d / endret` gir 69 123 kr både nå og i den ALLER FØRSTE målingen** — den som var
+   mange-til-én men bare summerte negative beløp. To uavhengige veier til samme tall.
+
+Restposten falt fra 271 → 269 par mens 33 reservasjoner nå står uparet mot 0 før. Det var hele
+poenget med én-til-én.
+
+### En femte feil, samme familie
+
+Setningen sa «51 674 kr/mnd av et nettoforbruk på 189 037 kr/mnd — altså **16 %**». 16 % er
+regnet mot **brutto** (947 780), mens kronetallene er netto. Mot netto er svaret **27 %**. To
+nevnere i én setning, altså samme feilform som alt annet i denne diagnosen har hatt: to ledd i
+en brøk målt mot ulike grunnlag. Rettet til én nevner.
+
+## Fixen: bygget, med tørrkjøring, ikke kjørt
+
+`$lib/server/economics/deactivate-superseded.ts` +
+`POST /api/admin/economics/deaktiver-reservasjoner` + `ReservationCleanupCard`.
+
+- **Leser CANONICAL, ikke rå-strømmen.** `is_active` bor på canonical, og en fix som måler på
+  ett lag og skriver på et annet kan avvike uten at noe sier fra. Diagnosen måler rått fordi den
+  svarer på hva banken sendte; fixen leser der den skriver. **Tørrkjøringen er derfor den
+  autoritative målingen for hva som faktisk vil skje** — den kan avvike fra diagnosens 249, og
+  gjør den det, er det canonical som gjelder.
+- **`is_active = false`, aldri slett.** Reversibelt, og samme regel som for treningsøkter.
+- **Dry-run er standard**, og skriveknappen finnes ikke i UI før en tørrkjøring har vist planen.
+  `dryRun=false` må sendes eksplisitt.
+- **Idempotent:** bare aktive rader vurderes, så en andre kjøring finner ingen nye par.
+  `is_active = true` er dessuten et vilkår i UPDATE-en, så to samtidige kjøringer ikke kan
+  telle samme rad to ganger.
+- **Toppstatus utledes av dataene**, ikke hardkodet til rank 20. Med bare PENDING i vinduet blir
+  ingenting regnet som bokført, altså ingen par — som er riktig.
+- **Taket er 730 dager**, og over det avvises kallet: hele vurderingen hviler på en måling over
+  90 dager, og et vindu på flere år ville anvendt terskler på data ingen har sett på.
+- **Største par vises først** i tabellen, siden det er dem en feilaktig parring ville kostet
+  mest.
+
+Både forbruks- og inntektspar deaktiveres — et dobbelttalt innskudd blåser opp inntekten på
+samme måte — men tallene rapporteres for seg og skal ikke summeres.
+
+## Femten feil senere: hva som faktisk gikk galt hver gang
+
+Fem feil i denne diagnosen, og **alle fem har samme form**: en betingelse jeg ikke så som en
+betingelse.
+
+| Feil | Betingelsen jeg ikke så |
+|------|------------------------|
+| Drift-joinen mispairet | `ORDER BY` på dato før beløp |
+| «Beløpet er identisk» | `f.mk = s.mk` gjorde valutaprefikset usynlig |
+| Porten | `since = sensor.lastSync` gjør `seen_count = 1` uunngåelig |
+| Overføringstellingen | self-joinen var mange-til-mange |
+| `orphanMatches` | `LATERAL … LIMIT 1` velger per RAD, ikke per motpart |
+| Fortegnsblind sum | `CASE WHEN s.amount < 0` fantes i SQL-en, ikke i JS-en |
+| «16 %» | brøkens to ledd målt mot ulike grunnlag |
+
+Og «~42 000 kr/mnd» var et avledet tall som arvet feilen i grunnlaget uten å se usikkert ut.
+
+**Det som til slutt avslørte hver av dem var ikke kodelesing, men en kryssjekk som ikke stemte:**
+et negativt forbruk, et tall som gikk opp der det måtte gå ned, et histogram som ikke summerte
+til sin egen overskrift. Derfor er tre slike kryssjekker nå bygget inn i kortet — `impossible`
+på negativt nettoforbruk, retningen på lagerforholdet, og skillet mellom «målt til 1» og «ikke
+målbart».
