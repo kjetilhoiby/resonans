@@ -13,7 +13,7 @@ function res(
 	merchantKey = 'kiwi bolerl',
 	accountId = 'a1'
 ): ReservationCandidate {
-	return { id, accountId, date, amount, merchantKey, booked: false };
+	return { id, accountId, date, amount, merchantKey, status: 'pending' };
 }
 function booked(
 	id: string,
@@ -22,7 +22,7 @@ function booked(
 	merchantKey = 'kiwi bolerl',
 	accountId = 'a1'
 ): ReservationCandidate {
-	return { id, accountId, date, amount, merchantKey, booked: true };
+	return { id, accountId, date, amount, merchantKey, status: 'booked' };
 }
 
 describe('matchReservationsToBooked', () => {
@@ -223,5 +223,81 @@ describe('doubleCountedTotals', () => {
 
 	it('gir 0 uten par', () => {
 		expect(doubleCountedTotals([])).toEqual({ spend: 0, income: 0 });
+	});
+});
+
+
+describe('rader som ikke skal matches i det hele tatt', () => {
+	// Regresjonen som tørrkjøringen i prod avslørte. Første utgave utledet
+	// `booked = statusRank >= topRank`, og `bookingStatusRank` gir 0 for MANGLENDE status —
+	// så «vi vet ikke» ble «ubokført reservasjon», og jobben foreslo å deaktivere
+	// overføringer. Samme felle som `startWorkout.type`: en stille default som gjetter en
+	// konkret verdi er verre enn et avslag.
+	it('rører ikke rader med ukjent status', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			{
+				id: 'ukjent',
+				accountId: 'a1',
+				date: '2026-07-29',
+				amount: -2500,
+				merchantKey: 'overforsel',
+				status: 'unknown'
+			},
+			booked('b1', '2026-07-30', -2500, 'overforsel')
+		]);
+
+		expect(matches).toHaveLength(0);
+		// Ikke engang som restpost: den er ikke en reservasjon, den er uavklart.
+		expect(unmatched).toHaveLength(0);
+	});
+
+	it('bruker ikke en ukjent rad som motpart heller', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -2500),
+			{
+				id: 'ukjent',
+				accountId: 'a1',
+				date: '2026-07-30',
+				amount: -2500,
+				merchantKey: 'kiwi bolerl',
+				status: 'unknown'
+			}
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched.map((u) => u.id)).toEqual(['r1']);
+	});
+
+	// Runde beløp som gjentas — 2 500, 4 000, 7 600 — er overføringer, og to separate
+	// overføringer innen tre dager ville blitt paret som reservasjon + bokført.
+	// Multiplisitetsmålingen som lisensierte beløpsmatching gjaldt gjentatte KJØP innenfor
+	// ett API-svar, altså en annen populasjon.
+	it('holder interne overføringer utenfor', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			{ ...res('r-overf', '2026-07-29', -2500), internalTransfer: true },
+			{ ...booked('b-overf', '2026-07-30', -2500), internalTransfer: true }
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched).toHaveLength(0);
+	});
+
+	it('lar en overføring aldri bli motpart for et ekte kjøp', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r-kjop', '2026-07-29', -2500, 'kiwi bolerl'),
+			{ ...booked('b-overf', '2026-07-30', -2500, 'overforsel'), internalTransfer: true }
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched.map((u) => u.id)).toEqual(['r-kjop']);
+	});
+
+	it('matcher fortsatt et ekte par når ingen av dem er overføring', () => {
+		const { matches } = matchReservationsToBooked([
+			{ ...res('r1', '2026-07-29', -113), internalTransfer: false },
+			{ ...booked('b1', '2026-07-30', -113), internalTransfer: false }
+		]);
+
+		expect(matches).toHaveLength(1);
 	});
 });

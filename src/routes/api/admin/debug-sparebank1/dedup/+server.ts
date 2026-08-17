@@ -7,6 +7,7 @@ import {
 	matchReservationsToBooked,
 	type ReservationCandidate
 } from '$lib/domain/economics/reservation-matching';
+import { findInternalTransfers } from '$lib/domain/economics/internal-transfers';
 import type { RequestHandler } from './$types';
 
 /**
@@ -32,6 +33,13 @@ import type { RequestHandler } from './$types';
  * beholder sin opprinnelige `first_seen_at` og får bare `last_seen_at` oppdatert, så
  * gruppering på `first_seen_at` gir «svaret der denne versjonen dukket opp først».
  */
+
+/** Bøttas status som tri-tilstand. Ukjent gjettes ikke til noen av sidene. */
+function bucketStatus(value: string | null): 'pending' | 'booked' | 'unknown' {
+	if (value === 'BOOKED') return 'booked';
+	if (value === 'PENDING') return 'pending';
+	return 'unknown';
+}
 
 const DEFAULT_DAYS = 365;
 const MAX_PAIR_SAMPLES = 60;
@@ -342,35 +350,40 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		transaction_date: string;
 		amount: string;
 		mk: string;
-		max_rank: number;
-		top_rank: number;
+		booking_status: string | null;
 	}[]>(
-		`WITH bucket AS (
-			SELECT account_id, transaction_date, amount, description_normalized AS mk,
-			       MAX(status_rank) AS max_rank
-			FROM raw_bank_transaction_versions
-			WHERE user_id = $1 AND transaction_date >= $2::date
-			GROUP BY 1, 2, 3, 4
-		),
-		top AS (SELECT MAX(max_rank) AS top_rank FROM bucket)
-		SELECT b.account_id,
-		       b.transaction_date::text AS transaction_date,
-		       b.amount::text           AS amount,
-		       b.mk,
-		       b.max_rank,
-		       t.top_rank
-		 FROM bucket b, top t`,
+		// Statusen hentes som TEKST, ikke som rang. `bookingStatusRank` gir 0 for manglende
+		// status, og en utledning «rank < topRank ⇒ reservasjon» gjorde «vi vet ikke» til
+		// «ubokført». Bøtta får den HØYESTE statusen den nådde.
+		`SELECT account_id,
+		        transaction_date::text AS transaction_date,
+		        amount::text           AS amount,
+		        description_normalized AS mk,
+		        CASE WHEN MAX(status_rank) = 20 THEN 'BOOKED'
+		             WHEN MAX(status_rank) = 10 THEN 'PENDING'
+		             ELSE NULL END     AS booking_status
+		 FROM raw_bank_transaction_versions
+		 WHERE user_id = $1 AND transaction_date >= $2::date
+		 GROUP BY 1, 2, 3, 4`,
 		[userId, fromDate]
 	);
 
-	const reservationCandidates: ReservationCandidate[] = buckets.map((row, index) => ({
+	// Interne overføringer merkes med den delte matchingen og holdes utenfor: runde beløp som
+	// gjentas ville blitt paret som reservasjon + bokført. Se `reservation-matching.ts`.
+	const bucketRows = buckets.map((row, index) => ({
 		// Bøtta har ingen egen id — nøkkelen ER identiteten, og indeksen holder den unik.
 		id: `${row.account_id}|${row.transaction_date}|${row.amount}|${row.mk}|${index}`,
 		accountId: row.account_id,
 		date: row.transaction_date,
 		amount: Number(row.amount) || 0,
 		merchantKey: row.mk ?? '',
-		booked: Number(row.max_rank) >= Number(row.top_rank)
+		status: bucketStatus(row.booking_status)
+	}));
+	const bucketTransfers = findInternalTransfers(bucketRows);
+
+	const reservationCandidates: ReservationCandidate[] = bucketRows.map((row) => ({
+		...row,
+		internalTransfer: bucketTransfers.internalIds.has(row.id)
 	}));
 
 	const reservationResult = matchReservationsToBooked(reservationCandidates);
