@@ -3,7 +3,7 @@ import { requireAdmin } from '$lib/server/admin-auth';
 import { pgClient } from '$lib/db';
 import { readTransactions } from '$lib/server/economics/transactions';
 import {
-	doubleCountedTotal,
+	doubleCountedTotals,
 	matchReservationsToBooked,
 	type ReservationCandidate
 } from '$lib/domain/economics/reservation-matching';
@@ -377,8 +377,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	// Histogram på (datoforskjell, endret beskrivelse), som før — men nå fra par som ikke
 	// kan dele motpart.
+	// Histogrammet viser bare FORBRUKS-par. Inntektsparene er like duplisert og skal
+	// deaktiveres, men de hører ikke i en tabell som leses som «dette er forbruk».
 	const orphanBuckets = new Map<string, { deltaDays: number; mkChanged: boolean; pairs: number; nok: number }>();
 	for (const match of reservationResult.matches) {
+		if (match.direction !== 'out') continue;
 		const key = `${match.deltaDays}|${match.merchantKeyChanged}`;
 		const entry = orphanBuckets.get(key) ?? {
 			deltaDays: match.deltaDays,
@@ -390,6 +393,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		entry.nok += match.amount;
 		orphanBuckets.set(key, entry);
 	}
+	const doubleCounted = doubleCountedTotals(reservationResult.matches);
 	const orphanRows = [...orphanBuckets.values()].sort((a, b) => b.pairs - a.pairs);
 
 	// ── Sprik mellom lagrene ─────────────────────────────────────────────────
@@ -572,8 +576,19 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		 * de er enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
 		 */
 		orphansUnmatched: reservationResult.unmatched.length,
-		/** Kroner som telles to ganger i dag — altså det fixen ville fjernet fra forbruket. */
-		doubleCountedNok: Math.round(doubleCountedTotal(reservationResult.matches)),
+		/** Forbruk som telles to ganger i dag — det fixen fjerner fra forbrukstallet. */
+		doubleCountedNok: Math.round(doubleCounted.spend),
+		/**
+		 * Inntekt som telles to ganger. Like duplisert, og skal deaktiveres på samme måte, men
+		 * det er ikke forbruk — og en sammenblanding var nettopp feilen som tok tallet fra
+		 * 154 703 til 258 117 kr.
+		 */
+		doubleCountedIncomeNok: Math.round(doubleCounted.income),
+		/** Par delt på retning, så ingen kaller trenger å utlede det. */
+		orphanPairs: {
+			out: reservationResult.matches.filter((m) => m.direction === 'out').length,
+			in: reservationResult.matches.filter((m) => m.direction === 'in').length
+		},
 
 		// «Ulike tall på ulike steder», tallfestet.
 		stores: stores.map((s) => ({

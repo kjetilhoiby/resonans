@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_MAX_DELTA_DAYS,
-	doubleCountedTotal,
+	doubleCountedTotals,
 	matchReservationsToBooked,
 	type ReservationCandidate
 } from './reservation-matching';
@@ -66,7 +66,7 @@ describe('matchReservationsToBooked', () => {
 
 		expect(matches).toHaveLength(1);
 		expect(unmatched).toHaveLength(2);
-		expect(doubleCountedTotal(matches)).toBe(255);
+		expect(doubleCountedTotals(matches).spend).toBe(255);
 	});
 
 	it('parrer tre mot tre når det finnes tre bokførte', () => {
@@ -183,8 +183,8 @@ describe('matchReservationsToBooked', () => {
 	});
 });
 
-describe('doubleCountedTotal', () => {
-	it('summerer kronene som telles to ganger', () => {
+describe('doubleCountedTotals', () => {
+	it('summerer forbruket som telles to ganger', () => {
 		const { matches } = matchReservationsToBooked([
 			res('r1', '2026-07-29', -113),
 			booked('b1', '2026-07-30', -113),
@@ -192,10 +192,36 @@ describe('doubleCountedTotal', () => {
 			booked('b2', '2026-07-30', -255, 'coop mega')
 		]);
 
-		expect(doubleCountedTotal(matches)).toBe(368);
+		expect(doubleCountedTotals(matches)).toEqual({ spend: 368, income: 0 });
+	});
+
+	// Regresjonen. `amount` er absoluttverdi, så en fortegnsblind summering blandet et
+	// dobbelttalt lønnsinnskudd inn i «dobbelttalt forbruk». I prod gikk tallet fra
+	// 154 703 til 258 117 kr av nettopp den grunnen.
+	it('blander ikke inntekt inn i forbruket', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r-kjop', '2026-07-29', -113),
+			booked('b-kjop', '2026-07-30', -113),
+			res('r-lonn', '2026-07-15', 48_000, 'amedia'),
+			booked('b-lonn', '2026-07-15', 48_000, 'sek amedia')
+		]);
+
+		expect(matches).toHaveLength(2);
+		expect(doubleCountedTotals(matches)).toEqual({ spend: 113, income: 48_000 });
+	});
+
+	it('merker retningen på hvert par', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-30', -113),
+			res('r2', '2026-07-15', 5000),
+			booked('b2', '2026-07-15', 5000)
+		]);
+
+		expect(matches.map((m) => m.direction).sort()).toEqual(['in', 'out']);
 	});
 
 	it('gir 0 uten par', () => {
-		expect(doubleCountedTotal([])).toBe(0);
+		expect(doubleCountedTotals([])).toEqual({ spend: 0, income: 0 });
 	});
 });

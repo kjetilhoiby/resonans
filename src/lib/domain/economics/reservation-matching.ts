@@ -44,8 +44,19 @@ export type ReservationMatch = {
 	/** Den bokførte raden som beholdes. */
 	bookedId: string;
 	accountId: string;
-	/** Alltid positivt — kronene som telles to ganger i dag. */
+	/** Alltid positivt — kronene som telles to ganger i dag. Se `direction` for fortegnet. */
 	amount: number;
+	/**
+	 * `out` = penger ut (forbruk), `in` = penger inn (lønn, innskudd, overføring).
+	 *
+	 * **Må bæres, ikke utledes av kalleren.** `amount` er absoluttverdi, og en summering over
+	 * alle par blander da et dobbelttalt lønnsinnskudd inn i «dobbelttalt forbruk». Det skjedde
+	 * i prod: tallet gikk fra 154 703 til 258 117 kr da matchingen ble flyttet ut av SQL, fordi
+	 * den gamle spørringen hadde `CASE WHEN s.amount < 0` og den nye ikke hadde noe tilsvarende.
+	 * En reservasjon PÅ et innskudd er like duplisert og skal like fullt deaktiveres — den er
+	 * bare ikke forbruk.
+	 */
+	direction: 'out' | 'in';
 	/** Bokført dato minus reservasjonsdato. Kan være negativ. */
 	deltaDays: number;
 	/** Sann når beskrivelsen endret seg — usynlig for en match som krever samme nøkkel. */
@@ -148,6 +159,7 @@ export function matchReservationsToBooked(
 			bookedId: booked.id,
 			accountId: reservation.accountId,
 			amount: Math.abs(reservation.amount),
+			direction: reservation.amount < 0 ? 'out' : 'in',
 			deltaDays: dayDiff(reservation.date, booked.date),
 			merchantKeyChanged: booked.merchantKey !== reservation.merchantKey
 		});
@@ -156,7 +168,23 @@ export function matchReservationsToBooked(
 	return { matches, unmatched };
 }
 
-/** Kroner som telles to ganger i dag, altså det fixen ville fjernet fra forbruket. */
-export function doubleCountedTotal(matches: readonly ReservationMatch[]): number {
-	return matches.reduce((sum, match) => sum + match.amount, 0);
+/**
+ * Kroner som telles to ganger i dag, delt på retning.
+ *
+ * **Delt, ikke summert.** `spend` er det fixen fjerner fra forbruket; `income` er det den
+ * fjerner fra inntekten. Ett samletall ville blandet dem, og siden et dobbelttalt lønnsinnskudd
+ * er stort i forhold til et dagligvarekjøp, ville forbrukstallet blitt dominert av noe som
+ * ikke er forbruk. Andelen «av alt forbruk» kan bare regnes mot `spend`.
+ */
+export function doubleCountedTotals(matches: readonly ReservationMatch[]): {
+	spend: number;
+	income: number;
+} {
+	let spend = 0;
+	let income = 0;
+	for (const match of matches) {
+		if (match.direction === 'out') spend += match.amount;
+		else income += match.amount;
+	}
+	return { spend, income };
 }
