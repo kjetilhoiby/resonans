@@ -57,26 +57,24 @@ kunne se.
 `(sensor_id, account_id, canonical_date, amount, merchant_key)` er det som splitter dem.
 Valutaprefikset er en separat mekanisme, fordi `SEK ` står foran alle prefiksreglene.
 
-## Porten: kan forsvinning måles i det hele tatt?
+## Porten jeg bygget — og som var feil konstruert
 
-Dette avgjør om modellen er anvendelig på data vi alt har, og det kan **ikke** leses av
-koden.
+> **Avkreftet 2026-08-16. Avsnittet står som dokumentasjon av en gal antakelse, ikke som
+> gjeldende forklaring.** Se «Porten var feil konstruert» lenger ned for hva som faktisk
+> gjelder.
 
-`raw_fingerprint` er en hash over
-`sensorId|accountId|txDate|amount|descriptionNorm|descriptionRaw|externalId|booking`, og
-`ON CONFLICT (raw_fingerprint) DO UPDATE SET last_seen_at = NOW(), seen_count = seen_count + 1`.
+Resonnementet var: `raw_fingerprint` hasher
+`sensorId|accountId|txDate|amount|descriptionNorm|descriptionRaw|externalId|booking`, med
+`ON CONFLICT DO UPDATE SET seen_count = seen_count + 1`. Altså — trodde jeg — to muligheter:
 
-- Er `externalTransactionId` **stabil innenfor en status**, treffer en uendret rad samme
-  fingerprint ved neste synk, `last_seen_at` flytter seg, og forsvinning er observerbar.
-- Minter SB1 en **ny id ved hver henting**, får hver synk en ny rad, `seen_count` er alltid
-  1, og «forsvunnet» kan ikke skilles fra «fikk ny ID». Da må rå-strømmen nøkles på
-  attributter uten ID-en før modellen kan brukes.
+- ID **stabil innenfor en status** → en uendret rad treffer samme fingerprint ved neste synk,
+  `seen_count` vokser, forsvinning er observerbar.
+- **Ny ID ved hver henting** → hver synk lager en ny rad, `seen_count` er alltid 1, og
+  forsvinning kan ikke skilles fra «fikk ny ID».
 
-Indisiet peker mot det første: `sensor_events` er 3,96× canonical over et år, og med synk
-hvert 5. minutt og sju dagers overlapp ville en ny id per henting gitt et forholdstall
-mange størrelsesordener høyere. Men et indisium er ikke en måling.
-
-**`seen_count`-histogrammet er hele svaret**, og det er derfor målingen kom før fixen.
+**Dikotomien var falsk.** Det finnes en tredje mulighet jeg ikke tenkte på, og den er den som
+gjelder: synken spør bare om det som er *endret*, så en uendret rad hentes ikke i det hele
+tatt. `seen_count = 1` følger av henterutinen, uansett hva ID-en gjør.
 
 ## Hva som er bygget
 
@@ -84,15 +82,17 @@ Fire nye seksjoner i `GET /api/admin/debug-sparebank1/dedup`, alle **kun lesing*
 
 | Felt | Spørsmål |
 |------|----------|
-| `lifecycle.seenCountHistogram` + `fingerprintStableAcrossFetches` | **Porten.** Blir en rad sett mer enn én gang? |
+| `lifecycle.seenCountHistogram` | Blir en rad sett mer enn én gang? (Se rettelsen: nei, og det er henterutinen som avgjør det.) |
 | `lifecycle.disappeared` | Rader som sluttet å bli sett, per status, med kroner |
 | `lifecycle.superseded` | Forsvunne rader med en beløpslik etterfølger — fordelt på `deltaDays` og `merchantKeyChanged` |
 | `lifecycle.disappearedWithoutMatch` | Restposten: forsvunne rader UTEN beløpsmatch |
 
-Og i `EconomyDiagnosticsCard`, med porten først: er `fingerprintStableAcrossFetches` falsk,
-sier kortet at tallene under **ikke betyr noe** og hva veien videre er. Uten det skillet
-ville et svar på «0 forsvunne» blitt lest som «hypotesen er feil», når det i virkeligheten
-ville betydd «vi kan ikke se det».
+Og i `EconomyDiagnosticsCard`, med porten først. Intensjonen var riktig — et svar på «0
+forsvunne» skal ikke leses som «hypotesen er feil» når det betyr «vi kan ikke se det». Men
+porten trakk en gal slutning om *hvorfor* vi ikke kan se det, og sendte leseren til å nøkle om
+rå-strømmen. `fingerprintStableAcrossFetches` er derfor erstattet av
+`singleSeenExplainedByIncrementalFetch`, `versionsPerCanonicalRow` og
+`disappearanceMeasurable`.
 
 ### Fella i forsvinningsmålingen
 
@@ -107,21 +107,6 @@ og denne raden var ikke der. Terskelen er én time, mot en synk hvert 5. minutt.
 handling: beløpet endret seg mellom versjonene (valutakurs på et utenlandskjøp, eller tips),
 eller raden var en kansellert reservasjon som aldri ble noe. Er tallet stort, dekker ikke
 beløpsmatching alene fenomenet. En stille utelatelse ville sett ut som full dekning.
-
-## Neste steg
-
-Kjør bankdiagnosen i prod og les i denne rekkefølgen:
-
-1. **`fingerprintStableAcrossFetches`.** Falsk → stopp. Da er neste oppgave å nøkle
-   rå-strømmen på attributter uten `externalId`, og forsvinning kan først måles etterpå.
-2. **`disappeared`.** Null → banken erstatter ikke, og dobbelttellingen har en annen årsak.
-3. **`superseded`.** Antall par og kroner er størrelsen på feilen. `merchantKeyChanged`
-   sier hvor mye av den drift-målingen aldri kunne se.
-4. **`disappearedWithoutMatch`.** Stor → beløpsmatching er ikke nok alene.
-
-Fixen bygges ikke før punkt 1 er bekreftet. Formen den vil ta: en forsvunnet canonical-rad
-med en beløpslik etterfølger settes `is_active = false` — **aldri slettet**, av samme grunn
-som ellers i dette domenet.
 
 ## Målt i prod 2026-08-16, vindu 90 dager
 
