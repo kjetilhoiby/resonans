@@ -54,9 +54,47 @@ export type DistanceRecord = {
 	date: Date;
 };
 
+/**
+ * Raskeste tid et menneske har løpt hver distanse — verdensrekorden, i sekunder.
+ *
+ * Terskelen er VERDENSREKORD og ikke «fort», og det er et bevisst valg: alt under
+ * er ikke en god økt, det er en måling som ikke kan være riktig. Er den her, er
+ * årsaken en feilmerket idrett eller en GPS-artefakt, aldri en prestasjon.
+ *
+ * Felttest 17. august: en elsykkeltur til jobb ble lagret som løping, og
+ * «tidenes raskeste 5 km» havnet i Ekko, Resonans OG Strava. Tempoet var
+ * 2:29/km, altså 12:25 over fem kilometer — tolv sekunder RASKERE enn
+ * verdensrekorden. En vakt på «urimelig fort» ville sluppet det gjennom; en vakt
+ * på rekorden gjør det ikke.
+ *
+ * Vakten hindrer ikke feilmerkingen, den hindrer at den forurenser rekordlista,
+ * VO2max-estimatet og formkurven. Rot-årsaken hører i appen.
+ */
+const WORLD_RECORD_SECONDS: Record<string, number> = {
+	'400m': 43, // 43,03 (Johnson)
+	'1k': 132, // 2:11,96 (Ngeny)
+	'3k': 440, // 7:20,67 (Komen)
+	'5k': 755, // 12:35,36 (Cheptegei)
+	'10k': 1571 // 26:11,00 (Cheptegei)
+};
+
+/**
+ * Sann når tida er raskere enn noe menneske har løpt distansen.
+ *
+ * Ukjent distansenøkkel gir `false` — en ny nøkkel uten rekord skal ikke stille
+ * forsvinne fra lista. Legger du en distanse i `RECORD_DISTANCES`, legg rekorden her.
+ */
+export function isImplausibleEffort(key: string, seconds: number): boolean {
+	const floor = WORLD_RECORD_SECONDS[key];
+	return floor !== undefined && seconds < floor;
+}
+
 function effort(workout: RecordWorkout, key: string): number | null {
 	const value = workout.bestEfforts?.[key];
-	return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+	// Umulige tider forkastes framfor å konkurrere: én feilmerket økt ville ellers
+	// holdt rekorden på alle distanser for alltid, og skjult de ekte tallene.
+	return isImplausibleEffort(key, value) ? null : value;
 }
 
 function eligible(workout: RecordWorkout): boolean {
