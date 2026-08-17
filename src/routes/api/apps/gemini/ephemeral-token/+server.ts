@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 import {
 	mintLiveToken,
+	listLiveModels,
 	GeminiNotConfiguredError,
 	GeminiTokenMintError
 } from '$lib/server/integrations/gemini-live';
@@ -69,6 +70,44 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		return json({ error: 'profile_disabled', profile }, { status: 403 });
 	}
 
+	// Modellvalg fra appen (Live-debug). Formålet er A/B mellom Live-modeller uten at noen må
+	// inn i Vercel og sette en env — men valget VALIDERES mot Googles egen katalog før det får
+	// låses inn i et token. Et fritt modellnavn her ville gjort tokenet til en nøkkel mot en
+	// vilkårlig modell på vår kvote, og det er nettopp det `bidiGenerateContentSetup` låser.
+	// Uten override rører vi ikke katalogen: den koster et kall til Google.
+	let modelOverride: string | null = null;
+	const requestedModel = typeof body?.model === 'string' ? body.model.trim() : '';
+	if (requestedModel) {
+		let catalogue: Awaited<ReturnType<typeof listLiveModels>>;
+		try {
+			catalogue = await listLiveModels();
+		} catch (err) {
+			if (err instanceof GeminiNotConfiguredError) {
+				return json({ error: err.message }, { status: 503 });
+			}
+			if (err instanceof GeminiTokenMintError) {
+				return json({ error: err.message }, { status: err.status });
+			}
+			throw err;
+		}
+		// Sammenlignes uten `models/`-prefiks, siden katalogen oppgir begge former.
+		const wanted = requestedModel.replace(/^models\//, '');
+		const match = catalogue.models.find((m) => m.id === wanted);
+		if (!match) {
+			// Lista blir med: et modellnavn som ikke finnes lenger er den vanligste feilen her,
+			// og «ukjent modell» uten alternativene er en blindvei.
+			return json(
+				{
+					error: 'ukjent_modell',
+					requested: requestedModel,
+					kjente: catalogue.models.map((m) => m.id)
+				},
+				{ status: 400 }
+			);
+		}
+		modelOverride = match.id;
+	}
+
 	const rate = await checkMintRateLimit(userId, new Date());
 	if (!rate.allowed) {
 		console.warn(
@@ -85,6 +124,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			ttlSeconds: num(body?.ttlSeconds),
 			newSessionSeconds: num(body?.newSessionSeconds),
 			uses: num(body?.uses),
+			model: modelOverride,
 			profile
 		});
 
