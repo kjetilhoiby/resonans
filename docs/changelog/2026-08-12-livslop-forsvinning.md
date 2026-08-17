@@ -517,3 +517,78 @@ Kolonnene `description` og `typeText` ble lagt til i SELECT-en med en `str.repla
 assert**, den traff ikke, og typesjekken fanget det. Andre gang samme feil i dette arbeidet, og
 begge ganger fordi jeg hoppet over å verifisere at mønsteret fantes. Lærdommen står nå to steder
 i dette dokumentet fordi den åpenbart ikke satt første gang.
+
+## Prefikset er ikke bare valuta
+
+Brukeren sendte transaksjonslista 2026-08-16 med fire synlige par:
+
+| Reservasjon | Bokført | Beløp | Dato |
+|---|---|---:|---|
+| `DKK OERESUNDSLINJEN HOER` | `OERESUNDSLINJEN HOER` | 729 kr | 2.8. |
+| `USD OPENAI CHATGPT SUBSCR` | `OPENAI CHATGPT SUBSCR` | 244 kr | 2.8. |
+| `SEK TYCHO BRAHE` | `TYCHO BRAHE` | 236 kr | 2.8. |
+| `Lars Terje Husbyn FPL-fee Tollgaar…` | `FPL-fee Tollgaarden` | 250 kr | 13.8. |
+
+De tre første er valutakoder. **Den fjerde er et personnavn.**
+
+Det betyr at **beskrivelsesdriften ikke kan løses ved å vaske bort valutakoder** — en
+`normalizeTxDescription` som strippet `DKK`/`USD`/`SEK` ville fortsatt latt
+«Lars Terje Husbyn FPL-fee Tollgaarden» og «FPL-fee Tollgaarden» ligge i to bøtter. Ikke bygg
+den; den ville sett ut som en løsning og dekket tre av fire tilfeller.
+
+Det er også bekreftelsen på at matchingen skal ignorere beskrivelsen helt og hvile på
+**eksakt beløp + konto + status**. Prefikset kan være hva som helst.
+
+Jeg antok først at de fire lå blant de 242 parene og bare var for små til å nå
+«Største par»-tabellen. **Det var galt** — se «Fjerde antagelse» nedenfor: brukeren kjørte
+ryddingen, og de fire sto der etterpå.
+
+
+## Fjerde antagelse: de fire var ikke blant de 242
+
+Brukeren trykket «Deaktiver» — 242 forbrukspar — og sendte transaksjonslista etterpå. **De fire
+parene sto der fortsatt.**
+
+Det avviser antagelsen over. De ble ikke ryddet og bare skjult av en tabell som viser 25 rader;
+de var aldri i settet. Og her er punktet: jeg kunne ha gjettet på årsaken — begge bokført, eller
+beløp som driftet med valutakursen — og jeg hadde 50 % sjanse. Det er samme feilform som de seks
+foregående, hvor hver forklaring var plausibel og feil.
+
+### Så jeg leser årsaken av radene i stedet
+
+`$lib/domain/economics/residual-duplicates.ts` finner par som **ser ut som** duplikater etter at
+ryddingen har kjørt, og klassifiserer hvorfor de ikke ble fanget:
+
+| Årsak | Betyr |
+|---|---|
+| `begge-bokfort` | Ingen PENDING-side. Matchingen kan per konstruksjon ikke danne par. |
+| `ulikt-belop` | Beløpene spriker. Valutakurs mellom reservasjon og bokføring. |
+| `ukjent-status` | Én side mangler status og deltar ikke. |
+| `overforing` | Holdt utenfor med vilje. |
+| `skulle-blitt-fanget` | Oppfyller kravene — ryddingen har ikke kjørt på det. |
+
+**Toleransene er LØSERE enn ryddingens med vilje**: 3 % beløpsavvik mot fixens eksakte likhet. En
+diagnose som bruker samme terskler som fixen kan per konstruksjon ikke finne noe fixen gikk glipp
+av — og det var nøyaktig feilen i drift-målingen, som joinet på samme `merchant_key` og derfor
+ikke kunne se valutatilfellene, altså nettopp dem der beløpet ville driftet. **Konklusjonen «bare
+datoen flytter seg» var trukket fra en populasjon som utelukket motbeviset.**
+
+### Kravet er suffiks-forhold, ikke en valutaliste
+
+`hasPrefixDrift` spør om den ene beskrivelsen er den andre med noe foran. Det dekker både `DKK …`
+og `Lars Terje Husbyn …` uten å vite hva prefikset er. En liste over valutakoder ville dekket tre
+av fire og sett ut som en løsning — forrige avsnitt er skrevet for å hindre nettopp det.
+
+Beskrivelseskravet finnes fordi det ellers ville rapportert to ekte Kiwi-kjøp på nesten samme
+beløp som mistenkelige. Det er en diagnose, så en falsk positiv koster tillit til tallet.
+
+### Restposten står på flaten, ikke i en logg
+
+`residual: { pairs, byReason, samples }` på tørrkjøringssvaret, og kortet skriver årsaken i
+klartekst med hva den betyr for hva som kan gjøres. `begge-bokfort` er en grense som må endres i
+kode; `skulle-blitt-fanget` betyr bare at knappen ikke er trykket. En kode uten den forskjellen er
+en beskjed uten innhold.
+
+Restposten måles på det som står **igjen etter denne kjøringen** — de valgte parene trekkes fra
+først. Ellers ville hvert par ryddingen fanget dukket opp som `skulle-blitt-fanget`, og tallet
+hadde svart på et annet spørsmål enn brukerens.

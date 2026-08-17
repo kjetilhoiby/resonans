@@ -37,6 +37,13 @@ import {
 	type ReservationCandidate,
 	type ReservationMatch
 } from '$lib/domain/economics/reservation-matching';
+import {
+	findResidualDuplicateSuspects,
+	summarizeSkipReasons,
+	type ResidualRow,
+	type ResidualSuspect,
+	type SkipReason
+} from '$lib/domain/economics/residual-duplicates';
 
 /** Hvor stor bolk som oppdateres per spørring. Postgres tåler mer, men logglinjene blir lesbare. */
 const UPDATE_CHUNK = 200;
@@ -75,6 +82,33 @@ export type DeactivateResult = {
 	unmatched: number;
 	/** Rader som faktisk fikk `is_active = false`. 0 ved dry-run. */
 	deactivated: number;
+	/**
+	 * Par som SER ut som duplikater men som ryddingen ikke fanget — med årsaken lest av radene.
+	 *
+	 * Bygget fordi brukeren trykket «Deaktiver» og fire synlige duplikater sto igjen etterpå.
+	 * Uten dette feltet ville svaret på «hvorfor står de der» vært en gjetning, og gjetninger på
+	 * årsak har tatt feil seks ganger i dette arbeidet.
+	 *
+	 * Toleransene er løsere enn ryddingens med vilje (3 % beløpsavvik) — en diagnose med samme
+	 * terskler som fixen kan per konstruksjon ikke finne noe fixen gikk glipp av.
+	 */
+	residual: {
+		pairs: number;
+		byReason: Array<{ reason: SkipReason; pairs: number; nok: number }>;
+		samples: Array<{
+			amount: number;
+			amountDeltaPct: number;
+			deltaDays: number;
+			prefixDrift: boolean;
+			reason: SkipReason;
+			aDescription: string;
+			bDescription: string;
+			aDate: string;
+			bDate: string;
+			aStatus: string;
+			bStatus: string;
+		}>;
+	};
 	/** Et utvalg par, så planen kan leses før den utføres. */
 	samples: Array<{
 		reservationId: string;
@@ -205,6 +239,28 @@ export async function deactivateSupersededReservations(
 	);
 
 	const totals = doubleCountedTotals(matches);
+
+	// **Restposten måles på det som står IGJEN etter denne kjøringen**, ikke på alt.
+	// Ellers ville hvert par ryddingen fanget også dukket opp som «skulle-blitt-fanget», og
+	// tallet hadde svart på et annet spørsmål enn brukerens: «hvorfor står disse der ennå?».
+	const willDeactivate = new Set(selected.map((m) => m.reservationId));
+	const byId = new Map(candidates.map((c) => [c.id, c]));
+	const residualRows: ResidualRow[] = rows
+		.filter((row) => !willDeactivate.has(row.id))
+		.map((row) => {
+			const candidate = byId.get(row.id);
+			return {
+				id: row.id,
+				accountId: row.accountId,
+				date: toDateKey(row.date),
+				amount: Number(row.amount) || 0,
+				description: row.description ?? '',
+				status: candidate?.status ?? 'unknown',
+				isInternalTransfer: candidate?.internalTransfer ?? false
+			};
+		});
+	const residualSuspects = findResidualDuplicateSuspects(residualRows);
+
 	let deactivated = 0;
 
 	if (!dryRun && selected.length > 0) {
@@ -249,8 +305,31 @@ export async function deactivateSupersededReservations(
 		doubleCounted: { spend: Math.round(totals.spend), income: Math.round(totals.income) },
 		unmatched: unmatched.length,
 		deactivated,
-		samples: pickSamples(matches)
+		samples: pickSamples(matches),
+		residual: {
+			pairs: residualSuspects.length,
+			byReason: summarizeSkipReasons(residualSuspects),
+			samples: pickResidualSamples(residualSuspects)
+		}
 	};
+}
+
+function pickResidualSamples(
+	suspects: readonly ResidualSuspect[]
+): DeactivateResult['residual']['samples'] {
+	return suspects.slice(0, MAX_SAMPLES).map((s) => ({
+		amount: Math.round(s.amountNok),
+		amountDeltaPct: s.amountDeltaPct,
+		deltaDays: s.deltaDays,
+		prefixDrift: s.prefixDrift,
+		reason: s.reason,
+		aDescription: s.a.description,
+		bDescription: s.b.description,
+		aDate: s.a.date,
+		bDate: s.b.date,
+		aStatus: s.a.status,
+		bStatus: s.b.status
+	}));
 }
 
 /**
