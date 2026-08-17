@@ -9,7 +9,8 @@
 		TeslaSourceCard,
 		EmailRulesCard,
 		EffortReprojectCard,
-		EconomyDiagnosticsCard
+		EconomyDiagnosticsCard,
+		ReservationCleanupCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -116,6 +117,8 @@
 		-->
 		{#if data.user?.isAdmin}
 			<EconomyDiagnosticsCard />
+			<!-- Ryddejobben står ETTER diagnosen: man måler før man skriver. -->
+			<ReservationCleanupCard />
 		{/if}
 	</div>
 	</PageSection>
