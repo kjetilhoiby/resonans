@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	distanceRecords,
 	formatRecordTime,
+	isImplausibleEffort,
 	recordNuggetText,
 	recordsSetBy,
 	type RecordWorkout
@@ -149,5 +150,41 @@ describe('recordNuggetText', () => {
 
 	it('gir null uten rekorder', () => {
 		expect(recordNuggetText([])).toBeNull();
+	});
+});
+
+describe('isImplausibleEffort (vakt mot feilmerket idrett)', () => {
+	it('forkaster tider raskere enn verdensrekorden', () => {
+		// Felttest 17. august: en elsykkeltur lagret som løping ga «tidenes raskeste
+		// 5 km» på 2:29/km — altså 12:25, tolv sekunder raskere enn verdensrekorden.
+		// En vakt på «urimelig fort» ville sluppet det gjennom.
+		expect(isImplausibleEffort('5k', 745)).toBe(true);
+		expect(isImplausibleEffort('400m', 40)).toBe(true);
+	});
+
+	it('slipper gjennom alt et menneske faktisk kan løpe', () => {
+		expect(isImplausibleEffort('5k', 756)).toBe(false);
+		expect(isImplausibleEffort('5k', 1500)).toBe(false);
+		expect(isImplausibleEffort('10k', 2400)).toBe(false);
+	});
+
+	it('ukjent distanse forkastes ikke — en ny nøkkel skal ikke stille forsvinne', () => {
+		expect(isImplausibleEffort('42k', 1)).toBe(false);
+	});
+});
+
+describe('umulige tider holdes utenfor rekordene', () => {
+	it('en feilmerket sykkeltur tar ikke rekorden', () => {
+		// Uten vakten ville denne økta holdt 5 km-rekorden for alltid, og skjult
+		// den ekte.
+		const records = distanceRecords([run('ekte', 5, { '5k': 1500 }), run('sykkel', 1, { '5k': 745 })]);
+		const fiveK = records.find((r) => r.key === '5k');
+		expect(fiveK?.activityId).toBe('ekte');
+		expect(fiveK?.seconds).toBe(1500);
+	});
+
+	it('en umulig tid gir ingen PR', () => {
+		const bogus = run('sykkel', 0, { '5k': 745 });
+		expect(recordsSetBy(bogus, [run('ekte', 5, { '5k': 1500 })])).toEqual([]);
 	});
 });

@@ -55,6 +55,10 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Skrive-/vedlikeholdsstier som opererer på rå rader.
 			'routes/api/admin/cleanup-walking/+server.ts',
 			'routes/api/tema/[id=uuid]/trip/import-walk/+server.ts',
+			// Slettestien MÅ se hver enkelt kilderad, ikke klyngen: det er radene som
+			// skal bort, og en dedupliserende leser skjuler nettopp hvor mange det er.
+			// Den rydder canonical og aggregatene selv — se filhodet der.
+			'routes/api/helse/trening/slett-okt/+server.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så
 			// styrkeøkter må leses rått. Utholdenhet leses allerede fra canonical.
 			'lib/server/tracks/repository.ts',
