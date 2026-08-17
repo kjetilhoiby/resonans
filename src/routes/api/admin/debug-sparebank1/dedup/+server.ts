@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { pgClient } from '$lib/db';
+import { readTransactions } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 /**
@@ -217,11 +218,23 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	// matches på beløp alene, uten å risikere at to ekte kjøp slås sammen. Ekte kjøp
 	// fortsetter å bli sett; et erstattet gjør ikke.
 	//
-	// **Alt hviler på om `seen_count` beveger seg.** `raw_fingerprint` inneholder
-	// `externalTransactionId`, og SB1 minter nye ID-er. Er de nye ved HVER synk, får hver
-	// henting en ny rad, `last_seen_at` flytter seg aldri, og forsvinning kan ikke måles
-	// uten å endre fingerprinten. Er de stabile innenfor en status, virker hypotesen.
-	// Histogrammet under er hele svaret på det, og det kan ikke leses av koden.
+	// **RETTET 2026-08-16 etter måling i prod.** Første utgave påsto at `seen_count = 1`
+	// over hele linja betyr at SB1 minter en ny ID ved hver henting. Det var galt, og
+	// konklusjonen ville sendt oss til å nøkle om rå-strømmen for ingenting.
+	//
+	// Årsaken er vår egen synk: `since = sensor.lastSync` (`sparebank1-sync.ts`), altså et
+	// INKREMENTELT kall som bare ber om det banken har endret siden sist. En uendret rad
+	// kommer derfor aldri tilbake, treffer aldri `ON CONFLICT`, og `seen_count` KAN ikke
+	// vokse — uansett hvor stabil ID-en er. Porten målte vår henterutine, ikke banken.
+	//
+	// Row-tallet avkrefter dessuten ID-churn direkte: med synk hvert 5. minutt og sju
+	// dagers vindu ville en ny ID per henting gitt ~2 000 versjoner per transaksjon.
+	// Målt i prod: 5 650 rå-rader mot 1 125 canonical, altså ~5. Se
+	// `versionsPerCanonicalRow`.
+	//
+	// **Forsvinning kan bare måles med et FULLSTENDIG vindusuttrekk** — en periodisk
+	// avstemming som ignorerer `lastSync` og henter siste N dager i sin helhet. Da blir
+	// «fortsatt der» og «borte» to ulike observasjoner. Uten den er de identiske.
 	const seenCounts = await pgClient.unsafe<{
 		seen_count: number;
 		rows: string;
@@ -307,6 +320,55 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		[userId, fromDate]
 	);
 
+	// ── 6. Foreldreløs reservasjon mot bokført rad, UTEN merchant_key-kravet ─
+	//
+	// Dette er den målingen drift-spørringen over ikke kunne gjøre: den joiner på
+	// `f.mk = s.mk`, så et par der beskrivelsen endret seg — «SEK ICA NARA HAGA» mot
+	// «ICA NARA HAGA» — var per konstruksjon usynlig. Prod viste tre slike par i ett
+	// skjermbilde av dagligvarer, så mekanismen er reell.
+	//
+	// **Multiplisitetsmålingen er det som gjør denne regelen forsvarlig.** Faren ved å
+	// matche på beløp uten beskrivelse er å slå sammen to ekte kjøp. Nå er hyppigheten
+	// målt: 2 av 1 125 bøtter hadde ekte gjentak (60 kr over 90 dager). I tillegg er
+	// PENDING-mot-BOOKED en tryggere par-form enn to vilkårlige rader — to reelle kjøp
+	// gir to BOOKED, ikke én PENDING og én BOOKED.
+	const orphanMatches = await pgClient.unsafe<{
+		delta_days: number | null;
+		mk_changed: boolean;
+		pairs: string;
+		nok: string | null;
+	}[]>(
+		`WITH bucket AS (
+			SELECT account_id, transaction_date, amount, description_normalized AS mk,
+			       MAX(status_rank) AS max_rank
+			FROM raw_bank_transaction_versions
+			WHERE user_id = $1 AND transaction_date >= $2::date
+			GROUP BY 1, 2, 3, 4
+		),
+		top AS (SELECT MAX(max_rank) AS top_rank FROM bucket),
+		stalled AS (SELECT b.* FROM bucket b, top t WHERE b.max_rank < t.top_rank),
+		final AS (SELECT b.* FROM bucket b, top t WHERE b.max_rank = t.top_rank)
+		SELECT (f.transaction_date - s.transaction_date) AS delta_days,
+		       (f.mk IS DISTINCT FROM s.mk)              AS mk_changed,
+		       COUNT(*)::text                            AS pairs,
+		       ROUND(SUM(CASE WHEN s.amount < 0 THEN ABS(s.amount) ELSE 0 END), 0)::text AS nok
+		 FROM stalled s
+		 JOIN LATERAL (
+		   SELECT f.* FROM final f
+		   WHERE f.account_id = s.account_id
+		     -- Eksakt beløp, og INGEN mk-betingelse. Det er hele forskjellen.
+		     AND f.amount = s.amount
+		     AND f.transaction_date BETWEEN s.transaction_date - $3::int
+		                                AND s.transaction_date + $3::int
+		   ORDER BY ABS(f.transaction_date - s.transaction_date)
+		   LIMIT 1
+		 ) f ON TRUE
+		 GROUP BY 1, 2
+		 ORDER BY COUNT(*) DESC
+		 LIMIT 100`,
+		[userId, fromDate, DRIFT_WINDOW_DAYS]
+	);
+
 	// ── Sprik mellom lagrene ─────────────────────────────────────────────────
 	// «Ulike tall på ulike steder», tallfestet. De tre radene skal være enige om
 	// samme periode og er det ikke i dag.
@@ -336,29 +398,34 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		[userId, fromDate]
 	);
 
-	// Hvor mye av «forbruket» er egne overføringer? Parvis: negativ på én konto og
-	// positiv på en annen, samme dag, samme beløp. Ingen av lesestiene ekskluderer dem
-	// i dag, så de blåser opp forbruk og inntekt samtidig.
-	const internalTransfers = await pgClient.unsafe<{
-		pairs: string;
-		transfer_nok: string | null;
-	}[]>(
-		`WITH t AS (
-			SELECT account_id, canonical_date, amount
-			FROM canonical_bank_transactions
-			WHERE user_id = $1 AND is_active = TRUE AND canonical_date >= $2::date
-		)
-		SELECT COUNT(*)::text AS pairs,
-		       ROUND(SUM(ABS(a.amount)), 0)::text AS transfer_nok
-		 FROM t a
-		 JOIN t b ON b.canonical_date = a.canonical_date
-		         AND b.amount = -a.amount
-		         AND b.account_id <> a.account_id
-		 WHERE a.amount < 0`,
-		[userId, fromDate]
-	);
+	// Hvor mye av «forbruket» er egne overføringer?
+	//
+	// **RETTET 2026-08-16.** Første utgave var en SQL self-join, og den var mange-til-mange:
+	// tre uttak på 500 og tre innskudd på 500 samme dag ga NI par. Prod viste 950 050 kr i
+	// «overføringer» mot 936 489 kr totalt forbruk, altså mer enn alt som fantes — og
+	// kortets nettotall ble **−4 581 kr/mnd**, et negativt forbruk. Et instrument som lyver
+	// er verre enn ingen.
+	//
+	// Nå brukes `readTransactions`, altså **samme én-til-én-matching flaten bruker**
+	// (`findInternalTransfers`). Diagnosen og flaten kan da ikke være uenige om dette tallet
+	// — som er hele poenget med én delt leser. At diagnosen hadde sin egen variant var
+	// nøyaktig feilen fase 1 gikk løs på, gjentatt i verktøyet som skulle avdekke den.
+	const { internalTransfers: sharedTransfers } = await readTransactions({
+		userId,
+		from: fromDate
+	});
+	const internalTransferPairs = sharedTransfers.links.length;
+	const internalTransferNok = sharedTransfers.links.reduce((sum, link) => sum + link.amount, 0);
 
 	const driftWithCandidate = drift.filter((d) => d.final_date !== null);
+
+	// Rå-versjoner per canonical-rad. Avkrefter ID-churn per henting: ~5, ikke ~2 000.
+	const canonicalRowCount = Number(
+		stores.find((s) => s.store === 'canonical_bank_transactions')?.rows ?? 0
+	);
+	const rawVersionCount = statuses.reduce((sum, s) => sum + Number(s.versions), 0);
+	const rawVersionsPerCanonicalRow =
+		canonicalRowCount > 0 ? Math.round((rawVersionCount / canonicalRowCount) * 10) / 10 : null;
 
 	return json({
 		window: { days, fromDate },
@@ -422,9 +489,22 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				seenCount: Number(s.seen_count),
 				rows: Number(s.rows)
 			})),
-			fingerprintStableAcrossFetches: seenCounts.some(
-				(s) => Number(s.seen_count) > 1 && Number(s.rows) > 0
-			),
+			/**
+			 * Rå-versjoner per canonical-rad. Dette er tallet som AVKREFTER at SB1 minter en ny
+			 * ID ved hver henting: med synk hvert 5. minutt ville det vært i tusenklassen.
+			 * Målt i prod 2026-08-16: ~5.
+			 */
+			versionsPerCanonicalRow: rawVersionsPerCanonicalRow,
+			/**
+			 * Sann fordi `since = sensor.lastSync` i `sparebank1-sync.ts`: synken er
+			 * inkrementell, så en uendret rad kommer aldri tilbake og `seen_count` KAN ikke
+			 * vokse. `seen_count = 1` er derfor forventet uansett, og sier ingenting om ID-ene.
+			 * Feltet er hardkodet fordi det er en egenskap ved koden, ikke ved dataene — og det
+			 * står her så ingen leser histogrammet som et funn igjen.
+			 */
+			singleSeenExplainedByIncrementalFetch: true,
+			/** Forsvinning krever et fullstendig vindusuttrekk. Se doc-kommentaren i fila. */
+			disappearanceMeasurable: false,
 			multiSeenRows: seenCounts
 				.filter((s) => Number(s.seen_count) > 1)
 				.reduce((sum, s) => sum + Number(s.rows), 0),
@@ -455,6 +535,16 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				superseded.reduce((sum, s) => sum + Number(s.pairs), 0)
 		},
 
+		// Spørsmål 6: foreldreløs reservasjon mot bokført rad UTEN merchant_key-kravet.
+		// Dette er kroner drift-målingen aldri kunne se, og etter multiplisitetsmålingen
+		// (2 av 1 125 bøtter med ekte gjentak) er beløpsmatching forsvarlig her.
+		orphanMatches: orphanMatches.map((m) => ({
+			deltaDays: m.delta_days === null ? null : Number(m.delta_days),
+			merchantKeyChanged: m.mk_changed,
+			pairs: Number(m.pairs),
+			nok: m.nok === null ? 0 : Number(m.nok)
+		})),
+
 		// «Ulike tall på ulike steder», tallfestet.
 		stores: stores.map((s) => ({
 			store: s.store,
@@ -462,13 +552,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			spendNok: s.spend_nok === null ? 0 : Number(s.spend_nok)
 		})),
 
-		// «Summen var åpenbart for høy», tallfestet.
+		// «Summen var åpenbart for høy», tallfestet — med samme matching som flaten.
 		internalTransfers: {
-			pairs: Number(internalTransfers[0]?.pairs ?? 0),
-			nok:
-				internalTransfers[0]?.transfer_nok === null
-					? 0
-					: Number(internalTransfers[0]?.transfer_nok ?? 0)
+			pairs: internalTransferPairs,
+			nok: internalTransferNok
 		},
 
 		notes: [

@@ -37,7 +37,9 @@
 	type StoreRow = { store: string; rows: number; spendNok: number };
 	type Lifecycle = {
 		seenCountHistogram: Array<{ seenCount: number; rows: number }>;
-		fingerprintStableAcrossFetches: boolean;
+		versionsPerCanonicalRow: number | null;
+		singleSeenExplainedByIncrementalFetch: boolean;
+		disappearanceMeasurable: boolean;
 		multiSeenRows: number;
 		singleSeenRows: number;
 		disappeared: Array<{ bookingStatus: string | null; rows: number; nok: number }>;
@@ -64,6 +66,12 @@
 		stores: StoreRow[];
 		internalTransfers: { pairs: number; nok: number };
 		lifecycle?: Lifecycle;
+		orphanMatches?: Array<{
+			deltaDays: number | null;
+			merchantKeyChanged: boolean;
+			pairs: number;
+			nok: number;
+		}>;
 	};
 
 	let days = $state('365');
@@ -90,6 +98,13 @@
 		if (!raw || !canonical || canonical.spendNok === 0) return null;
 
 		const ratio = raw.spendNok / canonical.spendNok;
+		// **RETTET 2026-08-16.** Forrige utgave sa «det er forventet» uansett retning, og i
+		// prod kom `sensor_events` inn LAVERE enn canonical (0,7×). En tekst som godkjenner
+		// begge retninger godkjenner også den som er umulig: rå-strømmen kan ikke ha færre
+		// kroner enn den deduperte utgaven av seg selv.
+		if (ratio < 0.95) {
+			return `sensor_events er ${ratio.toFixed(1)}× canonical — altså LAVERE. Det skal ikke kunne skje: den rå strømmen beholder hver versjon, så den kan ikke ha færre kroner enn den deduperte utgaven. Enten mangler sensor_events rader canonical har, eller de to vinduene måler ulike datofelt (timestamp mot canonical_date). Uavklart, og verdt en egen måling.`;
+		}
 		return `sensor_events er ${ratio.toFixed(1)}× canonical. Det er forventet — den rå strømmen beholder hver versjon av hver transaksjon. Avviket er bare et problem hvis en flate leser der.`;
 	});
 
@@ -99,9 +114,14 @@
 		const canonical = result.stores.find((s) => s.store === 'canonical_bank_transactions');
 		if (!canonical) return null;
 		const months = result.window.days / 30.4;
+		const net = (canonical.spendNok - result.internalTransfers.nok) / months;
 		return {
 			gross: canonical.spendNok / months,
-			net: (canonical.spendNok - result.internalTransfers.nok) / months
+			net,
+			// Et negativt «forbruk» er ikke et lite forbruk, det er en feil i regnestykket:
+			// overføringene overstiger alt som finnes. Prod viste −4 581 kr/mnd da
+			// overføringstellingen var en mange-til-mange join. Flagget står igjen som vakt.
+			impossible: net < 0
 		};
 	});
 
@@ -119,35 +139,54 @@
 	/**
 	 * Kan forsvinning måles i det hele tatt?
 	 *
-	 * Dette er PORTEN for hele livsløpsseksjonen, og den må stå først. `raw_fingerprint`
-	 * inneholder `externalTransactionId`; minter SB1 en ny id per henting, får hver henting
-	 * en ny rad, `seen_count` blir alltid 1, og «forsvunnet» betyr da ingenting — bare at
-	 * ID-en skiftet. Uten dette skillet ville tallene under blitt lest som et funn.
+	 * **RETTET 2026-08-16 etter måling i prod.** Første utgave konkluderte at `seen_count = 1`
+	 * over hele linja betyr at SB1 minter en ny ID ved hver henting, og ba brukeren nøkle om
+	 * rå-strømmen. Det var galt, og arbeidet ville vært bortkastet.
+	 *
+	 * Årsaken er vår egen synk: `since = sensor.lastSync`, altså inkrementelt. En uendret rad
+	 * kommer aldri tilbake, treffer aldri `ON CONFLICT`, og `seen_count` KAN ikke vokse
+	 * uansett hvor stabil ID-en er. Porten målte henterutinen vår, ikke banken.
 	 */
 	const lifecycleGate = $derived.by(() => {
 		const cycle = result?.lifecycle;
 		if (!cycle) return null;
-		if (!cycle.fingerprintStableAcrossFetches) {
-			return {
-				ok: false,
-				text: `Ingen rad er sett mer enn én gang (${cycle.singleSeenRows.toLocaleString('nb-NO')} rader, alle med seen_count 1). Da minter SB1 en ny transaksjons-ID ved hver henting, og siden ID-en er del av raw_fingerprint lager hver synk en ny rad. «Forsvunnet» kan ikke skilles fra «fikk ny ID», så tallene under betyr ingenting. Veien videre er å nøkle rå-strømmen på attributter uten ID-en — ikke å tolke disse tallene.`
-			};
-		}
+		const perRow = cycle.versionsPerCanonicalRow;
 		return {
-			ok: true,
-			text: `${cycle.multiSeenRows.toLocaleString('nb-NO')} rader er sett flere ganger og ${cycle.singleSeenRows.toLocaleString('nb-NO')} bare én gang. Fingerprinten er altså stabil på tvers av synker, og en rad som slutter å bli sett har faktisk forsvunnet fra bankens svar.`
+			measurable: cycle.disappearanceMeasurable,
+			text:
+				`Alle ${cycle.singleSeenRows.toLocaleString('nb-NO')} rader har seen_count 1, og det er ` +
+				`forventet: synken er inkrementell (\`since = sensor.lastSync\`), så en uendret rad ` +
+				`kommer aldri tilbake og kan ikke telles på nytt. Tallet sier derfor ingenting om ` +
+				`ID-ene — det måler henterutinen vår.`,
+			ruleOut:
+				perRow === null
+					? null
+					: `${perRow.toString().replace('.', ',')} rå-versjoner per canonical-rad avkrefter likevel ID-churn: ` +
+						`med synk hvert 5. minutt og sju dagers vindu ville en ny ID per henting gitt ` +
+						`i tusenklassen, ikke ~5. Banken sender altså en håndfull versjoner per kjøp.`,
+			next:
+				`Forsvinning krever et FULLSTENDIG vindusuttrekk — en avstemming som ignorerer ` +
+				`lastSync og henter siste N dager i sin helhet. Først da er «fortsatt der» og ` +
+				`«borte» to ulike observasjoner. Uten den er de identiske, og hypotesen er ` +
+				`uavklart snarere enn avkreftet.`
 		};
 	});
 
-	/** Kroner som ville forsvunnet fra forbruket om erstatningene ble deaktivert. */
-	const supersededTotal = $derived.by(() => {
-		const rows = result?.lifecycle?.superseded ?? [];
+	/** Kroner i foreldreløse reservasjoner som fant en bokført rad med samme beløp. */
+	const orphanTotal = $derived.by(() => {
+		const rows = result?.orphanMatches ?? [];
 		return {
 			pairs: rows.reduce((sum, r) => sum + r.pairs, 0),
 			nok: rows.reduce((sum, r) => sum + r.nok, 0),
-			mkChangedPairs: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.pairs, 0)
+			mkChanged: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.pairs, 0),
+			mkChangedNok: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.nok, 0)
 		};
 	});
+
+	// NB: `lifecycle.disappeared` og `lifecycle.superseded` hentes fortsatt av endepunktet,
+	// men RENDRES IKKE. De kan ikke tolkes før en fullstendig vindusavstemming finnes — se
+	// `lifecycleGate`. Å vise dem ville invitert til nettopp den feilslutningen forrige utgave
+	// av dette kortet gjorde. De blir meningsfulle i det avstemmingen kjører.
 
 	async function run() {
 		running = true;
@@ -304,92 +343,63 @@
 		{/if}
 
 		<!-- Livsløp: brukerens hypotese om at forrige status forsvinner -->
-		{#if result.lifecycle}
+		{#if result.lifecycle && lifecycleGate}
 			<h3>Livsløp</h3>
-			{#if lifecycleGate}
-				<p class:warn={!lifecycleGate.ok} class:meta={lifecycleGate.ok}>
-					{lifecycleGate.text}
-				</p>
+			<p class="meta">{lifecycleGate.text}</p>
+			{#if lifecycleGate.ruleOut}
+				<p class="meta">{lifecycleGate.ruleOut}</p>
 			{/if}
+			{#if !lifecycleGate.measurable}
+				<p class="warn">{lifecycleGate.next}</p>
+			{/if}
+		{/if}
 
-			{#if lifecycleGate?.ok}
-				{#if result.lifecycle.disappeared.length > 0}
-					<div class="table-scroll">
-						<table>
-							<thead>
-								<tr><th>Forsvant, status</th><th class="num">Rader</th><th class="num">Beløp</th></tr>
-							</thead>
-							<tbody>
-								{#each result.lifecycle.disappeared as row (row.bookingStatus)}
-									<tr>
-										<td><code>{row.bookingStatus ?? '(tom)'}</code></td>
-										<td class="num">{row.rows.toLocaleString('nb-NO')}</td>
-										<td class="num">{nok(row.nok)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					<p class="meta">
-						Rader som sluttet å bli sett mens andre rader på samme konto og dato fortsatt ble
-						hentet. Sammenligningen er mot samme dato, ikke mot nå — en transaksjon slutter å
-						bli hentet når den faller ut av synkvinduet, og det er en godartet grunn.
-					</p>
-				{:else}
-					<p class="meta">
-						Ingen rader har sluttet å bli sett. Da erstatter ikke banken forrige status, og
-						dobbelttellingen har en annen årsak.
-					</p>
-				{/if}
-
-				{#if supersededTotal.pairs > 0}
-					<p class="summary">
-						<strong>{supersededTotal.pairs}</strong> erstatningspar funnet,
-						{nok(supersededTotal.nok)} som telles to ganger i dag.
-					</p>
-					<div class="table-scroll">
-						<table>
-							<thead>
-								<tr>
-									<th class="num">Datoforskjell</th><th>Beskrivelse</th>
-									<th class="num">Par</th><th class="num">Beløp</th>
+		<!-- Foreldreløs reservasjon mot bokført rad, uten merchant_key-kravet -->
+		{#if result.orphanMatches}
+			<h3>Reservasjon mot bokført</h3>
+			{#if orphanTotal.pairs > 0}
+				<p class="summary">
+					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner har en bokført rad med
+					samme beløp på samme konto — {nok(orphanTotal.nok)} som telles to ganger.
+				</p>
+				<div class="table-scroll">
+					<table>
+						<thead>
+							<tr>
+								<th class="num">Datoforskjell</th><th>Beskrivelse</th>
+								<th class="num">Par</th><th class="num">Beløp</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each result.orphanMatches as row (`${row.deltaDays}-${row.merchantKeyChanged}`)}
+								<tr class:warn-row={row.merchantKeyChanged}>
+									<td class="num">{row.deltaDays === null ? '—' : `${row.deltaDays} d`}</td>
+									<td>{row.merchantKeyChanged ? 'endret' : 'uendret'}</td>
+									<td class="num">{row.pairs.toLocaleString('nb-NO')}</td>
+									<td class="num">{nok(row.nok)}</td>
 								</tr>
-							</thead>
-							<tbody>
-								{#each result.lifecycle.superseded as row (`${row.deltaDays}-${row.merchantKeyChanged}`)}
-									<tr>
-										<td class="num">{row.deltaDays === null ? '—' : `${row.deltaDays} d`}</td>
-										<td>{row.merchantKeyChanged ? 'endret' : 'uendret'}</td>
-										<td class="num">{row.pairs.toLocaleString('nb-NO')}</td>
-										<td class="num">{nok(row.nok)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					<p class="meta">
-						Matchet på <strong>beløp alene</strong> — uten dato, uten beskrivelse. Det er trygt
-						her fordi forsvinningen alt har fastslått at raden ble erstattet; samme matching
-						uten det kravet ville slått sammen to ekte kjøp på samme beløp.
-						{#if supersededTotal.mkChangedPairs > 0}
-							{supersededTotal.mkChangedPairs} av parene endret beskrivelse
-							(«SEK ICA NARA HAGA» → «ICA NARA HAGA»), og de er per konstruksjon usynlige for
-							statusdriften under, som krever samme merchant_key.
-						{/if}
-					</p>
-				{:else}
-					<p class="meta">Ingen erstatningspar med samme beløp funnet etter en forsvinning.</p>
-				{/if}
-
-				{#if result.lifecycle.disappearedWithoutMatch > 0}
-					<p class="meta">
-						{result.lifecycle.disappearedWithoutMatch.toLocaleString('nb-NO')} forsvunne rader
-						fant <strong>ingen</strong> beløpslik etterfølger. To grunner, med motsatt
-						handling: beløpet endret seg mellom versjonene (valutakurs på et utenlandskjøp,
-						eller tips), eller raden var en kansellert reservasjon som aldri ble noe. Er
-						tallet stort, dekker ikke beløpsmatching alene fenomenet.
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if orphanTotal.mkChanged > 0}
+					<p class="warn">
+						{orphanTotal.mkChanged} av parene ({nok(orphanTotal.mkChangedNok)}) endret
+						beskrivelse — typisk et valutaprefiks, «SEK ICA NARA HAGA» mot «ICA NARA HAGA».
+						De er <strong>per konstruksjon usynlige</strong> for statusdriften under, som
+						krever samme merchant_key. Det er kroner den forrige målingen ikke kunne se.
 					</p>
 				{/if}
+				<p class="meta">
+					Matchet på beløp og konto, uten beskrivelse. Det er forsvarlig fordi
+					multiplisitetsmålingen over nå viser hvor sjeldne ekte gjentatte kjøp er — og fordi
+					to reelle kjøp gir to bokførte rader, ikke én reservasjon og én bokført.
+				</p>
+			{:else}
+				<p class="meta">
+					Ingen foreldreløs reservasjon fant en bokført rad med samme beløp. Da er
+					reservasjonene enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+				</p>
 			{/if}
 		{/if}
 
