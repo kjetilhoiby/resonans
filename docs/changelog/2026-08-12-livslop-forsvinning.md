@@ -254,3 +254,32 @@ Fixen setter `is_active = false` på reservasjonen. **Aldri slett.**
 
 `npm run check` (0 feil) og `npm test` (3 416 tester). Ingen nye tester — endringene er SQL og
 visning; testene kommer med fixen.
+
+
+## Tredje måling 2026-08-16: tallet gikk OPP, og det var en ny feil
+
+Etter at matchingen ble flyttet ut av SQL viste diagnosen **269 par / 258 117 kr**, mot
+271 par / 154 703 kr før. Færre par, 67 % mer kroner — umulig for en én-til-én-matching over
+et *smalere* vindu (3 dager mot 7).
+
+**Årsaken: `amount` på et par er absoluttverdi, og summeringen var fortegnsblind.** Den gamle
+SQL-en hadde `CASE WHEN s.amount < 0 THEN ABS(s.amount) ELSE 0 END`; `doubleCountedTotal`
+hadde ingenting tilsvarende. Så en **reservasjon på et lønnsinnskudd** — like duplisert, men
+ikke forbruk — ble telt som dobbelttalt forbruk. Raden `0 d / endret` gikk fra 69 123 til
+157 858 kr på uendret 43 par, som er signaturen: samme par, andre kroner.
+
+Rettelsen: `ReservationMatch.direction` (`out`/`in`) bæres på paret, og `doubleCountedTotals`
+returnerer `{ spend, income }` framfor ett tall. Histogrammet viser bare forbrukspar;
+inntektsparene rapporteres for seg. Andelen «av alt forbruk» kan bare regnes mot `spend`.
+
+Fixen skal deaktivere **begge** — et dobbelttalt innskudd blåser opp inntekten på samme måte —
+men de to skal ikke summeres.
+
+### Og en stille no-op i mitt eget verktøy
+
+Doc-kommentaren i `EconomyDiagnosticsCard` sa fortsatt «månedsforbruket lande rundt 42 000 kr»
+etter at jeg hadde meldt den rettet. En `str.replace` manglet den ledende tabulatoren i
+søkestrengen, traff ikke, og **en replace som ikke treffer er en no-op uten feilmelding**.
+Commit-meldingen påsto at rettelsen var gjort. Bruk `assert` på at mønsteret finnes før
+erstatning — det er den samme klassen feil som resten av dette dokumentet handler om: et
+verktøy som rapporterer suksess uten å ha gjort noe.

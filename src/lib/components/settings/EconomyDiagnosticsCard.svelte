@@ -8,8 +8,13 @@
 	 *
 	 * Bakgrunn i `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`. Kort fortalt: tre
 	 * parallelle lagre ga 6,0 mill. / 1,58 mill. / 1,48 mill. kr «forbruk» over samme år, og
-	 * 68 % av canonicals forbruk var penger flyttet mellom egne kontoer. Etter fase 1 og 2
-	 * skal radene under være enige, og månedsforbruket lande rundt 42 000 kr.
+	 * en stor del av canonicals «forbruk» var penger flyttet mellom egne kontoer.
+	 *
+	 * **Sett ikke inn et forventet kronetall her.** Det sto «månedsforbruket lande rundt
+	 * 42 000 kr», og det var galt: tallet var avledet av en overføringssum som selv kom fra en
+	 * mange-til-mange SQL-join, altså overtelt. Målt med korrekt én-til-én-matching er
+	 * nettoforbruket **~189 000 kr/mnd** (90 dager, august 2026). Et avledet tall arver feilen
+	 * i grunnlaget uten å se usikkert ut.
 	 *
 	 * Endepunktet er admin-gated, så kortet vises bare for admin — «403» uten tekst ville
 	 * sett ut som en feil i diagnosen framfor manglende tilgang.
@@ -74,6 +79,8 @@
 		}>;
 		orphansUnmatched?: number;
 		doubleCountedNok?: number;
+		doubleCountedIncomeNok?: number;
+		orphanPairs?: { out: number; in: number };
 	};
 
 	let days = $state('365');
@@ -367,10 +374,19 @@
 			<h3>Reservasjon mot bokført</h3>
 			{#if orphanTotal.pairs > 0}
 				<p class="summary">
-					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner er parret én-til-én med
-					en bokført rad med samme beløp på samme konto — {nok(orphanTotal.nok)} som telles to
-					ganger i dag.
+					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner på FORBRUK er parret
+					én-til-én med en bokført rad med samme beløp på samme konto — {nok(orphanTotal.nok)}
+					som telles to ganger i dag.
 				</p>
+				{#if result.doubleCountedIncomeNok !== undefined && result.doubleCountedIncomeNok > 0}
+					<p class="meta">
+						I tillegg {nok(result.doubleCountedIncomeNok)} på
+						{result.orphanPairs?.in ?? 0} par som er penger INN — lønn, innskudd, overføring.
+						Like duplisert og skal deaktiveres på samme måte, men det er ikke forbruk, så det
+						holdes utenfor tallet over. En sammenblanding tok tallet fra 154 703 til
+						258 117 kr i en tidligere måling.
+					</p>
+				{/if}
 				{#if monthlySpend}
 					<p class="meta">
 						Det er {nok(orphanTotal.nok / (result.window.days / 30.4))}/mnd av et nettoforbruk på
