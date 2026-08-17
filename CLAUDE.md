@@ -351,6 +351,14 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
 - **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
   bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
   appen mistet resumption-handtaket.
+- **`newSessionExpireTime` (2 min) og `expireTime` (30 min) gjelder ulike ting, og
+  forvekslingen kostet døgnkvota.** Den første er vinduet for å STARTE en økt; den andre er
+  hvor lenge en økt som alt kjører kan sende. En **gjenopptakelse** starter ingen ny økt og
+  virker derfor til `expireTime` — også med `uses: 1`. Ekko mintet fram til 17. august 2026 et
+  nytt token ved hvert socket-brudd (hvert 3.–4. minutt i coach-modus), så en tur på 25
+  minutter kostet åtte mint og to turer tømte kvota. **Dagsgrensa er vår**
+  (`MINT_RATE_LIMIT_PER_DAY`), ikke Googles — den ble satt da vi antok 1–2 mint per økt, og
+  forutsetningen holder bare når klienten gjenbruker tokenet ved gjenopptakelse.
 - **Token-profiler** (`voice-test`/`assistant`/`coach`, se
   `docs/changelog/2026-08-14-gemini-token-profiler.md`): verktøyskjemaene bor i det
   constrainede setupet i `gemini-live-profiles.ts` — **aldri i appen**. Ukjent/manglende
