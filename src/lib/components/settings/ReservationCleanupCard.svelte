@@ -75,8 +75,18 @@
 	<p class="meta">
 		SB1 leverer samme kjøp først som reservasjon og så som bokført, og både datoen og
 		beskrivelsen kan endre seg mellom versjonene. Da havner de i to rader og beløpet telles to
-		ganger. Målt over 90 dager i august 2026: <strong>249 par, 152 982 kr</strong> — 27 % av
-		nettoforbruket.
+		ganger.
+	</p>
+	<p class="meta">
+		<!--
+			**Ingen forventet verdi her.** Kortet lovet «249 par, 152 982 kr — 27 %», og den
+			målingen var oppblåst av to feil tørrkjøringen avslørte: rader med ukjent status ble
+			regnet som reservasjoner, og interne overføringer ble paret med hverandre. Et tall i
+			innledningen blir lest som en forventning, og en forventning som ikke stemmer får
+			brukeren til å stole på planen framfor å lese den.
+		-->
+		Hvor mange par som finnes vet vi først etter en tørrkjøring — tallet under er det som
+		gjelder, ikke et anslag her.
 	</p>
 	<p class="meta">
 		Reservasjonen settes <strong>inaktiv, aldri slettet</strong>, så en feil kan reverseres.
