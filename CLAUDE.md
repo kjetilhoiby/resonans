@@ -1375,6 +1375,8 @@ svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og a
 ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
 `GEMINI_LIVE_COACH_MODEL` (valgfri) overstyrer modellen for coach-profilen.
 `GEMINI_LIVE_DISABLED_PROFILES` (valgfri, kommaseparert) er kill switch per token-profil.
+Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Modell); appen sender
+`model` i token-forespørselen, og serveren validerer navnet mot Googles katalog.
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 
