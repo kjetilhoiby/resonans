@@ -13,6 +13,12 @@
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 
 	type Direction = 'out' | 'in' | 'all';
+	type SkipReason =
+		| 'begge-bokfort'
+		| 'ulikt-belop'
+		| 'ukjent-status'
+		| 'overforing'
+		| 'skulle-blitt-fanget';
 	type Result = {
 		dryRun: boolean;
 		direction: Direction;
@@ -39,6 +45,38 @@
 			reservationMerchantKey: string;
 			bookedMerchantKey: string;
 		}>;
+		residual: {
+			pairs: number;
+			byReason: Array<{ reason: SkipReason; pairs: number; nok: number }>;
+			samples: Array<{
+				amount: number;
+				amountDeltaPct: number;
+				deltaDays: number;
+				prefixDrift: boolean;
+				reason: SkipReason;
+				aDescription: string;
+				bDescription: string;
+				aDate: string;
+				bDate: string;
+				aStatus: string;
+				bStatus: string;
+			}>;
+		};
+	};
+
+	/**
+	 * Årsaken i klartekst, og **hva den betyr for hva som kan gjøres**. En kode alene («ulikt
+	 * belop») forteller ikke om det er en feil å rette eller en grense som er riktig satt.
+	 */
+	const REASON_TEXT: Record<SkipReason, string> = {
+		'begge-bokfort':
+			'Begge radene står som bokført. Ryddingen krever at én side er reservasjon, så disse dannes det aldri par av.',
+		'ulikt-belop':
+			'Beløpene er ikke helt like — typisk valutakurs som endret seg mellom reservasjon og bokføring. Ryddingen krever eksakt likhet.',
+		'ukjent-status': 'Én av radene mangler status, og deltar derfor ikke.',
+		overforing: 'Én av radene er merket intern overføring og holdes bevisst utenfor.',
+		'skulle-blitt-fanget':
+			'Paret oppfyller kravene. Står det her, har ryddingen ikke kjørt på det ennå — kjør skrivingen.'
 	};
 
 	let days = $state('90');
@@ -209,6 +247,69 @@
 			</p>
 		{/if}
 
+		<!--
+			**Restposten er bygget fordi brukeren trykket «Deaktiver» og fire duplikater sto igjen.**
+			Uten dette avsnittet er svaret på «hvorfor står de der» en gjetning, og gjetninger på
+			årsak har tatt feil seks ganger i dette arbeidet. Toleransen er løsere enn ryddingens
+			(3 % beløpsavvik) med vilje — en diagnose med samme terskler kan per konstruksjon ikke
+			finne noe fixen gikk glipp av.
+		-->
+		<h3>Duplikater som står igjen</h3>
+		{#if result.residual.pairs === 0}
+			<p class="meta">
+				Ingen. Etter denne kjøringen finner vi ingen par med lik beskrivelse og nesten likt beløp
+				innenfor tre dager. Ser du likevel et duplikat i lista, ligger forskjellen et annet sted
+				enn beløp og beskrivelse — send det, det er data vi mangler.
+			</p>
+		{:else}
+			<p class="meta">
+				{result.residual.pairs} par ser ut som duplikater men blir <strong>ikke</strong> ryddet.
+				Her er hvorfor:
+			</p>
+			<ul class="reasons">
+				{#each result.residual.byReason as row (row.reason)}
+					<li>
+						<strong>{row.pairs} par · {nok(row.nok)}</strong> — {REASON_TEXT[row.reason]}
+					</li>
+				{/each}
+			</ul>
+			<div class="table-scroll">
+				<table>
+					<thead>
+						<tr>
+							<th class="num">Beløp</th><th>Rad A</th><th>Rad B</th>
+							<th class="num">Avvik</th><th>Årsak</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each result.residual.samples as row, i (`${row.aDate}-${row.bDate}-${row.amount}-${i}`)}
+							<tr>
+								<td class="num">{nok(row.amount)}</td>
+								<td class="wrap"
+									>{row.aDescription || '—'}<br /><span class="sub"
+										>{row.aDate} · {row.aStatus}</span
+									></td
+								>
+								<td class="wrap"
+									>{row.bDescription || '—'}<br /><span class="sub"
+										>{row.bDate} · {row.bStatus}</span
+									></td
+								>
+								<!-- Avviket i prosent er det som avgjør «ulikt belop», så det skal stå synlig. -->
+								<td class="num">{row.amountDeltaPct === 0 ? '0' : `${row.amountDeltaPct} %`}</td>
+								<td>{row.reason}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="meta">
+				Dette er en <strong>diagnose, ikke en plan</strong> — ingenting her blir rørt av knappene
+				over. Kravet er at beskrivelsene er like, eller at den ene er den andre med noe foran
+				(en valutakode <em>eller</em> et personnavn).
+			</p>
+		{/if}
+
 		<p class="meta footer">
 			Vindu: {result.window.days} dager fra {result.window.fromDate}.
 		</p>
@@ -274,6 +375,16 @@
 	}
 	.table-scroll {
 		overflow-x: auto;
+	}
+	.reasons {
+		margin: 0;
+		padding-left: 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.5;
 	}
 	table {
 		width: 100%;
