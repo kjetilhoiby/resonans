@@ -35,9 +35,17 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 
 	const dryRun = url.searchParams.get('dryRun') !== 'false';
 
+	// **Standard er `out` — bare forbruk.** Inntektsparene bar fortsatt preg av runde
+	// overføringsbeløp i tørrkjøringen, og de to retningene har ulik troverdighet.
+	const directionParam = url.searchParams.get('direction') ?? 'out';
+	if (directionParam !== 'out' && directionParam !== 'in' && directionParam !== 'all') {
+		error(400, 'direction må være «out», «in» eller «all».');
+	}
+
 	const result = await deactivateSupersededReservations(locals.userId, {
 		days: Math.floor(daysParam),
-		dryRun
+		dryRun,
+		direction: directionParam
 	});
 
 	return json(result);

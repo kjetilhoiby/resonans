@@ -32,6 +32,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { findInternalTransfers } from '$lib/domain/economics/internal-transfers';
 import {
 	doubleCountedTotals,
+	looksLikeTransferText,
 	matchReservationsToBooked,
 	type ReservationCandidate,
 	type ReservationMatch
@@ -42,6 +43,10 @@ const UPDATE_CHUNK = 200;
 
 export type DeactivateResult = {
 	dryRun: boolean;
+	/** Retningen som ville blitt skrevet. Standard `out` — bare forbruk. */
+	direction: 'out' | 'in' | 'all';
+	/** Antall par innenfor `direction`. `pairs` er alt som ble FUNNET. */
+	selectedPairs: number;
 	window: { days: number; fromDate: string };
 	/** Aktive canonical-rader vurdert. */
 	rowsConsidered: number;
@@ -54,8 +59,16 @@ export type DeactivateResult = {
 	 * falsk for rank 0), og tørrkjøringen i prod foreslo da å deaktivere overføringer.
 	 */
 	skippedUnknownStatus: number;
-	/** Rader hoppet over fordi de er interne overføringer. */
+	/** Rader hoppet over fordi begge bein av en overføring finnes i canonical. */
 	skippedInternalTransfers: number;
+	/**
+	 * Rader hoppet over fordi TEKSTEN peker på en overføring.
+	 *
+	 * Fanger de **ettbeinte**: brukeren overfører fra lønnskontoer som ikke synkes, så bare
+	 * innskuddet finnes hos oss og den parvise matchingen kan ikke se det. Er tallet 0 mens
+	 * runde beløp fortsatt står i tabellen, er ordlista i `TRANSFER_TEXT_TERMS` feil.
+	 */
+	skippedTransferText: number;
 	pairs: { out: number; in: number };
 	doubleCounted: { spend: number; income: number };
 	/** Reservasjoner uten en ledig bokført motpart — ekte ubokførte, eller endret beløp. */
@@ -70,6 +83,10 @@ export type DeactivateResult = {
 		direction: 'out' | 'in';
 		deltaDays: number;
 		merchantKeyChanged: boolean;
+		reservationDate: string;
+		bookedDate: string;
+		reservationMerchantKey: string;
+		bookedMerchantKey: string;
 	}>;
 };
 
@@ -94,7 +111,20 @@ function normalizeStatus(value: string | null): 'pending' | 'booked' | 'unknown'
 
 export async function deactivateSupersededReservations(
 	userId: string,
-	options: { days: number; dryRun?: boolean; maxDeltaDays?: number }
+	options: {
+		days: number;
+		dryRun?: boolean;
+		maxDeltaDays?: number;
+		/**
+		 * Hvilken retning som skal deaktiveres. **Standard er `out`, altså bare forbruk.**
+		 *
+		 * Tørrkjøringen viste at `inn`-parene fortsatt bar preg av runde overføringsbeløp
+		 * (23 000 ×2, 15 000, 12 500) som ingen kunne sette navn på, mens `ut`-parene hadde
+		 * ujevne beløp som er signaturen på ekte reservasjon→bokføring. De to har ulik
+		 * troverdighet og skal derfor ikke skrives i samme operasjon.
+		 */
+		direction?: 'out' | 'in' | 'all';
+	}
 ): Promise<DeactivateResult> {
 	const dryRun = options.dryRun !== false;
 	const fromDate = new Date(Date.now() - options.days * 86400000).toISOString().slice(0, 10);
@@ -111,7 +141,11 @@ export async function deactivateSupersededReservations(
 			merchantKey: canonicalBankTransactions.merchantKey,
 			// **Statusen leses eksplisitt, ikke utledet av rangen.** `bookingStatusRank` gir 0
 			// for manglende status, så `rank < topRank` gjorde «ukjent» til «reservasjon».
-			bookingStatus: canonicalBankTransactions.latestBookingStatus
+			bookingStatus: canonicalBankTransactions.latestBookingStatus,
+			// Til tekstbasert overføringsgjenkjenning. `typeText` er SB1s `category`, og ofte det
+			// eneste stedet ordet «overføring» står.
+			description: canonicalBankTransactions.descriptionDisplay,
+			typeText: canonicalBankTransactions.typeText
 		})
 		.from(canonicalBankTransactions)
 		.where(
@@ -136,12 +170,20 @@ export async function deactivateSupersededReservations(
 
 	let skippedUnknownStatus = 0;
 	let skippedInternalTransfers = 0;
+	let skippedTransferText = 0;
 
 	const candidates: ReservationCandidate[] = rows.map((row) => {
 		const status = normalizeStatus(row.bookingStatus);
-		const internalTransfer = transfers.internalIds.has(row.id);
+		const pairedTransfer = transfers.internalIds.has(row.id);
+		// **To uavhengige signaler, og det svakere er nødvendig.** Den parvise matchingen er en
+		// observasjon (begge bein finnes) og treffer ikke overføringer fra kontoer vi ikke
+		// synker. Tekstlesingen fanger dem, og de telles hver for seg så det er synlig hvilken
+		// som gjorde jobben.
+		const textTransfer = looksLikeTransferText(row);
+		const internalTransfer = pairedTransfer || textTransfer;
 		if (status === 'unknown') skippedUnknownStatus += 1;
-		if (internalTransfer) skippedInternalTransfers += 1;
+		if (pairedTransfer) skippedInternalTransfers += 1;
+		if (textTransfer && !pairedTransfer) skippedTransferText += 1;
 		return {
 			id: row.id,
 			accountId: row.accountId,
@@ -157,11 +199,16 @@ export async function deactivateSupersededReservations(
 		maxDeltaDays: options.maxDeltaDays
 	});
 
+	const direction = options.direction ?? 'out';
+	const selected = matches.filter(
+		(m) => direction === 'all' || m.direction === direction
+	);
+
 	const totals = doubleCountedTotals(matches);
 	let deactivated = 0;
 
-	if (!dryRun && matches.length > 0) {
-		const ids = matches.map((m) => m.reservationId);
+	if (!dryRun && selected.length > 0) {
+		const ids = selected.map((m) => m.reservationId);
 		for (let i = 0; i < ids.length; i += UPDATE_CHUNK) {
 			const chunk = ids.slice(i, i + UPDATE_CHUNK);
 			const updated = await db
@@ -180,17 +227,21 @@ export async function deactivateSupersededReservations(
 			deactivated += updated.length;
 		}
 		console.log(
-			`[deactivate-superseded] user=${userId} days=${options.days} pairs=${matches.length} deactivated=${deactivated} spend=${Math.round(totals.spend)} income=${Math.round(totals.income)}`
+			`[deactivate-superseded] user=${userId} days=${options.days} direction=${direction} selected=${selected.length} deactivated=${deactivated} spend=${Math.round(totals.spend)} income=${Math.round(totals.income)}`
 		);
 	}
 
 	return {
 		dryRun,
+		direction,
+		/** Par som VILLE blitt skrevet med gjeldende retning. Skiller funn fra handling. */
+		selectedPairs: selected.length,
 		window: { days: options.days, fromDate },
 		rowsConsidered: rows.length,
 		reservations: candidates.filter((c) => c.status === 'pending' && !c.internalTransfer).length,
 		skippedUnknownStatus,
 		skippedInternalTransfers,
+		skippedTransferText,
 		pairs: {
 			out: matches.filter((m) => m.direction === 'out').length,
 			in: matches.filter((m) => m.direction === 'in').length
@@ -215,6 +266,10 @@ function pickSamples(matches: readonly ReservationMatch[]): DeactivateResult['sa
 			amount: m.amount,
 			direction: m.direction,
 			deltaDays: m.deltaDays,
-			merchantKeyChanged: m.merchantKeyChanged
+			merchantKeyChanged: m.merchantKeyChanged,
+			reservationDate: m.reservationDate,
+			bookedDate: m.bookedDate,
+			reservationMerchantKey: m.reservationMerchantKey,
+			bookedMerchantKey: m.bookedMerchantKey
 		}));
 }

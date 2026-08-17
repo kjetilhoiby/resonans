@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_MAX_DELTA_DAYS,
 	doubleCountedTotals,
+	looksLikeTransferText,
 	matchReservationsToBooked,
 	type ReservationCandidate
 } from './reservation-matching';
@@ -299,5 +300,55 @@ describe('rader som ikke skal matches i det hele tatt', () => {
 		]);
 
 		expect(matches).toHaveLength(1);
+	});
+});
+
+describe('navn og datoer på paret', () => {
+	// Tørrkjøringen viste «23 000 kr inn, 0 dager, endret» ×2, og verken bruker eller agent
+	// kunne avgjøre om det var lønn i to versjoner eller to separate innskudd. Et par man
+	// ikke kan sette navn på, kan man ikke godkjenne.
+	it('bærer begge beskrivelsene og begge datoene', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-27', -74, 'sek ica nara'),
+			booked('b1', '2026-07-28', -74, 'ica nara haga')
+		]);
+
+		expect(matches[0]).toMatchObject({
+			reservationDate: '2026-07-27',
+			bookedDate: '2026-07-28',
+			reservationMerchantKey: 'sek ica nara',
+			bookedMerchantKey: 'ica nara haga'
+		});
+	});
+});
+
+describe('looksLikeTransferText', () => {
+	// Finnes fordi findInternalTransfers krever begge bein i canonical. Brukeren overfører fra
+	// lønnskontoer som ikke synkes, så innskuddet er det eneste beinet vi ser — og runde
+	// summer som 23 000 gjentas.
+	it('kjenner igjen overføringsord i beskrivelsen', () => {
+		expect(looksLikeTransferText({ description: 'Overføring til felles' })).toBe(true);
+		expect(looksLikeTransferText({ description: 'OVERFØRSEL' })).toBe(true);
+		expect(looksLikeTransferText({ description: 'Overforing mellom egne kontoer' })).toBe(true);
+	});
+
+	it('leser typeText også — der SB1 legger kategorien', () => {
+		expect(looksLikeTransferText({ description: 'Til Kjetil', typeText: 'Overføring' })).toBe(
+			true
+		);
+	});
+
+	it('rører ikke et vanlig kjøp', () => {
+		expect(looksLikeTransferText({ description: 'KIWI BØLERL', typeText: 'Mat og drikke' })).toBe(
+			false
+		);
+		expect(looksLikeTransferText({ description: 'SEK ICA NARA HAGA' })).toBe(false);
+	});
+
+	it('gir false på tom tekst framfor true', () => {
+		// En rad uten beskrivelse er ukjent, ikke en overføring. Å gjette «overføring» ville
+		// utelatt ekte kjøp fra ryddingen.
+		expect(looksLikeTransferText({})).toBe(false);
+		expect(looksLikeTransferText({ description: '', typeText: null })).toBe(false);
 	});
 });

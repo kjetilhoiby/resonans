@@ -35,6 +35,47 @@
 /** Standardvindu for datodrift mellom reservasjon og bokføring. */
 export const DEFAULT_MAX_DELTA_DAYS = 3;
 
+/**
+ * Ord som peker på en overføring mellom egne kontoer.
+ *
+ * **Dette finnes fordi `findInternalTransfers` har en strukturell blindsone:** den krever at
+ * BEGGE bein er i canonical. Brukeren overfører fra lønnskontoer — som ikke synkes — til
+ * bruks- og felleskonto, så innskuddet er det eneste beinet vi ser. En ettbeint overføring kan
+ * derfor ikke parvis-matches, og runde summer som 23 000 og 12 500 gjentas.
+ *
+ * Lista er en **hypotese om ordbruken**, ikke en fasit. `skippedTransferText` rapporterer hvor
+ * mange rader den faktisk fanget: er tallet 0 mens runde beløp fortsatt står i tabellen, er
+ * ordene feil og skal rettes framfor å stå der og se ut som et vern.
+ *
+ * Retningen er konservativ: dette **utelater** rader fra matchingen. Å la en dublett stå er
+ * trygt å rette senere; å deaktivere en ekte transaksjon er det ikke.
+ */
+export const TRANSFER_TEXT_TERMS = [
+	'overføring',
+	'overforing',
+	'overførsel',
+	'overforsel',
+	'overf.',
+	'egen konto',
+	'eigen konto',
+	'mellom egne'
+];
+
+/**
+ * Ser raden ut som en overføring ut fra sin EGEN tekst?
+ *
+ * Brukes i tillegg til den parvise matchingen, ikke i stedet for — den parvise er en
+ * observasjon (to bein finnes), denne er en lesning av ordbruk.
+ */
+export function looksLikeTransferText(fields: {
+	description?: string | null;
+	typeText?: string | null;
+}): boolean {
+	const haystack = `${fields.description ?? ''} ${fields.typeText ?? ''}`.toLowerCase();
+	if (!haystack.trim()) return false;
+	return TRANSFER_TEXT_TERMS.some((term) => haystack.includes(term));
+}
+
 /** En bøtte i canonical-forstand: én rad, med statusen den nådde. */
 export type ReservationCandidate = {
 	/** Stabil id, brukes bare til å peke tilbake på raden. */
@@ -94,6 +135,17 @@ export type ReservationMatch = {
 	deltaDays: number;
 	/** Sann når beskrivelsen endret seg — usynlig for en match som krever samme nøkkel. */
 	merchantKeyChanged: boolean;
+	/**
+	 * Datoene og beskrivelsene på begge sider, **så et par kan gjenkjennes av et menneske**.
+	 *
+	 * Tørrkjøringen viste «23 000 kr inn, 0 dager, endret» ×2, og verken jeg eller brukeren
+	 * kunne avgjøre om det var lønn i to versjoner eller to separate innskudd. Et par man ikke
+	 * kan sette navn på, kan man ikke godkjenne — og da er tørrkjøringen bare et tall.
+	 */
+	reservationDate: string;
+	bookedDate: string;
+	reservationMerchantKey: string;
+	bookedMerchantKey: string;
 };
 
 export type ReservationMatchResult = {
@@ -194,7 +246,11 @@ export function matchReservationsToBooked(
 			amount: Math.abs(reservation.amount),
 			direction: reservation.amount < 0 ? 'out' : 'in',
 			deltaDays: dayDiff(reservation.date, booked.date),
-			merchantKeyChanged: booked.merchantKey !== reservation.merchantKey
+			merchantKeyChanged: booked.merchantKey !== reservation.merchantKey,
+			reservationDate: reservation.date,
+			bookedDate: booked.date,
+			reservationMerchantKey: reservation.merchantKey,
+			bookedMerchantKey: booked.merchantKey
 		});
 	}
 

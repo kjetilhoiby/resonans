@@ -437,3 +437,83 @@ En stille utelatelse ville sett ut som full dekning.
 
 Den andre er ikke en kodefeil men en **resonneringsfeil**: jeg brukte et måletall som
 sikkerhetsargument utenfor det det målte.
+
+
+## Femte tørrkjøring: overføringene var HELE årsaken
+
+| | Før rettelsen | Etter |
+|---|---:|---:|
+| Forbrukspar | 255 / 157 824 kr | **242 / 128 588 kr** |
+| Inntektspar | 21 / 107 136 kr | **9 / 78 850 kr** |
+| Ekskludert som overføring | — | **226 rader** |
+| Ekskludert for ukjent status | — | **0 rader** |
+
+### Rettelse: «feil 1» var ikke årsaken
+
+`skippedUnknownStatus = 0`. Det fantes **ingen** rader med ukjent status i vinduet, så
+rank-0-hypotesen forklarte ingenting av det vi så. Vernet er riktig å ha — `latest_booking_status`
+er nullable, og en fremtidig rad uten status ville ellers blitt lest som reservasjon — men jeg
+tilskrev symptomet to mekanismer, og bare **interne overføringer** var reell.
+
+Det er samme feilform en gang til, i mildere utgave: jeg forklarte en observasjon med to årsaker
+uten å måle hvilken av dem som bidro.
+
+### `ut` ser troverdig ut, `inn` gjør det ikke
+
+Etter ekskluderingen har forbrukssiden **ujevne beløp** — 7 654, 4 026, 3 937, 3 277, 2 476,
+1 844, 1 801, 1 703, 1 690, 1 564, 1 463 — spredt over 0–3 dager, med både endret og uendret
+beskrivelse. Det er signaturen på ekte reservasjon→bokføring.
+
+Inntektssiden har fortsatt **runde beløp**: 23 000 ×2, 15 000, 12 500, 1 400. Ni par, 78 850 kr,
+snitt 8 761 kr. De er ikke matchet som overføringer, altså mangler motparten på en konto vi
+synker — men et innskudd på 23 000 kr som forekommer to ganger kan like godt være to
+innbetalinger som én i to versjoner, og **ingen av oss kunne avgjøre hvilket**.
+
+## To endringer som følger av det
+
+1. **`direction` med `out` som standard.** Forbruk og inntekt har ulik troverdighet og skal
+   ikke skrives i samme operasjon. Endepunktet tar `direction=out|in|all`, og UI-et har
+   «Bare forbruk (anbefalt)». Rader utenfor valgt retning tones ned i tabellen framfor å
+   skjules — de er fortsatt en del av funnet.
+2. **Paret bærer navn og datoer.** `reservationMerchantKey`/`bookedMerchantKey` og
+   `reservationDate`/`bookedDate` vises begge, side om side. **Et par man ikke kan sette navn
+   på, kan man ikke godkjenne** — og da er tørrkjøringen bare et tall som ser presist ut. Dette
+   er den samme lærdommen som resten av arbeidet: en flate som ikke sier hva den bygger på, kan
+   ikke etterprøves.
+
+`selectedPairs` skiller nå **funnet** fra **handlingen** i svaret, så «242 funnet, 242 valgt» og
+«251 funnet, 242 valgt» ikke ser like ut.
+
+
+## Brukeren forklarte restposten: overføringene er ETTBEINTE
+
+> «Husk at vi overfører fra lønnskontoer til brukskontoer og av og til fra sparekonto til
+> brukskonto eller omvendt. Runde summer innad forekommer.»
+
+Det er en **strukturell blindsone i `findInternalTransfers`**, ikke en terskel som er feil satt:
+funksjonen krever at BEGGE bein er i canonical. Kontolista har ingen lønnskonto — bare
+Regningskonto, Felleskonto og to sparekontoer — så en overføring lønnskonto → brukskonto har
+bare *innskuddet* hos oss. Den kan per konstruksjon ikke parvis-matches.
+
+Det er nøyaktig de ni gjenstående `inn`-parene: 23 000 ×2, 15 000, 12 500, 1 400.
+
+### Løsning: to uavhengige signaler, og det svakere er nødvendig
+
+`looksLikeTransferText` leser radens **egen** tekst (`descriptionDisplay` + `typeText`) etter
+overføringsord. Den er svakere enn den parvise matchingen — en observasjon at begge bein finnes
+slår en lesning av ordbruk — men den er den eneste som kan se en ettbeint overføring.
+
+De to telles **hver for seg** (`skippedInternalTransfers` mot `skippedTransferText`), så det er
+synlig hvilken som gjorde jobben. Og `TRANSFER_TEXT_TERMS` er dokumentert som en **hypotese om
+ordbruken**: står `skippedTransferText` på 0 mens runde beløp fortsatt er i tabellen, er ordene
+feil og skal rettes framfor å stå der og se ut som et vern.
+
+Retningen er konservativ. Dette **utelater** rader fra ryddingen, og å la en dublett stå er
+trygt å rette senere; å deaktivere en ekte transaksjon er det ikke.
+
+### Nok en stille no-op
+
+Kolonnene `description` og `typeText` ble lagt til i SELECT-en med en `str.replace` **uten
+assert**, den traff ikke, og typesjekken fanget det. Andre gang samme feil i dette arbeidet, og
+begge ganger fordi jeg hoppet over å verifisere at mønsteret fantes. Lærdommen står nå to steder
+i dette dokumentet fordi den åpenbart ikke satt første gang.
