@@ -517,3 +517,28 @@ Kolonnene `description` og `typeText` ble lagt til i SELECT-en med en `str.repla
 assert**, den traff ikke, og typesjekken fanget det. Andre gang samme feil i dette arbeidet, og
 begge ganger fordi jeg hoppet over å verifisere at mønsteret fantes. Lærdommen står nå to steder
 i dette dokumentet fordi den åpenbart ikke satt første gang.
+
+## Prefikset er ikke bare valuta
+
+Brukeren sendte transaksjonslista 2026-08-16 med fire synlige par:
+
+| Reservasjon | Bokført | Beløp | Dato |
+|---|---|---:|---|
+| `DKK OERESUNDSLINJEN HOER` | `OERESUNDSLINJEN HOER` | 729 kr | 2.8. |
+| `USD OPENAI CHATGPT SUBSCR` | `OPENAI CHATGPT SUBSCR` | 244 kr | 2.8. |
+| `SEK TYCHO BRAHE` | `TYCHO BRAHE` | 236 kr | 2.8. |
+| `Lars Terje Husbyn FPL-fee Tollgaar…` | `FPL-fee Tollgaarden` | 250 kr | 13.8. |
+
+De tre første er valutakoder. **Den fjerde er et personnavn.**
+
+Det betyr at **beskrivelsesdriften ikke kan løses ved å vaske bort valutakoder** — en
+`normalizeTxDescription` som strippet `DKK`/`USD`/`SEK` ville fortsatt latt
+«Lars Terje Husbyn FPL-fee Tollgaarden» og «FPL-fee Tollgaarden» ligge i to bøtter. Ikke bygg
+den; den ville sett ut som en løsning og dekket tre av fire tilfeller.
+
+Det er også bekreftelsen på at matchingen skal ignorere beskrivelsen helt og hvile på
+**eksakt beløp + konto + status**. Prefikset kan være hva som helst.
+
+Jeg antok først at de fire lå blant de 242 parene og bare var for små til å nå
+«Største par»-tabellen. **Det var galt** — se «Fjerde antagelse» nedenfor: brukeren kjørte
+ryddingen, og de fire sto der etterpå.
