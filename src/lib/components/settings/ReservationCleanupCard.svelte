@@ -22,6 +22,7 @@
 		reservations: number;
 		skippedUnknownStatus: number;
 		skippedInternalTransfers: number;
+		skippedTransferText: number;
 		pairs: { out: number; in: number };
 		doubleCounted: { spend: number; income: number };
 		unmatched: number;
@@ -156,11 +157,17 @@
 		-->
 		<p class="meta">
 			Holdt utenfor: {result.skippedUnknownStatus.toLocaleString('nb-NO')} rader med
-			<strong>ukjent status</strong> — verken PENDING eller BOOKED, så de kan ikke være en
-			reservasjon vi vet er erstattet — og
-			{result.skippedInternalTransfers.toLocaleString('nb-NO')} rader som er
-			<strong>interne overføringer</strong>. Overføringer går i runde beløp som gjentas, og to
-			separate flyttinger av 2 500 kr innen tre dager ville sett ut som ett kjøp i to versjoner.
+			<strong>ukjent status</strong>,
+			{result.skippedInternalTransfers.toLocaleString('nb-NO')} rader der
+			<strong>begge bein</strong> av en overføring finnes hos oss, og
+			{result.skippedTransferText.toLocaleString('nb-NO')} rader der bare
+			<strong>teksten</strong> sier overføring.
+		</p>
+		<p class="meta">
+			Det siste tallet fanger de <strong>ettbeinte</strong>: overføringer fra lønnskontoer vi
+			ikke synker har bare innskuddet hos oss, så de kan ikke parres med sin motpost. Står det
+			0 mens runde beløp som 23 000 fortsatt er i tabellen, er ordlista feil og skal rettes —
+			ikke stå og se ut som et vern.
 		</p>
 
 		{#if !result.dryRun && result.deactivated < totalPairs}

@@ -483,3 +483,37 @@ innbetalinger som én i to versjoner, og **ingen av oss kunne avgjøre hvilket**
 
 `selectedPairs` skiller nå **funnet** fra **handlingen** i svaret, så «242 funnet, 242 valgt» og
 «251 funnet, 242 valgt» ikke ser like ut.
+
+
+## Brukeren forklarte restposten: overføringene er ETTBEINTE
+
+> «Husk at vi overfører fra lønnskontoer til brukskontoer og av og til fra sparekonto til
+> brukskonto eller omvendt. Runde summer innad forekommer.»
+
+Det er en **strukturell blindsone i `findInternalTransfers`**, ikke en terskel som er feil satt:
+funksjonen krever at BEGGE bein er i canonical. Kontolista har ingen lønnskonto — bare
+Regningskonto, Felleskonto og to sparekontoer — så en overføring lønnskonto → brukskonto har
+bare *innskuddet* hos oss. Den kan per konstruksjon ikke parvis-matches.
+
+Det er nøyaktig de ni gjenstående `inn`-parene: 23 000 ×2, 15 000, 12 500, 1 400.
+
+### Løsning: to uavhengige signaler, og det svakere er nødvendig
+
+`looksLikeTransferText` leser radens **egen** tekst (`descriptionDisplay` + `typeText`) etter
+overføringsord. Den er svakere enn den parvise matchingen — en observasjon at begge bein finnes
+slår en lesning av ordbruk — men den er den eneste som kan se en ettbeint overføring.
+
+De to telles **hver for seg** (`skippedInternalTransfers` mot `skippedTransferText`), så det er
+synlig hvilken som gjorde jobben. Og `TRANSFER_TEXT_TERMS` er dokumentert som en **hypotese om
+ordbruken**: står `skippedTransferText` på 0 mens runde beløp fortsatt er i tabellen, er ordene
+feil og skal rettes framfor å stå der og se ut som et vern.
+
+Retningen er konservativ. Dette **utelater** rader fra ryddingen, og å la en dublett stå er
+trygt å rette senere; å deaktivere en ekte transaksjon er det ikke.
+
+### Nok en stille no-op
+
+Kolonnene `description` og `typeText` ble lagt til i SELECT-en med en `str.replace` **uten
+assert**, den traff ikke, og typesjekken fanget det. Andre gang samme feil i dette arbeidet, og
+begge ganger fordi jeg hoppet over å verifisere at mønsteret fantes. Lærdommen står nå to steder
+i dette dokumentet fordi den åpenbart ikke satt første gang.

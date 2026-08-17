@@ -32,6 +32,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { findInternalTransfers } from '$lib/domain/economics/internal-transfers';
 import {
 	doubleCountedTotals,
+	looksLikeTransferText,
 	matchReservationsToBooked,
 	type ReservationCandidate,
 	type ReservationMatch
@@ -58,8 +59,16 @@ export type DeactivateResult = {
 	 * falsk for rank 0), og tørrkjøringen i prod foreslo da å deaktivere overføringer.
 	 */
 	skippedUnknownStatus: number;
-	/** Rader hoppet over fordi de er interne overføringer. */
+	/** Rader hoppet over fordi begge bein av en overføring finnes i canonical. */
 	skippedInternalTransfers: number;
+	/**
+	 * Rader hoppet over fordi TEKSTEN peker på en overføring.
+	 *
+	 * Fanger de **ettbeinte**: brukeren overfører fra lønnskontoer som ikke synkes, så bare
+	 * innskuddet finnes hos oss og den parvise matchingen kan ikke se det. Er tallet 0 mens
+	 * runde beløp fortsatt står i tabellen, er ordlista i `TRANSFER_TEXT_TERMS` feil.
+	 */
+	skippedTransferText: number;
 	pairs: { out: number; in: number };
 	doubleCounted: { spend: number; income: number };
 	/** Reservasjoner uten en ledig bokført motpart — ekte ubokførte, eller endret beløp. */
@@ -132,7 +141,11 @@ export async function deactivateSupersededReservations(
 			merchantKey: canonicalBankTransactions.merchantKey,
 			// **Statusen leses eksplisitt, ikke utledet av rangen.** `bookingStatusRank` gir 0
 			// for manglende status, så `rank < topRank` gjorde «ukjent» til «reservasjon».
-			bookingStatus: canonicalBankTransactions.latestBookingStatus
+			bookingStatus: canonicalBankTransactions.latestBookingStatus,
+			// Til tekstbasert overføringsgjenkjenning. `typeText` er SB1s `category`, og ofte det
+			// eneste stedet ordet «overføring» står.
+			description: canonicalBankTransactions.descriptionDisplay,
+			typeText: canonicalBankTransactions.typeText
 		})
 		.from(canonicalBankTransactions)
 		.where(
@@ -157,12 +170,20 @@ export async function deactivateSupersededReservations(
 
 	let skippedUnknownStatus = 0;
 	let skippedInternalTransfers = 0;
+	let skippedTransferText = 0;
 
 	const candidates: ReservationCandidate[] = rows.map((row) => {
 		const status = normalizeStatus(row.bookingStatus);
-		const internalTransfer = transfers.internalIds.has(row.id);
+		const pairedTransfer = transfers.internalIds.has(row.id);
+		// **To uavhengige signaler, og det svakere er nødvendig.** Den parvise matchingen er en
+		// observasjon (begge bein finnes) og treffer ikke overføringer fra kontoer vi ikke
+		// synker. Tekstlesingen fanger dem, og de telles hver for seg så det er synlig hvilken
+		// som gjorde jobben.
+		const textTransfer = looksLikeTransferText(row);
+		const internalTransfer = pairedTransfer || textTransfer;
 		if (status === 'unknown') skippedUnknownStatus += 1;
-		if (internalTransfer) skippedInternalTransfers += 1;
+		if (pairedTransfer) skippedInternalTransfers += 1;
+		if (textTransfer && !pairedTransfer) skippedTransferText += 1;
 		return {
 			id: row.id,
 			accountId: row.accountId,
@@ -220,6 +241,7 @@ export async function deactivateSupersededReservations(
 		reservations: candidates.filter((c) => c.status === 'pending' && !c.internalTransfer).length,
 		skippedUnknownStatus,
 		skippedInternalTransfers,
+		skippedTransferText,
 		pairs: {
 			out: matches.filter((m) => m.direction === 'out').length,
 			in: matches.filter((m) => m.direction === 'in').length
