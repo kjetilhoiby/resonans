@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { sensorEvents, canonicalWorkouts, workoutNotifications } from '$lib/db/schema';
-import { and, eq, gte, lt, inArray } from 'drizzle-orm';
+import { sensorEvents } from '$lib/db/schema';
+import { and, eq, gte, lt } from 'drizzle-orm';
 import { requireAdmin } from '$lib/server/admin-auth';
-import { aggregatePeriodsFrom } from '$lib/server/integrations/aggregation';
+import { removeWorkouts } from '$lib/server/workouts/workout-cleanup';
 import {
 	looksMislabelled,
 	planRemoval,
@@ -109,68 +109,10 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 		});
 	}
 
-	const eventIds = candidates.map((c) => c.eventId);
+	// Kjeden er delt med Ekko-endepunktet (`/api/apps/workouts/[sessionId]`). To
+	// implementasjoner av «rydd etter en økt» ville drevet fra hverandre, og den ene ville
+	// glemt et lag — som er nøyaktig det `cleanup-walking` gjorde.
+	const result = await removeWorkouts(userId, candidates);
 
-	// 1. Projeksjonen først. `evidence` peker på kilderadene, så den finnes bare så
-	//    lenge de gjør — motsatt rekkefølge kunne etterlatt en canonical-rad som
-	//    ingen lenger kan spore tilbake til noe.
-	//
-	//    Matchingen skjer i JS framfor i SQL: `evidence` er en jsonb-array, og en
-	//    `EXISTS`-spørring over den måtte bygget id-lista inn i teksten. Vinduet er
-	//    én dag, så det er noen få rader å filtrere.
-	const canonicalRows = await db
-		.select({ id: canonicalWorkouts.id, evidence: canonicalWorkouts.evidence })
-		.from(canonicalWorkouts)
-		.where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				gte(canonicalWorkouts.startTime, from),
-				lt(canonicalWorkouts.startTime, to)
-			)
-		);
-	const eventIdSet = new Set(eventIds);
-	const canonicalIds = canonicalRows
-		.filter((row) => (row.evidence ?? []).some((ev) => eventIdSet.has(ev.eventId)))
-		.map((row) => row.id);
-	const canonicalDeleted = canonicalIds.length
-		? await db
-				.delete(canonicalWorkouts)
-				.where(and(eq(canonicalWorkouts.userId, userId), inArray(canonicalWorkouts.id, canonicalIds)))
-				.returning({ id: canonicalWorkouts.id })
-		: [];
-
-	// 2. Varselbokføringen. Står den igjen, blokkerer den varsel om en EKTE økt
-	//    som senere havner i samme klynge.
-	const notificationsDeleted = await db
-		.delete(workoutNotifications)
-		.where(
-			and(
-				eq(workoutNotifications.userId, userId),
-				inArray(workoutNotifications.sensorEventId, eventIds)
-			)
-		)
-		.returning({ id: workoutNotifications.id });
-
-	// 3. Kilderadene.
-	const eventsDeleted = await db
-		.delete(sensorEvents)
-		.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.id, eventIds)))
-		.returning({ id: sensorEvents.id });
-
-	// 4. Aggregatene sist, når det ikke er mer å lese. Rekorder, VO2max, EF og
-	//    formkurven regnes fra canonical ved lesing og selvheler herfra.
-	await aggregatePeriodsFrom(userId, plan.reaggregateFrom);
-
-	return json({
-		dryRun: false,
-		date,
-		sport,
-		deleted: {
-			sensorEvents: eventsDeleted.length,
-			canonicalWorkouts: canonicalDeleted.length,
-			workoutNotifications: notificationsDeleted.length
-		},
-		reaggregatedFrom: plan.reaggregateFrom,
-		notCleaned: plan.notCleaned
-	});
+	return json({ dryRun: false, date, sport, ...result });
 };
