@@ -259,15 +259,25 @@ export function isProfileDisabled(envValue: string | null | undefined, profile: 
 }
 
 /**
- * Mint-ratelimit: 30 per bruker per rullende døgn.
+ * Mint-ratelimit: 20 per bruker per rullende TIME.
  *
- * Dimensjonert fra briefen: en 3-timers økt med planlagt rotasjon minter ~6
- * tokens, så 30 dekker flere lange økter samme dag med god margin. Grensa
- * finnes ikke for normal bruk, men for en klient i reconnect-sløyfe — den skal
- * stoppes av oss med en `retryAfter`, ikke av Googles kvote uten forklaring.
+ * **Vakten finnes for å stoppe en klient i loop, ikke for å budsjettere bruk.** Google har
+ * ingen dagsgrense på utstedte tokens; kostnaden ligger i Live-BRUKEN (lydminutter), og den
+ * er bundet av hvor lenge man faktisk snakker — ikke av hvor mange tokens som ble mintet.
+ * Antall mint er derfor en dårlig proxy for kostnad, og en god proxy for «noe kjører løpsk».
+ *
+ * **Vinduet var et døgn fram til 17. august 2026, og det var feil form.** En loop gjør 18
+ * mint i 20 minutter (målt, 16. august); et døgnvindu fanger den, men straffer deretter en
+ * hel dag. I praksis: kvota var tom kl. 08:47, og fortsatt tom kl. 20:46 — på grunn av gårsdagens
+ * kveld. En testdag ble spist av en feil som alt var rettet. En rullende time fanger loopen
+ * **raskere** (20 minutter mot 24 timer) og er usynlig for normal bruk.
+ *
+ * Dimensjonering etter at klienten gjenbruker tokenet ved gjenopptakelse: én økt ≈ 1 mint,
+ * en 3-timers tur ≈ 6 med planlagt rotasjon. 20 i timen er altså rikelig for en testdag med
+ * gjentatte økter, og trippes bare av noe som er i stykker.
  */
-export const MINT_RATE_LIMIT_PER_DAY = 30;
-export const MINT_RATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const MINT_RATE_LIMIT_PER_HOUR = 20;
+export const MINT_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 export interface MintRateDecision {
 	allowed: boolean;
@@ -290,7 +300,7 @@ export interface MintRateDecision {
 export function evaluateMintRateLimit(
 	previousMints: Date[],
 	now: Date,
-	limit: number = MINT_RATE_LIMIT_PER_DAY
+	limit: number = MINT_RATE_LIMIT_PER_HOUR
 ): MintRateDecision {
 	const windowStart = now.getTime() - MINT_RATE_WINDOW_MS;
 	const inWindow = previousMints

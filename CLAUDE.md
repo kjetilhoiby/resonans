@@ -365,7 +365,12 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   profil → `voice-test`, som svarer byte-identisk med tida før profilene fantes; bare
   `assistant`/`coach` får `profile`-ekko, `capabilities` og `persona` i svaret. Kill
   switch per profil: `GEMINI_LIVE_DISABLED_PROFILES` → 403 `profile_disabled`. Ratelimit
-  30 mint/døgn per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  20 mint per rullende TIME per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  **Vinduet er en time, ikke et døgn, og det er en rettelse fra 17. august 2026:** vakten skal
+  stoppe en klient i loop (18 mint i 20 minutter, målt), ikke budsjettere bruk — Google har ingen
+  dagsgrense på utstedte tokens, og kostnaden ligger i lydminutter. Et døgnvindu fanget loopen og
+  straffet deretter et helt døgn: kvota var tom kl. 20:46 på grunn av kveldens loop dagen før,
+  altså av en feil som alt var rettet. En time fanger loopen raskere og er usynlig for normal bruk.
   Endrer du et verktøyskjema inkompatibelt, bump `TOOLSET_VERSION`.
 - **Verdilistene i et verktøyskjema er en kontrakt mot appens parser, og de må stemme.**
   `startWorkout.type` listet `løp|sykkel|gåtur|ski|tredemølle|yoga` mens Ekko kjente
