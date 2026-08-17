@@ -1,7 +1,7 @@
 # Livsløp: måle at forrige status forsvinner
 
 Dato: 2026-08-12
-Status: pågår — måling bygget, fix ikke bygget
+Status: pågår — målt 2026-08-16, porten var feil konstruert
 
 ## Kontekst
 
@@ -123,9 +123,88 @@ Fixen bygges ikke før punkt 1 er bekreftet. Formen den vil ta: en forsvunnet ca
 med en beløpslik etterfølger settes `is_active = false` — **aldri slettet**, av samme grunn
 som ellers i dette domenet.
 
+## Målt i prod 2026-08-16, vindu 90 dager
+
+| Lager | Rader | Forbruk |
+|-------|------:|--------:|
+| `sensor_events` | 925 | 655 430 kr |
+| `canonical_bank_transactions` | 1 125 | 936 489 kr |
+| `categorized_events` | 295 | 215 549 kr |
+
+Statuser: BOOKED 4 485 versjoner, PENDING 1 165. Ingen utenfor rank-mappingen.
+Multiplisitet: 1 123 bøtter på 1, én på 2, én på 3 (60 kr underrapportert).
+Statusdrift: 34 par, 30 av dem med **eksakt 0 %** beløpsavvik. 109 foreldreløse
+reservasjoner, 97 830 kr.
+Livsløp: **5 650 rader, alle med `seen_count` 1.**
+
+## Porten var feil konstruert, og konklusjonen den ga var gal
+
+Kortet sa: «ingen rad er sett mer enn én gang → SB1 minter en ny ID ved hver henting → nøkle
+rå-strømmen på attributter uten ID-en». Det ville vært bortkastet arbeid.
+
+**Årsaken er vår egen synk, ikke banken.** `sparebank1-sync.ts` har
+`const since = options.fromDate ?? sensor.lastSync`, altså et **inkrementelt** kall som bare
+ber om det banken har endret siden sist. En uendret rad kommer derfor aldri tilbake, treffer
+aldri `ON CONFLICT`, og `seen_count` **kan ikke** vokse — uansett hvor stabil ID-en er. Porten
+målte henterutinen vår.
+
+**Radtallet avkrefter dessuten ID-churn direkte.** Med synk hvert 5. minutt og sju dagers
+vindu ville en ny ID per henting gitt ~2 000 versjoner per transaksjon, altså millioner av
+rader. Målt: 5 650 rå mot 1 125 canonical, **~5 versjoner per kjøp**. Banken sender en håndfull
+versjoner, ikke én per henting.
+
+Hypotesen er altså **uavklart, ikke avkreftet** — og den er utestbar med dagens henterutine:
+et fravær og en uendret rad ser identiske ut når man bare spør om det som er endret.
+Forsvinning krever en **fullstendig vindusavstemming** som ignorerer `lastSync` og henter
+siste N dager i sin helhet. Den er ikke bygget.
+
+Lærdommen er den samme som med drift-joinen: **et instrument kan bekrefte en konklusjon det
+ikke har grunnlag for.** Begge gangene fordi målingen hadde en betingelse jeg ikke tenkte på
+som en betingelse — `f.mk = s.mk` der, `lastSync` her.
+
+## Tre feil i diagnosen, rettet samtidig
+
+1. **Overføringstellingen var mange-til-mange.** SQL self-joinen ga 950 050 kr i «interne
+   overføringer» mot 936 489 kr totalt forbruk — mer enn alt som fantes — og kortets nettotall
+   ble **−4 581 kr/mnd**, et negativt forbruk. Tre uttak på 500 og tre innskudd på 500 samme
+   dag ga ni par. Nå brukes `readTransactions`, altså **samme én-til-én-matching flaten
+   bruker**. At diagnosen hadde sin egen variant var nøyaktig feilen fase 1 gikk løs på,
+   gjentatt i verktøyet som skulle avdekke den. Et negativt nettoforbruk flagges nå som umulig
+   framfor å vises som et tall.
+2. **`sensor_events` kom inn LAVERE enn canonical** (0,7×), og kortet sa «det er forventet».
+   Teksten godkjente begge retninger, og dermed også den umulige: rå-strømmen kan ikke ha
+   færre kroner enn den deduperte utgaven av seg selv. Nå sier kortet fra under 0,95×. Årsaken
+   er uavklart — enten mangler `sensor_events` rader canonical har, eller de to vinduene måler
+   ulike datofelt (`timestamp` mot `canonical_date`).
+3. **`disappeared`/`superseded` rendres ikke lenger.** De hentes fortsatt, men kan ikke tolkes
+   uten avstemmingen, og å vise dem ville invitert til samme feilslutning.
+
+## Det målingen faktisk ga: multiplisitet er et ikke-problem
+
+«Sju øl samme sted samme kveld» var halve begrunnelsen for fase 3. Målt: **2 av 1 125 bøtter**
+hadde ekte gjentak, 60 kr over 90 dager. Det er avklart og kan legges bort.
+
+**Og det låser opp den trygge regelen.** Faren ved å matche reservasjon mot bokført på beløp
+uten beskrivelse var å slå sammen to ekte kjøp. Hyppigheten er nå målt til 0,2 % av bøttene, og
+PENDING-mot-BOOKED er dessuten en tryggere par-form enn to vilkårlige rader: to reelle kjøp gir
+to BOOKED, ikke én PENDING og én BOOKED.
+
+Derfor er `orphanMatches` lagt til — foreldreløs reservasjon mot bokført rad på samme konto og
+**eksakt samme beløp, uten `merchant_key`-kravet**. Det er nettopp de parene drift-målingen
+aldri kunne se, og prod viste tre av dem i ett enkelt skjermbilde av dagligvarer. 109 foreldreløse
+reservasjoner à 97 830 kr over 90 dager er ~10 % av alt «forbruk» i vinduet.
+
+## Neste steg
+
+1. Kjør diagnosen igjen og les **«Reservasjon mot bokført»**. Antall par og kroner er størrelsen
+   på feilen; raden «Beskrivelse: endret» er kroner den forrige målingen var blind for.
+2. Er tallet stort, bygg fixen: `is_active = false` på den foreldreløse reservasjonen når en
+   bokført rad med eksakt samme beløp finnes på samme konto innen ±3 dager. **Aldri slett.**
+3. Vindusavstemmingen (full henting uten `lastSync`) er en separat oppgave, og bare nødvendig
+   hvis punkt 2 ikke dekker nok. Brukerens modell er verdt å teste, men den er ikke lenger
+   forutsetningen for å fikse dette.
+
 ## Verifisering
 
-`npm run check` (0 feil) og `npm test` (3 345 tester — ingen nye, endringen er ren SQL og
-visning uten domenelogikk å teste).
-
-**Ingen måling gjort ennå.** Dokumentet beskriver instrumentet, ikke funnet.
+`npm run check` (0 feil) og `npm test` (3 416 tester). Ingen nye tester — endringene er SQL og
+visning; testene kommer med fixen.
