@@ -59,6 +59,11 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// skal bort, og en dedupliserende leser skjuler nettopp hvor mange det er.
 			// Den rydder canonical og aggregatene selv — se filhodet der.
 			'routes/api/helse/trening/slett-okt/+server.ts',
+			// Selve rydde-kjeden bak «rett og slett» i Ekko og slettestien over. Samme
+			// begrunnelse: den slår opp Ekkos EGNE rader på `data.sessionId` for å rette
+			// eller fjerne dem, og en dedupliserende leser gir klyngen — der Withings' og
+			// Dropbox' beskrivelse av samme tur ikke er våre å røre herfra.
+			'lib/server/workouts/workout-cleanup.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så
 			// styrkeøkter må leses rått. Utholdenhet leses allerede fra canonical.
 			'lib/server/tracks/repository.ts',

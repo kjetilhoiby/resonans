@@ -823,6 +823,32 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
 
+### En økt er rettet eller fjernet — også da én vei inn
+
+`$lib/server/workouts/workout-cleanup.ts`. Se
+`docs/changelog/2026-08-17-rett-og-slett.md` og kontrakten i `docs/ekko-rett-og-slett.md`.
+
+- **Retter eller sletter du en `workout`-hendelse, går du gjennom `correctWorkoutSport`
+  eller `removeWorkouts`.** En `DELETE FROM sensor_events` er ikke nok: rekorden,
+  effort-skåren og formkurven leser fra `canonical_workouts` og `sensor_aggregates`, som
+  står igjen og fortsetter å lyve. `POST /api/admin/cleanup-walking` gjør nettopp det og er
+  gjeld.
+- **Retting er hovedveien, sletting den smale.** Felttest 17. august 2026: en elsykkeltur
+  ble lagret som løping og ga «5 km i 12:25» — tolv sekunder under verdensrekorden — i
+  Ekko, Resonans og Strava. Men turen skjedde, og 8,3 km elsykkel er ekte data. Canonical
+  slettes derfor ikke ved en retting; den reprojiseres, så effort får den nye idrettens
+  faktor og familien følger med.
+- **`sportType` normaliseres før validering** i `PATCH /api/apps/workouts/[sessionId]`.
+  Ekko sender sin egen `eBiking`, og uten `normalizeSportType` ble rettingen til elsykkel
+  avvist som ukjent idrett.
+- **Bare rader Ekko selv skrev** (`data.sessionId`). Klokka og Dropbox står igjen — de er
+  ikke våre å rette herfra — og svaret sier `matched: 0` framfor å late som noe ble gjort.
+  Endepunktet svarer 404 der, og appen leser det som «ingen rader», ikke som en feil.
+- **Autohaking og målprogresjon rulles ikke tilbake**, og Strava eier sin egen kopi. Begge
+  står i `notCleaned`, og Ekko viser dem: en konsekvens skal sies, ikke oppdages.
+- Vakten mot rå sensorlesing dekker modulen med begrunnelse — den MÅ se hver enkelt
+  kilderad, siden det er radene som skal bort.
+
 ### Krydderet telles per aktivitet, aldri på tvers
 
 Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
