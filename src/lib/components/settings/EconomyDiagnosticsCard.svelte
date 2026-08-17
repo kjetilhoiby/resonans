@@ -72,6 +72,8 @@
 			pairs: number;
 			nok: number;
 		}>;
+		orphansUnmatched?: number;
+		doubleCountedNok?: number;
 	};
 
 	let days = $state('365');
@@ -108,7 +110,13 @@
 		return `sensor_events er ${ratio.toFixed(1)}× canonical. Det er forventet — den rå strømmen beholder hver versjon av hver transaksjon. Avviket er bare et problem hvis en flate leser der.`;
 	});
 
-	/** Månedsforbruk fra canonical. Skal lande rundt 42 000, ikke 132 000. */
+	/**
+	 * Månedsforbruk fra canonical, brutto og netto.
+	 *
+	 * Ingen forventet verdi er hardkodet her, med vilje: forrige utgave sa «skal lande rundt
+	 * 42 000», et tall som selv kom fra en overtelt overføringssum. Et forventet tall uten
+	 * måling bak seg blir en påstand kortet ikke kan innfri.
+	 */
 	const monthlySpend = $derived.by(() => {
 		if (!result) return null;
 		const canonical = result.stores.find((s) => s.store === 'canonical_bank_transactions');
@@ -359,9 +367,18 @@
 			<h3>Reservasjon mot bokført</h3>
 			{#if orphanTotal.pairs > 0}
 				<p class="summary">
-					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner har en bokført rad med
-					samme beløp på samme konto — {nok(orphanTotal.nok)} som telles to ganger.
+					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner er parret én-til-én med
+					en bokført rad med samme beløp på samme konto — {nok(orphanTotal.nok)} som telles to
+					ganger i dag.
 				</p>
+				{#if monthlySpend}
+					<p class="meta">
+						Det er {nok(orphanTotal.nok / (result.window.days / 30.4))}/mnd av et nettoforbruk på
+						{nok(monthlySpend.net)}/mnd — altså {Math.round(
+							(orphanTotal.nok / (result.stores.find((x) => x.store === 'canonical_bank_transactions')?.spendNok || 1)) * 100
+						)} % av alt forbruk i vinduet.
+					</p>
+				{/if}
 				<div class="table-scroll">
 					<table>
 						<thead>
@@ -391,10 +408,21 @@
 					</p>
 				{/if}
 				<p class="meta">
-					Matchet på beløp og konto, uten beskrivelse. Det er forsvarlig fordi
-					multiplisitetsmålingen over nå viser hvor sjeldne ekte gjentatte kjøp er — og fordi
-					to reelle kjøp gir to bokførte rader, ikke én reservasjon og én bokført.
+					Matchet på <strong>eksakt beløp og konto, uten beskrivelse</strong>, og
+					<strong>én-til-én</strong>: hver bokførte rad kan absorbere høyst én reservasjon, så
+					tre reservasjoner på samme beløp kan ikke alle peke på samme kjøp. Forsvarlig fordi
+					ekte gjentatte kjøp nå er målt til 2 av {(
+						result.multiplicity.reduce((sum, m) => sum + m.buckets, 0)
+					).toLocaleString('nb-NO')} bøtter — og fordi to reelle kjøp gir to bokførte rader, ikke
+					én reservasjon og én bokført.
 				</p>
+				{#if result.orphansUnmatched !== undefined && result.orphansUnmatched > 0}
+					<p class="meta">
+						{result.orphansUnmatched.toLocaleString('nb-NO')} reservasjoner fant ingen ledig
+						bokført motpart. De er enten ekte ubokførte, eller beløpet endret seg mellom
+						versjonene. Restposten står her framfor å forsvinne.
+					</p>
+				{/if}
 			{:else}
 				<p class="meta">
 					Ingen foreldreløs reservasjon fant en bokført rad med samme beløp. Da er

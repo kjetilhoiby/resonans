@@ -823,32 +823,6 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
 
-### En økt er rettet eller fjernet — også da én vei inn
-
-`$lib/server/workouts/workout-cleanup.ts`. Se
-`docs/changelog/2026-08-17-rett-og-slett.md` og kontrakten i `docs/ekko-rett-og-slett.md`.
-
-- **Retter eller sletter du en `workout`-hendelse, går du gjennom `correctWorkoutSport`
-  eller `removeWorkouts`.** En `DELETE FROM sensor_events` er ikke nok: rekorden,
-  effort-skåren og formkurven leser fra `canonical_workouts` og `sensor_aggregates`, som
-  står igjen og fortsetter å lyve. `POST /api/admin/cleanup-walking` gjør nettopp det og er
-  gjeld.
-- **Retting er hovedveien, sletting den smale.** Felttest 17. august 2026: en elsykkeltur
-  ble lagret som løping og ga «5 km i 12:25» — tolv sekunder under verdensrekorden — i
-  Ekko, Resonans og Strava. Men turen skjedde, og 8,3 km elsykkel er ekte data. Canonical
-  slettes derfor ikke ved en retting; den reprojiseres, så effort får den nye idrettens
-  faktor og familien følger med.
-- **`sportType` normaliseres før validering** i `PATCH /api/apps/workouts/[sessionId]`.
-  Ekko sender sin egen `eBiking`, og uten `normalizeSportType` ble rettingen til elsykkel
-  avvist som ukjent idrett.
-- **Bare rader Ekko selv skrev** (`data.sessionId`). Klokka og Dropbox står igjen — de er
-  ikke våre å rette herfra — og svaret sier `matched: 0` framfor å late som noe ble gjort.
-  Endepunktet svarer 404 der, og appen leser det som «ingen rader», ikke som en feil.
-- **Autohaking og målprogresjon rulles ikke tilbake**, og Strava eier sin egen kopi. Begge
-  står i `notCleaned`, og Ekko viser dem: en konsekvens skal sies, ikke oppdages.
-- Vakten mot rå sensorlesing dekker modulen med begrunnelse — den MÅ se hver enkelt
-  kilderad, siden det er radene som skal bort.
-
 ### Krydderet telles per aktivitet, aldri på tvers
 
 Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
@@ -1259,8 +1233,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   ulike steder» og sluttet å åpne flaten. `bank_transaction` og `bank_balance` er nå vaktet
   i `sensor-event-access.ts`.
 - **Interne overføringer MERKES, de fjernes ikke.** 68 % av «forbruket» var penger flyttet
-  mellom egne kontoer (1 084 033 av 1 583 723 kr) — reelt forbruk er ~42 000 kr/mnd, ikke
-  132 000. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
+  mellom egne kontoer. **NB: «1 084 033 av 1 583 723 kr» og «reelt forbruk ~42 000 kr/mnd» var
+  overtelt** — den første målingen brukte en mange-til-mange SQL-join, der tre uttak på 500 og
+  tre innskudd på 500 samme dag ga ni par. Med korrekt én-til-én-matching er nettoforbruket
+  målt til **~188 000 kr/mnd** (90 dager, august 2026), og av det er ~52 000 kr/mnd
+  dobbelttalte reservasjoner. Retningen står: overføringer skal ut av forbruket. Størrelsen
+  gjorde ikke. Se `docs/changelog/2026-08-12-livslop-forsvinning.md`. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
   overføring, og det er signalet en spareflate trenger. Samme rader, to spørsmål.
   `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
 - **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
@@ -1293,10 +1271,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   så toppene kan se uendret ut mens gulvet synker. Trenden regnes på laveste saldo per
   lønnsperiode, med minste kvadrater (ikke «siste minus første»: én avvikende måned ville
   avgjort svaret). Inneværende periode holdes utenfor; bunnen der kan fortsatt bli lavere.
-- **Enheten er måneders dekning**, og den forutsetter fase 2: med overføringene inne ville
-  forbruket vært 132 000 kr/mnd mot reelle ~42 000, altså en tredjedel av dekningen. Et tall
-  som er 3× feil i pessimistisk retning er verre enn ingen tall. `runwayMonths` returnerer
-  **null** uten forbrukstall.
+- **Enheten er måneders dekning**, og den forutsetter fase 2: interne overføringer må være ute,
+  ellers blåses forbruket opp og dekningen krymper tilsvarende. `runwayMonths` returnerer
+  **null** uten forbrukstall framfor å dele på et gjettet tall.
+  **Ikke skriv et forventet kronetall her.** Det sto «reelle ~42 000» en periode, arvet fra en
+  overtelt overføringssum, og ble brukt til å kalle flatens ~180 000 for en bug. Den var riktig.
+  Et avledet tall arver feilen i grunnlaget uten å se usikkert ut.
 - **Frekvens og posisjon i lønnsperioden skiller støtdemper fra kassekreditt**, og det er
   hele diagnosen. Ett uttak på 12 000 og tolv på 1 000 gir samme nedgang og krever motsatt
   handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
