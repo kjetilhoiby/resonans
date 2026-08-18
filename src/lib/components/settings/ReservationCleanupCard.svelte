@@ -47,19 +47,20 @@
 		}>;
 		residual: {
 			pairs: number;
+			nok: number;
 			byReason: Array<{ reason: SkipReason; pairs: number; nok: number }>;
-			samples: Array<{
+			byStatusPair: Array<{ statusPair: string; pairs: number; nok: number }>;
+			truncated: boolean;
+			suspects: Array<{
 				amount: number;
 				amountDeltaPct: number;
 				deltaDays: number;
 				prefixDrift: boolean;
+				sameDescription: boolean;
+				statusPair: string;
 				reason: SkipReason;
-				aDescription: string;
-				bDescription: string;
-				aDate: string;
-				bDate: string;
-				aStatus: string;
-				bStatus: string;
+				a: { id: string; date: string; description: string; status: string };
+				b: { id: string; date: string; description: string; status: string };
 			}>;
 		};
 	};
@@ -282,17 +283,17 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each result.residual.samples as row, i (`${row.aDate}-${row.bDate}-${row.amount}-${i}`)}
+						{#each result.residual.suspects as row (`${row.a.id}-${row.b.id}`)}
 							<tr>
 								<td class="num">{nok(row.amount)}</td>
 								<td class="wrap"
-									>{row.aDescription || '—'}<br /><span class="sub"
-										>{row.aDate} · {row.aStatus}</span
+									>{row.a.description || '—'}<br /><span class="sub"
+										>{row.a.date} · {row.a.status}</span
 									></td
 								>
 								<td class="wrap"
-									>{row.bDescription || '—'}<br /><span class="sub"
-										>{row.bDate} · {row.bStatus}</span
+									>{row.b.description || '—'}<br /><span class="sub"
+										>{row.b.date} · {row.b.status}</span
 									></td
 								>
 								<!-- Avviket i prosent er det som avgjør «ulikt belop», så det skal stå synlig. -->

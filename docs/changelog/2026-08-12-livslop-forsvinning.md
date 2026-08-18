@@ -592,3 +592,63 @@ en beskjed uten innhold.
 Restposten måles på det som står **igjen etter denne kjøringen** — de valgte parene trekkes fra
 først. Ellers ville hvert par ryddingen fanget dukket opp som `skulle-blitt-fanget`, og tallet
 hadde svart på et annet spørsmål enn brukerens.
+
+
+## Diagnosen ble et endepunkt, ikke et håndarbeid
+
+> «Det hadde vært sykt praktisk om du kunne bygget et åpent endepunkt du kunne teste mot i stedet
+> for at jeg har drevet periodisk håndarbeid i et par døgn.»
+
+Riktig, og det var den reelle kostnaden i dette arbeidet: sju målinger rettet sju feil, og hver
+runde krevde at brukeren trykket en knapp i nettleseren, kopierte JSON og limte det inn. Hypotesen
+kunne ikke testes uten et menneske i løkka.
+
+### Tilgangen fantes allerede
+
+`x-resonans-user-id` er nok i prod så lenge `RESONANS_HEADER_SECRET` ikke er satt — det er den
+bevisste fail-open-en som er dokumentert i `$lib/server/user-header-auth.ts`. Den er altså ikke et
+nytt endepunkt å bygge; den er en dør som står åpen. **Konsekvensen skal sies rett ut: den som
+kjenner bruker-ID-en kan lese denne økonomien.** ID-en ligger i klartekst i `playwright.config.ts`,
+altså i et offentlig repo. Skal det lukkes, er `RESONANS_HEADER_SECRET` bryteren.
+
+Et *virkelig* åpent endepunkt ble ikke bygget, og det er ikke et hensyn til meg: dette er
+banktransaksjoner, og en URL uten lås er en URL som blir indeksert.
+
+### Det som manglet var en LESEvei
+
+Eneste vei til restposten var `POST /api/admin/economics/deaktiver-reservasjoner?dryRun=true` —
+altså en POST mot en SKRIVEjobb. Det er feil verktøy å polle. `GET
+/api/admin/economics/duplikater` er ren lesing, og tar tersklene som parametere:
+
+| Parameter | Standard | Hva den er til |
+|---|---|---|
+| `days` | 90 | vindu |
+| `maxDeltaDays` | 3 | datodrift mellom to versjoner |
+| `tolerancePct` | 3 | beløpsavvik som fortsatt er samme kjøp |
+| `requireDescriptionMatch` | `true` | **måler hva beskrivelseskravet utelater** |
+| `limit` | 100 | `truncated` sier om lista er kappet |
+
+Det gjør hypotesetesting til **et kall framfor en deploy**. «Hvor mange par finner vi med 5 %
+toleranse?» var før en kodeendring, en merge og en melding til brukeren.
+
+`requireDescriptionMatch=false` gir falske positive **med vilje** — to ekte Kiwi-kjøp på nesten
+samme beløp dukker opp. Poenget er å kunne se om kravet er en riktig grense eller en blindsone, og
+det er nettopp en uutforsket grense av den typen som gjorde at drift-målingen ikke kunne se
+valutatilfellene.
+
+### Én laster, to konsumenter
+
+`loadDuplicateCandidates` eier statusnormaliseringen, overføringsvakten og vindusberegningen; både
+ryddingen og diagnosen leser gjennom den. Det er ikke plumbing — det er kalibrering, og to kopier
+ville svart på litt ulike spørsmål uten at noe sa fra. Samme regel som `loadEnergyContext` i
+ernæring og `readTransactions` i økonomi.
+
+Ugyldige parameterverdier gir **400, ikke standardverdien**. En stille default her er verre enn et
+avslag: svaret ville sett riktig ut mens parameteren man trodde man varierte ikke hadde virkning,
+og da måler man det samme to ganger og tror det er et funn.
+
+### `byStatusPair`: hva som STOPPER paret er ikke hva paret ER
+
+`byReason` sier hvorfor ryddingen hoppet over; `byStatusPair` sier hvilken mekanisme det er.
+`pending+booked` er livsløpet ryddingen er bygget for. `booked+booked` er noe annet — samme kjøp
+bokført to ganger. Uten den andre inndelingen ser det ut som en terskel som er feil satt.
