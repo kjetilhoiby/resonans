@@ -151,6 +151,10 @@ async function checkCronExecutionHealth(): Promise<CronMiss[]> {
 		'/api/cron/background-jobs': 60 * 60_000,  // */5 → 60 min buffer
 		'/api/cron/sparebank1-sync': 14 * 3600_000, // hver 6. time → 14t buffer
 		'/api/cron/aggregate': 28 * 3600_000,      // daglig (03:00 UTC) → 28t buffer
+		// Daglig (04:10 UTC) → 28t buffer. Overvåkes fordi den er ENESTE grunn til at
+		// dobbelttalte kjøp forsvinner fra historikken: stopper den stille, drifter
+		// forbrukstallene oppover igjen uten at noe sier fra.
+		'/api/cron/economics-dedup': 28 * 3600_000,
 		'/api/cron/dropbox-sync': 60 * 60_000,     // */5 → 60 min buffer
 	};
 

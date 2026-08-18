@@ -72,6 +72,15 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/economics-dedup',
+		// 04:10 UTC = 06:10 Oslo. Etter SB1-synken kl. 00/06 og før aggregeringen kl. 03,
+		// altså på en dag der nattens transaksjoner er inne.
+		schedule: '10 4 * * *',
+		description:
+			'Deaktiverer samme kjøp bokført to ganger (valuta-/datoprefiks). Automatisk — tallene skal stemme uten at noen trykker.',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/withings-sync',
 		schedule: '*/5 5-22 * * *', // hvert 5. minutt mellom 05:00–22:00 UTC
 		description: 'Withings sensordata synk (alle brukere)',
