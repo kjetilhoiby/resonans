@@ -8,6 +8,7 @@ import {
 	type EconomicsTransaction
 } from '$lib/server/economics/transactions';
 import { detectRecurring } from '$lib/server/integrations/transaction-categories';
+import { buildPaydayComparison } from '$lib/domain/economics/payday-comparison';
 
 async function measureStep<T>(label: string, userId: string, op: () => Promise<T>): Promise<T> {
 	const t0 = performance.now();
@@ -68,6 +69,18 @@ export type PaydaySpend = {
 	prevGrocerySpendPerDay: number | null;
 	comparisonPeriodsUsed: number;
 	averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
+	/**
+	 * Hvor langt snittkurven går = den KORTESTE tidligere perioden.
+	 *
+	 * Kurven kappes der, fordi et snitt over en krympende populasjon kan synke — og en akkumulert
+	 * kurve som synker er en umulighet brukeren ser før vi gjør.
+	 */
+	comparisonDays: number;
+	/**
+	 * Lengste tidligere periode. Er den mye over ~31 dager, ble en lønnsdato ikke kjent igjen og
+	 * to perioder er slått sammen. Rapporteres så kappingen ikke skjuler årsaken.
+	 */
+	longestComparisonPeriodDays: number;
 	transactions: EconomicsTx[];
 	groceryTransactions: EconomicsTx[];
 };
@@ -241,56 +254,22 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		prevGrocerySpendPerDay = prevGrocery / daysSincePayday;
 	}
 
-	// Snittkurve over de fire foregående periodene, akkumulert per dag i perioden.
-	const averageComparisonPoints: Array<{ day: number; total: number; grocery: number }> = [];
-	const previousPeriods = paydayKeys.slice(1, 5);
-
-	if (previousPeriods.length > 0) {
-		const perPeriodSeries = previousPeriods.flatMap((periodStartKey, index) => {
-			const newerBoundaryKey = paydayKeys[index];
-			if (!newerBoundaryKey) return [];
-
-			const periodLengthDays = Math.max(1, daysBetween(periodStartKey, newerBoundaryKey));
-
-			const totalsByDay = new Map<number, { total: number; grocery: number }>();
-			for (const tx of spendOnly) {
-				if (tx.date < periodStartKey || tx.date >= newerBoundaryKey) continue;
-				const dayIndex = daysBetween(periodStartKey, tx.date) + 1;
-				if (dayIndex < 1 || dayIndex > periodLengthDays) continue;
-				const prev = totalsByDay.get(dayIndex) ?? { total: 0, grocery: 0 };
-				prev.total += Math.abs(tx.amount);
-				if (tx.category === GROCERY_CATEGORY) prev.grocery += Math.abs(tx.amount);
-				totalsByDay.set(dayIndex, prev);
-			}
-
-			let cumulativeTotal = 0;
-			let cumulativeGrocery = 0;
-			const series: Array<{ day: number; total: number; grocery: number }> = [];
-			for (let day = 1; day <= periodLengthDays; day += 1) {
-				const dayTotals = totalsByDay.get(day);
-				cumulativeTotal += dayTotals?.total ?? 0;
-				cumulativeGrocery += dayTotals?.grocery ?? 0;
-				series.push({ day, total: cumulativeTotal, grocery: cumulativeGrocery });
-			}
-			return [series];
-		});
-
-		const maxComparisonDays =
-			perPeriodSeries.length > 0 ? Math.max(...perPeriodSeries.map((s) => s.length)) : 0;
-		for (let day = 1; day <= maxComparisonDays; day += 1) {
-			const pointsForDay = perPeriodSeries
-				.map((series) => series.find((point) => point.day === day) ?? null)
-				.filter((point): point is { day: number; total: number; grocery: number } => point !== null);
-
-			if (pointsForDay.length === 0) continue;
-
-			averageComparisonPoints.push({
-				day,
-				total: pointsForDay.reduce((sum, point) => sum + point.total, 0) / pointsForDay.length,
-				grocery: pointsForDay.reduce((sum, point) => sum + point.grocery, 0) / pointsForDay.length
-			});
-		}
-	}
+	// Snittkurve over de fire foregående periodene, akkumulert per dag.
+	//
+	// **Beregningen bor i domenelaget** (`buildPaydayComparison`), med tester. Den lå her inline
+	// fram til 18. august 2026, og den var gal: snittet delte på antallet perioder som ennå hadde
+	// den dagen, altså en KRYMPENDE populasjon. Hver enkelt kurve var monoton, men snittet falt
+	// 53 229 kr mellom dag 29 og 30 i prod idet tre korte perioder tok slutt — en akkumulert kurve
+	// som synker. Se `docs/changelog/2026-08-18-akkumulert-snitt-kunne-synke.md`.
+	const comparison = buildPaydayComparison(
+		spendOnly.map((tx) => ({
+			date: tx.date,
+			amount: tx.amount,
+			isGrocery: tx.category === GROCERY_CATEGORY
+		})),
+		paydayKeys
+	);
+	const averageComparisonPoints = comparison.points;
 
 	const paydaySpend: PaydaySpend = {
 		paydayDate,
@@ -301,7 +280,9 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		grocerySpendPerDay,
 		prevSpendPerDay,
 		prevGrocerySpendPerDay,
-		comparisonPeriodsUsed: previousPeriods.length,
+		comparisonPeriodsUsed: comparison.periodsUsed,
+		comparisonDays: comparison.comparisonDays,
+		longestComparisonPeriodDays: comparison.longestPeriodDays,
 		averageComparisonPoints,
 		transactions: paydayTxList,
 		groceryTransactions: groceryTxList
