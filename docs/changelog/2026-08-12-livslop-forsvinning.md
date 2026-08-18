@@ -776,7 +776,7 @@ Merk at raden ligger blant tre: to identiske `Påmelding …` (24. og 25. juni) 
 (25. juni). Restdiagnosen parer de to identiske (dagsavstand 1), denne motoren parer `Til:`-raden med
 en av dem (samme dag). Én-til-én hindrer at samme rad brukes i begge.
 
-## Åpent spørsmål: 365 dager gir de SAMME 40 parene
+## ~~Åpent spørsmål~~ AVKLART: 365 dager gir de SAMME 40 parene
 
 Vinduet på ett år vurderer 2 117 rader mot 917, og finner **null nye par**. Alle 40 ligger mellom
 3. juni og 13. august 2026.
@@ -794,3 +794,63 @@ feil sju ganger her. **Testen er billig:** finn ut om det finnes `Google Workspa
 
 Konsekvensen hvis (1) er sann: dette vil fortsette å produsere duplikater, og ryddingen må kjøres
 periodisk framfor én gang.
+
+
+## Svaret: SB1 endret oppførsel rundt 23. juni 2026
+
+Brukeren tippet at duplikatene bare finnes juni–august fordi det er da utenlandskjøpene skjedde.
+Plausibelt, og **galt** — målt med `foreignByMonth` over 365 dager:
+
+| Måned | Rader | Utenlandsk valuta | Valutakode-prefiks | …uparet |
+|---|---:|---:|---:|---:|
+| 2025-08 … 2025-12 | 284 | 0 | 0 | 0 |
+| 2026-01 | 230 | 5 | **0** | 0 |
+| 2026-02 | 218 | 5 | **0** | 0 |
+| 2026-03 | 136 | 4 | **0** | 0 |
+| 2026-04 | 202 | **17** | **0** | 0 |
+| 2026-05 | 205 | 9 | **0** | 0 |
+| 2026-06 | 290 | 5 | 3 | 1 |
+| 2026-07 | 350 | 29 | 29 | 7 |
+| 2026-08 | 208 | 13 | 13 | 3 |
+
+**Utenlandskjøpene fantes hele tiden — 40 av dem før juni, 17 i april alene. Ingen av dem hadde
+valutakode i beskrivelsen, og ingen av dem var dobbeltbokført.** Fra juni følger
+`currencyPrefix` `foreignCurrency` nesten én-til-én.
+
+Det første prefiksparet er `DKK DANSK CAMPING UNION` 23. juni. Bruddet er altså skarpt og
+datert: SB1 begynte å skrive den valutaprefiksede varianten som en **egen rad**.
+
+### Hva som gjorde testen mulig
+
+`hasCurrencyCodePrefix` leser signalet av **én** rad. Paringen kan per konstruksjon bare se par,
+så den kunne ikke svare på om det fantes *uparede* utenlandskjøp i april — og det var nettopp
+fraværet av dem som var beviset. Nevneren (`rows`) måtte med av samme grunn: uten den kan «tom
+måned» ikke skilles fra «måned uten utenlandskjøp».
+
+Åttende gang i dette arbeidet at en plausibel forklaring var feil. Denne gangen kostet den
+ingenting, fordi den ble målt før den ble trodd.
+
+### To konsekvenser
+
+**1. Ryddingen må kjøres periodisk.** Dette produserer nye duplikater ved hvert utenlandskjøp.
+En engangsopprydding lar tallet drive fra seg selv igjen.
+
+**2. Den varige fixen ligger i bøttenøkkelen, ikke i ryddingen.** Blir valutaprefikset strippet
+når `merchant_key` beregnes, lander de to variantene i **samme** bøtte og upserten slår dem sammen
+— da oppstår duplikatet aldri.
+
+Det ser ut som en selvmotsigelse mot «ikke bygg en `normalizeTxDescription` som stripper
+valutakoder», og det er det ikke. Den advarselen var mot å bruke stripping til å **matche**
+duplikater, der den dekker tre av fire tilfeller og ser ut som en løsning. Her handler det om
+**forebygging av den systematiske ene**: 33 par per 90 dager mot personnavnets 5, og fra juni
+gjelder det praktisk talt hvert utenlandskjøp. Personnavn-tilfellene ville fortsatt trenge
+ryddingen — men de er sjeldne og holdes alt tilbake som `medium`.
+
+Ikke bygget. Krever en reprojeksjon av `canonical_bank_transactions` og bør veies mot at
+ryddingen alt virker.
+
+### Restpost: 11 uparede prefiksrader
+
+Juni–august har 11 rader med valutakode-prefiks som **ikke** er i et par (1 + 7 + 3). Enten
+mangler partneren (ulik dag eller ulikt beløp, altså utenfor den strenge vakten), eller banken
+skrev bare den ene varianten for de kjøpene. Ikke målt.
