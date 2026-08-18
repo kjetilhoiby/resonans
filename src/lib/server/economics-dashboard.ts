@@ -75,6 +75,14 @@ export type PaydaySpend = {
 	 * Kurven kappes der, fordi et snitt over en krympende populasjon kan synke — og en akkumulert
 	 * kurve som synker er en umulighet brukeren ser før vi gjør.
 	 */
+	/**
+	 * Lønnsdatoer som er ANTATT fordi måneden manglet en rad.
+	 *
+	 * Mars 2026 manglet i prod, og februar→april ble én «periode» på 58 dager. Utfyllingen
+	 * retter kurven, men en antatt dato som ser observert ut er verre enn et hull — derfor
+	 * bæres den til flaten.
+	 */
+	inferredPaydayDates: string[];
 	comparisonDays: number;
 	/**
 	 * Lengste tidligere periode. Er den mye over ~31 dager, ble en lønnsdato ikke kjent igjen og
@@ -281,6 +289,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		prevSpendPerDay,
 		prevGrocerySpendPerDay,
 		comparisonPeriodsUsed: comparison.periodsUsed,
+		inferredPaydayDates: globalPayday?.inferredPaydayDates ?? [],
 		comparisonDays: comparison.comparisonDays,
 		longestComparisonPeriodDays: comparison.longestPeriodDays,
 		averageComparisonPoints,

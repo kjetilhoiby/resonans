@@ -25,6 +25,7 @@
 		paydayDate: string | null; daysSincePayday: number; totalSpend: number; spendPerDay: number;
 		grocerySpend: number; grocerySpendPerDay: number;
 		prevSpendPerDay: number | null; prevGrocerySpendPerDay: number | null; comparisonPeriodsUsed: number;
+		inferredPaydayDates: string[];
 		comparisonDays: number;
 		longestComparisonPeriodDays: number;
 		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;

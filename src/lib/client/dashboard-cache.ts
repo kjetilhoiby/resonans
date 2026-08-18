@@ -49,6 +49,7 @@ export interface EconomicsDashboardData {
 		prevSpendPerDay: number | null;
 		prevGrocerySpendPerDay: number | null;
 		comparisonPeriodsUsed: number;
+		inferredPaydayDates: string[];
 		comparisonDays: number;
 		longestComparisonPeriodDays: number;
 		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
