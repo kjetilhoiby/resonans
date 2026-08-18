@@ -261,3 +261,77 @@ export function summarizeBookedDuplicates(pairs: readonly BookedDuplicatePair[])
 		.map((v) => ({ ...v, nok: Math.round(v.nok) }))
 		.sort((x, y) => y.nok - x.nok);
 }
+
+/**
+ * Bærer raden en valutakode som første ord? **Per rad, uten en partner.**
+ *
+ * Dette er testen som skiller de to forklaringene på at alle duplikatparene ligger etter 3. juni
+ * 2026:
+ *
+ * 1. **Dobbeltbokføringen er ny.** Da finnes det `USD …`-rader i april/mai UTEN en partnerrad —
+ *    banken skrev bare den ene varianten den gangen.
+ * 2. **Utvalget er nytt** (sommerferie, ferske abonnementer). Da finnes det ingen utenlandskjøp i
+ *    april/mai i det hele tatt, og fraværet av par er en fraværende årsak, ikke en endret bank.
+ *
+ * Paringen kan ikke svare på det, siden den per konstruksjon bare ser par. Derfor et signal som
+ * leses av ÉN rad.
+ */
+export function hasCurrencyCodePrefix(description: string): boolean {
+	const first = normalize(description).split(' ')[0] ?? '';
+	return CURRENCY_PREFIXES.has(first);
+}
+
+export type ForeignMonthRow = {
+	id: string;
+	/** YYYY-MM-DD */
+	date: string;
+	description: string;
+	currency?: string | null;
+};
+
+export type ForeignMonthSummary = {
+	/** YYYY-MM */
+	month: string;
+	/** Alle rader i måneden — nevneren, så en tom måned kan skilles fra en måned uten utenlandskjøp. */
+	rows: number;
+	/** Rader der canonical sier en annen valuta enn NOK. */
+	foreignCurrency: number;
+	/** Rader med en valutakode som første ord i beskrivelsen. */
+	currencyPrefix: number;
+	/**
+	 * Rader med valutakode-prefiks som IKKE er del av et funnet par.
+	 *
+	 * **Dette er tallet som avgjør.** Er det > 0 i april/mai, skrev banken bare én variant da, og
+	 * dobbeltbokføringen er ny. Er det 0 fordi `currencyPrefix` er 0, fantes det ingen utenlandskjøp.
+	 */
+	currencyPrefixUnpaired: number;
+};
+
+/**
+ * Utenlandsk eksponering per måned, med og uten partner.
+ *
+ * `pairedIds` skal være **begge** id-ene fra hvert funnet par — en rad regnes som paret bare når
+ * den faktisk deltar i et par.
+ */
+export function summarizeForeignByMonth(
+	rows: readonly ForeignMonthRow[],
+	pairedIds: ReadonlySet<string>
+): ForeignMonthSummary[] {
+	const map = new Map<string, ForeignMonthSummary>();
+	for (const row of rows) {
+		// Datoen er alt en Oslo-dag fra canonical, så måneden er de sju første tegnene.
+		const month = row.date.slice(0, 7);
+		const entry =
+			map.get(month) ??
+			{ month, rows: 0, foreignCurrency: 0, currencyPrefix: 0, currencyPrefixUnpaired: 0 };
+		entry.rows += 1;
+		const currency = (row.currency ?? '').trim().toUpperCase();
+		if (currency !== '' && currency !== 'NOK') entry.foreignCurrency += 1;
+		if (hasCurrencyCodePrefix(row.description)) {
+			entry.currencyPrefix += 1;
+			if (!pairedIds.has(row.id)) entry.currencyPrefixUnpaired += 1;
+		}
+		map.set(month, entry);
+	}
+	return [...map.values()].sort((x, y) => x.month.localeCompare(y.month));
+}
