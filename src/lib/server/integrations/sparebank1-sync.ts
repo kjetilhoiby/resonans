@@ -3,6 +3,7 @@ import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { createHash } from 'node:crypto';
+import { hasFormatPrefix, merchantKeyFromDescription } from '$lib/domain/economics/merchant-key';
 import {
 	loadSalaryProfile,
 	buildSalaryProfile,
@@ -46,63 +47,14 @@ function encodeCredentials(credentials: BankCredentials): string {
 	return btoa(JSON.stringify(credentials));
 }
 
-function normalizeTxDescription(value: unknown): string {
-	const raw = typeof value === 'string' ? value : '';
-	const normalized = raw
-		.normalize('NFKC')
-		.replace(/\s+/g, ' ')
-		.trim()
-		.toUpperCase();
-
-	if (!normalized) return '';
-
-	const compact = normalized.replace(/\s+-\s+[A-Z0-9]{4,}$/g, '').trim();
-	const words = compact.split(' ').filter(Boolean);
-	const first = (count: number) => words.slice(0, Math.min(count, words.length)).join(' ');
-
-	if (compact.startsWith('COOP MEGA ')) return first(3);
-	if (compact.startsWith('COOP EXTRA ')) return first(3);
-	if (compact.startsWith('COOP PRIX ')) return first(3);
-	if (compact.startsWith('COOP OBS ')) return first(3);
-	if (compact.startsWith('KIWI ')) return first(2);
-	if (compact.startsWith('REMA ')) return first(2);
-	if (compact.startsWith('MENY ')) return first(2);
-	if (compact.startsWith('SPAR ')) return first(2);
-	if (compact.startsWith('BUNNPRIS ')) return first(2);
-	if (compact.startsWith('EXTRA ')) return first(2);
-	if (compact.startsWith('JOKER ')) return first(2);
-	if (compact.startsWith('NARVESEN ')) return first(2);
-	if (compact.startsWith('ODA.COM')) return 'ODA.COM';
-	if (compact.startsWith('ODA ')) return 'ODA';
-
-	// Normalize SB1 multi-text patterns: "Fra: X Betalt:" → "X", "Fra: X" → "X"
-	// SpareBank1 returns the same transaction with multiple description variants.
-	if (compact.startsWith('FRA: ')) {
-		const withoutPrefix = compact.slice(5).trim();
-		if (withoutPrefix.endsWith(' BETALT:')) {
-			return withoutPrefix.slice(0, -8).trim() || 'BETALING';
-		}
-		return withoutPrefix || 'BETALING';
-	}
-
-	// "Nettgiro til: X Betalt:" → "X", "Nettgiro fra: X Betalt:" → "X"
-	if (compact.startsWith('NETTGIRO TIL: ') || compact.startsWith('NETTGIRO FRA: ')) {
-		const withoutPrefix = compact.slice(14).trim();
-		if (withoutPrefix.endsWith(' BETALT:')) {
-			const name = withoutPrefix.slice(0, -8).trim();
-			return name || 'NETTGIRO';
-		}
-		return withoutPrefix || 'NETTGIRO';
-	}
-
-	// "Til: Betalt:" (truncated, no name) → generic key
-	if (compact === 'TIL: BETALT:') return 'OVERØRSEL';
-
-	// "Overørsel mellom egne konti..." → generic key, same as standalone "Overørsel"
-	if (compact.includes('MELLOM EGNE KONTI')) return 'OVERØRSEL';
-
-	return compact;
-}
+/**
+ * Bøttenøkkelen bor i `$lib/domain/economics/merchant-key.ts`, med tester.
+ *
+ * Den lå her, privat og utestet, fram til 18. august 2026 — samtidig som den avgjør hvilke
+ * transaksjoner som blir én rad og hvilke som blir to, altså alt som teller kroner. Aliaset
+ * beholdes fordi navnet brukes på seks steder i denne fila og betyr det samme.
+ */
+const normalizeTxDescription = merchantKeyFromDescription;
 
 function bookingStatusRank(value: unknown): number {
 	const status = typeof value === 'string' ? value.toUpperCase() : '';
@@ -248,10 +200,37 @@ async function writeRawAndCanonicalTransactions(
 			-- typeText fylles bare inn, aldri tømmes: en senere observasjon uten feltet
 			-- skal ikke slette kategoriteksten vi alt har.
 			type_text = COALESCE(EXCLUDED.type_text, canonical_bank_transactions.type_text),
+			-- Visningsteksten: to av SB1s vaner peker i MOTSATT retning, og skillet er
+			-- suffiks mot prefiks.
+			--
+			--   Trunkering: «SPORT 1 RINDAL RINDALSVEG» mot «SPORT 1 RINDAL RINDALSVEGEN RINDAL».
+			--     Den korte er et PREFIKS av den lange → den LANGE er mest komplett.
+			--   Formatprefiks: «OPENAI» mot «USD OPENAI».
+			--     Den korte er en SUFFIKS av den lange → den KORTE er butikkens navn.
+			--
+			-- Uten det andre tilfellet vinner «USD OPENAI» etter at bøttenøkkelen begynte å
+			-- strippe valutakoden, og kategoriseringen — som leser beskrivelsen — blir dårligere
+			-- av en opprydding som skulle gjort den bedre.
+			--
+			-- RIGHT(...) framfor LIKE '%' || x: en beskrivelse kan inneholde understrek og
+			-- prosenttegn («Google Workspace_hoi.by»), som er jokertegn i LIKE og ville gitt
+			-- løsere treff enn tilsiktet.
+			-- Mellomromskravet hindrer at «NORDEA»/«EA» leses som samme navn.
 			description_display = CASE
 				WHEN EXCLUDED.status_rank > canonical_bank_transactions.status_rank THEN EXCLUDED.description_display
-				WHEN EXCLUDED.status_rank = canonical_bank_transactions.status_rank
-					AND LENGTH(COALESCE(EXCLUDED.description_display, '')) > LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
+				WHEN EXCLUDED.status_rank < canonical_bank_transactions.status_rank THEN canonical_bank_transactions.description_display
+				-- Ny tekst er kortere OG en suffiks av den lagrede → formatprefiks, ta den nye.
+				WHEN LENGTH(COALESCE(EXCLUDED.description_display, '')) < LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
+					AND UPPER(COALESCE(EXCLUDED.description_display, '')) = RIGHT(UPPER(COALESCE(canonical_bank_transactions.description_display, '')), LENGTH(COALESCE(EXCLUDED.description_display, '')))
+					AND SUBSTRING(canonical_bank_transactions.description_display FROM LENGTH(canonical_bank_transactions.description_display) - LENGTH(EXCLUDED.description_display) FOR 1) = ' '
+					THEN EXCLUDED.description_display
+				-- Lagret tekst er kortere OG en suffiks av den nye → behold den lagrede.
+				WHEN LENGTH(COALESCE(canonical_bank_transactions.description_display, '')) < LENGTH(COALESCE(EXCLUDED.description_display, ''))
+					AND UPPER(COALESCE(canonical_bank_transactions.description_display, '')) = RIGHT(UPPER(COALESCE(EXCLUDED.description_display, '')), LENGTH(COALESCE(canonical_bank_transactions.description_display, '')))
+					AND SUBSTRING(EXCLUDED.description_display FROM LENGTH(EXCLUDED.description_display) - LENGTH(canonical_bank_transactions.description_display) FOR 1) = ' '
+					THEN canonical_bank_transactions.description_display
+				-- Ellers: trunkering, og den lengste er mest komplett. Uendret oppførsel.
+				WHEN LENGTH(COALESCE(EXCLUDED.description_display, '')) > LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
 					THEN EXCLUDED.description_display
 				ELSE canonical_bank_transactions.description_display
 			END,
