@@ -66,8 +66,8 @@ export type DuplicateDiagnosis = {
 		sameDescription: boolean;
 		statusPair: string;
 		reason: SkipReason;
-		a: { id: string; date: string; description: string; status: string; amount: number };
-		b: { id: string; date: string; description: string; status: string; amount: number };
+		a: { id: string; date: string; description: string; status: string; amount: number; currency: string };
+		b: { id: string; date: string; description: string; status: string; amount: number; currency: string };
 	}>;
 	/** Sann når lista er kappet av `limit`. En stille kapping ser ut som full dekning. */
 	truncated: boolean;
@@ -115,6 +115,9 @@ export async function diagnoseDuplicates(
 	});
 
 	const limit = Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+	// `ResidualRow` bærer ikke valuta — den er en beslutningstype, og feltet er bare til
+	// rapportering. Slås derfor på her framfor å utvide domenetypen med et visningsfelt.
+	const currencyById = new Map(candidates.rows.map((row) => [row.id, row.currency]));
 
 	return {
 		window: { days: options.days, fromDate: candidates.fromDate },
@@ -148,14 +151,16 @@ export async function diagnoseDuplicates(
 				date: s.a.date,
 				description: s.a.description,
 				status: s.a.status,
-				amount: s.a.amount
+				amount: s.a.amount,
+				currency: currencyById.get(s.a.id) ?? ''
 			},
 			b: {
 				id: s.b.id,
 				date: s.b.date,
 				description: s.b.description,
 				status: s.b.status,
-				amount: s.b.amount
+				amount: s.b.amount,
+				currency: currencyById.get(s.b.id) ?? ''
 			}
 		})),
 		truncated: suspects.length > limit

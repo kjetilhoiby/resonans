@@ -652,3 +652,100 @@ og da måler man det samme to ganger og tror det er et funn.
 `byReason` sier hvorfor ryddingen hoppet over; `byStatusPair` sier hvilken mekanisme det er.
 `pending+booked` er livsløpet ryddingen er bygget for. `booked+booked` er noe annet — samme kjøp
 bokført to ganger. Uten den andre inndelingen ser det ut som en terskel som er feil satt.
+
+
+## Femte antagelse, og den første som ble MÅLT før den ble trodd
+
+Med `GET /api/admin/economics/duplikater` på plass tok det ett kall å svare på spørsmålet som
+hadde kostet et par døgn håndarbeid:
+
+| Statuspar | Par | Kroner |
+|---|---:|---:|
+| `booked+booked` | 52 | 20 087 |
+| `booked+pending` | 1 | 1 703 |
+| `pending+pending` | 1 | 62 |
+
+**Livsløpet hele ryddingen er bygget for sto for ETT av 54 par.** Restposten er en annen mekanisme:
+SB1 bokfører samme kjøp to ganger, med ulik beskrivelse. Prefiksene, utrunkert:
+
+```
+11x dkk    4x eur             1x 02.07   1x håvard wormdal høiby
+11x usd    4x 'betaling av'   1x 07.06   1x lars terje husbyn
+ 7x sek                                  1x per inge øye hansen
+                                         1x marie helene nygaard
+```
+
+Merk at jeg **ikke** gjettet mellom de to hypotesene fra forrige runde. Svaret var «begge bokført»,
+ikke «beløpet driftet» — og det var 46 av 54 par, ikke fire.
+
+### Datoen er beviset
+
+Abonnementene i vinduet ligger på elleve forskjellige datoer med nøyaktig to rader hver:
+
+```
+CLAUDE SUB      2026-06-28, 2026-07-27
+OPENAI CHATGPT  2026-07-02, 2026-08-02
+OPENAI          2026-07-02, 07-07, 07-16, 08-03
+NEON.TECH       2026-07-01, 2026-08-02
+```
+
+Et månedsabonnement kan ikke belastes to ganger samme dag til samme øre. Det er den observasjonen
+som gjør prefiksfamilien trygg å skrive på — ikke at prefikset ser ut som en valutakode.
+
+### Hva som IKKE er et duplikat, og hvorfor grensa er der den er
+
+De samme radene inneholder:
+
+| Beskrivelse | Beløp | Dager mellom |
+|---|---:|---:|
+| `Ruter` ×2 | 41 kr | 2 og 3 |
+| `KIWI BØLERL BØLERLIA OSLO` ×2 | 335 kr | 3 |
+| `Småsparing stk avrunding` ×2 | 41 kr | 3 |
+| `Påmelding for Kjetil Høiby` ×2 | 2 000 kr | 1 |
+
+**Alle har identisk beskrivelse.** Et gjentatt kjøp produserer nøyaktig den signaturen, og
+ingenting i radene skiller det fra et duplikat. To trikkebilletter er to trikkebilletter.
+
+Derfor er `findBookedDuplicates` strengere enn reservasjonsryddingen på begge akser:
+**samme dag** (ikke ±3) og **eksakt beløp**, og beskrivelsene må være ULIKE — én skal være den
+andre med et prefiks foran. De to motorene kan ikke slås sammen: den løseste vakten ville gjeldt
+for begge.
+
+### Valutalista er riktig her, og var gal i matchingen
+
+Changeloggen sier «ikke bygg en `normalizeTxDescription` som stripper valutakoder». **Det står
+fortsatt, og det er et annet spørsmål.** Der handlet lista om å FINNE par — og da dekker den tre av
+fire tilfeller og ser ut som en løsning. Her graderer den TILLIT: `extractPrefix` er blind for hva
+prefikset er, og lista brukes bare til å avgjøre hva som skrives uten å spørre.
+
+- **`currency` / `date`** → `high`, skrives. Mekaniske: banken formaterer samme hendelse på to måter.
+- **personnavn** → `medium`, rapporteres. `Marie Helene Nygaard is` mot `is` *kan* være to
+  betalinger for is, og 120 kr er ikke verdt å ta sjansen på.
+
+`currencyConfirms` er en **uavhengig bekreftelse fra et annet felt**: canonical har en
+`currency`-kolonne, så et valutaprefiks i beskrivelsen kan sjekkes mot valutaen på raden. Står
+tallet på 0 mens valutaprefikser er funnet, er kolonnen ikke fylt, og graderingen hviler på
+ordlista alene — det skal være synlig.
+
+### Ordskillet i `extractPrefix`
+
+Prefikset må slutte på mellomrom. Uten det ville `NORDEA` og `EA` gitt prefikset `NORD`, altså to
+urelaterte betalinger paret på en tilfeldig delstreng. Det er en liten sjekk og den er testet, fordi
+den er den eneste som hindrer at suffiks-forholdet blir en tilfeldighet.
+
+### Hvilken rad som fjernes
+
+**Den med prefikset.** Ikke arbitrært: `merchant_key` utledes av beskrivelsen, så `USD OPENAI`
+kategoriserer dårligere enn `OPENAI` — koden er ikke en del av butikknavnet. Å beholde den rene
+raden rydder i kategoriseringen som en bieffekt.
+
+Sorteringen før matchingen er deterministisk (dato, så id). Uten det avhenger hvilken rad som
+beholdes av radrekkefølgen fra basen, og to kjøringer kan gi ulikt resultat på samme data.
+
+### `Oda.com - a6uafe` er det ene ekte reservasjonsparet
+
+`pending → booked`, to dager, **1,85 % beløpsavvik** — og beskrivelsen bærer en unik ordre-id.
+To rader med samme ordre-id kan ikke være to ordrer. Avviket er varesubstitusjon som endret
+totalen, altså nøyaktig det tilfellet reservasjonsryddingens krav om eksakt beløp utelater. Det
+står igjen som et kjent, navngitt tilfelle framfor å bli løst med en løsere terskel som ville
+sluppet inn butikkturene.

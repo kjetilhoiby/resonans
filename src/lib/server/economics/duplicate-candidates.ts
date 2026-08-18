@@ -44,6 +44,11 @@ export type DuplicateCandidateRow = {
 	amount: number;
 	merchantKey: string;
 	description: string;
+	/**
+	 * Valutaen canonical lagret. **Uavhengig bekreftelse** på at et valutaprefiks i beskrivelsen
+	 * faktisk ER en valutakode og ikke en del av butikknavnet — to signaler fra ulike felt.
+	 */
+	currency: string;
 	typeText: string;
 	status: 'pending' | 'booked' | 'unknown';
 	/** Begge bein av overføringen finnes hos oss — en observasjon. */
@@ -93,6 +98,7 @@ export async function loadDuplicateCandidates(
 			date: canonicalBankTransactions.canonicalDate,
 			amount: canonicalBankTransactions.amount,
 			merchantKey: canonicalBankTransactions.merchantKey,
+			currency: canonicalBankTransactions.currency,
 			// **Statusen leses eksplisitt, ikke utledet av rangen.** Se `normalizeBookingStatus`.
 			bookingStatus: canonicalBankTransactions.latestBookingStatus,
 			description: canonicalBankTransactions.descriptionDisplay,
@@ -141,6 +147,7 @@ export async function loadDuplicateCandidates(
 			date: toDateKey(row.date),
 			amount: Number(row.amount) || 0,
 			merchantKey: row.merchantKey ?? '',
+			currency: row.currency ?? '',
 			description: row.description ?? '',
 			typeText: row.typeText ?? '',
 			status,
