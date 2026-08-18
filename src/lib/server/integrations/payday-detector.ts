@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { canonicalBankTransactions } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
+import { fillPaydayGaps, longestPaydayGapDays } from '$lib/domain/economics/payday-gaps';
 
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
 const SALARY_MIN_AMOUNT = 10_000;
@@ -237,6 +238,35 @@ export type GlobalPayday = {
 	source: 'keyword' | 'largest-inflow';
 	/** Antall inntektsrader på kildekontoen som lønnsdatoene ble plukket fra. */
 	candidateCount: number;
+	/**
+	 * Lønnsdatoer som er SLUTTET fordi måneden manglet en rad, ikke observert.
+	 *
+	 * Mars 2026 manglet i prod, og februar→april ble da én «lønnsperiode» på 58 dager som
+	 * gjorde snittkurven på Økonomi-oversikten ubrukelig. Lønna kom (den faste overføringen
+	 * på 12 500 står 24. mars på en annen konto); raden nådde aldri canonical.
+	 *
+	 * Merkes fordi en antatt dato som ser observert ut er verre enn et hull: da kan ingen
+	 * etterprøve tallene den bærer.
+	 */
+	inferredPaydayDates: string[];
+	/**
+	 * Bare de OBSERVERTE datoene, altså de som har en rad bak seg.
+	 *
+	 * **Arbeidsdelingen er: statistikk fra observasjoner, periodegrenser fra den utfylte
+	 * serien.** Et lønnsvarsel skal aldri fyre på en antatt dato, og en lønnsprofil skal ikke
+	 * regne beløpsstatistikk på datoer uten beløp. `paydayDates` er for å dele tid i perioder;
+	 * denne er for å si noe om lønna selv.
+	 */
+	observedPaydayDates: string[];
+	/** Måneder som ble hoppet over fordi hullet var for langt å anta. `YYYY-MM`. */
+	skippedPaydayMonths: string[];
+	/**
+	 * Største avstand mellom to påfølgende lønnsdatoer, etter utfylling.
+	 *
+	 * Mye over ~40 dager betyr at et hull står igjen — bevisst, fordi det var for langt å
+	 * anta. Rapporteres så en flate kan si det framfor at tallene bare ser rare ut.
+	 */
+	longestPeriodDays: number;
 };
 
 /**
@@ -287,11 +317,24 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 	const selection = selectPaydaySource(normalizedTransactions);
 	if (!selection) return null;
 
-	const paydayDates = pickBestPerMonth(selection.candidates, selection.preferredFingerprint);
-	if (paydayDates.length < 2) return null;
+	const observedPaydays = pickBestPerMonth(selection.candidates, selection.preferredFingerprint);
+	if (observedPaydays.length < 2) return null;
 
-	// Use robust median of business-day-normalized dates to avoid drift.
-	const doms = paydayDates.map((d) => businessDayDom(new Date(`${d}T12:00:00Z`)));
+	// **Hull fylles med den antatte lønnsdagen.** `pickBestPerMonth` gir én dato per
+	// KALENDERMÅNED, så en måned uten kandidatrad gir ingen dato — og da blir to måneder én
+	// periode. Alternativet til å slutte er ikke «ingen påstand», men påstanden «58 dager var
+	// én lønnsperiode», som er konkret og gal. Se
+	// `docs/changelog/2026-08-18-manglende-lonnsdato.md`.
+	const series = fillPaydayGaps(observedPaydays);
+	const paydayDates = series.dates;
+
+	// Robust median av virkedagsnormaliserte datoer, mot drift.
+	//
+	// **Regnes på de OBSERVERTE datoene, ikke på den utfylte serien.** De antatte datoene er
+	// plassert PÅ lønnsdagen, så å ta dem med ville latt en slutning bekrefte seg selv. Her
+	// endrer det ingenting (medianen av en median er den samme), men det er en sirkel som blir
+	// reell så snart plasseringen endres.
+	const doms = observedPaydays.map((d) => businessDayDom(new Date(`${d}T12:00:00Z`)));
 	const domNoLate = doms.filter((d) => d <= 25);
 	const detectedPaydayDom = Math.round(median(domNoLate.length > 0 ? domNoLate : doms));
 
@@ -300,6 +343,10 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 		detectedPaydayDom,
 		sourceAccountId: selection.sourceAccountId,
 		source: selection.source,
-		candidateCount: selection.candidates.length
+		candidateCount: selection.candidates.length,
+		inferredPaydayDates: series.inferred,
+		observedPaydayDates: series.observed,
+		skippedPaydayMonths: series.skippedMonths,
+		longestPeriodDays: longestPaydayGapDays(paydayDates)
 	};
 }

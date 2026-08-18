@@ -22,6 +22,7 @@
 		prevSpendPerDay: number | null;
 		prevGrocerySpendPerDay: number | null;
 		comparisonPeriodsUsed: number;
+		inferredPaydayDates: string[];
 		comparisonDays: number;
 		longestComparisonPeriodDays: number;
 		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
@@ -233,6 +234,16 @@
 			kurve som synker er en umulighet brukeren ser før vi gjør.
 		-->
 		{paydaySpend.comparisonDays} dager, som er den korteste av dem.
+		{#if paydaySpend.inferredPaydayDates.length > 0}
+			<!--
+				Slutningen sies med ord. En antatt lønnsdato som ser observert ut er verre enn et
+				hull, fordi ingen da kan etterprøve tallene den bærer.
+			-->
+			NB: {paydaySpend.inferredPaydayDates.length === 1 ? 'lønnsdatoen' : 'lønnsdatoene'}
+			{paydaySpend.inferredPaydayDates.join(', ')}
+			{paydaySpend.inferredPaydayDates.length === 1 ? 'er antatt' : 'er antatt'} — lønnsraden
+			mangler i banken den måneden, så datoen er satt til den vanlige lønnsdagen.
+		{/if}
 		{#if paydaySpend.longestComparisonPeriodDays > MERGED_PERIOD_DAYS}
 			<!--
 				Symptomet på at en lønnsdato ikke ble kjent igjen. Kappingen skjuler det, så det må
