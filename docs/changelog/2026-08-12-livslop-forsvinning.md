@@ -749,3 +749,48 @@ To rader med samme ordre-id kan ikke være to ordrer. Avviket er varesubstitusjo
 totalen, altså nøyaktig det tilfellet reservasjonsryddingens krav om eksakt beløp utelater. Det
 står igjen som et kjent, navngitt tilfelle framfor å bli løst med en løsere terskel som ville
 sluppet inn butikkturene.
+
+
+## Tørrkjøringen, inspisert av meg selv
+
+Første gang i dette arbeidet at en plan ble lest uten at brukeren måtte kopiere JSON.
+`POST …/deaktiver-bokforte-duplikater?dryRun=true`, 90 dager:
+
+| Prefikstype | Tillit | Par | Kroner |
+|---|---|---:|---:|
+| valutakode | `high` | 33 | 12 029 |
+| kjøpsdato | `high` | 2 | 598 |
+| personnavn | `medium` | 5 | 2 870 |
+
+**`currencyConfirmed = 33 av 33` for valutaparene.** Canonical sin `currency`-kolonne bekrefter hver
+enkelt, altså to felt som er enige — ikke en slutning fra en ordliste.
+
+### Tillitsgraderingen fanget et tilfelle jeg ikke hadde forutsett
+
+`Til: Påmelding for Kjetil Høiby` mot `Påmelding for Kjetil Høiby`, 2 000 kr, samme dag. Prefikset
+`til:` er verken valuta eller dato, så det ble `medium` og skrives ikke. Det er riktig utfall av en
+regel som ikke var skrevet med dette tilfellet i tankene — og det er argumentet for å gradere
+framfor å liste opp unntak.
+
+Merk at raden ligger blant tre: to identiske `Påmelding …` (24. og 25. juni) og én `Til: Påmelding …`
+(25. juni). Restdiagnosen parer de to identiske (dagsavstand 1), denne motoren parer `Til:`-raden med
+en av dem (samme dag). Én-til-én hindrer at samme rad brukes i begge.
+
+## Åpent spørsmål: 365 dager gir de SAMME 40 parene
+
+Vinduet på ett år vurderer 2 117 rader mot 917, og finner **null nye par**. Alle 40 ligger mellom
+3. juni og 13. august 2026.
+
+To kandidater, og jeg har ikke målt hvilken:
+
+1. **Dobbeltbokføringen er ny** — SB1 begynte å skrive valutaprefikset som en egen rad rundt juni.
+2. **Utvalget er nytt** — utenlandskjøpene er sommerferie (Danmark, Sverige), og abonnementene
+   (`OPENAI`, `CLAUDE SUB`, `NEON.TECH`) er ferske.
+
+Nummer 2 forklarer ikke `Google Workspace_hoi.by` og `The New York Times`, som rimeligvis er eldre
+enn juni — men «rimeligvis» er ikke en måling, og det er nettopp den typen slutning som har tatt
+feil sju ganger her. **Testen er billig:** finn ut om det finnes `Google Workspace`- eller
+`NYT`-rader i april/mai uten en duplikatpartner. Ikke gjort.
+
+Konsekvensen hvis (1) er sann: dette vil fortsette å produsere duplikater, og ryddingen må kjøres
+periodisk framfor én gang.
