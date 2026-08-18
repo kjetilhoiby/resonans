@@ -23,6 +23,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
 	findBookedDuplicates,
 	summarizeBookedDuplicates,
+	summarizeForeignByMonth,
 	type BookedDuplicatePair,
 	type BookedDuplicateRow
 } from '$lib/domain/economics/booked-duplicates';
@@ -54,6 +55,17 @@ export type BookedDuplicateResult = {
 	currencyConfirmed: number;
 	/** Rader som faktisk fikk `is_active = false`. 0 ved dry-run. */
 	deactivated: number;
+	/**
+	 * Utenlandsk eksponering per måned — testen på HVORFOR alle par ligger etter juni 2026.
+	 *
+	 * `currencyPrefixUnpaired` er tallet som avgjør. Er det > 0 i en tidlig måned, skrev banken
+	 * bare én variant den gangen, og dobbeltbokføringen er ny. Er `currencyPrefix` 0, fantes det
+	 * ingen utenlandskjøp, og fraværet av par har en fraværende årsak.
+	 *
+	 * Står her framfor i et eget endepunkt fordi det er samme spørsmål med samme radgrunnlag, og
+	 * to lastinger av de samme radene kan avvike.
+	 */
+	foreignByMonth: ReturnType<typeof summarizeForeignByMonth>;
 	samples: Array<{
 		amount: number;
 		date: string;
@@ -126,6 +138,11 @@ export async function deactivateBookedDuplicates(
 		selectedPairs: selected.length,
 		selectedNok: Math.round(sumNok(selected)),
 		byPrefix: summarizeBookedDuplicates(pairs),
+		// BEGGE id-ene fra hvert par: en rad er «paret» bare når den faktisk deltar.
+		foreignByMonth: summarizeForeignByMonth(
+			rows,
+			new Set(pairs.flatMap((pair) => [pair.redundantId, pair.keptId]))
+		),
 		currencyConfirmed: pairs.filter((pair) => pair.currencyConfirms).length,
 		deactivated,
 		samples: pairs.slice(0, MAX_SAMPLES).map((pair) => ({

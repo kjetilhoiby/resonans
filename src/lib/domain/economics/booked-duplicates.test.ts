@@ -3,7 +3,9 @@ import {
 	classifyPrefix,
 	extractPrefix,
 	findBookedDuplicates,
+	hasCurrencyCodePrefix,
 	summarizeBookedDuplicates,
+	summarizeForeignByMonth,
 	type BookedDuplicateRow
 } from './booked-duplicates';
 
@@ -215,5 +217,72 @@ describe('summarizeBookedDuplicates', () => {
 
 	it('gir tom liste uten par', () => {
 		expect(summarizeBookedDuplicates([])).toEqual([]);
+	});
+});
+
+describe('hasCurrencyCodePrefix', () => {
+	it('kjenner valutakode som første ord', () => {
+		expect(hasCurrencyCodePrefix('USD OPENAI')).toBe(true);
+		expect(hasCurrencyCodePrefix('  dkk  dansk camping union ')).toBe(true);
+	});
+
+	it('krever at koden er FØRSTE ord', () => {
+		expect(hasCurrencyCodePrefix('OPENAI USD')).toBe(false);
+		expect(hasCurrencyCodePrefix('USDA KJØTT')).toBe(false);
+		expect(hasCurrencyCodePrefix('OPENAI')).toBe(false);
+		expect(hasCurrencyCodePrefix('')).toBe(false);
+	});
+});
+
+describe('summarizeForeignByMonth', () => {
+	// Testen som skiller «banken endret seg» fra «utvalget endret seg». Et upar-et
+	// valutaprefiks i en tidlig måned betyr at banken skrev bare én variant den gangen.
+	it('skiller uparede valutaprefikser fra fravær av utenlandskjøp', () => {
+		const summary = summarizeForeignByMonth(
+			[
+				// April: ett utenlandskjøp, ingen partner
+				{ id: 'apr1', date: '2026-04-10', description: 'USD OPENAI', currency: 'USD' },
+				{ id: 'apr2', date: '2026-04-11', description: 'KIWI', currency: 'NOK' },
+				// Mai: ingen utenlandskjøp i det hele tatt
+				{ id: 'mai1', date: '2026-05-04', description: 'REMA 1000', currency: 'NOK' },
+				// Juli: et par
+				{ id: 'jul1', date: '2026-07-02', description: 'USD OPENAI', currency: 'USD' },
+				{ id: 'jul2', date: '2026-07-02', description: 'OPENAI', currency: 'NOK' }
+			],
+			new Set(['jul1', 'jul2'])
+		);
+
+		expect(summary).toEqual([
+			{
+				month: '2026-04',
+				rows: 2,
+				foreignCurrency: 1,
+				currencyPrefix: 1,
+				currencyPrefixUnpaired: 1
+			},
+			{ month: '2026-05', rows: 1, foreignCurrency: 0, currencyPrefix: 0, currencyPrefixUnpaired: 0 },
+			{
+				month: '2026-07',
+				rows: 2,
+				foreignCurrency: 1,
+				currencyPrefix: 1,
+				currencyPrefixUnpaired: 0
+			}
+		]);
+	});
+
+	it('sorterer kronologisk', () => {
+		const summary = summarizeForeignByMonth(
+			[
+				{ id: 'b', date: '2026-08-01', description: 'KIWI' },
+				{ id: 'a', date: '2026-03-01', description: 'KIWI' }
+			],
+			new Set()
+		);
+		expect(summary.map((m) => m.month)).toEqual(['2026-03', '2026-08']);
+	});
+
+	it('gir tom liste uten rader', () => {
+		expect(summarizeForeignByMonth([], new Set())).toEqual([]);
 	});
 });
