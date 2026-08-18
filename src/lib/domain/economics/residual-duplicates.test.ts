@@ -185,3 +185,91 @@ describe('summarizeSkipReasons', () => {
 		expect(summarizeSkipReasons([])).toEqual([]);
 	});
 });
+
+describe('statusPair', () => {
+	it('sorteres, så pending+booked og booked+pending er samme nøkkel', () => {
+		const first = findResidualDuplicateSuspects([
+			row('a', '2026-08-11', -1703, 'Oda.com - a6uafe', 'pending'),
+			row('b', '2026-08-11', -1703, 'Oda.com - a6uafe', 'booked')
+		]);
+		const flipped = findResidualDuplicateSuspects([
+			row('a', '2026-08-11', -1703, 'Oda.com - a6uafe', 'booked'),
+			row('b', '2026-08-11', -1703, 'Oda.com - a6uafe', 'pending')
+		]);
+
+		expect(first[0].statusPair).toBe('booked+pending');
+		expect(flipped[0].statusPair).toBe('booked+pending');
+	});
+
+	// Dette skillet er hele grunnen til at feltet finnes: 46 av 54 par i prod var
+	// booked+booked, altså en annen MEKANISME enn den ryddingen er bygget for.
+	it('skiller begge-bokført fra livsløpet', () => {
+		const suspects = findResidualDuplicateSuspects([
+			row('a1', '2026-06-23', -3277, 'DANSK CAMPING UNION', 'booked'),
+			row('b1', '2026-06-23', -3277, 'DKK DANSK CAMPING UNION', 'booked')
+		]);
+
+		expect(suspects[0].statusPair).toBe('booked+booked');
+		expect(suspects[0].reason).toBe('begge-bokfort');
+	});
+});
+
+describe('sameDescription', () => {
+	it('skiller identisk beskrivelse fra prefiksdrift', () => {
+		const [identical] = findResidualDuplicateSuspects([
+			row('a', '2026-08-11', -100, 'Oda.com - a6uafe', 'pending'),
+			row('b', '2026-08-11', -100, 'oda.com  -  a6uafe', 'booked')
+		]);
+		expect(identical.sameDescription).toBe(true);
+		expect(identical.prefixDrift).toBe(false);
+
+		const [drifted] = findResidualDuplicateSuspects([
+			row('a', '2026-08-11', -100, 'DKK TYCHO', 'pending'),
+			row('b', '2026-08-11', -100, 'TYCHO', 'booked')
+		]);
+		expect(drifted.sameDescription).toBe(false);
+		expect(drifted.prefixDrift).toBe(true);
+	});
+});
+
+describe('requireDescriptionMatch', () => {
+	const ulike = [
+		row('a', '2026-08-02', -255, 'KIWI STORGATA', 'pending'),
+		row('b', '2026-08-03', -255, 'REMA 1000 TORGET', 'booked')
+	];
+
+	it('utelater par med ulik beskrivelse som standard', () => {
+		expect(findResidualDuplicateSuspects(ulike)).toEqual([]);
+	});
+
+	// Bryteren finnes for å MÅLE hva kravet utelater. At den gir falske positive er
+	// poenget — to ekte butikkjøp på samme beløp er ikke et duplikat.
+	it('slås av for å måle hvor mye kravet utelater', () => {
+		const suspects = findResidualDuplicateSuspects(ulike, { requireDescriptionMatch: false });
+		expect(suspects).toHaveLength(1);
+		expect(suspects[0].sameDescription).toBe(false);
+		expect(suspects[0].prefixDrift).toBe(false);
+	});
+
+	it('krever fortsatt samme konto, fortegn, dato og beløp', () => {
+		expect(
+			findResidualDuplicateSuspects(
+				[
+					row('a', '2026-08-02', -255, 'KIWI'),
+					row('b', '2026-08-02', 255, 'REMA') // motsatt fortegn
+				],
+				{ requireDescriptionMatch: false }
+			)
+		).toEqual([]);
+
+		expect(
+			findResidualDuplicateSuspects(
+				[
+					row('a', '2026-08-02', -255, 'KIWI'),
+					row('b', '2026-08-02', -255, 'REMA', 'booked', { accountId: 'annen' })
+				],
+				{ requireDescriptionMatch: false }
+			)
+		).toEqual([]);
+	});
+});

@@ -74,6 +74,16 @@ export type ResidualSuspect = {
 	deltaDays: number;
 	/** Sann når én beskrivelse er den andre med noe foran — valutakode eller navn. */
 	prefixDrift: boolean;
+	/** Sann når beskrivelsene er identiske etter normalisering. */
+	sameDescription: boolean;
+	/**
+	 * Statusparet, sortert, som `'booked+booked'`.
+	 *
+	 * Finnes fordi det er nøkkelen til hvilken MEKANISME paret er. `pending+booked` er
+	 * livsløpet ryddingen er bygget for; `booked+booked` er noe annet, og at det var det
+	 * dominerende tilfellet i prod var ikke synlig før dette feltet fantes.
+	 */
+	statusPair: string;
 	reason: SkipReason;
 };
 
@@ -123,10 +133,24 @@ function classify(a: ResidualRow, b: ResidualRow, amountDeltaPct: number): SkipR
  */
 export function findResidualDuplicateSuspects(
 	rows: readonly ResidualRow[],
-	options: { maxDeltaDays?: number; amountTolerancePct?: number } = {}
+	options: {
+		maxDeltaDays?: number;
+		amountTolerancePct?: number;
+		/**
+		 * Krev at beskrivelsene peker på samme kjøp. **Standard `true`, og skal stå slik i drift.**
+		 *
+		 * Slås den av, rapporteres to ekte Kiwi-kjøp på nesten samme beløp som mistenkelige — en
+		 * falsk positiv koster tillit til tallet. Bryteren finnes for å kunne MÅLE hvor mye
+		 * beskrivelseskravet utelater, altså om det er en riktig grense eller en blindsone. Det var
+		 * nettopp en slik uutforsket grense som gjorde at drift-målingen ikke kunne se
+		 * valutatilfellene.
+		 */
+		requireDescriptionMatch?: boolean;
+	} = {}
 ): ResidualSuspect[] {
 	const maxDeltaDays = options.maxDeltaDays ?? SUSPECT_MAX_DELTA_DAYS;
 	const tolerance = options.amountTolerancePct ?? SUSPECT_AMOUNT_TOLERANCE_PCT;
+	const requireDescriptionMatch = options.requireDescriptionMatch !== false;
 
 	const sorted = [...rows].sort((x, y) =>
 		x.date === y.date ? x.id.localeCompare(y.id) : x.date.localeCompare(y.date)
@@ -158,7 +182,7 @@ export function findResidualDuplicateSuspects(
 			// Kiwi-kjøp på nesten samme beløp blitt rapportert som mistenkelige.
 			const prefixDrift = hasPrefixDrift(a.description, b.description);
 			const sameDescription = normalize(a.description) === normalize(b.description);
-			if (!prefixDrift && !sameDescription) continue;
+			if (requireDescriptionMatch && !prefixDrift && !sameDescription) continue;
 
 			used.add(a.id);
 			used.add(b.id);
@@ -169,6 +193,8 @@ export function findResidualDuplicateSuspects(
 				amountDeltaPct: Math.round(deltaPct * 100) / 100,
 				deltaDays: delta,
 				prefixDrift,
+				sameDescription,
+				statusPair: [a.status, b.status].sort().join('+'),
 				reason: classify(a, b, Math.round(deltaPct * 100) / 100)
 			});
 			break;
