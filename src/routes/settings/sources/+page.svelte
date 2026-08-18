@@ -10,7 +10,8 @@
 		EmailRulesCard,
 		EffortReprojectCard,
 		EconomyDiagnosticsCard,
-		ReservationCleanupCard
+		ReservationCleanupCard,
+		BookedDuplicateCleanupCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -117,8 +118,13 @@
 		-->
 		{#if data.user?.isAdmin}
 			<EconomyDiagnosticsCard />
-			<!-- Ryddejobben står ETTER diagnosen: man måler før man skriver. -->
+			<!-- Ryddejobbene står ETTER diagnosen: man måler før man skriver. -->
 			<ReservationCleanupCard />
+			<!--
+				Reservasjonsryddingen først, denne etter: den andre motoren fjerner PENDING-rader,
+				og det som står igjen etterpå er nettopp det denne er til for.
+			-->
+			<BookedDuplicateCleanupCard />
 		{/if}
 	</div>
 	</PageSection>
