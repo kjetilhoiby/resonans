@@ -122,6 +122,30 @@ To bivirkninger stoppes samtidig, og de er verdt å kjenne til:
 Raden skrives fortsatt. Skrivestien skal være additiv og idempotent, og et
 avvist opplastingssvar ville sett ut som en feil i appen.
 
+## Forholdet til «rett og slett» (`/api/apps/workouts/<sessionId>`)
+
+De to er komplementære, og valget avhenger av **hvem som skrev raden**.
+
+| | `PATCH`/`DELETE /workouts/<sessionId>` | `POST /workouts/<id>/dismiss` |
+|---|---|---|
+| Virker på | rader Ekko selv skrev | økta, uansett kilde |
+| Gjør | retter idretten, eller sletter raden | skjuler økta |
+| Id | Ekkos `data.sessionId` | `sensor_events.id` fra lista |
+
+**Pass på id-typen.** `/workouts/<X>` tar en Ekko-sessionId, mens
+`/workouts/<X>/dismiss` tar `id` fra `GET /api/apps/workouts` — altså en
+`sensor_events.id`. Samme posisjon i URL-en, to ulike id-er. Bytter du dem, får
+du 404 uten forklaring.
+
+**Når hva:**
+
+- Feil idrett på din egen økt → `PATCH`. Turen skjedde; rett merkelappen.
+- Ekte søppel du selv lastet opp → `DELETE`.
+- Søppel fra klokka, Dropbox eller Strava → `dismiss`. `DELETE` svarer
+  `matched: 0` her, siden de radene ikke er Ekkos å fjerne.
+- Beskriver flere kilder samme søppeløkt → `dismiss`. Den treffer hele økta;
+  en sletting av Ekkos rad ville bare fjernet én av beskrivelsene.
+
 ## Det Ekko må gjøre
 
 1. Vis økt-lista fra `GET /api/apps/workouts` (alle kilder, ikke bare egne).

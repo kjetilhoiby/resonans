@@ -88,6 +88,14 @@ slutte å hake for mye er trygt, å fjerne opptjent framgang er det ikke. Det st
 **Andre kilder står igjen.** Beskriver Withings-klokka eller en GPX i Dropbox den samme
 turen, er de ikke våre å rette herfra; dedupliseringen tar dem fra da av.
 
+Er økta søppel også i de andre kildene, er **skjuling** veien —
+`POST /api/apps/workouts/<id>/dismiss` treffer økta uansett kilde, og overlever at
+Withings sender den på nytt. `DELETE` her svarer `matched: 0` for en økt Ekko ikke
+skrev, framfor å late som noe ble gjort. Se `docs/ekko-skjul-okt.md`.
+
+NB: de to endepunktene tar **ulike id-er** på samme URL-posisjon — `<sessionId>`
+her, en `sensor_events.id` (fra `GET /api/apps/workouts`) der.
+
 **Strava eier sin egen kopi.** Den må rettes i Strava, og Ekko sier det i kvitteringen —
 også når alt annet gikk bra. En rekord som er borte i tre apper og står i den fjerde er
 nettopp forvirringen 17. august skapte.

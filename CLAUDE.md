@@ -238,16 +238,32 @@ skjuling), `/api/apps/strava/*`, `/api/apps/tesla/*` og `/api/apps/gemini/*`
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
 
-**En økt kan skjules fra Ekko, aldri slettes** (`docs/ekko-skjul-okt.md`,
-`2026-08-15-skjul-okt-fra-ekko.md`). `GET /api/apps/workouts` lister dedupliserte
-økter fra ALLE kilder — en økt fra klokka finnes bare i Resonans, og uten lista er
-den uåtkommelig fra appen. `POST /api/apps/workouts/[id]/dismiss` skjuler.
-Sletting er ikke et alternativ vi valgte bort av forsiktighet: Withings henter sju
-dagers overlapp hvert 5. minutt, så en slettet rad er tilbake før brukeren rekker å
-se etter. Svaret sier derfor `hidden`/`reversible`, ikke `deleted` — appen skal
-kunne bruke et ord som holder. Både denne og web-flatens knapp går gjennom
-`setWorkoutDismissed` (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en
-andre skjulesti.
+**Å fjerne en økt fra Ekko: to mekanismer, og hvilken som gjelder avgjøres av
+HVEM som skrev raden.** De er komplementære, ikke alternativer — og de tar ulike
+id-er på samme URL-posisjon, som er den fella å passe seg for.
+
+| | Rader Ekko selv skrev | Alle andre kilder |
+|---|---|---|
+| Handling | rett (`PATCH`) eller slett (`DELETE`) | skjul (`POST …/dismiss`) |
+| Endepunkt | `/api/apps/workouts/[sessionId]` | `/api/apps/workouts/[id]/dismiss` |
+| Id | Ekkos `data.sessionId` | `sensor_events.id` |
+| Doku | `docs/ekko-rett-og-slett.md` | `docs/ekko-skjul-okt.md` |
+
+- **`[sessionId]` og `[id]` er ULIKE id-typer** på samme segment. `/workouts/<X>`
+  tar Ekkos sessionId; `/workouts/<X>/dismiss` tar en `sensor_events.id` (fra
+  `GET /api/apps/workouts`). SvelteKit tillater det fordi dybden er ulik, men en
+  app-utvikler som antar én id-type får 404 uten forklaring.
+- **Sletting kan bare røre Ekkos egne rader.** Beskriver klokka eller Dropbox den
+  samme turen, står de igjen (`matched: 0`), og da er skjuling det som virker.
+  Retting er hovedveien for feilmerket idrett — turen skjedde.
+- **En Withings-økt kan IKKE slettes**, og det er ikke forsiktighet: synken henter
+  sju dagers overlapp hvert 5. minutt, så en slettet rad er tilbake før brukeren
+  rekker å se etter. `dismiss`-svaret sier derfor `hidden`/`reversible`, ikke
+  `deleted` — appen skal kunne bruke et ord som holder.
+- `GET /api/apps/workouts` lister dedupliserte økter fra ALLE kilder; en økt fra
+  klokka finnes bare i Resonans og er uten lista uåtkommelig fra appen.
+- Både denne og web-flatens knapp går gjennom `setWorkoutDismissed`
+  (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en andre skjulesti.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
