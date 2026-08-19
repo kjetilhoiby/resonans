@@ -107,3 +107,51 @@ og størst-først, og dry-run må vise hver rad før noe skrives.
 - `npm run check`: 0 feil
 - `npm test`: 3583 tester (17 på avstemmingen, 4 av dem på tetthetsfella)
 - Tallene over er hentet fra prod, `granularity=month`
+
+## Er saldotallene til å stole på? Målt, og svaret er delt
+
+> «Skal jeg hente kontoutskrifter igjen, eller har vi trygge saldotall?»
+
+Duplikatoverskuddet er regnet **helt uavhengig av saldoen** — grupper på (dato, beløp, fortegn),
+overskudd = `(n − 1) × beløp`. To beregninger som ikke deler en eneste inngang kan ikke bli enige
+ved uhell.
+
+**Samlet enighet: 0,847.** Under terskelen på 0,9. Men headline-tallet skjuler det som betyr noe:
+
+### De store avvikene er vindisert
+
+| Konto | Periode | Saldoavvik | Duplikatoverskudd | Treff |
+|---|---|---:|---:|---:|
+| `iHPE…` | mai→juni | −27 261 | −27 317 | **0,998** |
+| `iHPE…` | juni→juli | −27 841 | −28 171 | **0,988** |
+| `m2yj…` | juni→juli | +48 355 | +46 955 | **0,971** |
+| `lNi…` | juni→juli | +90 001 | +86 064 | **0,956** |
+
+Disse fire er ~196 000 kr av 300 000, og de treffer innenfor 0,2–4 %. **Det er ikke tilfeldig.**
+Saldoen måler riktig, og duplikatene forklarer avviket der pengene er.
+
+Alle ankre kom dessuten fra **én** sensor per konto — ingen blanding av live-synk og PDF-import,
+som ville gitt sprikende troverdighet.
+
+### Uenigheten har to forklaringer, og begge er kjente
+
+1. **Den inneværende måneden er ikke omme.** Intervallet 31. juli → 18. august treffer
+   systematisk dårligst (0,387–0,738). Saldoen er «nå» mens transaksjoner fortsatt bokføres, så
+   avviket der er delvis reelt ubokførte kjøp framfor duplikater.
+2. **`yLuK` OVERforklarer**: overskudd 7 600 mot avvik 5 700. Kontoen har ekte gjentatte beløp på
+   1 900 kr, så noen `n ≥ 2`-grupper er *to reelle bevegelser*. Nøyaktig fella som er notert over.
+
+`4PEz` (0,501) er den ene som ikke er forklart. Ikke undersøkt.
+
+## Konsekvensen for fase 2
+
+**Svaret på brukerens spørsmål er nei — utskriftene trengs ikke.** Men saldoen kan ikke styre
+ryddingen alene, og det er en skjerping av skissen over:
+
+- **Hold det inneværende intervallet utenfor.** En periode som ikke er omme kan ikke avstemmes, og
+  å rydde etter et avvik der ville fjernet ekte transaksjoner som ennå ikke er bokført.
+- **Krev enighet PER INTERVALL, ikke samlet.** `iHPE` på 0,998 skal kunne ryddes selv om `4PEz`
+  ligger på 0,501. Et samlet tall ville blokkert de sikre tilfellene på grunn av de usikre — samme
+  feilform som å blande nevnere.
+- **Stopp når intervallet stemmer.** Oraklet er fortsatt det som hindrer at motoren går for langt;
+  `yLuK` viser at kandidatgruppene alene ville gjort det.
