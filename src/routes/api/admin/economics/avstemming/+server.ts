@@ -52,12 +52,29 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 	const days = Math.floor(daysParam);
 
-	// Ett saldoanker per konto per DAG — den siste observasjonen. Synken kjører hver 6. time, så
-	// uten dette blir det fire ankere om dagen og intervaller på seks timer, der dagsoppløsningen
-	// på transaksjonene gjør avviket meningsløst.
+	// **Ett anker per konto per MÅNED, ikke per dag.** Dette er hele forskjellen mellom en
+	// måling som virker og en som ikke gjør det.
+	//
+	// Første utgave tok siste anker per DAG. Da blir hvert intervall én dag, og alle
+	// transaksjonene i intervallet ligger på sluttdagen — altså er hele volumet grenseusikkert,
+	// `significant` blir aldri sann, og svaret «ingen avvik» er en egenskap ved MÅLINGEN framfor
+	// ved dataene. Målt i prod ga 29 daglige intervaller «0 avvik» mens to aktive lønnsrader på
+	// 54 685 kr sto på samme dato.
+	//
+	// Ankerne må være grovere enn transaksjonenes oppløsning. `canonical_date` har dagsoppløsning,
+	// så månedlig gir grenseusikkerhet på én dag av tretti. `granularity=day` finnes for å kunne
+	// se fella igjen.
+	const granularityParam = url.searchParams.get('granularity') ?? 'month';
+	if (granularityParam !== 'month' && granularityParam !== 'day') {
+		error(400, 'granularity må være «month» eller «day».');
+	}
+	const bucket = granularityParam === 'day' ? sql`'day'` : sql`'month'`;
 	const anchorRows = rowsOf<{ account_id: string; day: string; balance: string }>(
 		await db.execute(sql`
-			SELECT DISTINCT ON (data->>'accountId', (timestamp AT TIME ZONE 'Europe/Oslo')::date)
+			SELECT DISTINCT ON (
+				data->>'accountId',
+				DATE_TRUNC(${bucket}, timestamp AT TIME ZONE 'Europe/Oslo')
+			)
 				data->>'accountId' AS account_id,
 				(timestamp AT TIME ZONE 'Europe/Oslo')::date::text AS day,
 				(data->>'balance') AS balance
@@ -69,7 +86,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				AND data->>'balance' IS NOT NULL
 			ORDER BY
 				data->>'accountId',
-				(timestamp AT TIME ZONE 'Europe/Oslo')::date,
+				DATE_TRUNC(${bucket}, timestamp AT TIME ZONE 'Europe/Oslo'),
 				timestamp DESC
 		`)
 	);
@@ -107,6 +124,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			}
 			const intervals = reconcileBalances(anchors, txByAccount.get(accountId) ?? []);
 			const significant = intervals.filter((i) => i.significant);
+			// Intervaller der grenseusikkerheten spiser signalet. **Rapporteres**, ellers ser en
+			// umålbar periode ut som en periode der alt stemmer.
+			const unmeasurable = intervals.filter((i) => !i.significant && i.boundaryShare > 0.5);
 			return {
 				accountId,
 				anchors: anchors.length,
@@ -115,6 +135,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				significantIntervals: significant.length,
 				/** Positivt = vi bokfører MER enn kontoen faktisk beveget seg. */
 				significantDiffNok: significantDiffTotal(intervals),
+				/** Summen av ABSOLUTTavvik. Signert sum skjuler at +54 685 og −53 000 er to feil. */
+				absDiffNok:
+					Math.round(significant.reduce((sum, i) => sum + Math.abs(i.diff), 0) * 100) / 100,
+				unmeasurableIntervals: unmeasurable.length,
 				worst: [...significant]
 					.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
 					.slice(0, 10)
@@ -132,12 +156,31 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		window: { days },
 		accountsTotal: accounts.length,
 		accountsReconcilable: reconcilable.length,
+		granularity: granularityParam,
 		/**
-		 * Summen av reelle avvik over alle kontoer.
+		 * Intervaller som ikke kan avstemmes fordi hele volumet ligger på sluttdagen.
 		 *
-		 * **Ikke det samme som «overtelt forbruk»** — inn og ut nuller delvis hverandre ut, og
-		 * en konto kan telle for mye inn mens en annen teller for mye ut. Tallet er et mål på
-		 * hvor mye vi IKKE kan forklare, ikke en korreksjon som kan trekkes fra noe.
+		 * Er dette tallet høyt, er «ingen avvik» meningsløst — se tetthetsfella i
+		 * `balance-reconciliation.ts`.
+		 */
+		totalUnmeasurableIntervals: reconcilable.reduce(
+			(sum, a) => sum + (a.unmeasurableIntervals ?? 0),
+			0
+		),
+		/**
+		 * Sum av ABSOLUTTavvik — det tallet som sier hvor mye vi ikke kan forklare.
+		 *
+		 * Det signerte tallet under skjuler at +54 685 og −53 000 er TO feil, ikke nesten null.
+		 * Signert sum var min egen felle i første runde av denne målingen.
+		 */
+		totalAbsDiffNok:
+			Math.round(reconcilable.reduce((sum, a) => sum + (a.absDiffNok ?? 0), 0) * 100) / 100,
+		/**
+		 * Signert sum av avvikene.
+		 *
+		 * **Ikke det samme som «overtelt forbruk»** — inn og ut nuller delvis hverandre ut, og en
+		 * konto kan telle for mye inn mens en annen teller for mye ut. Les `totalAbsDiffNok` for
+		 * omfanget; dette tallet sier bare hvilken retning nettoen peker.
 		 */
 		totalSignificantDiffNok:
 			Math.round(reconcilable.reduce((sum, a) => sum + (a.significantDiffNok ?? 0), 0) * 100) /
