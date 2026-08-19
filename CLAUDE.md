@@ -804,6 +804,12 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   (synken er additiv og fjerner ALDRI rader en kilde slutter å returnere), og en
   rad med revidert starttidspunkt får ny id og arver ingenting. Se
   `docs/changelog/2026-08-16-svarteliste-for-okter.md`.
+  **Begge sperrene vises og angres på `/settings/skjulte-okter`**, som leser
+  `listHiddenWorkouts` (`$lib/server/workouts/hidden-workouts.ts`). Lista MÅ dekke
+  begge: økter skjult før svartelista fantes har bare flagget, og en liste som
+  utelot dem kunne ikke gjenopprette dem i det hele tatt — en skjult økt finnes
+  ikke i noen annen liste å klikke på. Se
+  `docs/changelog/2026-08-19-skjulte-okter-gjenoppretting.md`.
 - **Matcher du noe mot en klynge, bruk `clusterSportFamily` fra
   `activity-layer.ts`** — ikke `workoutSportFamily` fra `workout-sport.ts`. De
   er ikke enige (`hill` og `løp` går hver sin vei), og en svartelisting skrevet

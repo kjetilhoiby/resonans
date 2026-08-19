@@ -56,6 +56,9 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
 			// oppslaget er én bestemt rad på id — ikke en telling over flere.
 			'lib/server/workouts/dismiss-workout.ts',
+			// «Hva har jeg skjult?» kan ikke besvares av det dedupliserte laget:
+			// det filtrerer nettopp bort disse radene. Leser per kilde, med vilje.
+			'lib/server/workouts/hidden-workouts.ts',
 			'routes/api/admin/cleanup-walking/+server.ts',
 			'routes/api/tema/[id=uuid]/trip/import-walk/+server.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så

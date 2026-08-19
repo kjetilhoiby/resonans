@@ -145,7 +145,12 @@ export function clusterSportFamily(value: string): string {
 	return value;
 }
 
-function normalizeDistanceMeters(value: unknown): number | null {
+/**
+ * Distanse i meter. Verdier ≤ 80 tolkes som kilometer — noen kilder sender km.
+ * Eksportert fordi skjulte-økter-lista må vise det SAMME tallet som feeden;
+ * en tredje kopi av regelen ville før eller siden ment noe annet.
+ */
+export function normalizeDistanceMeters(value: unknown): number | null {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
 	return value > 80 ? value : value * 1000;
 }
