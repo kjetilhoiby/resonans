@@ -2,9 +2,12 @@ import { db } from '$lib/db';
 import { workoutSuppressions } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import {
+	SUPPRESSION_TOLERANCE_MINUTES,
+	isWorkoutSuppressed,
 	suppressionLookupWindow,
 	type WorkoutSuppression
 } from '$lib/domain/health/workout-suppression';
+import { clusterSportFamily } from '$lib/server/activity-layer';
 
 /**
  * Lesing og skriving av øktsvartelista.
@@ -91,4 +94,43 @@ export async function removeWorkoutSuppression(input: {
 		.returning({ id: workoutSuppressions.id });
 
 	return deleted.length;
+}
+
+/**
+ * Er denne økta svartelistet? For skrivestier som må vite det FØR de gjør noe
+ * utover å lagre raden.
+ *
+ * Tidsvinduet i spørringen er bare et prefilter for indeksen — avgjørelsen tas
+ * av `isWorkoutSuppressed`, samme funksjon aktivitetslaget bruker. Ville vi
+ * uttrykt toleransen i SQL, hadde vi hatt to steder som kan mene ulikt om hva
+ * «samme økt» er.
+ *
+ * `sportType` normaliseres med `clusterSportFamily` her, ikke av kalleren:
+ * feil familie-funksjon er nettopp feilen som gjør en svartelisting usynlig.
+ */
+export async function isWorkoutSuppressedForUser(
+	userId: string,
+	startTime: Date,
+	sportType: string | null | undefined
+): Promise<boolean> {
+	if (!Number.isFinite(startTime.getTime())) return false;
+	const sportFamily = clusterSportFamily((sportType ?? 'workout').trim().toLowerCase());
+
+	const windowMs = SUPPRESSION_TOLERANCE_MINUTES * 60 * 1000;
+	const rows = await db
+		.select({
+			startTime: workoutSuppressions.startTime,
+			sportFamily: workoutSuppressions.sportFamily
+		})
+		.from(workoutSuppressions)
+		.where(
+			and(
+				eq(workoutSuppressions.userId, userId),
+				eq(workoutSuppressions.sportFamily, sportFamily),
+				gte(workoutSuppressions.startTime, new Date(startTime.getTime() - windowMs)),
+				sql`${workoutSuppressions.startTime} <= ${new Date(startTime.getTime() + windowMs)}`
+			)
+		);
+
+	return isWorkoutSuppressed({ startTime, sportFamily }, rows);
 }

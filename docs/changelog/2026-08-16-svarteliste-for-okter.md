@@ -111,3 +111,50 @@ et feiltrykk ville vært usynlig og permanent. En bruker som ikke tør trykke
 
 Ingen flate viser svartelista ennå — bare endepunktene. `/settings/snoozes`
 («Skjulte forslag») er mønsteret å følge om den skal få en side.
+
+## Etterspill: Ekko-reeksport (2026-08-19)
+
+Brukeren eksporterte økta fra Ekko på nytt, og den kom tilbake — en fjerde vei
+inn, og den første som gikk gjennom en helt annen sensor.
+
+Svartelista fanget den slik den var ment å gjøre (verifisert: Ekko-eksporten
+startet fire minutter unna Withings-raden og traff toleransevinduet). Men to
+bivirkninger lå UTENFOR aktivitetslaget og ble derfor ikke filtrert:
+
+- **`POST /api/apps/upload` pushet økta til Strava** uansett. Det er den ene
+  bivirkningen brukeren ikke kan angre fra Resonans: en økt hen har sagt at ikke
+  skjedde, lagt ut på en offentlig treningsprofil.
+- **`POST /api/apps/strava/sync` var verre.** Backfillen plukker de siste N
+  `workout`-radene rått, uten å gå gjennom aktivitetslaget, så den så verken
+  svartelista ELLER `metadata.dismissed`. Den siste delen er en eldre feil enn
+  svartelista — en skjult økt kunne publiseres av en knapp som het «synk», og
+  det har vært tilfelle hele tiden.
+
+Begge er nå gatet på `isWorkoutSuppressedForUser` (og `dismissed`). Toleransen
+uttrykkes ikke i SQL: spørringen er et indeks-prefilter, og avgjørelsen tas av
+den samme `isWorkoutSuppressed` aktivitetslaget bruker.
+
+Opplastingssvaret bærer `hidden: true`, fordi en re-eksport ellers ser helt
+vanlig ut for appen — brukeren får `ok: true` og lurer med rette på hvor økta ble
+av.
+
+**Raden skrives fortsatt.** Å avvise skrivingen ble vurdert og forkastet:
+skrivestien skal være additiv og idempotent (det er den samme egenskapen som gjør
+backfill trygt og `wasExisting` meningsfull), og en avvist opplasting ville sett
+ut som en feil i Ekko. Riktig lag er å skrive og filtrere, og å stoppe det som
+rekker utenfor.
+
+### Verifisering av etterspillet
+
+Kjørt ende-til-ende mot ekte Postgres 16 med full schema og dev-serveren: en
+svartelistet Withings-økt seedet, deretter en Ekko-GPX for samme økt lastet opp
+på `/api/apps/upload` med start fire minutter unna.
+
+- Svaret ga `hidden: true`, `ok: true`, `inserted: true` ✓
+- Raden ble skrevet (to rader i `sensor_events`, to ulike sensorer) ✓
+- `GET /api/apps/workouts` returnerte 0 økter ✓
+- `canonical_workouts` tom, ingen dagsrad → ingen CTL/TSB-påvirkning ✓
+- `workout_notifications` tom → ingen push ✓
+- Skjulte-økter-lista viste ÉN oppføring, ikke to — det er én økt ✓
+- Etter «Gjenopprett»: én aktivitet med begge kildene klynget
+  (`['withings','ekko']`, `evidenceCount: 2`), canonical og dagsrad tilbake ✓

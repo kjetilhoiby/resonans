@@ -810,6 +810,15 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   utelot dem kunne ikke gjenopprette dem i det hele tatt — en skjult økt finnes
   ikke i noen annen liste å klikke på. Se
   `docs/changelog/2026-08-19-skjulte-okter-gjenoppretting.md`.
+- **Bivirkninger UTENFOR aktivitetslaget må sjekke svartelista selv.** Filteret i
+  `buildUnifiedWorkoutActivities` dekker lister, canonical, CTL/TSB, autohaking og
+  varsling — men ikke det som rekker ut av Resonans. Strava-pushen i
+  `/api/apps/upload` og backfillen i `/api/apps/strava/sync` gjorde det ikke, og
+  den siste så heller ikke `metadata.dismissed`: en skjult økt kunne publiseres
+  til en offentlig treningsprofil av en knapp som het «synk». Nye utgående
+  bivirkninger skal gate på `isWorkoutSuppressedForUser`. Skrivingen selv skal
+  IKKE avvises — den er additiv og idempotent med vilje; skriv raden, filtrer på
+  lesing, og stopp det som forlater systemet.
 - **Matcher du noe mot en klynge, bruk `clusterSportFamily` fra
   `activity-layer.ts`** — ikke `workoutSportFamily` fra `workout-sport.ts`. De
   er ikke enige (`hill` og `løp` går hver sin vei), og en svartelisting skrevet

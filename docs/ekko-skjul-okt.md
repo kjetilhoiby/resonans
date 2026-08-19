@@ -101,6 +101,27 @@ riktig. For «denne økta skjedde ikke» er det scope-løse kallet riktig.
 Ukjent scope faller til `activity` framfor å feile — en skrivefeil skal ikke
 gjøre knappen død.
 
+## `hidden` på opplastingssvaret
+
+`POST /api/apps/upload` returnerer nå `hidden: true` når økta du lastet opp er
+svartelistet. Økta ER lagret — svaret er `ok: true` som før — men den vises
+ikke noe sted i Resonans.
+
+Feltet finnes fordi en re-eksport ellers ser helt vanlig ut for appen: brukeren
+eksporterte en økt på nytt, fikk `ok: true`, og lurte med rette på hvor den ble
+av. Vis det gjerne som «skjult i Resonans» framfor å tie om det.
+
+To bivirkninger stoppes samtidig, og de er verdt å kjenne til:
+
+- **Ingen Strava-push.** En svartelistet økt legges ikke ut på Strava, verken
+  fra opplastingen eller fra `POST /api/apps/strava/sync`. Det er den ene
+  bivirkningen brukeren ikke kan angre fra Resonans.
+- **Ingen push-varsel.** Varsling går gjennom aktivitetslaget, som filtrerer
+  svartelistede klynger.
+
+Raden skrives fortsatt. Skrivestien skal være additiv og idempotent, og et
+avvist opplastingssvar ville sett ut som en feil i appen.
+
 ## Det Ekko må gjøre
 
 1. Vis økt-lista fra `GET /api/apps/workouts` (alle kilder, ikke bare egne).
