@@ -168,3 +168,59 @@ describe('significantDiffTotal', () => {
 		expect(significantDiffTotal([])).toBe(0);
 	});
 });
+
+describe('tetthetsfella', () => {
+	// Dette gjorde første prod-måling ubrukelig: 29 intervaller over 30 dager ga «0 avvik»
+	// mens to aktive lønnsrader på 54 685 kr sto på samme dato. Med daglige ankere ligger alt
+	// volumet på sluttdagen, så grenseusikkerheten spiser hele signalet.
+	const daily: BalanceAnchor[] = [
+		{ date: '2026-07-22', balance: 0 },
+		{ date: '2026-07-23', balance: 54_685 },
+		{ date: '2026-07-24', balance: 54_685 }
+	];
+	const doubleSalary: ReconTx[] = [
+		{ date: '2026-07-23', amount: 54_685 },
+		{ date: '2026-07-23', amount: 54_685 }
+	];
+
+	it('kan IKKE se dubletten med daglige ankere', () => {
+		const intervals = reconcileBalances(daily, doubleSalary);
+		const july23 = intervals.find((i) => i.toDate === '2026-07-23')!;
+
+		expect(july23.diff).toBe(54_685); // avviket ER der
+		expect(july23.significant).toBe(false); // men kan ikke skilles fra grenseusikkerhet
+		expect(july23.boundaryShare).toBe(1); // hele volumet er på sluttdagen
+	});
+
+	it('ser den straks ankerne er grovere enn transaksjonsoppløsningen', () => {
+		const monthly: BalanceAnchor[] = [
+			{ date: '2026-06-30', balance: 0 },
+			{ date: '2026-07-31', balance: 54_685 }
+		];
+
+		const [interval] = reconcileBalances(monthly, doubleSalary);
+
+		expect(interval.diff).toBe(54_685);
+		expect(interval.significant).toBe(true);
+		expect(interval.boundaryShare).toBe(0);
+	});
+
+	// `boundaryShare` finnes for at en UMÅLBAR periode ikke skal se ut som en periode der
+	// alt stemmer.
+	it('flagger en umålbar periode framfor å kalle den ren', () => {
+		const intervals = reconcileBalances(daily, doubleSalary);
+		const unmeasurable = intervals.filter((i) => i.boundaryShare > 0.5 && !i.significant);
+		expect(unmeasurable.length).toBeGreaterThan(0);
+	});
+
+	it('regner ikke startdagen som usikker', () => {
+		const intervals = reconcileBalances(
+			[
+				{ date: '2026-06-30', balance: 0 },
+				{ date: '2026-07-31', balance: 0 }
+			],
+			[{ date: '2026-06-30', amount: 9999 }]
+		);
+		expect(intervals[0].boundaryAmount).toBe(0);
+	});
+});
