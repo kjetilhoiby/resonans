@@ -231,11 +231,39 @@ Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
 `/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
-`/api/apps/assistant`, `/api/apps/day`, `/api/apps/strava/*`, `/api/apps/tesla/*` og
-`/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
+`/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
+skjuling), `/api/apps/strava/*`, `/api/apps/tesla/*` og `/api/apps/gemini/*`
+(kortlevde Gemini Live-tokens).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
+
+**Å fjerne en økt fra Ekko: to mekanismer, og hvilken som gjelder avgjøres av
+HVEM som skrev raden.** De er komplementære, ikke alternativer — og de tar ulike
+id-er på samme URL-posisjon, som er den fella å passe seg for.
+
+| | Rader Ekko selv skrev | Alle andre kilder |
+|---|---|---|
+| Handling | rett (`PATCH`) eller slett (`DELETE`) | skjul (`POST …/dismiss`) |
+| Endepunkt | `/api/apps/workouts/[sessionId]` | `/api/apps/workouts/[id]/dismiss` |
+| Id | Ekkos `data.sessionId` | `sensor_events.id` |
+| Doku | `docs/ekko-rett-og-slett.md` | `docs/ekko-skjul-okt.md` |
+
+- **`[sessionId]` og `[id]` er ULIKE id-typer** på samme segment. `/workouts/<X>`
+  tar Ekkos sessionId; `/workouts/<X>/dismiss` tar en `sensor_events.id` (fra
+  `GET /api/apps/workouts`). SvelteKit tillater det fordi dybden er ulik, men en
+  app-utvikler som antar én id-type får 404 uten forklaring.
+- **Sletting kan bare røre Ekkos egne rader.** Beskriver klokka eller Dropbox den
+  samme turen, står de igjen (`matched: 0`), og da er skjuling det som virker.
+  Retting er hovedveien for feilmerket idrett — turen skjedde.
+- **En Withings-økt kan IKKE slettes**, og det er ikke forsiktighet: synken henter
+  sju dagers overlapp hvert 5. minutt, så en slettet rad er tilbake før brukeren
+  rekker å se etter. `dismiss`-svaret sier derfor `hidden`/`reversible`, ikke
+  `deleted` — appen skal kunne bruke et ord som holder.
+- `GET /api/apps/workouts` lister dedupliserte økter fra ALLE kilder; en økt fra
+  klokka finnes bare i Resonans og er uten lista uåtkommelig fra appen.
+- Både denne og web-flatens knapp går gjennom `setWorkoutDismissed`
+  (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en andre skjulesti.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
@@ -804,6 +832,35 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   evidence-event — altså en ekte `sensor_events.id`. Rader skrevet før dedupliseringen
   (én per kilde) matcher derfor fortsatt, så en re-kjøring lager ikke nye duplikater av
   gammel historikk. Bytter du nøkkelform, skriver du hele historikken på nytt.
+- **«Skjul økt» er TO sperrer, og de er ikke alternativer.**
+  `metadata.dismissed` er rad-nivå; svartelista (`workout_suppressions`,
+  `$lib/domain/health/workout-suppression.ts`) er økt-nivå og matcher på
+  **tidspunkt + sportsfamilie**, ikke på rad-id. `setWorkoutDismissed` skriver
+  begge. Svartelista finnes fordi flagget kom tilbake på tre måter samme uke:
+  synken overskrev metadata, en sletting hos Withings propagerte aldri hit
+  (synken er additiv og fjerner ALDRI rader en kilde slutter å returnere), og en
+  rad med revidert starttidspunkt får ny id og arver ingenting. Se
+  `docs/changelog/2026-08-16-svarteliste-for-okter.md`.
+  **Begge sperrene vises og angres på `/settings/skjulte-okter`**, som leser
+  `listHiddenWorkouts` (`$lib/server/workouts/hidden-workouts.ts`). Lista MÅ dekke
+  begge: økter skjult før svartelista fantes har bare flagget, og en liste som
+  utelot dem kunne ikke gjenopprette dem i det hele tatt — en skjult økt finnes
+  ikke i noen annen liste å klikke på. Se
+  `docs/changelog/2026-08-19-skjulte-okter-gjenoppretting.md`.
+- **Bivirkninger UTENFOR aktivitetslaget må sjekke svartelista selv.** Filteret i
+  `buildUnifiedWorkoutActivities` dekker lister, canonical, CTL/TSB, autohaking og
+  varsling — men ikke det som rekker ut av Resonans. Strava-pushen i
+  `/api/apps/upload` og backfillen i `/api/apps/strava/sync` gjorde det ikke, og
+  den siste så heller ikke `metadata.dismissed`: en skjult økt kunne publiseres
+  til en offentlig treningsprofil av en knapp som het «synk». Nye utgående
+  bivirkninger skal gate på `isWorkoutSuppressedForUser`. Skrivingen selv skal
+  IKKE avvises — den er additiv og idempotent med vilje; skriv raden, filtrer på
+  lesing, og stopp det som forlater systemet.
+- **Matcher du noe mot en klynge, bruk `clusterSportFamily` fra
+  `activity-layer.ts`** — ikke `workoutSportFamily` fra `workout-sport.ts`. De
+  er ikke enige (`hill` og `løp` går hver sin vei), og en svartelisting skrevet
+  med den ene treffer aldri et filter som bruker den andre. Feilen gir ingen
+  feilmelding; økta bare kommer tilbake.
 - **Vi haker aldri AV automatisk.** To reelle økter innenfor klyngevinduet på to timer
   ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
   hake for mye er trygt; å fjerne opptjent framgang er det ikke.
@@ -843,6 +900,24 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
 - **`wasExisting` på `SensorEventService.write`/`writeMany` er ikke pynt.** Den
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
+- **En upsert overskriver `metadata` i sin helhet — brukerens valg må løftes
+  tilbake.** Nøklene står i `USER_OWNED_METADATA_KEYS`
+  (`$lib/domain/sensor-event-metadata.ts`): `dismissed`, `sourceRejected`,
+  `preferGps`, `preferHr`. Fram til august 2026 satte `set` bare
+  `metadata = excluded.metadata`, så en økt brukeren hadde skjult var tilbake ved
+  neste synk av den samme raden — og med 7 dagers overlapp hvert 5. minutt kunne
+  ferske økter i praksis ikke skjules i det hele tatt. Feilen er usynlig i basen:
+  raden ser riktig ut, og «skjulte aldri» og «skjulte, men vi kastet valget» er
+  ikke til å skille fra hverandre. Legger du til en ny brukerstyrt metadata-nøkkel,
+  hører den i den lista. Se `docs/changelog/2026-08-15-skjul-okt-overlever-synken.md`.
+- **Endrer du hva som TELLER som en økt, må dagsraden re-aggregeres — ikke bare
+  projeksjonen.** `WorkoutProjectionService.refreshForRange` skriver
+  `canonical_workouts` og `workout_daily_aggregates`, men CTL/ATL/TSB leser
+  dagsraden i `sensor_aggregates`, og den skrives bare av `aggregateDailyEffort`.
+  `/dismiss` og `/source-role` refreshet lenge bare projeksjonen: en skjult økt
+  forsvant fra lista med det samme og ble stående i formkurven til nattjobben kl.
+  03 UTC. Kall `aggregatePeriodsFrom` etterpå, slik `runAfterWorkoutWrite` alltid
+  har gjort på skrivesiden.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 

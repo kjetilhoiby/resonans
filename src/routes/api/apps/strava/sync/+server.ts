@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { getConnection, pushSession } from '$lib/server/services/strava-sync-service';
+import { isWorkoutSuppressedForUser } from '$lib/server/workouts/workout-suppressions';
 import { describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 
 /**
@@ -70,6 +71,16 @@ ${trkpts}
 
 type WorkoutEvent = typeof sensorEvents.$inferSelect;
 
+/**
+ * Publiserer én lagret økt til Strava.
+ *
+ * **Skjulte økter hoppes over — begge sperrene.** Backfillen her plukker de siste
+ * N `workout`-radene rått, uten å gå gjennom aktivitetslaget, så den så verken
+ * `metadata.dismissed` eller svartelista. En økt brukeren har sagt at ikke
+ * skjedde, ville altså blitt lagt ut på en offentlig treningsprofil av en
+ * knapp som het «synk». Det er den ene bivirkningen som ikke kan angres fra
+ * Resonans, og derfor den ene som må sjekkes før den skjer.
+ */
 async function syncEvent(userId: string, appId: string, eventRow: WorkoutEvent): Promise<boolean> {
 	const data = (eventRow.data ?? {}) as Record<string, unknown>;
 	const metadata = (eventRow.metadata ?? {}) as Record<string, unknown>;
@@ -77,6 +88,10 @@ async function syncEvent(userId: string, appId: string, eventRow: WorkoutEvent):
 	const points = Array.isArray(data.trackPoints) ? (data.trackPoints as StoredTrackPoint[]) : [];
 
 	if (!sessionId || points.length === 0) return false;
+
+	if (metadata.dismissed === true || metadata.dismissed === 'true') return false;
+	const sportTypeRaw = typeof data.sportType === 'string' ? data.sportType : null;
+	if (await isWorkoutSuppressedForUser(userId, eventRow.timestamp, sportTypeRaw)) return false;
 
 	const sportType = typeof data.sportType === 'string' ? data.sportType : undefined;
 	const name = `${describeWorkoutSportType(sportType ?? '')} — ${new Intl.DateTimeFormat('nb-NO', {
