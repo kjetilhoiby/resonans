@@ -167,6 +167,12 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/integrations/balance-reconstructor.ts',
 			// Leseren selv.
 			'lib/server/economics/transactions.ts',
+			// Avstemming mot saldo trenger en TIDSSERIE av ankere, ett per dag, mens
+			// `readLatestBalances` per definisjon gir bare det ferskeste per konto. Samme
+			// begrunnelse som `balance-reconstructor.ts` over: her er alle snapshotene over tid
+			// nettopp poenget. Endepunktet gjør sin egen DISTINCT ON per konto og dag, altså
+			// ikke feilen vakten finnes for (hente alt og plukke i JS).
+			'routes/api/admin/economics/avstemming/+server.ts',
 			// Skrive-/vedlikeholdsstier.
 			'routes/api/admin/db-stats/+server.ts',
 			'routes/api/admin/deduplicate-economics/+server.ts',
