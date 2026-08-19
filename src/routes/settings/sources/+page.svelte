@@ -9,7 +9,9 @@
 		TeslaSourceCard,
 		EmailRulesCard,
 		EffortReprojectCard,
-		EconomyDiagnosticsCard
+		EconomyDiagnosticsCard,
+		ReservationCleanupCard,
+		BookedDuplicateCleanupCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -116,6 +118,13 @@
 		-->
 		{#if data.user?.isAdmin}
 			<EconomyDiagnosticsCard />
+			<!-- Ryddejobbene står ETTER diagnosen: man måler før man skriver. -->
+			<ReservationCleanupCard />
+			<!--
+				Reservasjonsryddingen først, denne etter: den andre motoren fjerner PENDING-rader,
+				og det som står igjen etterpå er nettopp det denne er til for.
+			-->
+			<BookedDuplicateCleanupCard />
 		{/if}
 	</div>
 	</PageSection>

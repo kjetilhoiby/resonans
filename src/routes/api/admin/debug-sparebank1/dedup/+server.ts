@@ -1,6 +1,13 @@
 import { json } from '@sveltejs/kit';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { pgClient } from '$lib/db';
+import { readTransactions } from '$lib/server/economics/transactions';
+import {
+	doubleCountedTotals,
+	matchReservationsToBooked,
+	type ReservationCandidate
+} from '$lib/domain/economics/reservation-matching';
+import { findInternalTransfers } from '$lib/domain/economics/internal-transfers';
 import type { RequestHandler } from './$types';
 
 /**
@@ -26,6 +33,13 @@ import type { RequestHandler } from './$types';
  * beholder sin opprinnelige `first_seen_at` og får bare `last_seen_at` oppdatert, så
  * gruppering på `first_seen_at` gir «svaret der denne versjonen dukket opp først».
  */
+
+/** Bøttas status som tri-tilstand. Ukjent gjettes ikke til noen av sidene. */
+function bucketStatus(value: string | null): 'pending' | 'booked' | 'unknown' {
+	if (value === 'BOOKED') return 'booked';
+	if (value === 'PENDING') return 'pending';
+	return 'unknown';
+}
 
 const DEFAULT_DAYS = 365;
 const MAX_PAIR_SAMPLES = 60;
@@ -207,6 +221,194 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		[userId, fromDate, DRIFT_WINDOW_DAYS]
 	);
 
+	// ── 5. Livsløp: forsvinner den forrige statusen når den neste kommer? ────
+	//
+	// Brukerens hypotese, og en bedre modell enn attributt-likhet: SB1 **erstatter**
+	// reservasjonen med den bokførte raden framfor å levere begge. Synken vår er additiv,
+	// så begge blir stående — én foreldreløs PENDING og én BOOKED — og telles to ganger.
+	//
+	// Er det sant, er forsvinning en OBSERVASJON og ikke en gjetning: da kan to rader
+	// matches på beløp alene, uten å risikere at to ekte kjøp slås sammen. Ekte kjøp
+	// fortsetter å bli sett; et erstattet gjør ikke.
+	//
+	// **RETTET 2026-08-16 etter måling i prod.** Første utgave påsto at `seen_count = 1`
+	// over hele linja betyr at SB1 minter en ny ID ved hver henting. Det var galt, og
+	// konklusjonen ville sendt oss til å nøkle om rå-strømmen for ingenting.
+	//
+	// Årsaken er vår egen synk: `since = sensor.lastSync` (`sparebank1-sync.ts`), altså et
+	// INKREMENTELT kall som bare ber om det banken har endret siden sist. En uendret rad
+	// kommer derfor aldri tilbake, treffer aldri `ON CONFLICT`, og `seen_count` KAN ikke
+	// vokse — uansett hvor stabil ID-en er. Porten målte vår henterutine, ikke banken.
+	//
+	// Row-tallet avkrefter dessuten ID-churn direkte: med synk hvert 5. minutt og sju
+	// dagers vindu ville en ny ID per henting gitt ~2 000 versjoner per transaksjon.
+	// Målt i prod: 5 650 rå-rader mot 1 125 canonical, altså ~5. Se
+	// `versionsPerCanonicalRow`.
+	//
+	// **Forsvinning kan bare måles med et FULLSTENDIG vindusuttrekk** — en periodisk
+	// avstemming som ignorerer `lastSync` og henter siste N dager i sin helhet. Da blir
+	// «fortsatt der» og «borte» to ulike observasjoner. Uten den er de identiske.
+	const seenCounts = await pgClient.unsafe<{
+		seen_count: number;
+		rows: string;
+	}[]>(
+		`SELECT seen_count, COUNT(*)::text AS rows
+		 FROM raw_bank_transaction_versions
+		 WHERE user_id = $1 AND transaction_date >= $2::date
+		 GROUP BY seen_count
+		 ORDER BY seen_count
+		 LIMIT 40`,
+		[userId, fromDate]
+	);
+
+	// Forsvunne versjoner: `last_seen_at` henger etter det NYESTE tidspunktet noen rad på
+	// samme konto+dato ble sett.
+	//
+	// Sammenligningen må være mot samme DATO, ikke mot nå. En transaksjon slutter å bli
+	// hentet når den faller ut av synkvinduet, og da stopper `last_seen_at` av en helt
+	// godartet grunn. Ligger andre rader på samme dag og fortsatt ble sett etterpå, hentet
+	// vi fortsatt den dagen — og denne raden var ikke der.
+	const disappeared = await pgClient.unsafe<{
+		booking_status: string | null;
+		rows: string;
+		nok: string | null;
+	}[]>(
+		`WITH per_row AS (
+			SELECT booking_status, amount, last_seen_at,
+			       MAX(last_seen_at) OVER (PARTITION BY account_id, transaction_date) AS day_last_seen
+			FROM raw_bank_transaction_versions
+			WHERE user_id = $1 AND transaction_date >= $2::date
+		)
+		SELECT booking_status,
+		       COUNT(*)::text AS rows,
+		       ROUND(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0)::text AS nok
+		 FROM per_row
+		 WHERE last_seen_at < day_last_seen - INTERVAL '1 hour'
+		 GROUP BY booking_status
+		 ORDER BY COUNT(*) DESC`,
+		[userId, fromDate]
+	);
+
+	// Erstatningskandidater: en forsvunnet rad, og en rad med SAMME BELØP på samme konto
+	// som ble sett først ETTER at den forsvant.
+	//
+	// Matchingen er på beløp, som brukeren foreslo — og det er trygt nettopp fordi
+	// forsvinningen alt har fastslått at raden ble erstattet. Verken datoen eller
+	// beskrivelsen inngår, så både datodriften og `SEK `-prefikset blir irrelevante.
+	// `delta_days` og `mk_changed` rapporteres for å VISE hvor fritt de to beveger seg.
+	const superseded = await pgClient.unsafe<{
+		delta_days: number | null;
+		mk_changed: boolean;
+		pairs: string;
+		nok: string | null;
+	}[]>(
+		`WITH per_row AS (
+			SELECT id, account_id, transaction_date, amount, booking_status, status_rank,
+			       description_normalized AS mk, first_seen_at, last_seen_at,
+			       MAX(last_seen_at) OVER (PARTITION BY account_id, transaction_date) AS day_last_seen
+			FROM raw_bank_transaction_versions
+			WHERE user_id = $1 AND transaction_date >= $2::date
+		),
+		gone AS (
+			SELECT * FROM per_row WHERE last_seen_at < day_last_seen - INTERVAL '1 hour'
+		)
+		SELECT (s.transaction_date - g.transaction_date) AS delta_days,
+		       (s.mk IS DISTINCT FROM g.mk)              AS mk_changed,
+		       COUNT(*)::text                            AS pairs,
+		       ROUND(SUM(CASE WHEN g.amount < 0 THEN ABS(g.amount) ELSE 0 END), 0)::text AS nok
+		 FROM gone g
+		 JOIN LATERAL (
+		   SELECT p.* FROM per_row p
+		   WHERE p.id <> g.id
+		     AND p.account_id = g.account_id
+		     AND p.amount = g.amount
+		     AND p.first_seen_at >= g.last_seen_at
+		     AND p.last_seen_at >= g.day_last_seen - INTERVAL '1 hour'
+		   ORDER BY p.first_seen_at
+		   LIMIT 1
+		 ) s ON TRUE
+		 GROUP BY 1, 2
+		 ORDER BY COUNT(*) DESC
+		 LIMIT 100`,
+		[userId, fromDate]
+	);
+
+	// ── 6. Foreldreløs reservasjon mot bokført rad, UTEN merchant_key-kravet ─
+	//
+	// Dette er målingen drift-spørringen ikke kunne gjøre: den joiner på `f.mk = s.mk`, så et
+	// par der beskrivelsen endret seg — «SEK ICA NARA HAGA» mot «ICA NARA HAGA» — var per
+	// konstruksjon usynlig. Målt i prod: 110 av 271 par, 103 165 kr.
+	//
+	// **RETTET 2026-08-16: matchingen er flyttet ut av SQL.** Første utgave var en LATERAL
+	// join som ga hver reservasjon sin nærmeste bokførte rad UTEN å reservere den, så tre
+	// PENDING på 255 kr kunne alle peke på samme bokførte kjøp. Det er nøyaktig samme
+	// én-til-én-feil overføringstellingen hadde, gjentatt i samme fil noen linjer unna, fordi
+	// en LATERAL join med `LIMIT 1` ser uskyldig ut. Nå henter SQL bare bøttene, og
+	// `matchReservationsToBooked` gjør parringen — rent og testet.
+	const buckets = await pgClient.unsafe<{
+		account_id: string;
+		transaction_date: string;
+		amount: string;
+		mk: string;
+		booking_status: string | null;
+	}[]>(
+		// Statusen hentes som TEKST, ikke som rang. `bookingStatusRank` gir 0 for manglende
+		// status, og en utledning «rank < topRank ⇒ reservasjon» gjorde «vi vet ikke» til
+		// «ubokført». Bøtta får den HØYESTE statusen den nådde.
+		`SELECT account_id,
+		        transaction_date::text AS transaction_date,
+		        amount::text           AS amount,
+		        description_normalized AS mk,
+		        CASE WHEN MAX(status_rank) = 20 THEN 'BOOKED'
+		             WHEN MAX(status_rank) = 10 THEN 'PENDING'
+		             ELSE NULL END     AS booking_status
+		 FROM raw_bank_transaction_versions
+		 WHERE user_id = $1 AND transaction_date >= $2::date
+		 GROUP BY 1, 2, 3, 4`,
+		[userId, fromDate]
+	);
+
+	// Interne overføringer merkes med den delte matchingen og holdes utenfor: runde beløp som
+	// gjentas ville blitt paret som reservasjon + bokført. Se `reservation-matching.ts`.
+	const bucketRows = buckets.map((row, index) => ({
+		// Bøtta har ingen egen id — nøkkelen ER identiteten, og indeksen holder den unik.
+		id: `${row.account_id}|${row.transaction_date}|${row.amount}|${row.mk}|${index}`,
+		accountId: row.account_id,
+		date: row.transaction_date,
+		amount: Number(row.amount) || 0,
+		merchantKey: row.mk ?? '',
+		status: bucketStatus(row.booking_status)
+	}));
+	const bucketTransfers = findInternalTransfers(bucketRows);
+
+	const reservationCandidates: ReservationCandidate[] = bucketRows.map((row) => ({
+		...row,
+		internalTransfer: bucketTransfers.internalIds.has(row.id)
+	}));
+
+	const reservationResult = matchReservationsToBooked(reservationCandidates);
+
+	// Histogram på (datoforskjell, endret beskrivelse), som før — men nå fra par som ikke
+	// kan dele motpart.
+	// Histogrammet viser bare FORBRUKS-par. Inntektsparene er like duplisert og skal
+	// deaktiveres, men de hører ikke i en tabell som leses som «dette er forbruk».
+	const orphanBuckets = new Map<string, { deltaDays: number; mkChanged: boolean; pairs: number; nok: number }>();
+	for (const match of reservationResult.matches) {
+		if (match.direction !== 'out') continue;
+		const key = `${match.deltaDays}|${match.merchantKeyChanged}`;
+		const entry = orphanBuckets.get(key) ?? {
+			deltaDays: match.deltaDays,
+			mkChanged: match.merchantKeyChanged,
+			pairs: 0,
+			nok: 0
+		};
+		entry.pairs += 1;
+		entry.nok += match.amount;
+		orphanBuckets.set(key, entry);
+	}
+	const doubleCounted = doubleCountedTotals(reservationResult.matches);
+	const orphanRows = [...orphanBuckets.values()].sort((a, b) => b.pairs - a.pairs);
+
 	// ── Sprik mellom lagrene ─────────────────────────────────────────────────
 	// «Ulike tall på ulike steder», tallfestet. De tre radene skal være enige om
 	// samme periode og er det ikke i dag.
@@ -236,29 +438,34 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		[userId, fromDate]
 	);
 
-	// Hvor mye av «forbruket» er egne overføringer? Parvis: negativ på én konto og
-	// positiv på en annen, samme dag, samme beløp. Ingen av lesestiene ekskluderer dem
-	// i dag, så de blåser opp forbruk og inntekt samtidig.
-	const internalTransfers = await pgClient.unsafe<{
-		pairs: string;
-		transfer_nok: string | null;
-	}[]>(
-		`WITH t AS (
-			SELECT account_id, canonical_date, amount
-			FROM canonical_bank_transactions
-			WHERE user_id = $1 AND is_active = TRUE AND canonical_date >= $2::date
-		)
-		SELECT COUNT(*)::text AS pairs,
-		       ROUND(SUM(ABS(a.amount)), 0)::text AS transfer_nok
-		 FROM t a
-		 JOIN t b ON b.canonical_date = a.canonical_date
-		         AND b.amount = -a.amount
-		         AND b.account_id <> a.account_id
-		 WHERE a.amount < 0`,
-		[userId, fromDate]
-	);
+	// Hvor mye av «forbruket» er egne overføringer?
+	//
+	// **RETTET 2026-08-16.** Første utgave var en SQL self-join, og den var mange-til-mange:
+	// tre uttak på 500 og tre innskudd på 500 samme dag ga NI par. Prod viste 950 050 kr i
+	// «overføringer» mot 936 489 kr totalt forbruk, altså mer enn alt som fantes — og
+	// kortets nettotall ble **−4 581 kr/mnd**, et negativt forbruk. Et instrument som lyver
+	// er verre enn ingen.
+	//
+	// Nå brukes `readTransactions`, altså **samme én-til-én-matching flaten bruker**
+	// (`findInternalTransfers`). Diagnosen og flaten kan da ikke være uenige om dette tallet
+	// — som er hele poenget med én delt leser. At diagnosen hadde sin egen variant var
+	// nøyaktig feilen fase 1 gikk løs på, gjentatt i verktøyet som skulle avdekke den.
+	const { internalTransfers: sharedTransfers } = await readTransactions({
+		userId,
+		from: fromDate
+	});
+	const internalTransferPairs = sharedTransfers.links.length;
+	const internalTransferNok = sharedTransfers.links.reduce((sum, link) => sum + link.amount, 0);
 
 	const driftWithCandidate = drift.filter((d) => d.final_date !== null);
+
+	// Rå-versjoner per canonical-rad. Avkrefter ID-churn per henting: ~5, ikke ~2 000.
+	const canonicalRowCount = Number(
+		stores.find((s) => s.store === 'canonical_bank_transactions')?.rows ?? 0
+	);
+	const rawVersionCount = statuses.reduce((sum, s) => sum + Number(s.versions), 0);
+	const rawVersionsPerCanonicalRow =
+		canonicalRowCount > 0 ? Math.round((rawVersionCount / canonicalRowCount) * 10) / 10 : null;
 
 	return json({
 		window: { days, fromDate },
@@ -311,6 +518,91 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			orphanNok: orphans[0]?.orphan_nok === null ? 0 : Number(orphans[0]?.orphan_nok ?? 0)
 		},
 
+		// Spørsmål 5: forsvinner den forrige statusen når den neste kommer?
+		//
+		// `fingerprintStableAcrossFetches` er PORTEN. Er den falsk, betyr ikke `disappeared`
+		// at noe forsvant — det betyr bare at SB1 minter en ny id per henting, så hver
+		// henting lager en ny rad og ingen rad blir sett to ganger. Da er hele
+		// forsvinningsmålingen meningsløs, og tallene under skal ikke leses.
+		lifecycle: {
+			seenCountHistogram: seenCounts.map((s) => ({
+				seenCount: Number(s.seen_count),
+				rows: Number(s.rows)
+			})),
+			/**
+			 * Rå-versjoner per canonical-rad. Dette er tallet som AVKREFTER at SB1 minter en ny
+			 * ID ved hver henting: med synk hvert 5. minutt ville det vært i tusenklassen.
+			 * Målt i prod 2026-08-16: ~5.
+			 */
+			versionsPerCanonicalRow: rawVersionsPerCanonicalRow,
+			/**
+			 * Sann fordi `since = sensor.lastSync` i `sparebank1-sync.ts`: synken er
+			 * inkrementell, så en uendret rad kommer aldri tilbake og `seen_count` KAN ikke
+			 * vokse. `seen_count = 1` er derfor forventet uansett, og sier ingenting om ID-ene.
+			 * Feltet er hardkodet fordi det er en egenskap ved koden, ikke ved dataene — og det
+			 * står her så ingen leser histogrammet som et funn igjen.
+			 */
+			singleSeenExplainedByIncrementalFetch: true,
+			/** Forsvinning krever et fullstendig vindusuttrekk. Se doc-kommentaren i fila. */
+			disappearanceMeasurable: false,
+			multiSeenRows: seenCounts
+				.filter((s) => Number(s.seen_count) > 1)
+				.reduce((sum, s) => sum + Number(s.rows), 0),
+			singleSeenRows: seenCounts
+				.filter((s) => Number(s.seen_count) === 1)
+				.reduce((sum, s) => sum + Number(s.rows), 0),
+			disappeared: disappeared.map((d) => ({
+				bookingStatus: d.booking_status,
+				rows: Number(d.rows),
+				nok: d.nok === null ? 0 : Number(d.nok)
+			})),
+			superseded: superseded.map((s) => ({
+				deltaDays: s.delta_days === null ? null : Number(s.delta_days),
+				merchantKeyChanged: s.mk_changed,
+				pairs: Number(s.pairs),
+				nok: s.nok === null ? 0 : Number(s.nok)
+			})),
+			/**
+			 * Forsvunne rader UTEN en beløpslik etterfølger. Restposten, og den skal sies.
+			 *
+			 * To grunner den kan være stor, og de krever motsatt handling: beløpet endret seg
+			 * mellom versjonene (valutakurs på et utenlandskjøp, eller tips), eller raden var en
+			 * kansellert reservasjon som aldri ble noe. Er den nær null, dekker
+			 * beløpsmatchingen hele fenomenet.
+			 */
+			disappearedWithoutMatch:
+				disappeared.reduce((sum, d) => sum + Number(d.rows), 0) -
+				superseded.reduce((sum, s) => sum + Number(s.pairs), 0)
+		},
+
+		// Spørsmål 6: foreldreløs reservasjon mot bokført rad UTEN merchant_key-kravet.
+		// Dette er kroner drift-målingen aldri kunne se, og etter multiplisitetsmålingen
+		// (2 av 1 125 bøtter med ekte gjentak) er beløpsmatching forsvarlig her.
+		orphanMatches: orphanRows.map((m) => ({
+			deltaDays: m.deltaDays,
+			merchantKeyChanged: m.mkChanged,
+			pairs: m.pairs,
+			nok: Math.round(m.nok)
+		})),
+		/**
+		 * Reservasjoner UTEN en ledig bokført motpart. Restposten, og den skal rapporteres:
+		 * de er enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+		 */
+		orphansUnmatched: reservationResult.unmatched.length,
+		/** Forbruk som telles to ganger i dag — det fixen fjerner fra forbrukstallet. */
+		doubleCountedNok: Math.round(doubleCounted.spend),
+		/**
+		 * Inntekt som telles to ganger. Like duplisert, og skal deaktiveres på samme måte, men
+		 * det er ikke forbruk — og en sammenblanding var nettopp feilen som tok tallet fra
+		 * 154 703 til 258 117 kr.
+		 */
+		doubleCountedIncomeNok: Math.round(doubleCounted.income),
+		/** Par delt på retning, så ingen kaller trenger å utlede det. */
+		orphanPairs: {
+			out: reservationResult.matches.filter((m) => m.direction === 'out').length,
+			in: reservationResult.matches.filter((m) => m.direction === 'in').length
+		},
+
 		// «Ulike tall på ulike steder», tallfestet.
 		stores: stores.map((s) => ({
 			store: s.store,
@@ -318,13 +610,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			spendNok: s.spend_nok === null ? 0 : Number(s.spend_nok)
 		})),
 
-		// «Summen var åpenbart for høy», tallfestet.
+		// «Summen var åpenbart for høy», tallfestet — med samme matching som flaten.
 		internalTransfers: {
-			pairs: Number(internalTransfers[0]?.pairs ?? 0),
-			nok:
-				internalTransfers[0]?.transfer_nok === null
-					? 0
-					: Number(internalTransfers[0]?.transfer_nok ?? 0)
+			pairs: internalTransferPairs,
+			nok: internalTransferNok
 		},
 
 		notes: [
@@ -335,7 +624,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			'drift.samples er kandidatpar, ikke bekreftede sammenhenger. Tersklene skal leses av histogrammene, ikke velges.',
 			'Er drift.stalledWithCandidate 0 fordi alle bøtter har samme toppstatus, gjelder ikke driftshypotesen for lagrede data — det er også et svar.',
 			'drift-joinen prioriterer eksakt beløp foran nær dato. Første utgave gjorde det motsatt og mispairet flere kjøp hos samme merchant samme dag; les gamle uttrekk med det i mente.',
-			'multiplicity er meningsløs for data synket før 2026-08-11: rå-tabellen ble til da skrevet POST batch-kollaps, så den kunne per konstruksjon aldri vise mer enn 1. Måling krever data synket etter at rå-strømmen ble gjort rå.'
+			'multiplicity er meningsløs for data synket før 2026-08-11: rå-tabellen ble til da skrevet POST batch-kollaps, så den kunne per konstruksjon aldri vise mer enn 1. Måling krever data synket etter at rå-strømmen ble gjort rå.',
+			'lifecycle.fingerprintStableAcrossFetches er porten for hele livsløpsmålingen. raw_fingerprint inneholder externalTransactionId; minter SB1 en ny id per henting, får hver henting en ny rad, seen_count blir alltid 1, og «forsvunnet» betyr da ingenting.',
+			'lifecycle.disappeared sammenligner last_seen_at mot det nyeste tidspunktet noen rad på SAMME konto+dato ble sett — ikke mot nå. En transaksjon slutter å bli hentet når den faller ut av synkvinduet, og det er en godartet grunn til at last_seen_at stopper.',
+			'lifecycle.superseded matcher på BELØP alene, uten dato og uten beskrivelse. Det er trygt bare fordi forsvinningen alt har fastslått at raden ble erstattet — samme matching uten forsvinningskravet ville slått sammen to ekte kjøp på samme beløp.',
+			'superseded[].merchantKeyChanged = true betyr at beskrivelsen endret seg mellom de to versjonene (f.eks. «SEK ICA NARA HAGA» → «ICA NARA HAGA»). Slike par er per konstruksjon usynlige for drift-målingen over, som krever samme merchant_key.'
 		]
 	});
 };

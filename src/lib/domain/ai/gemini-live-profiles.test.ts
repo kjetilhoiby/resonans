@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
 	ASSISTANT_FUNCTION_DECLARATIONS,
-	MINT_RATE_LIMIT_PER_DAY,
+	COACH_FUNCTION_DECLARATIONS,
+	MINT_RATE_LIMIT_PER_HOUR,
 	MINT_RATE_WINDOW_MS,
 	TOOLSET_VERSION,
 	evaluateMintRateLimit,
@@ -33,9 +34,30 @@ describe('resolveTokenProfile', () => {
 });
 
 describe('toolsForProfile', () => {
-	it('voice-test og coach er tomme — coach-verktøyene designes i fase 3b', () => {
+	it('voice-test er tom — spiken skal være byte-identisk med før profilene fantes', () => {
 		expect(toolsForProfile('voice-test')).toEqual([]);
-		expect(toolsForProfile('coach')).toEqual([]);
+	});
+
+	it('coach får handlinger appen alt kan gjøre, ikke nye', () => {
+		// Avgrensningen er poenget: dette er ting som til nå krevde at man tok opp
+		// telefonen midt i en løpetur. `markLap` er utelatt fordi en runde henger
+		// sammen med autohaking, effort og progresjon — det skal ikke oppfinnes i en
+		// verktøydeklarasjon.
+		expect(toolNamesForProfile('coach')).toEqual([
+			'startSharing',
+			'stopSharing',
+			'sendViewerReply'
+		]);
+	});
+
+	it('getWorkoutStatus finnes ikke — klienten sender fersk status ved hvert mic-vindu', () => {
+		// Et verktøy for tall modellen allerede har er en ekstra rundtur midt i en økt.
+		expect(toolNamesForProfile('coach')).not.toContain('getWorkoutStatus');
+	});
+
+	it('deling krever muntlig bekreftelse i selve beskrivelsen', () => {
+		const share = COACH_FUNCTION_DECLARATIONS.find((d) => d.name === 'startSharing');
+		expect(share!.description).toContain('Bekreft muntlig');
 	});
 
 	it('assistant låser executor-verktøyene, med startWorkout.place', () => {
@@ -93,9 +115,13 @@ describe('buildAuthTokenRequest med profil', () => {
 		}
 	});
 
-	it('coach-profilen låser tom verktøyliste men ikke systemInstruction', () => {
+	it('coach-profilen låser coach-verktøyene men ikke systemInstruction', () => {
+		// systemInstruction må forbli klient-skrivbar: øktrammen (sport, mål, rute) og
+		// kald-oppstartens ferske tall bygges i appen og kan ikke ligge i tokenet.
 		const body = buildAuthTokenRequest({ now: NOW, profile: 'coach' });
-		expect(body.bidiGenerateContentSetup.tools).toEqual([]);
+		expect(body.bidiGenerateContentSetup.tools).toEqual([
+			{ functionDeclarations: COACH_FUNCTION_DECLARATIONS }
+		]);
 		expect(body.bidiGenerateContentSetup).not.toHaveProperty('systemInstruction');
 	});
 });
@@ -153,15 +179,26 @@ describe('evaluateMintRateLimit', () => {
 	it('slipper gjennom under grensa og teller ned remaining', () => {
 		const decision = evaluateMintRateLimit(mints(5), NOW);
 		expect(decision.allowed).toBe(true);
-		expect(decision.remaining).toBe(MINT_RATE_LIMIT_PER_DAY - 6);
+		expect(decision.remaining).toBe(MINT_RATE_LIMIT_PER_HOUR - 6);
 		expect(decision.retryAfterSeconds).toBeNull();
 	});
 
 	it('avviser på grensa med retryAfter mot den som må eldes ut', () => {
-		const decision = evaluateMintRateLimit(mints(MINT_RATE_LIMIT_PER_DAY), NOW);
+		// Tett nok til å ligge inne i timesvinduet: 20 mint med to minutters mellomrom.
+		const decision = evaluateMintRateLimit(mints(MINT_RATE_LIMIT_PER_HOUR, 2), NOW);
 		expect(decision.allowed).toBe(false);
-		// Eldste mint er 300 min gammel → den faller ut av døgnvinduet om 24 t − 300 min.
-		expect(decision.retryAfterSeconds).toBe((24 * 60 - MINT_RATE_LIMIT_PER_DAY * 10) * 60);
+		// Eldste mint er 40 min gammel → faller ut av timesvinduet om 20 minutter.
+		expect(decision.retryAfterSeconds).toBe((60 - MINT_RATE_LIMIT_PER_HOUR * 2) * 60);
+	});
+
+	it('gårsdagens loop koster ingenting i dag — og timen før koster ingenting nå', () => {
+		// Formålet med å bytte fra døgn til time: en loop som brant 18 mint i går kveld skal
+		// ikke kunne blokkere en test i dag. 17. august var kvota tom kl. 20:46 av den grunn.
+		const lastNight = Array.from(
+			{ length: 18 },
+			(_, i) => new Date(NOW.getTime() - 3 * 60 * 60 * 1000 - i * 60 * 1000)
+		);
+		expect(evaluateMintRateLimit(lastNight, NOW).allowed).toBe(true);
 	});
 
 	it('ignorerer minter utenfor vinduet — gårsdagens økter koster ingenting i dag', () => {
@@ -181,7 +218,7 @@ describe('evaluateMintRateLimit', () => {
 
 	it('en 3-timers økt med rotasjon hvert 25. minutt går klart under grensa', () => {
 		// Dimensjoneringstesten fra briefen: ~6–8 minter på en lang tur skal aldri
-		// være i nærheten av å stoppes.
+		// være i nærheten av å stoppes. Med timesvindu er bare de siste to inne i det.
 		const longRun = mints(8, 25);
 		expect(evaluateMintRateLimit(longRun, NOW).allowed).toBe(true);
 	});

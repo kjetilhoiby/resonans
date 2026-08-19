@@ -338,7 +338,10 @@
 				onclick={() => { selectedConvId = null; navError = ''; }}
 				aria-label="Tilbake til samtaler"
 			>
-				<Icon name="back" size={16} /> Samtaler
+				<!-- Ingen pil: designsystemet har ingen separate tilbake-ikoner. Dette er
+				     dessuten en liste/detalj-veksling inne i fanen, ikke sidenavigasjon,
+				     så det finnes ingen tittel å henge den på — teksten navngir målet. -->
+				Alle samtaler
 			</button>
 		</div>
 

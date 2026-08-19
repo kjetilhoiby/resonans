@@ -22,6 +22,9 @@
 		prevSpendPerDay: number | null;
 		prevGrocerySpendPerDay: number | null;
 		comparisonPeriodsUsed: number;
+		inferredPaydayDates: string[];
+		comparisonDays: number;
+		longestComparisonPeriodDays: number;
 		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
 		transactions: TxItem[];
 		groceryTransactions: TxItem[];
@@ -190,6 +193,14 @@
 		{ day: 0, total: 0 },
 		...paydaySpend.averageComparisonPoints.map((p) => ({ day: p.day, total: p.grocery }))
 	]);
+	/**
+	 * Over dette regnes en «lønnsperiode» som to slått sammen.
+	 *
+	 * En månedslønn gir 28–31 dager; 35 gir slack for en lønning som havner noen dager på hver
+	 * side av en helg uten å rope ulv.
+	 */
+	const MERGED_PERIOD_DAYS = 35;
+
 	const totalBurnupMax = $derived.by(() => {
 		const compMax = Math.max(0, ...totalComparisonBurnupPoints.map((p) => p.total));
 		return Math.max(1, compMax > 0 ? compMax : Math.max(...totalBurnupPoints.map((p) => p.total)));
@@ -213,7 +224,36 @@
 </script>
 
 <p class="ed-widget-context">
-	Forbruk per dag siden lønn — nåværende periode er {paydaySpend.daysSincePayday} dager.{#if paydaySpend.comparisonPeriodsUsed > 0} Stiplet linje viser snitt av {paydaySpend.comparisonPeriodsUsed} foregående {paydaySpend.comparisonPeriodsUsed === 1 ? 'periode' : 'perioder'}.{/if}
+	Forbruk per dag siden lønn — nåværende periode er {paydaySpend.daysSincePayday} dager.
+	{#if paydaySpend.comparisonPeriodsUsed > 0}
+		Stiplet linje viser snitt av {paydaySpend.comparisonPeriodsUsed} foregående
+		{paydaySpend.comparisonPeriodsUsed === 1 ? 'periode' : 'perioder'}, og stopper etter
+		<!--
+			Kappingen forklares framfor å bare skje. Linja slutter ved den KORTESTE tidligere
+			perioden, fordi et snitt over en krympende populasjon kan synke — og en akkumulert
+			kurve som synker er en umulighet brukeren ser før vi gjør.
+		-->
+		{paydaySpend.comparisonDays} dager, som er den korteste av dem.
+		{#if paydaySpend.inferredPaydayDates.length > 0}
+			<!--
+				Slutningen sies med ord. En antatt lønnsdato som ser observert ut er verre enn et
+				hull, fordi ingen da kan etterprøve tallene den bærer.
+			-->
+			NB: {paydaySpend.inferredPaydayDates.length === 1 ? 'lønnsdatoen' : 'lønnsdatoene'}
+			{paydaySpend.inferredPaydayDates.join(', ')}
+			{paydaySpend.inferredPaydayDates.length === 1 ? 'er antatt' : 'er antatt'} — lønnsraden
+			mangler i banken den måneden, så datoen er satt til den vanlige lønnsdagen.
+		{/if}
+		{#if paydaySpend.longestComparisonPeriodDays > MERGED_PERIOD_DAYS}
+			<!--
+				Symptomet på at en lønnsdato ikke ble kjent igjen. Kappingen skjuler det, så det må
+				sies med ord — ellers ser snittet bare litt rart ut uten at noen vet hvorfor.
+			-->
+			NB: den lengste av dem er {paydaySpend.longestComparisonPeriodDays} dager, altså
+			sannsynligvis to perioder slått sammen fordi en lønnsdato ikke ble kjent igjen. Snittet
+			blir da for høyt.
+		{/if}
+	{/if}
 </p>
 <div class="ed-grid">
 	<!-- Widget 1: Total forbruk per dag siden lønn -->

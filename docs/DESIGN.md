@@ -33,7 +33,14 @@ Tommelfingerregel for hvor en ny seksjon hører hjemme: *demoer jeg én komponen
 
 ## Navigasjon og header
 
-- **Tittelen ER tilbakeknappen.** Bruk `titleHref` (eller `onTitleClick`) — aldri `backHref` eller separate tilbake-ikoner.
+- **Tittelen ER tilbakeknappen.** Bruk `titleHref` (eller `onTitleClick`). `PageHeader`
+  har **ingen** `backHref` — propen er fjernet, så regelen håndheves av typen og ikke av
+  hukommelsen. Gjelder også ark og paneler: tittelen i toppen er lukkeflaten, ikke en pil
+  ved siden av den.
+- **Unntaket er ikke tilbake, men «forrige».** Et steg bakover i en flyt
+  (`FlowSheetFooter`) og forrige/neste-par i en kalender (`MonthCalendar`, `MonthHeader`)
+  er navigasjon *langs* en akse, ikke ut av en flate. De beholder pilen — der finnes det
+  ingen tittel å henge den på, og et par piler leses som en akse.
 - Maks 1–2 små knapper til høyre i headeren (aksjon-knapper, ikke navigasjon). Bruk `IconButton` (32×32, `btn-icon`-stil) eller kompakte pill-knapper som `mp-nav-btn`.
 - Tema-sider bruker `emoji`-prop på PageHeader for tema-ikon ved siden av tittelen.
 

@@ -33,12 +33,17 @@ export async function sendSalaryReceivedNudge(
 
 	const payDay = await detectGlobalPayday(userId);
 
-	if (payDay && payDay.paydayDates.length >= 2) {
-		mostRecentPayday = payDay.paydayDates[payDay.paydayDates.length - 1];
-		prevPaydayDate = payDay.paydayDates[payDay.paydayDates.length - 2];
+	// **`observedPaydayDates`, ikke `paydayDates`.** Den utfylte serien inneholder antatte
+	// datoer for måneder der lønnsraden mangler, og et varsel om at lønna har kommet skal
+	// aldri fyre på en slutning. `fillPaydayGaps` fyller bare MELLOM observasjoner, så siste
+	// element er observert uansett — men den invarianten skal ikke et varsel hvile på.
+	const observedPaydays = payDay?.observedPaydayDates ?? [];
+	if (payDay && observedPaydays.length >= 2) {
+		mostRecentPayday = observedPaydays[observedPaydays.length - 1];
+		prevPaydayDate = observedPaydays[observedPaydays.length - 2];
 		sourceAccountId = payDay.sourceAccountId;
-	} else if (opts.force && payDay && payDay.paydayDates.length >= 1) {
-		mostRecentPayday = payDay.paydayDates[payDay.paydayDates.length - 1];
+	} else if (opts.force && payDay && observedPaydays.length >= 1) {
+		mostRecentPayday = observedPaydays[observedPaydays.length - 1];
 		sourceAccountId = payDay.sourceAccountId;
 	} else if (opts.force) {
 		// Raw fallback: most recent transaction >= 10 000 kr

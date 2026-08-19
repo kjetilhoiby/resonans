@@ -114,7 +114,15 @@ export const ASSISTANT_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
 		parameters: {
 			type: 'OBJECT',
 			properties: {
-				type: { type: 'STRING', description: 'løp|sykkel|gåtur|ski|tredemølle|yoga (default løp)' },
+				// NB: lista MÅ stemme med `AssistantToolExecutor.sport(from:)` i Ekko. Fram til
+				// 17. august 2026 manglet «elsykkel» her mens appen kjente den — og en modell som
+				// bare får se seks verdier finner sin egen syvende. Felttesten: brukeren ba om
+				// elsykkel, modellen bekreftet «sykkeløkt … på elsykkel» høyt, og økta ble LØPING,
+				// fordi verdien den sendte ikke traff noen gren i appen.
+				type: {
+					type: 'STRING',
+					description: 'løp|sykkel|elsykkel|gåtur|ski|tredemølle|yoga (default løp)'
+				},
 				distanceKm: { type: 'NUMBER' },
 				minutes: { type: 'NUMBER' },
 				shape: { type: 'STRING', description: 'tur-retur|én vei|rundtur' },
@@ -145,8 +153,46 @@ export const ASSISTANT_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
  * Tomheten er like bindende som assistentens liste: masken dekker `tools`
  * uansett.
  */
+/**
+ * Coach-verktøy (brief-PR 11) — handlinger under en pågående økt.
+ *
+ * Avgrensningen er bevisst smal: dette er ting appen ALLEREDE kan gjøre, som til nå
+ * krevde at man tok opp telefonen midt i en løpetur. Verktøy som ville krevd ny
+ * domeneatferd (markere runde manuelt) er holdt utenfor — en runde er koblet til
+ * autohaking, effort og progresjon, og skal ikke oppfinnes gjennom en verktøydeklarasjon.
+ *
+ * `getWorkoutStatus` finnes med vilje IKKE: klienten sender en fersk `[status]`-linje hver
+ * gang mikrofonvinduet åpnes, så modellen har alltid tallene når brukeren spør. Et verktøy
+ * for det samme ville vært en ekstra rundtur for data den allerede har.
+ */
+export const COACH_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
+	{
+		name: 'startSharing',
+		description:
+			'Start posisjonsdeling for den pågående økta og gi brukeren en delbar lenke. Bekreft muntlig før du kaller denne.',
+		parameters: { type: 'OBJECT', properties: {} }
+	},
+	{
+		name: 'stopSharing',
+		description: 'Avslutt posisjonsdelingen for den pågående økta.',
+		parameters: { type: 'OBJECT', properties: {} }
+	},
+	{
+		name: 'sendViewerReply',
+		description:
+			'Send en kort melding til dem som følger økta i sanntid. Brukes når brukeren ber deg svare noen som ser på — ikke for vanlig coaching.',
+		parameters: {
+			type: 'OBJECT',
+			properties: { text: { type: 'STRING', description: 'Meldingen, med brukerens egne ord.' } },
+			required: ['text']
+		}
+	}
+];
+
 export function toolsForProfile(profile: TokenProfile): GeminiTool[] {
-	return profile === 'assistant' ? [{ functionDeclarations: ASSISTANT_FUNCTION_DECLARATIONS }] : [];
+	if (profile === 'assistant') return [{ functionDeclarations: ASSISTANT_FUNCTION_DECLARATIONS }];
+	if (profile === 'coach') return [{ functionDeclarations: COACH_FUNCTION_DECLARATIONS }];
+	return [];
 }
 
 /** Navnelista til `capabilities.tools` i token-svaret — klientens allow-list. */
@@ -187,6 +233,8 @@ const PERSONAS: Record<TokenProfile, TokenPersona | null> = {
 			'Du er en norsk løpecoach som snakker i ørepropper under en økt.',
 			'Norsk bokmål, én til to korte setninger per melding, aldri lister.',
 			'Siter tallene du får ordrett — regn aldri om dem selv.',
+			'Du kan starte og stoppe posisjonsdeling og sende meldinger til dem som følger økta.',
+			'Bekreft muntlig før du deler posisjon — det er en handling brukeren skal ha bedt om.',
 			'Unngå ordet «ekko» i svarene dine.'
 		].join(' ')
 	}
@@ -211,15 +259,25 @@ export function isProfileDisabled(envValue: string | null | undefined, profile: 
 }
 
 /**
- * Mint-ratelimit: 30 per bruker per rullende døgn.
+ * Mint-ratelimit: 20 per bruker per rullende TIME.
  *
- * Dimensjonert fra briefen: en 3-timers økt med planlagt rotasjon minter ~6
- * tokens, så 30 dekker flere lange økter samme dag med god margin. Grensa
- * finnes ikke for normal bruk, men for en klient i reconnect-sløyfe — den skal
- * stoppes av oss med en `retryAfter`, ikke av Googles kvote uten forklaring.
+ * **Vakten finnes for å stoppe en klient i loop, ikke for å budsjettere bruk.** Google har
+ * ingen dagsgrense på utstedte tokens; kostnaden ligger i Live-BRUKEN (lydminutter), og den
+ * er bundet av hvor lenge man faktisk snakker — ikke av hvor mange tokens som ble mintet.
+ * Antall mint er derfor en dårlig proxy for kostnad, og en god proxy for «noe kjører løpsk».
+ *
+ * **Vinduet var et døgn fram til 17. august 2026, og det var feil form.** En loop gjør 18
+ * mint i 20 minutter (målt, 16. august); et døgnvindu fanger den, men straffer deretter en
+ * hel dag. I praksis: kvota var tom kl. 08:47, og fortsatt tom kl. 20:46 — på grunn av gårsdagens
+ * kveld. En testdag ble spist av en feil som alt var rettet. En rullende time fanger loopen
+ * **raskere** (20 minutter mot 24 timer) og er usynlig for normal bruk.
+ *
+ * Dimensjonering etter at klienten gjenbruker tokenet ved gjenopptakelse: én økt ≈ 1 mint,
+ * en 3-timers tur ≈ 6 med planlagt rotasjon. 20 i timen er altså rikelig for en testdag med
+ * gjentatte økter, og trippes bare av noe som er i stykker.
  */
-export const MINT_RATE_LIMIT_PER_DAY = 30;
-export const MINT_RATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const MINT_RATE_LIMIT_PER_HOUR = 20;
+export const MINT_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 export interface MintRateDecision {
 	allowed: boolean;
@@ -242,7 +300,7 @@ export interface MintRateDecision {
 export function evaluateMintRateLimit(
 	previousMints: Date[],
 	now: Date,
-	limit: number = MINT_RATE_LIMIT_PER_DAY
+	limit: number = MINT_RATE_LIMIT_PER_HOUR
 ): MintRateDecision {
 	const windowStart = now.getTime() - MINT_RATE_WINDOW_MS;
 	const inWindow = previousMints

@@ -8,8 +8,13 @@
 	 *
 	 * Bakgrunn i `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`. Kort fortalt: tre
 	 * parallelle lagre ga 6,0 mill. / 1,58 mill. / 1,48 mill. kr «forbruk» over samme år, og
-	 * 68 % av canonicals forbruk var penger flyttet mellom egne kontoer. Etter fase 1 og 2
-	 * skal radene under være enige, og månedsforbruket lande rundt 42 000 kr.
+	 * en stor del av canonicals «forbruk» var penger flyttet mellom egne kontoer.
+	 *
+	 * **Sett ikke inn et forventet kronetall her.** Det sto «månedsforbruket lande rundt
+	 * 42 000 kr», og det var galt: tallet var avledet av en overføringssum som selv kom fra en
+	 * mange-til-mange SQL-join, altså overtelt. Målt med korrekt én-til-én-matching er
+	 * nettoforbruket **~189 000 kr/mnd** (90 dager, august 2026). Et avledet tall arver feilen
+	 * i grunnlaget uten å se usikkert ut.
 	 *
 	 * Endepunktet er admin-gated, så kortet vises bare for admin — «403» uten tekst ville
 	 * sett ut som en feil i diagnosen framfor manglende tilgang.
@@ -35,6 +40,22 @@
 		underreportedNok: number;
 	};
 	type StoreRow = { store: string; rows: number; spendNok: number };
+	type Lifecycle = {
+		seenCountHistogram: Array<{ seenCount: number; rows: number }>;
+		versionsPerCanonicalRow: number | null;
+		singleSeenExplainedByIncrementalFetch: boolean;
+		disappearanceMeasurable: boolean;
+		multiSeenRows: number;
+		singleSeenRows: number;
+		disappeared: Array<{ bookingStatus: string | null; rows: number; nok: number }>;
+		disappearedWithoutMatch: number;
+		superseded: Array<{
+			deltaDays: number | null;
+			merchantKeyChanged: boolean;
+			pairs: number;
+			nok: number;
+		}>;
+	};
 	type Result = {
 		window: { days: number; fromDate: string };
 		statuses: StatusRow[];
@@ -49,6 +70,17 @@
 		};
 		stores: StoreRow[];
 		internalTransfers: { pairs: number; nok: number };
+		lifecycle?: Lifecycle;
+		orphanMatches?: Array<{
+			deltaDays: number | null;
+			merchantKeyChanged: boolean;
+			pairs: number;
+			nok: number;
+		}>;
+		orphansUnmatched?: number;
+		doubleCountedNok?: number;
+		doubleCountedIncomeNok?: number;
+		orphanPairs?: { out: number; in: number };
 	};
 
 	let days = $state('365');
@@ -75,18 +107,36 @@
 		if (!raw || !canonical || canonical.spendNok === 0) return null;
 
 		const ratio = raw.spendNok / canonical.spendNok;
+		// **RETTET 2026-08-16.** Forrige utgave sa «det er forventet» uansett retning, og i
+		// prod kom `sensor_events` inn LAVERE enn canonical (0,7×). En tekst som godkjenner
+		// begge retninger godkjenner også den som er umulig: rå-strømmen kan ikke ha færre
+		// kroner enn den deduperte utgaven av seg selv.
+		if (ratio < 0.95) {
+			return `sensor_events er ${ratio.toFixed(1)}× canonical — altså LAVERE. Det skal ikke kunne skje: den rå strømmen beholder hver versjon, så den kan ikke ha færre kroner enn den deduperte utgaven. Enten mangler sensor_events rader canonical har, eller de to vinduene måler ulike datofelt (timestamp mot canonical_date). Uavklart, og verdt en egen måling.`;
+		}
 		return `sensor_events er ${ratio.toFixed(1)}× canonical. Det er forventet — den rå strømmen beholder hver versjon av hver transaksjon. Avviket er bare et problem hvis en flate leser der.`;
 	});
 
-	/** Månedsforbruk fra canonical. Skal lande rundt 42 000, ikke 132 000. */
+	/**
+	 * Månedsforbruk fra canonical, brutto og netto.
+	 *
+	 * Ingen forventet verdi er hardkodet her, med vilje: forrige utgave sa «skal lande rundt
+	 * 42 000», et tall som selv kom fra en overtelt overføringssum. Et forventet tall uten
+	 * måling bak seg blir en påstand kortet ikke kan innfri.
+	 */
 	const monthlySpend = $derived.by(() => {
 		if (!result) return null;
 		const canonical = result.stores.find((s) => s.store === 'canonical_bank_transactions');
 		if (!canonical) return null;
 		const months = result.window.days / 30.4;
+		const net = (canonical.spendNok - result.internalTransfers.nok) / months;
 		return {
 			gross: canonical.spendNok / months,
-			net: (canonical.spendNok - result.internalTransfers.nok) / months
+			net,
+			// Et negativt «forbruk» er ikke et lite forbruk, det er en feil i regnestykket:
+			// overføringene overstiger alt som finnes. Prod viste −4 581 kr/mnd da
+			// overføringstellingen var en mange-til-mange join. Flagget står igjen som vakt.
+			impossible: net < 0
 		};
 	});
 
@@ -100,6 +150,58 @@
 	const multiplicityMeasurable = $derived(
 		result?.multiplicity.some((row) => row.multiplicity > 1) ?? false
 	);
+
+	/**
+	 * Kan forsvinning måles i det hele tatt?
+	 *
+	 * **RETTET 2026-08-16 etter måling i prod.** Første utgave konkluderte at `seen_count = 1`
+	 * over hele linja betyr at SB1 minter en ny ID ved hver henting, og ba brukeren nøkle om
+	 * rå-strømmen. Det var galt, og arbeidet ville vært bortkastet.
+	 *
+	 * Årsaken er vår egen synk: `since = sensor.lastSync`, altså inkrementelt. En uendret rad
+	 * kommer aldri tilbake, treffer aldri `ON CONFLICT`, og `seen_count` KAN ikke vokse
+	 * uansett hvor stabil ID-en er. Porten målte henterutinen vår, ikke banken.
+	 */
+	const lifecycleGate = $derived.by(() => {
+		const cycle = result?.lifecycle;
+		if (!cycle) return null;
+		const perRow = cycle.versionsPerCanonicalRow;
+		return {
+			measurable: cycle.disappearanceMeasurable,
+			text:
+				`Alle ${cycle.singleSeenRows.toLocaleString('nb-NO')} rader har seen_count 1, og det er ` +
+				`forventet: synken er inkrementell (\`since = sensor.lastSync\`), så en uendret rad ` +
+				`kommer aldri tilbake og kan ikke telles på nytt. Tallet sier derfor ingenting om ` +
+				`ID-ene — det måler henterutinen vår.`,
+			ruleOut:
+				perRow === null
+					? null
+					: `${perRow.toString().replace('.', ',')} rå-versjoner per canonical-rad avkrefter likevel ID-churn: ` +
+						`med synk hvert 5. minutt og sju dagers vindu ville en ny ID per henting gitt ` +
+						`i tusenklassen, ikke ~5. Banken sender altså en håndfull versjoner per kjøp.`,
+			next:
+				`Forsvinning krever et FULLSTENDIG vindusuttrekk — en avstemming som ignorerer ` +
+				`lastSync og henter siste N dager i sin helhet. Først da er «fortsatt der» og ` +
+				`«borte» to ulike observasjoner. Uten den er de identiske, og hypotesen er ` +
+				`uavklart snarere enn avkreftet.`
+		};
+	});
+
+	/** Kroner i foreldreløse reservasjoner som fant en bokført rad med samme beløp. */
+	const orphanTotal = $derived.by(() => {
+		const rows = result?.orphanMatches ?? [];
+		return {
+			pairs: rows.reduce((sum, r) => sum + r.pairs, 0),
+			nok: rows.reduce((sum, r) => sum + r.nok, 0),
+			mkChanged: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.pairs, 0),
+			mkChangedNok: rows.filter((r) => r.merchantKeyChanged).reduce((s, r) => s + r.nok, 0)
+		};
+	});
+
+	// NB: `lifecycle.disappeared` og `lifecycle.superseded` hentes fortsatt av endepunktet,
+	// men RENDRES IKKE. De kan ikke tolkes før en fullstendig vindusavstemming finnes — se
+	// `lifecycleGate`. Å vise dem ville invitert til nettopp den feilslutningen forrige utgave
+	// av dette kortet gjorde. De blir meningsfulle i det avstemmingen kjører.
 
 	async function run() {
 		running = true;
@@ -253,6 +355,102 @@
 				mer enn 1. Bare data synket etter den datoen kan måles — sammenlign
 				<code>Periode</code> på statusene over.
 			</p>
+		{/if}
+
+		<!-- Livsløp: brukerens hypotese om at forrige status forsvinner -->
+		{#if result.lifecycle && lifecycleGate}
+			<h3>Livsløp</h3>
+			<p class="meta">{lifecycleGate.text}</p>
+			{#if lifecycleGate.ruleOut}
+				<p class="meta">{lifecycleGate.ruleOut}</p>
+			{/if}
+			{#if !lifecycleGate.measurable}
+				<p class="warn">{lifecycleGate.next}</p>
+			{/if}
+		{/if}
+
+		<!-- Foreldreløs reservasjon mot bokført rad, uten merchant_key-kravet -->
+		{#if result.orphanMatches}
+			<h3>Reservasjon mot bokført</h3>
+			{#if orphanTotal.pairs > 0}
+				<p class="summary">
+					<strong>{orphanTotal.pairs}</strong> foreldreløse reservasjoner på FORBRUK er parret
+					én-til-én med en bokført rad med samme beløp på samme konto — {nok(orphanTotal.nok)}
+					som telles to ganger i dag.
+				</p>
+				{#if result.doubleCountedIncomeNok !== undefined && result.doubleCountedIncomeNok > 0}
+					<p class="meta">
+						I tillegg {nok(result.doubleCountedIncomeNok)} på
+						{result.orphanPairs?.in ?? 0} par som er penger INN — lønn, innskudd, overføring.
+						Like duplisert og skal deaktiveres på samme måte, men det er ikke forbruk, så det
+						holdes utenfor tallet over. En sammenblanding tok tallet fra 154 703 til
+						258 117 kr i en tidligere måling.
+					</p>
+				{/if}
+				{#if monthlySpend && monthlySpend.net > 0}
+					<!--
+						**Én nevner, ikke to.** Forrige utgave sa «X kr/mnd av et nettoforbruk på Y kr/mnd
+						— altså Z %», der Z var regnet mot BRUTTO. I prod ble det «51 674 av 189 037 —
+						altså 16 %», der svaret mot netto er 27 %. Samme feilform som alt annet i denne
+						diagnosen har hatt: to ledd i en brøk målt mot ulike grunnlag.
+					-->
+					<p class="meta">
+						Det er {nok(orphanTotal.nok / (result.window.days / 30.4))}/mnd av et nettoforbruk på
+						{nok(monthlySpend.net)}/mnd — altså {Math.round(
+							(orphanTotal.nok / (result.window.days / 30.4) / monthlySpend.net) * 100
+						)} % av forbruket du faktisk ser.
+					</p>
+				{/if}
+				<div class="table-scroll">
+					<table>
+						<thead>
+							<tr>
+								<th class="num">Datoforskjell</th><th>Beskrivelse</th>
+								<th class="num">Par</th><th class="num">Beløp</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each result.orphanMatches as row (`${row.deltaDays}-${row.merchantKeyChanged}`)}
+								<tr class:warn-row={row.merchantKeyChanged}>
+									<td class="num">{row.deltaDays === null ? '—' : `${row.deltaDays} d`}</td>
+									<td>{row.merchantKeyChanged ? 'endret' : 'uendret'}</td>
+									<td class="num">{row.pairs.toLocaleString('nb-NO')}</td>
+									<td class="num">{nok(row.nok)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if orphanTotal.mkChanged > 0}
+					<p class="warn">
+						{orphanTotal.mkChanged} av parene ({nok(orphanTotal.mkChangedNok)}) endret
+						beskrivelse — typisk et valutaprefiks, «SEK ICA NARA HAGA» mot «ICA NARA HAGA».
+						De er <strong>per konstruksjon usynlige</strong> for statusdriften under, som
+						krever samme merchant_key. Det er kroner den forrige målingen ikke kunne se.
+					</p>
+				{/if}
+				<p class="meta">
+					Matchet på <strong>eksakt beløp og konto, uten beskrivelse</strong>, og
+					<strong>én-til-én</strong>: hver bokførte rad kan absorbere høyst én reservasjon, så
+					tre reservasjoner på samme beløp kan ikke alle peke på samme kjøp. Forsvarlig fordi
+					ekte gjentatte kjøp nå er målt til 2 av {(
+						result.multiplicity.reduce((sum, m) => sum + m.buckets, 0)
+					).toLocaleString('nb-NO')} bøtter — og fordi to reelle kjøp gir to bokførte rader, ikke
+					én reservasjon og én bokført.
+				</p>
+				{#if result.orphansUnmatched !== undefined && result.orphansUnmatched > 0}
+					<p class="meta">
+						{result.orphansUnmatched.toLocaleString('nb-NO')} reservasjoner fant ingen ledig
+						bokført motpart. De er enten ekte ubokførte, eller beløpet endret seg mellom
+						versjonene. Restposten står her framfor å forsvinne.
+					</p>
+				{/if}
+			{:else}
+				<p class="meta">
+					Ingen foreldreløs reservasjon fant en bokført rad med samme beløp. Da er
+					reservasjonene enten ekte ubokførte, eller beløpet endret seg mellom versjonene.
+				</p>
+			{/if}
 		{/if}
 
 		<!-- Drift -->

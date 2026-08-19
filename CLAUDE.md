@@ -363,14 +363,35 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
 - **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
   bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
   appen mistet resumption-handtaket.
+- **`newSessionExpireTime` (2 min) og `expireTime` (30 min) gjelder ulike ting, og
+  forvekslingen kostet døgnkvota.** Den første er vinduet for å STARTE en økt; den andre er
+  hvor lenge en økt som alt kjører kan sende. En **gjenopptakelse** starter ingen ny økt og
+  virker derfor til `expireTime` — også med `uses: 1`. Ekko mintet fram til 17. august 2026 et
+  nytt token ved hvert socket-brudd (hvert 3.–4. minutt i coach-modus), så en tur på 25
+  minutter kostet åtte mint og to turer tømte kvota. **Dagsgrensa er vår**
+  (`MINT_RATE_LIMIT_PER_DAY`), ikke Googles — den ble satt da vi antok 1–2 mint per økt, og
+  forutsetningen holder bare når klienten gjenbruker tokenet ved gjenopptakelse.
 - **Token-profiler** (`voice-test`/`assistant`/`coach`, se
   `docs/changelog/2026-08-14-gemini-token-profiler.md`): verktøyskjemaene bor i det
   constrainede setupet i `gemini-live-profiles.ts` — **aldri i appen**. Ukjent/manglende
   profil → `voice-test`, som svarer byte-identisk med tida før profilene fantes; bare
   `assistant`/`coach` får `profile`-ekko, `capabilities` og `persona` i svaret. Kill
   switch per profil: `GEMINI_LIVE_DISABLED_PROFILES` → 403 `profile_disabled`. Ratelimit
-  30 mint/døgn per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  20 mint per rullende TIME per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  **Vinduet er en time, ikke et døgn, og det er en rettelse fra 17. august 2026:** vakten skal
+  stoppe en klient i loop (18 mint i 20 minutter, målt), ikke budsjettere bruk — Google har ingen
+  dagsgrense på utstedte tokens, og kostnaden ligger i lydminutter. Et døgnvindu fanget loopen og
+  straffet deretter et helt døgn: kvota var tom kl. 20:46 på grunn av kveldens loop dagen før,
+  altså av en feil som alt var rettet. En time fanger loopen raskere og er usynlig for normal bruk.
   Endrer du et verktøyskjema inkompatibelt, bump `TOOLSET_VERSION`.
+- **Verdilistene i et verktøyskjema er en kontrakt mot appens parser, og de må stemme.**
+  `startWorkout.type` listet `løp|sykkel|gåtur|ski|tredemølle|yoga` mens Ekko kjente
+  `elsykkel` — så modellen bekreftet «på elsykkel» høyt til brukeren, sendte en verdi appen
+  ikke kjente, og `default: return .running` gjorde det til en løpeøkt: løpecoaching på en
+  elsykkeltur og «rekord» på 5 km i 12:25. **En stille default som gjetter en KONKRET verdi
+  er verre enn et avslag** — avslaget kan modellen rette seg selv på, i samme tur. Skillet
+  som må holdes er «ikke oppgitt» (default er riktig) mot «oppgitt, men ukjent» (avslå).
+  Se `docs/changelog/2026-08-17-rett-og-slett.md`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
   Vercel-logg eller i et JSON-svar.
@@ -1292,8 +1313,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   ulike steder» og sluttet å åpne flaten. `bank_transaction` og `bank_balance` er nå vaktet
   i `sensor-event-access.ts`.
 - **Interne overføringer MERKES, de fjernes ikke.** 68 % av «forbruket» var penger flyttet
-  mellom egne kontoer (1 084 033 av 1 583 723 kr) — reelt forbruk er ~42 000 kr/mnd, ikke
-  132 000. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
+  mellom egne kontoer. **NB: «1 084 033 av 1 583 723 kr» og «reelt forbruk ~42 000 kr/mnd» var
+  overtelt** — den første målingen brukte en mange-til-mange SQL-join, der tre uttak på 500 og
+  tre innskudd på 500 samme dag ga ni par. Med korrekt én-til-én-matching er nettoforbruket
+  målt til **~188 000 kr/mnd** (90 dager, august 2026), og av det er ~52 000 kr/mnd
+  dobbelttalte reservasjoner. Retningen står: overføringer skal ut av forbruket. Størrelsen
+  gjorde ikke. Se `docs/changelog/2026-08-12-livslop-forsvinning.md`. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
   overføring, og det er signalet en spareflate trenger. Samme rader, to spørsmål.
   `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
 - **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
@@ -1326,10 +1351,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   så toppene kan se uendret ut mens gulvet synker. Trenden regnes på laveste saldo per
   lønnsperiode, med minste kvadrater (ikke «siste minus første»: én avvikende måned ville
   avgjort svaret). Inneværende periode holdes utenfor; bunnen der kan fortsatt bli lavere.
-- **Enheten er måneders dekning**, og den forutsetter fase 2: med overføringene inne ville
-  forbruket vært 132 000 kr/mnd mot reelle ~42 000, altså en tredjedel av dekningen. Et tall
-  som er 3× feil i pessimistisk retning er verre enn ingen tall. `runwayMonths` returnerer
-  **null** uten forbrukstall.
+- **Enheten er måneders dekning**, og den forutsetter fase 2: interne overføringer må være ute,
+  ellers blåses forbruket opp og dekningen krymper tilsvarende. `runwayMonths` returnerer
+  **null** uten forbrukstall framfor å dele på et gjettet tall.
+  **Ikke skriv et forventet kronetall her.** Det sto «reelle ~42 000» en periode, arvet fra en
+  overtelt overføringssum, og ble brukt til å kalle flatens ~180 000 for en bug. Den var riktig.
+  Et avledet tall arver feilen i grunnlaget uten å se usikkert ut.
 - **Frekvens og posisjon i lønnsperioden skiller støtdemper fra kassekreditt**, og det er
   hele diagnosen. Ett uttak på 12 000 og tolv på 1 000 gir samme nedgang og krever motsatt
   handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
@@ -1412,6 +1439,8 @@ svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og a
 ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
 `GEMINI_LIVE_COACH_MODEL` (valgfri) overstyrer modellen for coach-profilen.
 `GEMINI_LIVE_DISABLED_PROFILES` (valgfri, kommaseparert) er kill switch per token-profil.
+Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Modell); appen sender
+`model` i token-forespørselen, og serveren validerer navnet mot Googles katalog.
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 

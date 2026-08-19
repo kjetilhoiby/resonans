@@ -39,7 +39,12 @@
 
 <AppPage>
 	<PageSection>
-		<PageHeader title={data.selectedStore ? `🛒 ${data.selectedStore}` : 'Handlelister'} titleHref="/" />
+		<!-- Fra én butikk går tittelen til butikklista, ikke til forsiden: ett steg ut,
+		     slik en tilbakeknapp ville gjort. -->
+		<PageHeader
+			title={data.selectedStore ? `🛒 ${data.selectedStore}` : 'Handlelister'}
+			titleHref={data.selectedStore ? '/handleliste' : '/'}
+		/>
 
 		{#if !data.selectedStore}
 			{#if data.groups.length === 0}
@@ -59,7 +64,6 @@
 				</div>
 			{/if}
 		{:else}
-			<a class="back-link" href="/handleliste">← Alle butikker</a>
 			{#if items.length === 0}
 				<p class="empty">Ingenting å kjøpe på {data.selectedStore}.</p>
 			{:else}
@@ -141,13 +145,6 @@
 	.store-count {
 		font-size: 0.8rem;
 		color: var(--text-secondary);
-	}
-	.back-link {
-		display: inline-block;
-		margin-bottom: 1rem;
-		color: var(--text-secondary);
-		font-size: 0.85rem;
-		text-decoration: none;
 	}
 	.back-link:hover {
 		color: var(--text-primary);

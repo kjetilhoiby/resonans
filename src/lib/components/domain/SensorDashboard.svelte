@@ -131,14 +131,11 @@
 </script>
 
 <div class="sd-page">
-	<!-- Back nav -->
-	<a class="sd-back" href="/">← Hjem</a>
-
 	<!-- Header -->
 	<header class="sd-header">
 		<span class="sd-emoji">{meta.emoji}</span>
 		<div>
-			<h1 class="sd-title" style="color:{meta.color}">{meta.label}</h1>
+			<a class="sd-title-link" href="/"><h1 class="sd-title" style="color:{meta.color}">{meta.label}</h1></a>
 			{#if meta.goal}
 				<p class="sd-goal">Mål: {meta.goal} {meta.goalUnit}</p>
 			{/if}
@@ -254,6 +251,18 @@
 </div>
 
 <style>
+	/* Tittelen ER tilbakeknappen (docs/DESIGN.md). */
+	.sd-title-link {
+		text-decoration: none;
+		color: inherit;
+		display: inline-block;
+	}
+	.sd-title-link:focus-visible {
+		outline: 2px solid #3987e5;
+		outline-offset: 3px;
+		border-radius: 6px;
+	}
+
 	.sd-page {
 		min-height: 100dvh;
 		background: #0f0f0f;
@@ -264,13 +273,6 @@
 		padding: 0 0 40px;
 	}
 
-	.sd-back {
-		display: inline-block;
-		padding: 16px 20px;
-		color: #444;
-		font-size: 0.8rem;
-		text-decoration: none;
-	}
 	.sd-back:hover {
 		color: #aaa;
 	}
