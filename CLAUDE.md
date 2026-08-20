@@ -380,6 +380,17 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   er verre enn et avslag** — avslaget kan modellen rette seg selv på, i samme tur. Skillet
   som må holdes er «ikke oppgitt» (default er riktig) mot «oppgitt, men ukjent» (avslå).
   Se `docs/changelog/2026-08-17-rett-og-slett.md`.
+- **Lukkekodene betyr ulike ting, og to av dem er lette å forveksle.** Målt 19. august:
+  `gemini-3.1-flash-live-preview` lukker med **1008** («The operation was aborted») etter
+  170–185 sekunder, hver gang — femten ganger på en økt på 52 minutter. Det er **rutine og
+  skal ikke feilsøkes**: gjenopptakelsen dekker det usynlig og koster ingen mint.
+  `gemini-2.5-flash-native-audio-latest` lukker derimot med **1007** («The audio content
+  type (CONTENT_TYPE_AUDIO) is not supported for this model configuration») så snart
+  mikrofonen står åpen — 2.5 avviser lydINNGANGEN, ikke utgangen, så den kan betjene
+  coachen (bare avspilling) men ikke vekkeord-modus. Bytter man modell for å slippe 1008,
+  bytter man til noe verre: 1007 gjentar seg, og resumption hjelper ikke når det er setupet
+  som avvises. Derfor er 3.1 default. 1006 er transporten, 1011 er serveren.
+  Se `docs/changelog/2026-08-19-live-i-drift.md`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
   Vercel-logg eller i et JSON-svar.
