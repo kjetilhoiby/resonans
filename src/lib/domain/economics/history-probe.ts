@@ -30,8 +30,9 @@ export interface ProbeRad {
 	accountKey: string;
 	name?: string | null;
 	count: number;
-	oldestDate: string | null;
-	newestDate: string | null;
+	/** Rå fra banken: kan være ISO-streng, epoch-ms eller epoch-sekunder. */
+	oldestDate: unknown;
+	newestDate: unknown;
 	/** Fra endepunktet: count > 0 && count % 100 === 0. Vi vurderer den på nytt her. */
 	likelyCapped?: boolean;
 }
@@ -50,6 +51,44 @@ export interface KontoVurdering {
 	muligKappet: boolean;
 }
 
+/**
+ * Gjør bankens datoverdi om til `YYYY-MM-DD`.
+ *
+ * SpareBank1 sender `date` som **epoch-millisekunder**, ikke som ISO-streng —
+ * `sparebank1-sync.ts` har alltid visst det (`typeof transaction.date ===
+ * 'number'`), men proben antok streng og krasjet med «slice is not a
+ * function» første gang den ble trykket på i produksjon.
+ *
+ * Vi tar imot alle tre formene framfor å stole på én, siden dette er et
+ * diagnoseverktøy: det skal tåle å bli pekt på et svar vi ikke har sett før.
+ */
+export function normaliserDato(verdi: unknown): string | null {
+	if (verdi === null || verdi === undefined) return null;
+
+	if (verdi instanceof Date) {
+		return Number.isNaN(verdi.getTime()) ? null : verdi.toISOString().slice(0, 10);
+	}
+
+	if (typeof verdi === 'number') {
+		if (!Number.isFinite(verdi)) return null;
+		// Under 1e11 er tallet sekunder (1e11 ms er 1973); over er det millisekunder.
+		const ms = Math.abs(verdi) < 1e11 ? verdi * 1000 : verdi;
+		const d = new Date(ms);
+		return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+	}
+
+	if (typeof verdi === 'string') {
+		const trimmet = verdi.trim();
+		if (!trimmet) return null;
+		// Et tall som streng er fortsatt et tidsstempel.
+		if (/^\d{9,}$/.test(trimmet)) return normaliserDato(Number(trimmet));
+		const dato = trimmet.slice(0, 10);
+		return /^\d{4}-\d{2}-\d{2}$/.test(dato) ? dato : null;
+	}
+
+	return null;
+}
+
 export function dagerMellom(fra: string, til: string): number | null {
 	const a = Date.parse(`${fra.slice(0, 10)}T00:00:00Z`);
 	const b = Date.parse(`${til.slice(0, 10)}T00:00:00Z`);
@@ -59,8 +98,9 @@ export function dagerMellom(fra: string, til: string): number | null {
 
 export function vurderKonto(rad: ProbeRad): KontoVurdering {
 	const muligKappet = rad.count > 0 && SIDEGRENSER.includes(rad.count);
-	const spennDager =
-		rad.oldestDate && rad.newestDate ? dagerMellom(rad.oldestDate, rad.newestDate) : null;
+	const eldste = normaliserDato(rad.oldestDate);
+	const nyeste = normaliserDato(rad.newestDate);
+	const spennDager = eldste && nyeste ? dagerMellom(eldste, nyeste) : null;
 
 	let verdikt: Verdikt;
 	if (rad.count === 0) {
@@ -79,8 +119,8 @@ export function vurderKonto(rad: ProbeRad): KontoVurdering {
 		accountKey: rad.accountKey,
 		name: rad.name ?? null,
 		count: rad.count,
-		oldestDate: rad.oldestDate,
-		newestDate: rad.newestDate,
+		oldestDate: eldste,
+		newestDate: nyeste,
 		spennDager,
 		verdikt,
 		muligKappet

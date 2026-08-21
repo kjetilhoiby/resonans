@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { getSparebank1Sensor, getValidSparebank1AccessToken } from '$lib/server/integrations/sparebank1-sync';
 import { fetchSparebank1Accounts, fetchSparebank1Transactions } from '$lib/server/integrations/sparebank1';
+import { normaliserDato } from '$lib/domain/economics/history-probe';
 import type { RequestHandler } from './$types';
 
 /**
@@ -36,9 +37,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const txns = await fetchSparebank1Transactions(accessToken, accountKey, undefined, undefined, rateLimitHeaders);
 
+	// SpareBank1 sender `date` som epoch-millisekunder (se sparebank1-sync.ts:592).
+	// Uten normalisering sorterte vi tall leksikografisk — riktig ved en tilfeldighet
+	// så lenge alle er 13-sifrede — og sendte råtallet videre til en klient som
+	// forventet en dato.
 	const dates = txns
-		.map((t: any) => t.date ?? t.bookingDate ?? t.transactionDate)
-		.filter(Boolean)
+		.map((t: any) => normaliserDato(t.date ?? t.bookingDate ?? t.transactionDate))
+		.filter((d): d is string => d !== null)
 		.sort();
 
 	return json({

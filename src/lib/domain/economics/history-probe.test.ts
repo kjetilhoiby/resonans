@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	dagerMellom,
 	konkluder,
+	normaliserDato,
 	vurderKonto,
 	type ProbeRad
 } from './history-probe';
@@ -26,6 +27,37 @@ describe('dagerMellom', () => {
 
 	it('returnerer null på søppel framfor NaN', () => {
 		expect(dagerMellom('ikke-en-dato', '2026-01-01')).toBeNull();
+	});
+});
+
+describe('normaliserDato', () => {
+	// SpareBank1 sender epoch-millisekunder. Proben antok streng og krasjet med
+	// «slice is not a function» første gang knappen ble trykket i produksjon.
+	it('tar epoch-millisekunder, slik banken faktisk sender', () => {
+		expect(normaliserDato(1_700_000_000_000)).toBe('2023-11-14');
+	});
+
+	it('tar epoch-sekunder også', () => {
+		expect(normaliserDato(1_700_000_000)).toBe('2023-11-14');
+	});
+
+	it('tar et tidsstempel som streng', () => {
+		expect(normaliserDato('1700000000000')).toBe('2023-11-14');
+	});
+
+	it('tar ISO med og uten klokkeslett', () => {
+		expect(normaliserDato('2026-08-21')).toBe('2026-08-21');
+		expect(normaliserDato('2026-08-21T13:45:00Z')).toBe('2026-08-21');
+	});
+
+	it('tar et Date-objekt', () => {
+		expect(normaliserDato(new Date('2024-02-29T12:00:00Z'))).toBe('2024-02-29');
+	});
+
+	it('gir null på det den ikke forstår, framfor å kaste', () => {
+		for (const søppel of [null, undefined, '', '   ', 'i går', {}, [], NaN, Infinity]) {
+			expect(normaliserDato(søppel)).toBeNull();
+		}
 	});
 });
 
@@ -56,6 +88,16 @@ describe('vurderKonto', () => {
 		// Poenget: et kappet svar kan dekke tre år og skjule tjue.
 		const v = vurderKonto(rad({ count: 200, oldestDate: '2019-01-01' }));
 		expect(v.verdikt).toBe('kappet');
+	});
+
+	it('regner spennet riktig når datoene kommer som epoch-ms', () => {
+		const v = vurderKonto(
+			rad({ oldestDate: 1_600_000_000_000, newestDate: 1_700_000_000_000, count: 137 })
+		);
+		expect(v.oldestDate).toBe('2020-09-13');
+		expect(v.newestDate).toBe('2023-11-14');
+		expect(v.spennDager).toBe(1157);
+		expect(v.verdikt).toBe('lang-historikk');
 	});
 
 	it('skiller tom konto fra kort historikk', () => {

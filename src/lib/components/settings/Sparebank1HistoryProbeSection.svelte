@@ -144,7 +144,7 @@
 			<tbody>
 				{#each vurderinger as v (v.accountKey)}
 					<tr>
-						<td>{v.name ?? v.accountKey.slice(0, 10) + '…'}</td>
+						<td>{v.name ?? String(v.accountKey).slice(0, 10) + '…'}</td>
 						<td>{v.count}</td>
 						<td>{v.oldestDate ?? '–'}</td>
 						<td>{v.newestDate ?? '–'}</td>
