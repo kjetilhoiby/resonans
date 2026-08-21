@@ -81,13 +81,41 @@ finnes ikke i noe API.
 - GPX-filene (de ligger i Dropbox)
 - TMDB- og Goodreads-metadata
 
-### Vet ikke — må måles
+### Målt 21. august 2026: SpareBank1 gir nøyaktig 24 måneder
 
-**SpareBank1-transaksjoner.** Bank-API-er kapper som regel historikken.
-`spending-analyzer.ts` leser «up to 13 months», men det er *vårt* vindu, ikke
-nødvendigvis API-ets. Gir ikke SB1 oss 2019, hører
-`canonical_bank_transactions` i gruppa over — og det er 2 245 rader ingen kan
-skaffe på nytt.
+Proben ble kjørt på ti kontoer. Resultatet er utvetydig:
+
+| Konto | Rader | Eldste | Nyeste |
+|---|---|---|---|
+| Felleskonto Ekteskapet | 1800 | 2024-08-21 | 2026-08-20 |
+| Brukskonto Kjetil | 2036 | 2024-08-21 | 2026-08-20 |
+| Sparekonto Kjetil | 428 | 2024-08-21 | 2026-08-20 |
+| Sparekonto Ekteskapet | 582 | 2024-08-25 | 2026-08-20 |
+| Regningskonto | 435 | 2024-08-25 | 2026-08-16 |
+| Nedbetaling | 7 | 2026-06-11 | 2026-08-19 |
+| Barnas kontoer (3) | 3–6 | 2024-08-30 | 2025-12-30 |
+| Europaferie | 0 | – | – |
+
+**Fire kontoer starter på nøyaktig samme dag, 2024-08-21 — to år før
+måledagen.** Det er ikke unge kontoer; det er et rullerende vindu.
+
+Signalet er delt startdato, ikke antall rader. En ekte kort historikk gir
+ULIK startdato per konto, siden hver konto har sin egen første transaksjon.
+Verktøyet lette først bare etter runde radtall (sidegrenser) og kalte derfor
+et toårsvindu «kort historikk» — 729 dager mellom eldste og nyeste lå én dag
+under terskelen for «lang». `finnFellesGulv` ser det riktige signalet nå, og
+måler vinduet fra **i dag** framfor fra nyeste transaksjon.
+
+Banken sendte `X-RateLimit-Remaining: 58`. Kvoten finnes altså og eksponeres,
+men vi traff den ikke med elleve kall.
+
+**Konsekvens:** alt eldre enn 2024-08-21 finnes **bare hos oss**.
+`canonical_bank_transactions` flyttes dermed opp i gruppa «kan aldri hentes
+igjen». Hvor mange rader det gjelder er én spørring unna — kontooversikten i
+`Sparebank1DiagnosticsSection` viser `minDate` per konto.
+
+Det gjør bankdataene til det mest uerstattelige i hele basen: de er både
+umulige å hente på nytt og vanskelige å rekonstruere manuelt.
 
 ## Beslutninger
 
@@ -142,7 +170,8 @@ Withings måles fortsatt med URL:
 
 ## Åpne punkter
 
-- [ ] Trykk knappen i `/settings/sources` og noter eldste transaksjon her
+- [x] ~~Trykk knappen i `/settings/sources` og noter eldste transaksjon her~~ — målt
+      21. august 2026: rullerende vindu på 24 måneder, gulv 2024-08-21
 - [ ] Legg backoff på Strava og Tesla før historikkjobber
 - [ ] Avklar hvilke domener som blir med på dag én — det avgjør hvor mye av
       kartleggingen som i det hele tatt er relevant

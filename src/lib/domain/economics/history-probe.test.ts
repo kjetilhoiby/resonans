@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	dagerMellom,
+	finnFellesGulv,
 	konkluder,
 	normaliserDato,
 	vurderKonto,
@@ -107,12 +108,63 @@ describe('vurderKonto', () => {
 	});
 });
 
+describe('finnFellesGulv', () => {
+	it('finner datoen flere kontoer deler', () => {
+		const v = [
+			vurderKonto(rad({ accountKey: 'a', oldestDate: '2024-08-21' })),
+			vurderKonto(rad({ accountKey: 'b', oldestDate: '2024-08-21' })),
+			vurderKonto(rad({ accountKey: 'c', oldestDate: '2025-03-01' }))
+		];
+		expect(finnFellesGulv(v)).toBe('2024-08-21');
+	});
+
+	it('gir null når hver konto har sin egen startdato', () => {
+		const v = [
+			vurderKonto(rad({ accountKey: 'a', oldestDate: '2024-08-21' })),
+			vurderKonto(rad({ accountKey: 'b', oldestDate: '2025-01-02' }))
+		];
+		expect(finnFellesGulv(v)).toBeNull();
+	});
+
+	it('teller ikke tomme kontoer som deltakere i et gulv', () => {
+		const v = [
+			vurderKonto(rad({ accountKey: 'a', count: 0, oldestDate: null, newestDate: null })),
+			vurderKonto(rad({ accountKey: 'b', count: 0, oldestDate: null, newestDate: null }))
+		];
+		expect(finnFellesGulv(v)).toBeNull();
+	});
+});
+
 describe('konkluder', () => {
 	it('sier ja når banken ga oss flere år ukappet', () => {
 		const k = konkluder([vurderKonto(rad())]);
 		expect(k.kanHentesIgjen).toBe(true);
 		expect(k.eldsteDato).toBe('2023-01-15');
 		expect(k.begrunnelse).toMatch(/kan hentes inn igjen/);
+	});
+
+	it('kjenner igjen et rullerende vindu framfor å kalle det kort historikk', () => {
+		// Ekte måling 21. august 2026: seks kontoer startet alle på 2024-08-21.
+		// 729 dager mellom eldste og nyeste lå ÉN dag under terskelen for «lang»,
+		// så uten gulv-deteksjonen ble et toårsvindu kalt «kort historikk».
+		const felles = ['a', 'b', 'c', 'd', 'e', 'f'].map((k) =>
+			vurderKonto(rad({ accountKey: k, oldestDate: '2024-08-21', newestDate: '2026-08-20' }))
+		);
+		const k = konkluder(felles, '2026-08-21');
+		expect(k.fellesGulv).toBe('2024-08-21');
+		expect(k.vindusDager).toBe(730);
+		expect(k.kanHentesIgjen).toBe(false);
+		expect(k.begrunnelse).toMatch(/rullerende vindu på 24 måneder/);
+		expect(k.begrunnelse).toMatch(/6 kontoer/);
+	});
+
+	it('måler vinduet fra i dag, ikke fra nyeste transaksjon', () => {
+		// En konto uten bevegelse på tre uker skal ikke se ut som et kortere vindu.
+		const v = [
+			vurderKonto(rad({ accountKey: 'a', oldestDate: '2024-08-21', newestDate: '2026-07-30' })),
+			vurderKonto(rad({ accountKey: 'b', oldestDate: '2024-08-21', newestDate: '2026-07-30' }))
+		];
+		expect(konkluder(v, '2026-08-21').vindusDager).toBe(730);
 	});
 
 	it('sier nei når historikken er kort', () => {

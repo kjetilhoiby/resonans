@@ -131,15 +131,47 @@ export interface Konklusjon {
 	/** true = kan hentes igjen, false = kan ikke, null = uvisst (kappet svar). */
 	kanHentesIgjen: boolean | null;
 	eldsteDato: string | null;
+	/** Datoen flere kontoer deler som eldste – fingeravtrykket til et rullerende vindu. */
+	fellesGulv: string | null;
+	/** Hvor langt tilbake vinduet rekker, målt fra i dag. */
+	vindusDager: number | null;
 	begrunnelse: string;
 }
 
-export function konkluder(vurderinger: KontoVurdering[]): Konklusjon {
+/**
+ * Finner datoen minst to kontoer deler som sin eldste.
+ *
+ * Dette er det sterkeste signalet vi har, og det er ikke antall rader.
+ * En ekte kort historikk gir ULIK startdato per konto — hver konto har sin
+ * egen første transaksjon. Deler flere kontoer eksakt samme gulv, er det
+ * ikke kontoene som er unge; det er banken som har et vindu.
+ *
+ * Målt 21. august 2026: seks kontoer startet alle på 2024-08-21, altså
+ * nøyaktig to år tilbake.
+ */
+export function finnFellesGulv(vurderinger: KontoVurdering[]): string | null {
+	const antall = new Map<string, number>();
+	for (const v of vurderinger) {
+		if (!v.oldestDate || v.count === 0) continue;
+		antall.set(v.oldestDate, (antall.get(v.oldestDate) ?? 0) + 1);
+	}
+	let gulv: string | null = null;
+	for (const [dato, n] of Array.from(antall.entries())) {
+		if (n < 2) continue;
+		if (gulv === null || dato < gulv) gulv = dato;
+	}
+	return gulv;
+}
+
+export function konkluder(vurderinger: KontoVurdering[], iDag?: string): Konklusjon {
+	const idag = iDag ?? new Date().toISOString().slice(0, 10);
 	const medData = vurderinger.filter((v) => v.count > 0);
 	if (medData.length === 0) {
 		return {
 			kanHentesIgjen: null,
 			eldsteDato: null,
+			fellesGulv: null,
+			vindusDager: null,
 			begrunnelse: 'Ingen transaksjoner kom tilbake. Er kontoene tomme, eller mangler tilsagn?'
 		};
 	}
@@ -149,15 +181,40 @@ export function konkluder(vurderinger: KontoVurdering[]): Konklusjon {
 		.filter((d): d is string => !!d)
 		.sort()[0] ?? null;
 
+	const fellesGulv = finnFellesGulv(medData);
+	// Vinduet måles fra I DAG, ikke fra nyeste transaksjon. En konto uten
+	// bevegelse på tre uker ville ellers sett ut som et kortere vindu enn den har.
+	const vindusDager = fellesGulv ? dagerMellom(fellesGulv, idag) : null;
+
 	const kappede = medData.filter((v) => v.verdikt === 'kappet');
 	if (kappede.length > 0) {
 		return {
 			kanHentesIgjen: null,
 			eldsteDato,
+			fellesGulv,
+			vindusDager,
 			begrunnelse:
 				`${kappede.length} av ${medData.length} kontoer traff en sidegrense, så eldste dato ` +
 				`(${eldsteDato ?? 'ukjent'}) er et gulv og ikke sannheten. Historikken kan gå lenger ` +
 				'tilbake. Paginer for å få et ekte svar.'
+		};
+	}
+
+	// Et delt gulv slår ut FØR spennet vurderes, og er hele poenget: det skiller
+	// «banken har et vindu» fra «kontoene er unge». Uten det ble et 24-måneders
+	// vindu kalt «kort historikk» fordi 729 dager lå én dag under terskelen.
+	if (fellesGulv && vindusDager !== null) {
+		const mnd = Math.round(vindusDager / 30.44);
+		return {
+			kanHentesIgjen: false,
+			eldsteDato,
+			fellesGulv,
+			vindusDager,
+			begrunnelse:
+				`${medData.filter((v) => v.oldestDate === fellesGulv).length} kontoer starter på ` +
+				`nøyaktig samme dato (${fellesGulv}). Det er ikke unge kontoer, det er et ` +
+				`rullerende vindu på ${mnd} måneder. Alt eldre finnes bare hos oss — ` +
+				'canonical_bank_transactions kan ikke gjenskapes fra API-et.'
 		};
 	}
 
@@ -166,6 +223,8 @@ export function konkluder(vurderinger: KontoVurdering[]): Konklusjon {
 		return {
 			kanHentesIgjen: true,
 			eldsteDato,
+			fellesGulv,
+			vindusDager,
 			begrunnelse:
 				`Banken ga oss ${Math.round(lengste / 30)} måneder i ett kall, tilbake til ` +
 				`${eldsteDato}. Transaksjonshistorikken kan hentes inn igjen.`
@@ -175,8 +234,11 @@ export function konkluder(vurderinger: KontoVurdering[]): Konklusjon {
 	return {
 		kanHentesIgjen: false,
 		eldsteDato,
+		fellesGulv,
+		vindusDager,
 		begrunnelse:
-			`Lengste svar dekket ${lengste} dager, tilbake til ${eldsteDato}. Alt eldre finnes ` +
-			'bare hos oss — canonical_bank_transactions kan ikke gjenskapes fra API-et.'
+			`Lengste svar dekket ${lengste} dager, tilbake til ${eldsteDato}, og kontoene deler ` +
+			'ingen felles startdato. Alt eldre finnes bare hos oss — ' +
+			'canonical_bank_transactions kan ikke gjenskapes fra API-et.'
 	};
 }

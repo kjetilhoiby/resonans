@@ -106,6 +106,18 @@
 		'lang-historikk': 'lang historikk'
 	};
 
+	/**
+	 * En konto som starter på det delte gulvet er ikke «kort historikk» — den er
+	 * kuttet av bankens vindu. Ordet må si hvilken av de to det er, ellers leser
+	 * man 24 måneder som om kontoen var ny.
+	 */
+	function ord(v: KontoVurdering): string {
+		if (konklusjon?.fellesGulv && v.oldestDate === konklusjon.fellesGulv) {
+			return 'ved vindusgrensa';
+		}
+		return ORD[v.verdikt];
+	}
+
 	function måneder(dager: number | null): string {
 		if (dager === null) return '–';
 		if (dager < 60) return `${dager} d`;
@@ -149,7 +161,7 @@
 						<td>{v.oldestDate ?? '–'}</td>
 						<td>{v.newestDate ?? '–'}</td>
 						<td>{måneder(v.spennDager)}</td>
-						<td class:advarsel={v.muligKappet}>{ORD[v.verdikt]}</td>
+						<td class:advarsel={v.muligKappet || v.oldestDate === konklusjon?.fellesGulv}>{ord(v)}</td>
 					</tr>
 				{/each}
 			</tbody>
