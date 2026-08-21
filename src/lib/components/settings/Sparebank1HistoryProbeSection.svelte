@@ -24,10 +24,20 @@
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import {
 		konkluder,
+		normaliserDato,
+		vurderEksplisittFra,
 		vurderKonto,
+		type EksplisittSjekk,
 		type Konklusjon,
 		type KontoVurdering
 	} from '$lib/domain/economics/history-probe';
+
+	/**
+	 * Datoen vi spør eksplisitt om i kontrollrunden. Godt før både banken og
+	 * Withings-kontoen begynner, så et svar herfra betyr utvetydig «det finnes
+	 * mer enn standardvinduet».
+	 */
+	const KONTROLL_FRA = '2015-01-01';
 
 	type Konto = { key: string; name?: string | null; type?: string | null };
 
@@ -37,6 +47,7 @@
 	let vurderinger = $state<KontoVurdering[]>([]);
 	let konklusjon = $state<Konklusjon | null>(null);
 	let rateLimit = $state<Record<string, string>>({});
+	let kontroll = $state<EksplisittSjekk | null>(null);
 
 	async function hent<T>(url: string): Promise<T> {
 		const res = await fetch(url);
@@ -49,6 +60,7 @@
 		feil = null;
 		vurderinger = [];
 		konklusjon = null;
+		kontroll = null;
 		rateLimit = {};
 		framdrift = 'Henter kontoliste …';
 
@@ -91,6 +103,24 @@
 			}
 
 			konklusjon = konkluder(samlet);
+
+			// Kontrollspørsmålet. Uten filter kan banken ha svart med et
+			// STANDARDVINDU framfor alt den har — og da ville konklusjonen «kan
+			// ikke gjenskapes» hvilt på at vi ikke spurte godt nok. Vi spør én
+			// gang til, på kontoen med flest rader, med en eksplisitt gammel dato.
+			const travleste = [...samlet].sort((a, b) => b.count - a.count)[0];
+			if (travleste && travleste.count > 0) {
+				framdrift = `Kontrollspørsmål: ber eksplisitt om ${KONTROLL_FRA} …`;
+				const svar = await hent<{ oldestDate: unknown }>(
+					`/api/sensors/sparebank1/probe?accountKey=${encodeURIComponent(travleste.accountKey)}` +
+						`&from=${KONTROLL_FRA}`
+				);
+				kontroll = vurderEksplisittFra(
+					travleste.oldestDate,
+					normaliserDato(svar.oldestDate),
+					KONTROLL_FRA
+				);
+			}
 		} catch (error) {
 			feil = error instanceof Error ? error.message : 'Ukjent feil';
 		} finally {
@@ -175,6 +205,12 @@
 			class:nei={konklusjon.kanHentesIgjen === false}
 		>
 			{konklusjon.begrunnelse}
+		</p>
+	{/if}
+
+	{#if kontroll}
+		<p class="konklusjon" class:nei={!kontroll.vinduetErBankens}>
+			{kontroll.begrunnelse}
 		</p>
 	{/if}
 

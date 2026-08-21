@@ -5,10 +5,15 @@ import { normaliserDato } from '$lib/domain/economics/history-probe';
 import type { RequestHandler } from './$types';
 
 /**
- * GET /api/sensors/sparebank1/probe?accountKey=xxx
- * Fetches transactions without date constraints to probe SpareBank1's response cap.
- * Returns count, oldest/newest transaction date, and rate-limit headers.
- * Use this to understand how many years of history we can fetch in one call.
+ * GET /api/sensors/sparebank1/probe?accountKey=xxx[&from=YYYY-MM-DD]
+ *
+ * Henter transaksjoner for å måle hvor langt tilbake banken faktisk gir oss
+ * noe. Returnerer antall, eldste/nyeste dato og rate-limit-headerne.
+ *
+ * `from` er ikke pynt. Uten den spør vi UTEN datofilter, og mange API-er
+ * svarer da med et standardvindu selv om de ville gitt mer hvis man ba
+ * eksplisitt. Uten å stille begge spørsmålene kan vi ikke skille «banken har
+ * bare 24 måneder» fra «banken gir 24 måneder til den som ikke spør bedre».
  */
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
@@ -35,7 +40,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		});
 	}
 
-	const txns = await fetchSparebank1Transactions(accessToken, accountKey, undefined, undefined, rateLimitHeaders);
+	const fra = url.searchParams.get('from');
+	const since = fra ? new Date(`${fra}T00:00:00Z`) : undefined;
+	if (since && Number.isNaN(since.getTime())) {
+		return json({ error: `Ugyldig from-dato: ${fra}` }, { status: 400 });
+	}
+
+	const txns = await fetchSparebank1Transactions(accessToken, accountKey, since, undefined, rateLimitHeaders);
 
 	// SpareBank1 sender `date` som epoch-millisekunder (se sparebank1-sync.ts:592).
 	// Uten normalisering sorterte vi tall leksikografisk — riktig ved en tilfeldighet
@@ -48,6 +59,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	return json({
 		accountKey,
+		requestedFrom: fra ?? null,
 		count: txns.length,
 		oldestDate: dates[0] ?? null,
 		newestDate: dates[dates.length - 1] ?? null,

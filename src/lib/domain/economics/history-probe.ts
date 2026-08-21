@@ -242,3 +242,68 @@ export function konkluder(vurderinger: KontoVurdering[], iDag?: string): Konklus
 			'canonical_bank_transactions kan ikke gjenskapes fra API-et.'
 	};
 }
+
+export interface EksplisittSjekk {
+	/** Sant når banken svarer likt enten vi spør eksplisitt eller ikke. */
+	vinduetErBankens: boolean;
+	eldsteVedEksplisitt: string | null;
+	begrunnelse: string;
+}
+
+/**
+ * Kontrollspørsmålet: gir banken mer hvis vi ber eksplisitt om en eldre dato?
+ *
+ * Uten dette kan vi ikke skille to helt ulike verdener:
+ *
+ *   «banken HAR bare 24 måneder»
+ *   «banken gir 24 måneder til den som ikke spør bedre»
+ *
+ * Mange API-er svarer med et standardvindu når `fromDate` mangler, og
+ * respekterer en eldre dato hvis den oppgis. Vår probe spurte lenge aldri
+ * eksplisitt, og konklusjonen «kan ikke gjenskapes» hvilte dermed på en
+ * antakelse vi ikke hadde testet. Det er en dyr antakelse: den brukes til å
+ * avgjøre hva som må tas vare på.
+ */
+export function vurderEksplisittFra(
+	gulvUtenFilter: string | null,
+	eldsteVedEksplisitt: string | null,
+	spurtFra: string
+): EksplisittSjekk {
+	if (!eldsteVedEksplisitt) {
+		return {
+			vinduetErBankens: true,
+			eldsteVedEksplisitt: null,
+			begrunnelse:
+				`Banken ga ingenting da vi ba eksplisitt om ${spurtFra}. Vinduet er bankens.`
+		};
+	}
+
+	if (!gulvUtenFilter) {
+		return {
+			vinduetErBankens: false,
+			eldsteVedEksplisitt,
+			begrunnelse: `Med eksplisitt fromDate=${spurtFra} kom det data tilbake til ${eldsteVedEksplisitt}.`
+		};
+	}
+
+	if (eldsteVedEksplisitt < gulvUtenFilter) {
+		const dager = dagerMellom(eldsteVedEksplisitt, gulvUtenFilter);
+		return {
+			vinduetErBankens: false,
+			eldsteVedEksplisitt,
+			begrunnelse:
+				`Banken ga oss ${dager} dager MER da vi ba eksplisitt om ${spurtFra}: ` +
+				`tilbake til ${eldsteVedEksplisitt} mot ${gulvUtenFilter} uten filter. ` +
+				'Standardvinduet var vårt problem, ikke bankens grense — og backfill bør ' +
+				'alltid oppgi fromDate.'
+		};
+	}
+
+	return {
+		vinduetErBankens: true,
+		eldsteVedEksplisitt,
+		begrunnelse:
+			`Banken svarte likt (${eldsteVedEksplisitt}) da vi ba eksplisitt om ${spurtFra}. ` +
+			'Vinduet er bankens, ikke en bieffekt av at vi ikke spurte.'
+	};
+}

@@ -109,6 +109,20 @@ måler vinduet fra **i dag** framfor fra nyeste transaksjon.
 Banken sendte `X-RateLimit-Remaining: 58`. Kvoten finnes altså og eksponeres,
 men vi traff den ikke med elleve kall.
 
+**Men konklusjonen hviler på et kontrollspørsmål som må stilles.** Vår probe
+spurte lenge UTEN datofilter, og mange API-er svarer da med et *standardvindu*
+selv om de ville gitt mer til den som ber eksplisitt. Uten begge spørsmålene
+kan vi ikke skille «banken har bare 24 måneder» fra «banken gir 24 måneder til
+den som ikke spør bedre».
+
+Proben stiller derfor nå begge: etter kontorunden spør den én gang til, på
+kontoen med flest rader, med `fromDate=2015-01-01`. Kommer det data eldre enn
+gulvet, var standardvinduet **vårt** problem — og da må all backfill oppgi
+`fromDate` eksplisitt. Kommer samme svar, er vinduet bankens.
+
+⚠️ **Kontrollrunden er ikke kjørt ennå per skriving.** Konklusjonen under
+gjelder under forutsetning av at den bekrefter gulvet.
+
 **Konsekvens:** alt eldre enn 2024-08-21 finnes **bare hos oss**.
 `canonical_bank_transactions` flyttes dermed opp i gruppa «kan aldri hentes
 igjen». Hvor mange rader det gjelder er én spørring unna — kontooversikten i
@@ -170,8 +184,10 @@ Withings måles fortsatt med URL:
 
 ## Åpne punkter
 
-- [x] ~~Trykk knappen i `/settings/sources` og noter eldste transaksjon her~~ — målt
-      21. august 2026: rullerende vindu på 24 måneder, gulv 2024-08-21
+- [x] ~~Trykk knappen og noter eldste transaksjon~~ — målt 21. august 2026:
+      gulv 2024-08-21 på fire kontoer
+- [ ] Kjør kontrollrunden (`fromDate=2015-01-01`) og bekreft at vinduet er
+      bankens og ikke en bieffekt av at vi ikke spurte
 - [ ] Legg backoff på Strava og Tesla før historikkjobber
 - [ ] Avklar hvilke domener som blir med på dag én — det avgjør hvor mye av
       kartleggingen som i det hele tatt er relevant

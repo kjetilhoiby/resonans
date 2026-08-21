@@ -4,6 +4,7 @@ import {
 	finnFellesGulv,
 	konkluder,
 	normaliserDato,
+	vurderEksplisittFra,
 	vurderKonto,
 	type ProbeRad
 } from './history-probe';
@@ -203,5 +204,33 @@ describe('konkluder', () => {
 		const k = konkluder([vurderKonto(rad({ count: 0, oldestDate: null, newestDate: null }))]);
 		expect(k.kanHentesIgjen).toBeNull();
 		expect(k.begrunnelse).toMatch(/Ingen transaksjoner/);
+	});
+});
+
+describe('vurderEksplisittFra', () => {
+	it('bekrefter at vinduet er bankens når svaret er likt', () => {
+		const r = vurderEksplisittFra('2024-08-21', '2024-08-21', '2015-01-01');
+		expect(r.vinduetErBankens).toBe(true);
+		expect(r.begrunnelse).toMatch(/Vinduet er bankens/);
+	});
+
+	it('avslører at standardvinduet var VÅRT problem når eksplisitt gir mer', () => {
+		const r = vurderEksplisittFra('2024-08-21', '2019-03-04', '2015-01-01');
+		expect(r.vinduetErBankens).toBe(false);
+		expect(r.begrunnelse).toMatch(/2 000 dager MER|dager MER/);
+		expect(r.begrunnelse).toMatch(/backfill bør/);
+	});
+
+	it('teller nyere svar ved eksplisitt som bekreftelse, ikke som mer', () => {
+		// Banken kan aldri gi MINDRE fordi vi ba om mer; skjer det, er det ikke
+		// et tegn på skjult historikk.
+		const r = vurderEksplisittFra('2024-08-21', '2025-01-01', '2015-01-01');
+		expect(r.vinduetErBankens).toBe(true);
+	});
+
+	it('tåler at det ikke kom noe tilbake i det hele tatt', () => {
+		const r = vurderEksplisittFra('2024-08-21', null, '2015-01-01');
+		expect(r.vinduetErBankens).toBe(true);
+		expect(r.eldsteVedEksplisitt).toBeNull();
 	});
 });
