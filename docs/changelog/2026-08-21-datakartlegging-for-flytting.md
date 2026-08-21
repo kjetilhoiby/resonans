@@ -118,24 +118,31 @@ grep -oE "'/api/cron/[a-z0-9-]+'|schedule: '[^']+'" src/routes/api/cron/jobs/+se
 grep -rIlE "rate.?limit|429|retry.after|backoff" src/lib/server/integrations/
 ```
 
-De faktiske leverandørgrensene måles med endepunkter som allerede finnes.
-Åpne dem innlogget:
+De faktiske leverandørgrensene måles med verktøy som allerede finnes.
+
+**SpareBank1: knappen i `/settings/sources`** — «Sjekk hvor langt tilbake
+banken gir oss data», på bankkortet under diagnostikken
+(`Sparebank1HistoryProbeSection`). Den spør hver konto etter tur, viser antall
+rader, eldste og nyeste dato, og konkluderer.
+
+Verdikten har tre utfall, ikke to, og det er poenget:
+`$lib/domain/economics/history-probe.ts` skiller «kan hentes igjen» og «kan
+ikke hentes igjen» fra **«vet ikke ennå»**. Returnerer banken nøyaktig 100
+(eller 200, 500 …) rader, har vi antakelig truffet en sidegrense — og da er
+eldste dato et **gulv**, ikke sannheten. Historikken kan gå mye lenger
+tilbake enn målingen viser. Et gjettet svar her ville blitt brukt til å
+bestemme om det er trygt å slette noe.
+
+Withings måles fortsatt med URL:
 
 ```
-/api/sensors/sparebank1/probe                       → kontoliste
-/api/sensors/sparebank1/probe?accountKey=<key>      → antall, eldste/nyeste transaksjon,
-                                                      og rate-limit-headerne
 /api/sensors/withings/debug/coverage?from=2013-01-01&types=weight
 /api/sensors/withings/debug/probe?from=…&to=…       → seks varianter av samme spørsmål
 ```
 
-**SB1-proben uten datofilter er den viktigste**: den viser hvor langt tilbake
-banken faktisk gir oss noe, og flytter dermed `canonical_bank_transactions`
-mellom to av gruppene over.
-
 ## Åpne punkter
 
-- [ ] Kjør SB1-proben og noter eldste transaksjon her
+- [ ] Trykk knappen i `/settings/sources` og noter eldste transaksjon her
 - [ ] Legg backoff på Strava og Tesla før historikkjobber
 - [ ] Avklar hvilke domener som blir med på dag én — det avgjør hvor mye av
       kartleggingen som i det hele tatt er relevant

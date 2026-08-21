@@ -7,6 +7,7 @@
 	} from './sources-utils';
 	import Sparebank1SalarySection from './Sparebank1SalarySection.svelte';
 	import Sparebank1DiagnosticsSection from './Sparebank1DiagnosticsSection.svelte';
+	import Sparebank1HistoryProbeSection from './Sparebank1HistoryProbeSection.svelte';
 
 	type Sparebank1DebugTransaction = {
 		accountId: string; timestamp: string; description: string; amount: number;
@@ -298,6 +299,13 @@
 		/>
 
 		<Sparebank1DiagnosticsSection />
+
+		<!--
+			Proben står ETTER diagnostikken: den første viser hva vi HAR i basen, den
+			andre hva banken fortsatt VIL GI oss. Rekkefølgen er den man leser dem i
+			når spørsmålet er «kan dette hentes inn igjen?».
+		-->
+		<Sparebank1HistoryProbeSection />
 	{:else}
 		<Button href="/api/sensors/sparebank1/connect">Koble til SpareBank 1</Button>
 	{/if}
