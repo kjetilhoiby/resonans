@@ -292,8 +292,14 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // ingen modul — da vet ikke modellen at manage_weight_measurement finnes.
    // NB: «maling» uten ø er BEVISST utelatt. Det er maling til veggen, og et
    // hus-prosjekt skal ikke dra inn helse-blokka.
+   //
+   // «nedgang», «oppgang», «gikk/gått ned» og «kilo» dekker spørsmål om PERIODENE i
+   // vektkurven: «hvor mye har jeg gått ned siden april» inneholder ikke ordet
+   // «vekt», og traff derfor ingen modul — da finnes ikke query_weight for modellen,
+   // og den svarer på siste enkeltmåling i stedet. `\bkilo\b` holder «kilometer»
+   // utenfor.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b/.test(
          text
       )
    )

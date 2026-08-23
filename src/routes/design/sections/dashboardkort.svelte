@@ -17,6 +17,7 @@
 	import WeightStatusCard from '$lib/components/domain/weight/WeightStatusCard.svelte';
 	import WeightMilestonesCard from '$lib/components/domain/weight/WeightMilestonesCard.svelte';
 	import WeightTrendChart from '$lib/components/domain/weight/WeightTrendChart.svelte';
+	import WeightPeriodsCard from '$lib/components/domain/weight/WeightPeriodsCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -44,6 +45,9 @@
 		weightMilestones,
 		weightMilestonesQualified,
 		weightMilestonesStale,
+		weightSwings,
+		weightDaysSwinging,
+		weightSwingsRich,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -333,10 +337,33 @@
 		et hull i veiingene blir et tomrom og ikke to punkter ved siden av hverandre.
 	</p>
 	<div class="demo-card demo-card--wide">
-		<WeightTrendChart days={weightDays} goalKg={80} />
+		<WeightTrendChart
+			days={weightDaysSwinging}
+			goalKg={80}
+			swings={weightSwingsRich}
+			initialRange="alt"
+		/>
 	</div>
 	<div class="demo-card demo-card--wide">
 		<WeightTrendChart days={weightDays.slice(-24)} initialRange="30d" />
+	</div>
+
+	<h3 class="subsection">WeightPeriodsCard — kurvens egne perioder</h3>
+	<p class="section-desc">
+		Et fast vindu treffer sjelden der bevegelsen begynte: «ned 1,8 kg på 365 dager» var sant for
+		en bruker som hadde gått ned nesten seks kilo siden april, fordi vinduet blandet inn
+		oppgangen som lå foran nedgangen. Her er grensene kurvens egne topper og bunner på trenden,
+		så hver rad har <em>én</em> retning og tempoet i den er tempoet i noe som faktisk hendte. De
+		samme vendepunktene er ringer i grafen over, så en rad kan leses av kurven framfor å måtte
+		holdes i hodet. Retningen bæres av ord og en pil, ikke av farge — en oppgang er ikke en
+		fiasko. Notisen nederst sier at lista har hull: bevegelser under terskelen er utelatt som
+		væske, og en liste som ser komplett ut men ikke er det, er verre enn en med et forbehold.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightPeriodsCard swings={weightSwingsRich} />
+	</div>
+	<div class="demo-card demo-card--wide">
+		<WeightPeriodsCard swings={[]} enoughHistory={false} />
 	</div>
 
 </section>

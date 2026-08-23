@@ -627,6 +627,38 @@ ble flyttet ut da det ble et eget fokusområde.
   hull i veiingene blir et tomrom.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Perioder i vektkurven: én motor, to retninger
+
+Se `docs/changelog/2026-08-23-perioder-i-vektkurven.md`. Avgrensingen bor i
+`$lib/domain/health/weight-swings.ts`; `weight-declines.ts` er nedgangene ut av den.
+
+- **Faste vinduer og kurvens egne grenser svarer på ulike spørsmål.** 30/90/180/365
+  dager kan sammenlignes med ikke-overlappende historikk («er dette bratt for meg?»),
+  men starter et vilkårlig antall dager tilbake: prod sa «ned 1,8 kg på 365 dager» om
+  en nedgang på nesten seks kilo, fordi vinduet blandet inn oppgangen foran den.
+  `current-swing` er derfor rangert over `largest-drop`, og det faste vinduet vikes
+  for en pågående *nedgang* — men ikke for en oppgang, som er en annen historie.
+- **Ikke skriv en andre motor for «en periode».** Flaten, milepælene og
+  `query_weight` leser alle `findWeightSwings`; to motorer i samme kurve blir aldri
+  enige, og da sier chatten ett tall og skjermen et annet.
+- **To terskler, to jobber.** `REBOUND_TOLERANCE_KG` (1 kg) avgjør STRUKTUREN — når
+  en periode er over — mens `MIN_SWING_KG` (2) og `MIN_SWING_DAYS` (21) avgjør hva
+  som VISES. Like tall her slår sammen perioder som gikk motsatt vei, eller fyller
+  lista med væske. Konsekvensen er at lista har hull, og flaten må si det.
+- **`MIN_RETRACE_KG` må ligge UNDER vendeterskelen**, ellers er feltet dødt kode: et
+  tilbakeslag på et helt kilo har alt avsluttet perioden. Første utgave brukte
+  `MIN_SWING_KG / 2` — nøyaktig vendeterskelen — og en bunn tre uker tilbake ble
+  presentert som «faller fortsatt».
+- **`ongoing` og `daysSinceEnd` er to ulike ting.** Den første er struktur (ingen
+  bekreftet vending), den andre er nå. «Pågår» om noe som flatet ut i juli er en
+  påstand om i dag som ikke stemmer — `isSwingActive` krever begge.
+- **Et platå i ytterpunktet tilhører ingen av periodene.** Perioden slutter på første
+  punkt med ytterverdien, den neste starter på det siste — ellers trekker en flat uke
+  i bunnen tempoet i nedgangen ned.
+- Setningene bor i domenelaget (`describeCurrentSwing`), fordi de bærer forbeholdene:
+  tilbakeslag fra ytterpunktet, et sluttempo som avviker, muskeltap som avlyser
+  feiringen. Datoene og kilotallene deles med milepælene gjennom `weight-text.ts`.
+
 ### Vektmål: baselinen er halve målet
 
 Se `docs/changelog/2026-08-23-vektmal-uten-maaling.md`. Tolkningen bor rent i

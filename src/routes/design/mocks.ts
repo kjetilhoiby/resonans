@@ -3,6 +3,8 @@
  * Regler: faste datoer, ingen Math.random() — /design er med i visuell regresjon.
  * Fixtures deles mellom demosidene; komponenter importeres der de brukes.
  */
+import { buildMetricSeries } from '$lib/domain/health/weight-series';
+import { findWeightSwings } from '$lib/domain/health/weight-swings';
 import type { Checklist } from '$lib/components/composed/ChecklistWidget.svelte';
 import type { ChecklistItemLike } from '$lib/types/checklist';
 import type { WidgetData } from '$lib/client/widget-data-cache';
@@ -1825,6 +1827,61 @@ function mockWeightDays() {
 }
 
 export const weightDays = mockWeightDays();
+
+/**
+ * En kurve med FLERE perioder: ned, opp, ned igjen.
+ *
+ * `mockWeightDays` er én lang nedgang med et platå i midten — riktig for å vise at
+ * platået ikke deler perioden i to, men den viser bare én rad i periodekortet og
+ * knapt et vendepunkt i grafen. Galleriet trenger en kurve som snur.
+ */
+function mockSwingingWeightDays() {
+	const legs = [
+		{ from: 88, to: 83, days: 120 },
+		{ from: 83, to: 86, days: 60 },
+		{ from: 86, to: 80.5, days: 140 }
+	];
+	const total = legs.reduce((sum, leg) => sum + leg.days, 0);
+	const END = Date.UTC(2026, 7, 4);
+
+	const days: typeof weightDays = [];
+	let index = 0;
+	for (const leg of legs) {
+		for (let i = 0; i < leg.days; i++, index++) {
+			// Hopp over hver trettende dag: hull hører til en ekte veieserie.
+			if (index % 13 === 5) continue;
+			const t = i / (leg.days - 1);
+			const baseline = leg.from + (leg.to - leg.from) * t;
+			const noise = Math.sin(index * 1.7) * 0.4 + Math.sin(index * 0.53) * 0.25;
+			const weightKg = Math.round((baseline + noise) * 10) / 10;
+			days.push({
+				date: new Date(END - (total - 1 - index) * 86_400_000).toISOString().slice(0, 10),
+				weightKg,
+				weighInCount: 1,
+				fatMassKg: null,
+				fatRatio: null,
+				muscleMassKg: null,
+				fatFreeMassKg: null
+			});
+		}
+	}
+	return days;
+}
+
+export const weightDaysSwinging = mockSwingingWeightDays();
+
+export const weightSwingsRich = findWeightSwings(
+	buildMetricSeries(weightDaysSwinging, 'weight').points
+);
+
+/**
+ * Periodene i mock-kurven, regnet av den ekte motoren.
+ *
+ * Håndskrevne perioder ville vist en form galleriet ikke kan komme i: terskler,
+ * platåregelen og «pågår»-vurderingen bor i `weight-swings`, og en mock som går
+ * rundt dem viser noe annet enn flaten.
+ */
+export const weightSwings = findWeightSwings(buildMetricSeries(weightDays, 'weight').points);
 
 export const weightLatest = weightDays[weightDays.length - 1];
 

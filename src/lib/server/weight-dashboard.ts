@@ -13,6 +13,7 @@ import {
 	type CompositionChangeSummary
 } from '$lib/domain/health/weight-measurements';
 import { buildWeightMilestones, type WeightMilestone } from '$lib/domain/health/weight-milestones';
+import type { WeightSwing } from '$lib/domain/health/weight-swings';
 import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/metric-settings';
 import { readBodyProfile } from '$lib/server/health/body-profile';
 import { listWaistMeasurements } from '$lib/server/health/waist-log';
@@ -67,6 +68,14 @@ export interface WeightDashboardPayload {
 	/** Dagsverdier for grafen, stigende. Hele historikken, med MAX_CHART_POINTS som tak. */
 	days: WeightDay[];
 	milestones: WeightMilestone[];
+	/**
+	 * Periodene kurven er delt i — topper og bunner, begge retninger.
+	 *
+	 * Kommer fra `buildWeightMilestones`, ikke fra et eget kall: setningen om den
+	 * pågående perioden og lista under grafen skal ikke kunne vise ulike perioder.
+	 * Regnet på HELE historikken, som milepælene — grafen kan være kuttet.
+	 */
+	swings: WeightSwing[];
 	/** Dager mellom første og siste veiing i HELE historikken. */
 	historyDays: number;
 	weighIns: number;
@@ -145,6 +154,7 @@ export async function loadWeightDashboardData(userId: string): Promise<WeightDas
 	return {
 		days,
 		milestones: milestoneResult.milestones,
+		swings: milestoneResult.swings,
 		historyDays: milestoneResult.historyDays,
 		weighIns: milestoneResult.weighIns,
 		enoughHistory: milestoneResult.enoughHistory,

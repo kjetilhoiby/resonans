@@ -26,6 +26,13 @@ import {
 	type MonthlyWeight
 } from '$lib/domain/health/weight-monthly';
 import { summarizeDeclines, type WeightDecline } from '$lib/domain/health/weight-declines';
+import {
+	currentSwing,
+	describeCurrentSwing,
+	findWeightSwings,
+	isLargestInDirection,
+	type WeightSwing
+} from '$lib/domain/health/weight-swings';
 
 export interface WeightSummaryInput {
 	/** Stigende, fra `dailyWeights`. */
@@ -63,7 +70,7 @@ export interface WeightSummaryInput {
 	today: string;
 }
 
-export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly' | 'declines';
+export type WeightQueryType = 'trend' | 'milestones' | 'composition' | 'monthly' | 'periods';
 
 /** Vinduene endringen rapporteres over. 7 er støyete alene, 90 er retningen. */
 export const CHANGE_WINDOWS_DAYS = [7, 30, 90] as const;
@@ -96,8 +103,19 @@ export interface WeightSummary {
 		latestWeighIn: string | null;
 		daysSinceLatest: number | null;
 	};
-	/* declines */
-	declines?: WeightDecline[];
+	/* periods */
+	/**
+	 * Periodene kurven er delt i, kronologisk — nedganger OG oppganger.
+	 *
+	 * Het `declines` og dekket bare nedganger fram til august 2026. En bruker som
+	 * spurte «hva har skjedd i år» fikk da bare halve kurven, og oppgangen mellom to
+	 * nedganger var usynlig — akkurat den som forklarer hvorfor et fast årsvindu
+	 * viser mindre enn nedgangen man er inne i.
+	 */
+	periods?: WeightSwing[];
+	/** Den pågående perioden, med tempo og forbehold ferdig formulert. */
+	current?: WeightSwing | null;
+	currentSentence?: string | null;
 	largestDecline?: WeightDecline | null;
 	fastestDecline?: WeightDecline | null;
 	longestDecline?: WeightDecline | null;
@@ -166,19 +184,27 @@ export function summarizeWeightForChat(
 		}
 	};
 
-	if (queryType === 'declines') {
-		const summary = summarizeDeclines(series.points);
+	if (queryType === 'periods') {
+		const swings = findWeightSwings(series.points);
+		const current = currentSwing(swings);
+		// Nedgangs-statistikken beholdes ved siden av lista: «hvor fort klarte jeg det
+		// sist» er et annet spørsmål enn «hva har skjedd», og svaret er vektet.
+		const declines = summarizeDeclines(series.points);
 		return {
 			...base,
-			declines: summary.declines,
-			largestDecline: summary.largest,
-			fastestDecline: summary.fastest,
-			longestDecline: summary.longest,
-			averageKgPerWeek: summary.averageKgPerWeek,
+			periods: swings,
+			current,
+			currentSentence: current
+				? describeCurrentSwing(current, {
+						largestInDirection: isLargestInDirection(current, swings)
+					})
+				: null,
+			largestDecline: declines.largest,
+			fastestDecline: declines.fastest,
+			longestDecline: declines.longest,
+			averageKgPerWeek: declines.averageKgPerWeek,
 			missing:
-				summary.count === 0
-					? 'Ingen nedgangsperioder over terskelen i historikken.'
-					: undefined
+				swings.length === 0 ? 'Ingen perioder over terskelen i historikken.' : undefined
 		};
 	}
 

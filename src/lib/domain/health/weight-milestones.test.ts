@@ -134,8 +134,13 @@ describe('laveste trend', () => {
 });
 
 describe('største nedgang', () => {
+	/**
+	 * Fixturene her slutter med en OPPGANG, og det er ikke tilfeldig: er en nedgang
+	 * fortsatt i gang, viker det faste vinduet for `current-swing`, som forteller
+	 * samme historie fra der den begynte. Se «pågående periode» under.
+	 */
 	it('navngir vinduet og sier at det er en rekord', () => {
-		const days = build([...flat(82, 100), ...ramp(82, 79, 90)]);
+		const days = build([...ramp(86, 80, 150), ...ramp(80, 83, 60)]);
 		const milestone = find(days, 'largest-drop');
 		expect(milestone?.sentence).toMatch(/^Ned \d+,\d kg på \d+ dager/);
 		expect(milestone?.sentence).toContain('vi har målt');
@@ -154,7 +159,7 @@ describe('største nedgang', () => {
 		 * siden» er en sammenligning av en periode med seg selv. Referansen må
 		 * derfor ligge minst et helt vindu tilbake.
 		 */
-		const days = build(ramp(90, 80, 400));
+		const days = build([...ramp(90, 80, 400), ...ramp(80, 82, 40)]);
 		const milestone = find(days, 'largest-drop');
 		expect(milestone).toBeTruthy();
 		if (milestone?.sinceDate) {
@@ -163,10 +168,42 @@ describe('største nedgang', () => {
 		}
 	});
 
+	it('krever et vindu som ikke bare gjenforteller en pågående nedgang', () => {
+		// Ett langt fall som fortsatt pågår: `current-swing` sier det samme fra
+		// toppen, og to setninger om samme nedgang med ULIKE tall («ned 2,2 kg på
+		// 180 dager» ved siden av «ned 5,9 kg siden januar») leses som en selvmotsigelse.
+		const list = kinds(build(ramp(90, 80, 400)));
+		expect(list).toContain('current-swing');
+		expect(list).not.toContain('largest-drop');
+	});
+});
+
+describe('pågående periode', () => {
+	it('sier retning, ankerdato og tempo', () => {
+		const days = build(ramp(90, 80, 400));
+		const milestone = find(days, 'current-swing');
+		expect(milestone?.sentence).toMatch(/^Ned \d+,\d kg siden toppen \d+\. \w+ \d{4}/);
+		expect(milestone?.sentence).toContain('kg i måneden');
+		expect(milestone?.tone).toBe('positiv');
+	});
+
+	it('er nøytral når perioden går oppover', () => {
+		const days = build([...ramp(86, 80, 150), ...ramp(80, 83, 60)]);
+		const milestone = find(days, 'current-swing');
+		expect(milestone?.sentence).toMatch(/^Opp \d+,\d kg siden bunnen/);
+		expect(milestone?.tone).toBe('nøytral');
+	});
+
+	it('lar det faste vinduet stå når perioden går oppover — det er to ulike historier', () => {
+		const list = kinds(build([...ramp(86, 80, 150), ...ramp(80, 83, 60)]));
+		expect(list).toContain('current-swing');
+		expect(list).toContain('largest-drop');
+	});
+
 	it('avlyser feiringen når nedgangen er muskel', () => {
 		const values = ramp(84, 82, 200);
 		const muscle = ramp(61, 59.5, 200);
-		const milestone = find(build(values, { muscle }), 'largest-drop');
+		const milestone = find(build(values, { muscle }), 'current-swing');
 		expect(milestone?.sentence).toContain('muskel');
 		expect(milestone?.tone).toBe('nøytral');
 	});
@@ -174,7 +211,7 @@ describe('største nedgang', () => {
 	it('feirer uforbeholdent når fettet står for nedgangen', () => {
 		const values = ramp(84, 82, 200);
 		const muscle = flat(60, 200);
-		const milestone = find(build(values, { muscle }), 'largest-drop');
+		const milestone = find(build(values, { muscle }), 'current-swing');
 		expect(milestone?.sentence).not.toContain('muskel');
 		expect(milestone?.tone).toBe('positiv');
 	});
@@ -283,10 +320,24 @@ describe('målvekt', () => {
 
 describe('avstand til lavpunktet', () => {
 	it('orienterer når vekta har gått opp igjen', () => {
-		const days = build([...ramp(86, 80, 150), ...ramp(80, 83, 60)]);
+		// Oppgangen starter i en LOKAL bunn, ikke i historikkens lavpunkt: da sier de
+		// to setningene ulike ting, og begge får stå.
+		const days = build([
+			...ramp(84, 80, 60),
+			...ramp(80, 83, 50),
+			...ramp(83, 81, 30),
+			...ramp(81, 84, 30)
+		]);
 		const milestone = find(days, 'above-nadir');
 		expect(milestone?.sentence).toMatch(/kg over lavpunktet på \d+,\d kg, målt/);
 		expect(milestone?.tone).toBe('nøytral');
+	});
+
+	it('tier når en pågående oppgang starter PÅ lavpunktet — da er det samme setning', () => {
+		const days = build([...ramp(86, 80, 150), ...ramp(80, 83, 60)]);
+		const list = kinds(days);
+		expect(list).toContain('current-swing');
+		expect(list).not.toContain('above-nadir');
 	});
 
 	it('tier når du står på lavpunktet — da sier trend-rekorden det bedre', () => {

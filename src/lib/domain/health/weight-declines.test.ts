@@ -150,8 +150,10 @@ describe('summarizeDeclines', () => {
 		expect(summary.count).toBe(2);
 		expect(summary.largest?.lostKg).toBe(6);
 		expect(summary.longest?.days).toBe(100);
-		// 29, ikke 28: perioden starter på TOPPEN, som er siste dag i oppgangen.
-		expect(summary.fastest?.days).toBe(29);
+		// 28, ikke 29: fixturen har to dager på 99 (siste dag i oppgangen og første i
+		// nedgangen). Et platå i ytterpunktet tilhører ingen av periodene — nedgangen
+		// starter der trenden faktisk begynte å falle. Se `weight-swings.ts`.
+		expect(summary.fastest?.days).toBe(28);
 	});
 
 	it('vekter snittempoet på varighet', () => {

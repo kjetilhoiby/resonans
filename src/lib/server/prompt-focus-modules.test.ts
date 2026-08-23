@@ -88,3 +88,26 @@ describe('detectPromptFocusModules — sletting av feilmåling', () => {
 		expect(detectPromptFocusModules('kjøpe maling til stua')).not.toContain('health');
 	});
 });
+
+describe('detectPromptFocusModules — perioder i vektkurven', () => {
+	it('sender spørsmål om nedganger og oppganger til helse', () => {
+		// Meldingene brukeren faktisk skriver om periodene i kurven. Ingen av dem
+		// inneholder ordet «vekt», så de traff ingen modul — og da finnes ikke
+		// query_weight for modellen, som i stedet svarer på siste enkeltmåling.
+		for (const text of [
+			'hvor mye har jeg gått ned siden april',
+			'når snudde nedgangen',
+			'har jeg hatt en oppgang i år',
+			'hvor mange kilo gikk jeg ned sist'
+		]) {
+			expect(detectPromptFocusModules(text), text).toContain('health');
+		}
+	});
+
+	it('lar kilometer være i fred', () => {
+		// «kilo» med ordgrense, ellers drar hver løpetur inn vekt-verktøyene.
+		expect(detectPromptFocusModules('hvor mange kilometer løp jeg i juli')).not.toContain(
+			'health'
+		);
+	});
+});

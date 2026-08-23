@@ -70,17 +70,23 @@
 		type WaistDay
 	} from '$lib/domain/health/waist';
 	import { dayNumber, type TrendPoint } from '$lib/domain/health/trailing-trend';
+	import type { WeightSwing } from '$lib/domain/health/weight-swings';
 
 	interface Props {
 		days: WeightDay[];
 		/** Livviddemålinger. Tom liste skjuler panelet — det finnes da ingenting å justere mot. */
 		waistDays?: WaistDay[];
 		goalKg?: number | null;
+		/**
+		 * Periodene fra `weight-swings`. Toppene og bunnene markeres i grafen, slik at
+		 * radene i periodekortet kan leses AV kurven framfor å måtte holdes i hodet.
+		 */
+		swings?: WeightSwing[];
 		/** Startperiode. 90 dager viser en trend uten å bli et arkiv. */
 		initialRange?: WeightRangeId;
 	}
 
-	let { days, waistDays = [], goalKg = null, initialRange = '90d' }: Props = $props();
+	let { days, waistDays = [], goalKg = null, swings = [], initialRange = '90d' }: Props = $props();
 
 	/** Livviddefargen. Blågrønn framfor beinhvit, så de to panelene ikke forveksles. */
 	const WAIST_COLOR = '#5fb3a1';
@@ -222,6 +228,46 @@
 
 	const endPoint = $derived(series.points.at(-1) ?? null);
 
+	/**
+	 * Toppene og bunnene periodene er avgrenset av, innenfor det synlige vinduet.
+	 *
+	 * Bare for vekt: periodene er regnet på vekttrenden, og en ring tegnet på
+	 * fettprosentkurven ville pekt på en vending som ikke finnes der.
+	 *
+	 * Markeringer nær lavpunktsringen eller sluttpunktet dropper vi — to ringer
+	 * oppå hverandre sier ikke to ting, de gjør begge vanskeligere å lese. Samme
+	 * regel som gjør at lavpunktet skjules når det praktisk talt ER siste måling.
+	 */
+	const MARKER_COLLISION_DAYS = 5;
+	const turningPoints = $derived.by(() => {
+		if (metricId !== 'weight' || !chartWindow || series.points.length === 0) return [];
+		const first = series.points[0].date;
+		const last = series.points.at(-1)!.date;
+
+		const seen = new Set<string>();
+		const points: Array<{ date: string; value: number }> = [];
+		for (const swing of swings) {
+			for (const end of [
+				{ date: swing.startDate, value: swing.startKg },
+				{ date: swing.endDate, value: swing.endKg }
+			]) {
+				if (seen.has(end.date)) continue;
+				if (end.date < first || end.date > last) continue;
+				const day = dayNumber(end.date);
+				if (Math.abs(day - dayNumber(last)) <= MARKER_COLLISION_DAYS) continue;
+				if (
+					visibleNadir &&
+					Math.abs(day - dayNumber(visibleNadir.date)) <= MARKER_COLLISION_DAYS
+				) {
+					continue;
+				}
+				seen.add(end.date);
+				points.push(end);
+			}
+		}
+		return points;
+	});
+
 	/* ── Hover ────────────────────────────────────────────
 	   En graf i nettleseren er interaktiv. Nærmeste punkt i x-retning, ikke
 	   nærmeste i begge — man peker på en dato, ikke på et tall. */
@@ -339,6 +385,11 @@
 		{#if activeGoal !== null}
 			<span class="key"><span class="swatch swatch--dashed" style:color={GOAL_COLOR}></span>Mål</span>
 		{/if}
+		{#if turningPoints.length > 0}
+			<span class="key"
+				><span class="swatch swatch--ring" style:border-color={TREND_COLOR}></span>Topp/bunn</span
+			>
+		{/if}
 		{#if showWaistPanel}
 			<span class="key"><span class="swatch swatch--line" style:background={WAIST_COLOR}></span>Livvidde</span>
 		{/if}
@@ -412,6 +463,20 @@
 							stroke-linejoin="round"
 						/>
 					{/if}
+				{/each}
+
+				<!-- Periodenes topper og bunner: samme ringform som lavpunktet, mindre og
+				     svakere. De er navigasjon inn i periodekortet under, ikke et tall. -->
+				{#each turningPoints as point (point.date)}
+					<circle
+						cx={xOf(point.date)}
+						cy={yOf(point.value)}
+						r="2.8"
+						fill={SURFACE}
+						stroke={TREND_COLOR}
+						stroke-width="1.2"
+						opacity="0.55"
+					/>
 				{/each}
 
 				{#if visibleNadir}
@@ -626,6 +691,13 @@
 		border-radius: 0;
 		border-top: 2px dashed currentColor;
 		background: none !important;
+	}
+
+	/* Ringen, ikke en fylt prikk: markeringen i grafen er også en ring, og formen
+	   er det som skiller den fra en måling for den som ikke ser fargeforskjellen. */
+	.swatch--ring {
+		background: transparent;
+		border: 1.2px solid;
 	}
 
 	.field {

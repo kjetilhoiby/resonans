@@ -2,8 +2,9 @@
   WeightDashboard — Vekt-undertemaets flate.
 
   Rekkefølgen er en påstand om hva brukeren spør om, i denne orden:
-  «hvor står jeg» (status) → «hva betyr det» (milepæler) → «vis meg» (grafen).
-  Milepælene står FØR grafen fordi de er svaret; grafen er belegget.
+  «hvor står jeg» (status) → «hva betyr det» (milepæler) → «vis meg» (grafen) →
+  «hva har skjedd før» (periodene). Milepælene står FØR grafen fordi de er svaret;
+  grafen er belegget, og periodekortet er lesningen av den.
 
   Arbeidsdelingen mot mortemaet: Helse viser sammenhengen mellom vekt og trening
   gjennom signalet «Trening mot vektterskel». Vekt eier historikken, milepælene og
@@ -15,6 +16,7 @@
 	import WeightMilestonesCard from './weight/WeightMilestonesCard.svelte';
 	import WeightOutliersCard from './weight/WeightOutliersCard.svelte';
 	import WeightTrendChart from './weight/WeightTrendChart.svelte';
+	import WeightPeriodsCard from './weight/WeightPeriodsCard.svelte';
 	import WaistCard from './weight/WaistCard.svelte';
 	import { buildMetricSeries } from '$lib/domain/health/weight-series';
 	import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
@@ -59,10 +61,21 @@
 		milestonesReachBeyondChart={data.milestonesReachBeyondChart}
 	/>
 
-	<!-- Under grafen, ikke over: uteliggeren oppdages VED å se grafen, og kortet er
-	     svaret på «hva gjør jeg med den» — ikke noe man leter etter først. -->
-	<WeightTrendChart days={data.days} waistDays={data.waistDays} goalKg={data.goalKg} />
+	<WeightTrendChart
+		days={data.days}
+		waistDays={data.waistDays}
+		goalKg={data.goalKg}
+		swings={data.swings}
+	/>
 
+	<!-- Rett under grafen: radene er lesningen av kurven man nettopp så, og ringene
+	     i grafen markerer de samme toppene og bunnene. Står de langt fra hverandre,
+	     må leseren holde datoene i hodet mens hen blar. -->
+	<WeightPeriodsCard swings={data.swings} enoughHistory={data.enoughHistory} />
+
+	<!-- Uteliggerkortet står også under grafen: uteliggeren oppdages VED å se
+	     grafen, og kortet er svaret på «hva gjør jeg med den» — ikke noe man
+	     leter etter først. -->
 	<WeightOutliersCard onDeleted={onDataChanged} />
 
 	<!-- Sist: livvidde er den andre målingen på flaten, ikke den man kom for. Den
