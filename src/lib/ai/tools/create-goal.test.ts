@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { describeMeasurement } from './create-goal';
+import { createGoalTool, describeMeasurement } from './create-goal';
 
 /**
  * Kvitteringen etter et vektmål skal bære tallene som BLE LAGRET.
@@ -50,5 +50,23 @@ describe('describeMeasurement', () => {
 			goalTrack: { targetValue: 150, unit: 'km' }
 		});
 		expect(result.measurement).toBe('Måles mot 150 km');
+	});
+});
+
+/**
+ * Vektmål: kontrakten er målvekten, og tittelen er kryssjekken.
+ *
+ * `execute` treffer databasen, så det som testes her er porten foran den — den som
+ * avgjør hvilket tall som i det hele tatt sendes videre.
+ */
+describe('create_goal — vektmålets målverdi', () => {
+	it('har en egen parameter for målvekten', () => {
+		const shape = (createGoalTool.parameters as unknown as { shape: Record<string, unknown> }).shape;
+		expect(shape).toHaveProperty('targetWeightKg');
+	});
+
+	it('sier i beskrivelsen at målvekten skal stemme med tittelen', () => {
+		expect(createGoalTool.description).toContain('targetWeightKg');
+		expect(createGoalTool.description).toContain('tittelen');
 	});
 });

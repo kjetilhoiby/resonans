@@ -88,6 +88,60 @@ framfor å erstatte. Startvekt-feltet kan stå tomt.
 ThemeDataTab leste den samme flate `targetValue` og viste derfor null fremdrift for
 både løpe- og vektmål opprettet andre steder; den slår nå opp `goalTrack` først.
 
+### Fase 5: Instruksen nådde ikke flaten brukeren brukte
+
+Første forsøk virket delvis: målet ble opprettet med en baseline (98 kg, hentet fra
+siste veiing), men det siktet mot **93 kg** der brukeren hadde sagt 95. Chatten sa
+«Målvekt: 95 kg» og «Mål om å gå ned: 5 kg» i samme melding — to tall som ikke kan
+være sanne samtidig.
+
+Årsaken var ikke modellen. **Chat-endepunktet hadde en håndskrevet kopi av
+`create_goal`-skjemaet**, og kopien sa fortsatt «targetValue: … -3 for kg ned».
+Fase 2 la `startValue` og «oppgi MÅLVEKTEN» på verktøymodulen, som web-chatten ikke
+leser — bare Ekko-assistenten gjør det, gjennom `adaptSharedTool`. Instruksen fantes,
+men ikke på flaten brukeren brukte, og modellen fulgte kopien og sendte −5.
+
+Konverteringen zod → JSON-schema er derfor flyttet ut av `shared-tools.ts` til
+`$lib/server/assistant/tool-schema.ts`, og chat-endepunktet henter nå `create_goal`
+og `query_weight` gjennom `openAiFunctionDefinition(tool)`. En tekstvakt i
+`tool-schema.test.ts` feiler hvis navnene kommer tilbake som literaler ved siden av
+et eget `parameters`-objekt.
+
+**De øvrige verktøyene i den lista er ikke konvertert.** De som allerede leser
+`tool.name`/`tool.description` fra modulen har bare parametrene sine igjen som kopi;
+resten har ingen zod-parametre i det hele tatt. Konverteringen er mekanisk, men den
+hører i sin egen endring.
+
+### Fase 6: Målvekten valideres mot ordene målet beskrives med
+
+En kontrakt modellen kan bryte, blir brutt. `validateWeightGoalTarget`
+(`$lib/domain/health/weight-goal.ts`) avgjør nå målvekten før noe skrives:
+
+1. Et tall som **kan** være en kroppsvekt vinner (`targetWeightKg`, ellers
+   `targetValue`).
+2. Kan det ikke — som −5 — leses målvekten ut av tittelen og beskrivelsen
+   (`targetWeightInText`, som bare godtar «til NN kg»). Det redder nettopp dette
+   tilfellet uten en ny runde: tittelen sa «til 95 kg».
+3. Finnes begge og er de uenige, **avvises** opprettelsen med begge tallene i
+   feilmeldingen. Et mål som sikter mot noe annet enn det brukeren sa, er verre enn
+   et mål som ikke ble opprettet — og modellen kan rette seg selv i samme tur.
+
+Parameteren heter nå `targetWeightKg`, fordi et felt som heter `targetValue` inviterer
+til lesningen «verdien av målet = endringen». Navnet er halve instruksen.
+
+Tekstparseren er smal med vilje: «Ned 5 kg innen jul» treffer ikke, siden 5 der er en
+endring, og en parser som gjettet ville laget et mål om å veie fem kilo.
+
+### Fase 7: «Under mål» pekte motsatt vei
+
+Flaten skrev «Estimat ved dagens snitt: ~98 kg (5 kg under mål)» om et mål på 93 kg.
+`computePaceEstimate` brukte målretningens fortegn til å velge både tonen og ordet,
+og for et nedadgående mål er de motsatte: å ligge **over** målvekta er å ligge
+**bak** planen. Tonen følger nå målretningen, ordet følger verdien.
+
+Samme feil sto på det gamle 85 kg-målet, der «~67,6 kg (17,4 kg over mål)» var
+17,4 kg *under*.
+
 ## Beslutninger
 
 - **Baselinen gjettes ikke, den måles.** Fallbacken er siste veiing, ikke et anslag
@@ -99,12 +153,19 @@ både løpe- og vektmål opprettet andre steder; den slår nå opp `goalTrack` f
   regner på det; kontrakten mot språkmodellen er absolutt fordi det er språket
   brukeren snakker, og oversettelsen skjer i skrivelaget.
 - **Ingen datamigrasjon.** Lesesiden ble tolerant i stedet, så gamle mål repareres
-  uten en engangsjobb som må treffe riktig på første forsøk.
+  uten en engangsjobb som må treffe riktig på første forsøk. Et mål som alt ligger i
+  basen med gal målvekt må rettes i skjemaet på temaets mål-fane (feltet «Målvekt»)
+  eller slettes og opprettes på nytt — tolkningen i lesesiden kan ikke vite at 93
+  skulle vært 95.
+- **Tittelen er en kilde, ikke bare tekst.** Den er det brukeren leser rett over
+  tallet, så en målvekt som spriker fra den er synlig for brukeren og usynlig for
+  koden. Da skal koden lese den.
 
 ## Verifisering
 
-- `npm test` — 3664 tester, alle grønne. Nye: `weight-goal.test.ts` (10) og
-  `create-goal.test.ts` (5).
+- `npm test` — 3725 tester, alle grønne. Nye i denne runden:
+  `targetWeightInText`/`validateWeightGoalTarget` (10), `tool-schema.test.ts` (6),
+  `helpers-pace.test.ts` (6).
 - `npm run check` — 0 feil, 0 advarsler.
-- Manuelt gjenstår: opprette et vektmål gjennom chatten i prod og se at det havner
-  over «Uten måling»-gruppa, med fraverdi lik siste veiing.
+- Manuelt gjenstår: opprette et vektmål gjennom chatten i prod og se at målvekta blir
+  den brukeren sa. Det gamle målet med 93 kg må rettes eller slettes for hånd.

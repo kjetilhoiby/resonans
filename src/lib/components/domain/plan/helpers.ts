@@ -226,16 +226,23 @@ export function computePaceEstimate(opts: {
 	const projectedSignedDiff = (projected - opts.targetValue) * direction;
 	const projectedAbsDiff = Math.abs(projected - opts.targetValue);
 
+	/**
+	 * Tonen følger MÅLRETNINGEN, ordet følger VERDIEN.
+	 *
+	 * De to er ikke det samme, og forvekslingen sto i prod: for et vektmål er
+	 * `direction` −1, så et estimat på 98 kg mot et mål på 93 ga
+	 * `projectedSignedDiff = −5` — altså «bak plan», som er riktig — og teksten
+	 * «5 kg under mål», som er motsatt av sant. Et estimat over målvekta er over
+	 * målet uansett hvilken vei målet peker.
+	 */
 	let estimateTone: PaceEstimate['estimateTone'];
 	let estimateSuffix = '';
 	if (projectedAbsDiff < 0.5) {
 		estimateTone = 'neutral';
-	} else if (projectedSignedDiff > 0) {
-		estimateTone = 'ahead';
-		estimateSuffix = ` (${opts.formatValue(projectedAbsDiff)} ${opts.unit} over mål)`;
 	} else {
-		estimateTone = 'behind';
-		estimateSuffix = ` (${opts.formatValue(projectedAbsDiff)} ${opts.unit} under mål)`;
+		estimateTone = projectedSignedDiff > 0 ? 'ahead' : 'behind';
+		const side = projected > opts.targetValue ? 'over' : 'under';
+		estimateSuffix = ` (${opts.formatValue(projectedAbsDiff)} ${opts.unit} ${side} mål)`;
 	}
 
 	const estimateLabel = `Estimat ved dagens snitt: ~${opts.formatValue(projected)} ${opts.unit}${estimateSuffix}`;

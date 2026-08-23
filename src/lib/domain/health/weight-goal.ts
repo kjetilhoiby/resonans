@@ -29,6 +29,11 @@ export type WeightGoalNumbers = {
 	startSource: 'oppgitt' | 'maalt';
 };
 
+/** Et tall som kan være en kroppsvekt i kilo, ellers null. */
+export function plausibleWeightKg(value: unknown): number | null {
+	return plausibleWeight(value);
+}
+
 function plausibleWeight(value: unknown): number | null {
 	const n = Number(value);
 	if (!Number.isFinite(n)) return null;
@@ -80,4 +85,69 @@ export function resolveWeightGoalNumbers(input: {
 		targetInterpretation: absolute ? 'absolute' : 'delta',
 		startSource: explicitStart !== null ? 'oppgitt' : 'maalt'
 	};
+}
+
+/**
+ * Målvekta nevnt i en måltittel eller beskrivelse: «Redusere vekt til 95 kg» → 95.
+ *
+ * Finnes fordi språkmodellen skriver tittelen og måltallet i samme tur, og de kan
+ * sprike: prod fikk «Redusere vekt til 95 kg» med −5 i målfeltet, altså et mål som
+ * siktet mot 93 kg. Tittelen er det brukeren leser, så den er både en kryssjekk og
+ * en siste utvei når måltallet ikke kan være en vekt.
+ *
+ * Mønsteret er smalt med vilje: bare «til NN kg» (eller kilo). «Ned 5 kg innen jul»
+ * treffer ikke — der er 5 en endring, og en parser som gjettet ellers ville laget en
+ * målvekt på 5 kg.
+ */
+export function targetWeightInText(text: string | null | undefined): number | null {
+	if (!text) return null;
+	const match = /\btil\s*(\d{2,3}(?:[.,]\d)?)\s*(?:kg|kilo)\b/i.exec(text);
+	if (!match) return null;
+	return plausibleWeight(Number(match[1].replace(',', '.')));
+}
+
+/** Hvor mye tekst og måltall kan sprike før det er en selvmotsigelse, i kg. */
+export const TARGET_TEXT_TOLERANCE_KG = 0.5;
+
+export type WeightGoalTargetResult =
+	| { ok: true; targetWeightKg: number; source: 'oppgitt' | 'tittel' }
+	| { ok: false; error: string };
+
+/**
+ * Målvekta for et nytt vektmål, validert mot ordene målet er beskrevet med.
+ *
+ * Kontrakten mot språkmodellen er ABSOLUTT (en målvekt), fordi det er slik brukeren
+ * snakker — men modellen sender likevel av og til en endring. Rekkefølgen her er
+ * derfor: et tall som KAN være en vekt vinner; kan det ikke, leses målvekta ut av
+ * tittelen; spriker de to, avvises hele opprettelsen.
+ *
+ * Avvisning framfor gjetning når begge finnes og er uenige: et mål som sikter mot et
+ * annet tall enn det brukeren sa, er verre enn et mål som ikke ble opprettet — og
+ * modellen kan rette seg selv i samme tur.
+ */
+export function validateWeightGoalTarget(input: {
+	title?: string | null;
+	description?: string | null;
+	targetWeightKg?: number | null;
+	targetValue?: number | null;
+}): WeightGoalTargetResult {
+	const explicit = plausibleWeightKg(input.targetWeightKg) ?? plausibleWeightKg(input.targetValue);
+	const fromText = targetWeightInText(`${input.title ?? ''} ${input.description ?? ''}`);
+
+	if (explicit !== null && fromText !== null && Math.abs(explicit - fromText) > TARGET_TEXT_TOLERANCE_KG) {
+		return {
+			ok: false,
+			error: `Målvekten spriker: teksten sier ${fromText} kg, men målverdien er ${explicit} kg. Rett opp det ene og kall verktøyet igjen — et mål som sikter mot et annet tall enn det brukeren sa, er verre enn ingen mål.`
+		};
+	}
+
+	const target = explicit ?? fromText;
+	if (target === null) {
+		return {
+			ok: false,
+			error: `Vektmål krever MÅLVEKTEN i kilo, ikke endringen: send targetWeightKg=95 for «ned til 95 kg» (mottok targetWeightKg=${input.targetWeightKg ?? 'ingen'}, targetValue=${input.targetValue ?? 'ingen'}). Serveren regner endringen selv fra siste veiing.`
+		};
+	}
+
+	return { ok: true, targetWeightKg: target, source: explicit !== null ? 'oppgitt' : 'tittel' };
 }

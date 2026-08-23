@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWeightGoalNumbers } from './weight-goal';
+import {
+	resolveWeightGoalNumbers,
+	targetWeightInText,
+	validateWeightGoalTarget
+} from './weight-goal';
 
 describe('resolveWeightGoalNumbers', () => {
 	it('leser en oppgitt målvekt absolutt og regner deltaet selv', () => {
@@ -99,5 +103,77 @@ describe('resolveWeightGoalNumbers', () => {
 		});
 		expect(result?.startWeight).toBe(98.3);
 		expect(result?.targetDelta).toBe(-13.3);
+	});
+});
+
+describe('targetWeightInText', () => {
+	it('finner målvekta i en tittel', () => {
+		expect(targetWeightInText('Redusere vekt til 95 kg')).toBe(95);
+		expect(targetWeightInText('Gå ned til 95 kg fra nåværende vekt')).toBe(95);
+		expect(targetWeightInText('ned til 88,5 kilo innen jul')).toBe(88.5);
+	});
+
+	it('tar målvekta, ikke startvekta', () => {
+		expect(targetWeightInText('Fra 104 kg til 85 kg innen sommeren')).toBe(85);
+	});
+
+	it('leser ikke en ENDRING som en målvekt', () => {
+		// «Ned 5 kg» er et delta. En parser som gjettet her ville laget et mål om å
+		// veie fem kilo.
+		expect(targetWeightInText('Ned 5 kg innen jul')).toBeNull();
+		expect(targetWeightInText('Gå ned 5 kg')).toBeNull();
+	});
+
+	it('går ikke i «tilbake»-fella', () => {
+		expect(targetWeightInText('Ta tilbake 3 kg muskel')).toBeNull();
+	});
+
+	it('forkaster tall som ikke kan være kroppsvekt', () => {
+		expect(targetWeightInText('Løfte til 8 kg i kettlebell')).toBeNull();
+		expect(targetWeightInText('opp til 900 kg i markløft')).toBeNull();
+	});
+});
+
+describe('validateWeightGoalTarget', () => {
+	it('godtar en oppgitt målvekt', () => {
+		const result = validateWeightGoalTarget({
+			title: 'Redusere vekt til 95 kg',
+			targetWeightKg: 95
+		});
+		expect(result).toEqual({ ok: true, targetWeightKg: 95, source: 'oppgitt' });
+	});
+
+	it('redder et mål der modellen sendte endringen i stedet', () => {
+		// Prod 23. august 2026: tittelen sa «til 95 kg», målfeltet sa −5, og målet
+		// endte med å sikte mot 93 kg. Tittelen er det brukeren leser.
+		const result = validateWeightGoalTarget({
+			title: 'Redusere vekt til 95 kg',
+			description: 'Gå ned til 95 kg fra nåværende vekt',
+			targetValue: -5
+		});
+		expect(result).toEqual({ ok: true, targetWeightKg: 95, source: 'tittel' });
+	});
+
+	it('avviser når tekst og måltall er uenige', () => {
+		const result = validateWeightGoalTarget({
+			title: 'Redusere vekt til 95 kg',
+			targetWeightKg: 93
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toContain('95');
+			expect(result.error).toContain('93');
+		}
+	});
+
+	it('avviser når ingenting kan være en målvekt', () => {
+		const result = validateWeightGoalTarget({ title: 'Gå ned 5 kg', targetValue: -5 });
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error).toContain('targetWeightKg');
+	});
+
+	it('godtar en målvekt i targetValue — samme mening, riktig felt er bare hyggeligere', () => {
+		const result = validateWeightGoalTarget({ title: 'Ned mot normalvekt', targetValue: 95 });
+		expect(result).toEqual({ ok: true, targetWeightKg: 95, source: 'oppgitt' });
 	});
 });

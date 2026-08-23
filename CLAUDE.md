@@ -427,6 +427,15 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
 - **Nye verktøy registreres på BEGGE flater:** `routes/api/chat/+server.ts` og
   `server/assistant/shared-tools.ts` (Ekko). Beskrivelsen bor på verktøymodulen og gjenbrukes,
   ellers får de to flatene ulike instrukser uten at noen ser hvorfor.
+- **Skriv ALDRI av et verktøyskjema i `routes/api/chat/+server.ts`.** Bruk
+  `openAiFunctionDefinition(tool)` fra `$lib/server/assistant/tool-schema.ts`, som
+  genererer skjemaet fra verktøyets zod-parametre. Kopien er ikke en teoretisk fare:
+  `create_goal` fikk `targetWeightKg` og «oppgi MÅLVEKTEN» på modulen 23. august 2026,
+  mens kopien i chat-endepunktet fortsatt sa «-3 for kg ned» — modellen fulgte kopien,
+  og et mål brukeren hadde sagt «til 95 kg» om siktet mot 93. Bare Ekko leser
+  zod-skjemaet (`adaptSharedTool`), så en endring der er **usynlig i web-chatten**.
+  En tekstvakt i `tool-schema.test.ts` feiler hvis et navn kommer tilbake som literal.
+  De øvrige verktøyene i lista er ikke konvertert ennå.
 - **Et verktøy som ikke velges, endrer ingenting.** Legger du til et, må du også si i
   `query_sensor_data`-beskrivelsen hva den *ikke* er til, oppdatere `DOMAIN_PROMPTS.health`,
   og sjekke at ordene brukeren faktisk skriver treffer `detectPromptFocusModules`
@@ -884,6 +893,17 @@ Se `docs/changelog/2026-08-23-vektmal-uten-maaling.md`. Tolkningen bor rent i
   delta-feltet (de siktet mot startvekt + 95 kg).
 - **`Number(null)` er 0, altså «hold vekta».** Nullsjekken må stå før konverteringen,
   ellers blir et mål uten målverdi et gyldig mål.
+- **Parameteren heter `targetWeightKg`, og navnet er halve instruksen.** Et felt som
+  heter `targetValue` inviterer til lesningen «verdien av målet = endringen», og
+  modellen sendte −5 der brukeren hadde sagt 95. `validateWeightGoalTarget` avgjør
+  målvekten før skriving: et plausibelt vekttall vinner, ellers leses «til NN kg» ut
+  av tittelen, og spriker de to avvises opprettelsen med begge tallene i
+  feilmeldingen. Tittelen er det brukeren leser rett over tallet — en målvekt som
+  spriker fra den er synlig for brukeren og usynlig for koden.
+- **Tonen følger målretningen, ordet følger verdien.** `computePaceEstimate` brukte
+  målretningens fortegn til begge, og for et nedadgående mål er de motsatte: flaten
+  skrev «~98 kg (5 kg under mål)» om et mål på 93. Over målvekta er over målet,
+  uansett hvilken vei målet peker — men det er fortsatt *bak* planen.
 - **Metrikkfelt skrives gjennom `createGoal`/`updateGoalMetric`, aldri som rå
   metadata fra en klient.** `metadata.targetValue` (flat) er en gammel form bare
   `GoalEditCard` skrev; leserne slår opp `metadata.goalTrack.targetValue`, og

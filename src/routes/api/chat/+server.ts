@@ -24,6 +24,7 @@ import { saveThemeResearch, getThemeResearchDomains } from '$lib/server/services
 import { buildResearchCard, type ResearchCard, type ResearchCardMap } from '$lib/chat/research-card';
 import { geocodePlace } from '$lib/utils/geocode';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
+import { openAiFunctionDefinition } from '$lib/server/assistant/tool-schema';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { updateGoalTool } from '$lib/ai/tools/update-goal';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -259,82 +260,16 @@ const tools = [
 			}
 		}
 	},
-	{
-		type: 'function' as const,
-		function: {
-			name: 'create_goal',
-			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen — dette aktiverer fremgangssporing over perioden. ALDRI opprett mål med titler som "Planlegging", "Plan" eller andre meta-titler som beskriver planleggingsprosessen — kun konkrete livsmål.',
-			parameters: {
-				type: 'object',
-				properties: {
-					categoryName: {
-						type: 'string',
-						description: 'Kategori for målet (f.eks: "Trening", "Parforhold", "Mental helse", "Karriere")',
-						enum: ['Trening', 'Parforhold', 'Mental helse', 'Karriere', 'Økonomi', 'Hobby', 'Annet']
-					},
-					themeId: {
-						type: 'string',
-						description: 'Valgfritt tema-ID hvis målet skal kobles til et eksisterende tema, for eksempel et nylig opprettet tema.'
-					},
-					title: {
-						type: 'string',
-						description: 'Kort, konkret tittel for målet (f.eks: "Løpe 5 km uten pause")'
-					},
-					description: {
-						type: 'string',
-						description: 'Detaljert beskrivelse av målet, inkludert hvorfor det er viktig for brukeren'
-					},
-					targetDate: {
-						type: 'string',
-						description: 'Måldato i ISO format (YYYY-MM-DD), hvis brukeren har spesifisert en tidsfrist'
-					},
-					startDate: {
-						type: 'string',
-						description: 'Startdato for målet i ISO format (YYYY-MM-DD). Sett alltid til dagens dato for tidsbegrensede mål som har en eksplisitt frist eller sluttdato.'
-					},
-					endDate: {
-						type: 'string',
-						description: 'Sluttdato for målet i ISO format (YYYY-MM-DD). Bruk når brukeren har oppgitt en eksplisitt frist (f.eks. "før 15. juni"). Sett lik targetDate hvis begge angis.'
-					},
-					metricId: {
-						type: 'string',
-						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori), sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
-					},
-					spendCategory: {
-						type: 'string',
-						description: 'Kun for metricId=category_spend: forbrukskategorien taket gjelder (canonical CategoryId: kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr, hobby_og_fritid, helse_og_velvaere, hjem_og_hage, bil_og_transport).'
-					},
-					childName: {
-						type: 'string',
-						description: 'Kun for metricId=parent_time: barnets fornavn timene gjelder. targetValue = timer per uke.'
-					},
-					goalKind: {
-						type: 'string',
-						description: 'Hvordan målet evalueres i dashboardet',
-						enum: ['level', 'change', 'trajectory']
-					},
-					goalWindow: {
-						type: 'string',
-						description: 'Hvilken horisont målet gjelder for',
-						enum: ['week', 'month', 'quarter', 'year', 'custom']
-					},
-					targetValue: {
-						type: 'number',
-						description: 'Målverdien for metrikksporet. Eksempler: 20 for km per uke, -3 for kg ned, 9000 for kroner per måned.'
-					},
-					unit: {
-						type: 'string',
-						description: 'Enhet for målverdien, f.eks. km, kg eller kr.'
-					},
-					durationDays: {
-						type: 'number',
-						description: 'Brukes kun når goalWindow er custom, f.eks. 60 for 2 måneder eller 730 for 2 år.'
-					}
-				},
-				required: ['categoryName', 'title', 'description']
-			}
-		}
-	},
+	/**
+	 * Generert fra verktøymodulen, ikke skrevet av.
+	 *
+	 * Blokka her var en håndskrevet kopi, og kopien drev fra originalen: da
+	 * `create_goal` fikk `targetWeightKg` og beskjed om at vektmål oppgis som en
+	 * MÅLVEKT, sto det fortsatt «-3 for kg ned» her. Modellen fulgte kopien, sendte en
+	 * endring, og et mål brukeren hadde sagt «til 95 kg» om siktet mot 93. Se
+	 * `$lib/server/assistant/tool-schema.ts`.
+	 */
+	openAiFunctionDefinition(createGoalTool),
 	{
 		type: 'function' as const,
 		function: {
@@ -688,23 +623,7 @@ const tools = [
 			}
 		}
 	},
-	{
-		type: 'function' as const,
-		function: {
-			name: queryWeightTool.name,
-			description: queryWeightTool.description,
-			parameters: {
-				type: 'object',
-				properties: {
-					queryType: {
-						type: 'string',
-						enum: ['trend', 'milestones', 'composition', 'monthly', 'periods'],
-						description: 'Hvilket utsnitt. Default trend. monthly gir snittvekt per måned gjennom hele historikken; periods gir periodene kurven er delt i — nedganger OG oppganger med varighet, endring og tempo, pluss den pågående perioden ferdig formulert.'
-					}
-				}
-			}
-		}
-	},
+	openAiFunctionDefinition(queryWeightTool),
 	{
 		type: 'function' as const,
 		function: {
