@@ -251,6 +251,25 @@ export interface EksplisittSjekk {
 }
 
 /**
+ * Banken avviste en dato utenfor vinduet.
+ *
+ * Målt 22. august 2026: `fromDate=2015-01-01` ga HTTP 400. Et API som NEKTER
+ * å svare på en gammel dato, framfor å returnere tom liste, har et vindu det
+ * håndhever. Det er sterkere bevis enn et tomt svar, som også kunne betydd
+ * «ingen transaksjoner den gangen».
+ */
+export function tolkAvvistDato(status: number, spurtFra: string): EksplisittSjekk {
+	return {
+		vinduetErBankens: true,
+		eldsteVedEksplisitt: null,
+		begrunnelse:
+			`Banken avviste fromDate=${spurtFra} med HTTP ${status} — den nektet å svare, ` +
+			'framfor å gi tom liste. Et API som håndhever datoen slik, har et vindu. ' +
+			'Vinduet er bankens.'
+	};
+}
+
+/**
  * Kontrollspørsmålet: gir banken mer hvis vi ber eksplisitt om en eldre dato?
  *
  * Uten dette kan vi ikke skille to helt ulike verdener:
@@ -264,6 +283,14 @@ export interface EksplisittSjekk {
  * antakelse vi ikke hadde testet. Det er en dyr antakelse: den brukes til å
  * avgjøre hva som må tas vare på.
  */
+/** Dagen før en ISO-dato. Brukes til å spørre banken om nøyaktig ett døgn
+ *  utenfor vinduet — det skarpeste kontrollspørsmålet vi kan stille. */
+export function dagenFør(iso: string): string {
+	const d = new Date(`${iso}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() - 1);
+	return d.toISOString().slice(0, 10);
+}
+
 export function vurderEksplisittFra(
 	gulvUtenFilter: string | null,
 	eldsteVedEksplisitt: string | null,

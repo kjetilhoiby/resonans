@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+	dagenFør,
 	dagerMellom,
 	finnFellesGulv,
 	konkluder,
 	normaliserDato,
+	tolkAvvistDato,
 	vurderEksplisittFra,
 	vurderKonto,
 	type ProbeRad
@@ -232,5 +234,28 @@ describe('vurderEksplisittFra', () => {
 		const r = vurderEksplisittFra('2024-08-21', null, '2015-01-01');
 		expect(r.vinduetErBankens).toBe(true);
 		expect(r.eldsteVedEksplisitt).toBeNull();
+	});
+});
+
+describe('dagenFør', () => {
+	it('går ett døgn tilbake', () => {
+		expect(dagenFør('2024-08-22')).toBe('2024-08-21');
+	});
+
+	it('krysser månedsskifte', () => {
+		expect(dagenFør('2024-03-01')).toBe('2024-02-29');
+	});
+
+	it('krysser årsskifte', () => {
+		expect(dagenFør('2026-01-01')).toBe('2025-12-31');
+	});
+});
+
+describe('tolkAvvistDato', () => {
+	it('leser en avvisning som bevis for at vinduet er bankens', () => {
+		const r = tolkAvvistDato(400, '2024-08-21');
+		expect(r.vinduetErBankens).toBe(true);
+		expect(r.begrunnelse).toMatch(/HTTP 400/);
+		expect(r.begrunnelse).toMatch(/nektet å svare/);
 	});
 });

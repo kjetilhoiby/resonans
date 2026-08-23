@@ -23,8 +23,10 @@
 	import { Button } from '$lib/components/ui';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import {
+		dagenFør,
 		konkluder,
 		normaliserDato,
+		tolkAvvistDato,
 		vurderEksplisittFra,
 		vurderKonto,
 		type EksplisittSjekk,
@@ -33,11 +35,14 @@
 	} from '$lib/domain/economics/history-probe';
 
 	/**
-	 * Datoen vi spør eksplisitt om i kontrollrunden. Godt før både banken og
-	 * Withings-kontoen begynner, så et svar herfra betyr utvetydig «det finnes
-	 * mer enn standardvinduet».
+	 * Kontrollrunden spør om dagen FØR det delte gulvet — ett døgn utenfor
+	 * vinduet, ikke elleve år.
+	 *
+	 * En vilkårlig gammel dato (vi prøvde 2015-01-01) ga HTTP 400, og det er i
+	 * seg selv et svar. Men dagen før gulvet er skarpere: den skiller «banken
+	 * avviser gamle datoer generelt» fra «grensa går nøyaktig her». Finnes det
+	 * data 22. august 2024 men ikke 21., er vinduet funnet på dagen.
 	 */
-	const KONTROLL_FRA = '2015-01-01';
 
 	type Konto = { key: string; name?: string | null; type?: string | null };
 
@@ -109,17 +114,21 @@
 			// ikke gjenskapes» hvilt på at vi ikke spurte godt nok. Vi spør én
 			// gang til, på kontoen med flest rader, med en eksplisitt gammel dato.
 			const travleste = [...samlet].sort((a, b) => b.count - a.count)[0];
-			if (travleste && travleste.count > 0) {
-				framdrift = `Kontrollspørsmål: ber eksplisitt om ${KONTROLL_FRA} …`;
-				const svar = await hent<{ oldestDate: unknown }>(
+			const gulv = konklusjon.fellesGulv ?? travleste?.oldestDate ?? null;
+			if (travleste && travleste.count > 0 && gulv) {
+				const spurtFra = dagenFør(gulv);
+				framdrift = `Kontrollspørsmål: ber eksplisitt om ${spurtFra} …`;
+				const svar = await hent<{
+					oldestDate: unknown;
+					upstreamRejected?: boolean;
+					upstreamStatus?: number;
+				}>(
 					`/api/sensors/sparebank1/probe?accountKey=${encodeURIComponent(travleste.accountKey)}` +
-						`&from=${KONTROLL_FRA}`
+						`&from=${spurtFra}`
 				);
-				kontroll = vurderEksplisittFra(
-					travleste.oldestDate,
-					normaliserDato(svar.oldestDate),
-					KONTROLL_FRA
-				);
+				kontroll = svar.upstreamRejected
+					? tolkAvvistDato(svar.upstreamStatus ?? 400, spurtFra)
+					: vurderEksplisittFra(gulv, normaliserDato(svar.oldestDate), spurtFra);
 			}
 		} catch (error) {
 			feil = error instanceof Error ? error.message : 'Ukjent feil';

@@ -46,7 +46,34 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: `Ugyldig from-dato: ${fra}` }, { status: 400 });
 	}
 
-	const txns = await fetchSparebank1Transactions(accessToken, accountKey, since, undefined, rateLimitHeaders);
+	// At banken AVVISER en dato er en måling, ikke en feil. Spør vi om noe utenfor
+	// vinduet og får 400, er nettopp det svaret på spørsmålet vi stilte — så vi
+	// rapporterer det framfor å la det bli en 500 hos oss.
+	//
+	// Statusen hentes ut av feilmeldingen med regex fordi
+	// `fetchSparebank1Transactions` kaster en Error og deles med synken; å endre
+	// signaturen der for å tjene et diagnoseverktøy er feil vei å betale.
+	let txns: any[];
+	try {
+		txns = await fetchSparebank1Transactions(accessToken, accountKey, since, undefined, rateLimitHeaders);
+	} catch (error) {
+		const melding = error instanceof Error ? error.message : String(error);
+		const status = Number(/failed: (\d{3})/.exec(melding)?.[1] ?? 0);
+		if (fra && status >= 400 && status < 500) {
+			return json({
+				accountKey,
+				requestedFrom: fra,
+				upstreamRejected: true,
+				upstreamStatus: status,
+				count: 0,
+				oldestDate: null,
+				newestDate: null,
+				rateLimitHeaders,
+				likelyCapped: false
+			});
+		}
+		throw error;
+	}
 
 	// SpareBank1 sender `date` som epoch-millisekunder (se sparebank1-sync.ts:592).
 	// Uten normalisering sorterte vi tall leksikografisk — riktig ved en tilfeldighet

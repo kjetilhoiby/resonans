@@ -120,8 +120,19 @@ kontoen med flest rader, med `fromDate=2015-01-01`. Kommer det data eldre enn
 gulvet, var standardvinduet **vårt** problem — og da må all backfill oppgi
 `fromDate` eksplisitt. Kommer samme svar, er vinduet bankens.
 
-⚠️ **Kontrollrunden er ikke kjørt ennå per skriving.** Konklusjonen under
-gjelder under forutsetning av at den bekrefter gulvet.
+**Kontrollrunden er kjørt, og vinduet er bankens.** To uavhengige bevis:
+
+1. **`fromDate=2015-01-01` ga HTTP 400.** Banken NEKTET å svare, framfor å
+   returnere tom liste. Et tomt svar kunne betydd «ingen transaksjoner den
+   gangen»; en avvisning betyr at datoen håndheves.
+2. **Gulvet flyttet seg nøyaktig én dag på ett døgn.** Målt 21. august:
+   2024-08-21. Målt 22. august: 2024-08-22. Et fast kutt ville stått stille,
+   og et radtak ville ikke fulgt kalenderen. Det er et rullerende vindu, og
+   dette er det sterkeste beviset vi har — det krevde bare tålmodighet.
+
+Proben spør nå om **dagen før gulvet** framfor en vilkårlig gammel dato. Det
+skiller «banken avviser gamle datoer generelt» fra «grensa går nøyaktig her»,
+og en avvisning rapporteres som en måling framfor å bli en 500 hos oss.
 
 **Konsekvens:** alt eldre enn 2024-08-21 finnes **bare hos oss**.
 `canonical_bank_transactions` flyttes dermed opp i gruppa «kan aldri hentes
@@ -186,8 +197,9 @@ Withings måles fortsatt med URL:
 
 - [x] ~~Trykk knappen og noter eldste transaksjon~~ — målt 21. august 2026:
       gulv 2024-08-21 på fire kontoer
-- [ ] Kjør kontrollrunden (`fromDate=2015-01-01`) og bekreft at vinduet er
-      bankens og ikke en bieffekt av at vi ikke spurte
+- [x] ~~Kjør kontrollrunden og bekreft at vinduet er bankens~~ — bekreftet
+      22. august 2026: HTTP 400 på eldre dato, og gulvet flyttet seg én dag
+      på ett døgn
 - [ ] Legg backoff på Strava og Tesla før historikkjobber
 - [ ] Avklar hvilke domener som blir med på dag én — det avgjør hvor mye av
       kartleggingen som i det hele tatt er relevant
