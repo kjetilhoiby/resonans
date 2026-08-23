@@ -23,7 +23,7 @@ queryType:
 - 'trend' (standard): siste veiing, trendverdi, endring over 7/30/90 dager, avstand til målvekt, laveste trendverdi i historikken.
 - 'milestones': ferdig formulerte milepælsetninger, rangert. Velg ÉN og si den — ikke regn om tallene.
 - 'composition': fett og muskel bak vektendringen.
-- 'declines': tidligere NEDGANGSPERIODER — start, slutt, varighet, samlet nedgang og snittempo i kg/uke. Bruk denne på «når har jeg gått ned før», «hvor fort klarte jeg det sist», «hvor lenge holdt det».
+- 'periods': PERIODENE kurven er delt i — nedganger OG oppganger, med start, slutt, varighet, endring og tempo. Bruk denne på «når har jeg gått ned før», «hvor fort klarte jeg det sist», «hvor lenge holdt det», «når snudde det», «hva har skjedd i år».
 - 'monthly': snittvekt per måned gjennom HELE historikken, med hull fylt av interpolasjon. Bruk denne på «list vekta per måned», «hvordan har vekta gått år for år», «snittvekt i 2019».
 
 ALDRI finn på månedstall. Trenger du en serie, hent 'monthly' — den finnes. Et oppdiktet tall merket «interpolert» er verre enn å si at du ikke vet, fordi merkelappen gir oppspinnet en metode.
@@ -33,12 +33,14 @@ Om 'monthly':
 - gapMonths på en interpolert rad sier hvor stort hullet den ligger i er. Et anslag midt i et hull på fjorten måneder skal kvalifiseres, ikke oppgis som et tall.
 - measuredFrom er første måned med en ekte måling. Spør brukeren om data lenger tilbake enn det, er DET svaret — serien er aldri ekstrapolert bakover, og du skal heller ikke gjøre det selv.
 
-Om 'declines':
-- Periodene er avgrenset topp-til-bunn på TRENDEN, med toleranse for tilbakeslag: et platå midt i en nedgang deler den ikke i to. Perioder under 2 kg eller 21 dager er utelatt som støy.
-- kgPerWeek er snittet over hele perioden, ikke tempoet på det bratteste. Si «i snitt».
+Om 'periods':
+- Periodene er avgrenset topp-til-bunn og bunn-til-topp på TRENDEN, med toleranse for tilbakeslag: et platå midt i en nedgang deler den ikke i to. direction er 'ned' eller 'opp'. Perioder under 2 kg eller 21 dager er utelatt som støy — lista har derfor HULL, og du skal ikke påstå at den er sammenhengende.
+- current er perioden som pågår, og currentSentence er den ferdig formulerte setningen om den. SI DEN framfor å sette sammen tallene selv: den bærer forbeholdene (tilbakeslag fra ytterpunktet, sluttempo som avviker fra snittet).
+- Dette er det RIKTIGE svaret på «hvor mye har jeg gått ned» når brukeren mener den nedgangen de er inne i. Milepælenes faste vinduer (30/90/180/365 dager) starter et vilkårlig antall dager tilbake og blander gjerne inn en oppgang som lå foran.
+- kgPerWeek og kgPerMonth er snitt over HELE perioden, ikke tempoet på det bratteste. Si «i snitt». recentPace finnes bare når de siste 30 dagene avviker merkbart fra snittet.
+- ongoing betyr at ingen vending er bekreftet — ikke at ytterpunktet er i dag. daysSinceEnd sier hvor mange dager siden ytterpunktet var; er den stor, har trenden stått stille siden, og «faller fortsatt» er da feil ord.
 - longestGapDays sier lengste strekk uten veiing INNE i perioden. Er den stor, er tempoet regnet over et vindu brukeren ikke målte — kvalifiser det framfor å oppgi tallet bart.
-- averageKgPerWeek er vektet på varighet, så en lang periode teller mer enn en kort. Ikke regn et eget snitt av kgPerWeek-verdiene.
-- Siste periode kan fortsatt pågå: slutter endDate på eller nær siste veiing, er den ikke avsluttet.
+- largestDecline/fastestDecline/longestDecline og averageKgPerWeek gjelder bare NEDGANGENE. averageKgPerWeek er vektet på varighet, så en lang periode teller mer enn en kort. Ikke regn et eget snitt av kgPerWeek-verdiene.
 
 Om tallene:
 - ALLE endringstall er regnet på TRENDEN (etterslepende 7-dagerssnitt), ikke på enkeltmålinger. Si «trenden», ikke «du veide».
@@ -50,7 +52,7 @@ Om tallene:
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
 		queryType: z
-			.enum(['trend', 'milestones', 'composition', 'monthly', 'declines'])
+			.enum(['trend', 'milestones', 'composition', 'monthly', 'periods'])
 			.optional()
 			.describe('Hvilket utsnitt. Default trend.')
 	}),

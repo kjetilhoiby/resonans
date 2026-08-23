@@ -153,6 +153,42 @@ describe('summarizeWeightForChat — milestones', () => {
 	});
 });
 
+describe('summarizeWeightForChat — periods', () => {
+	/** Ned 3,6 kg over 120 dager, og fortsatt fallende. */
+	const days = decliningDays(120, 88, 0.03);
+
+	it('gir periodene med retning, og den pågående ferdig formulert', () => {
+		const summary = summarizeWeightForChat(input({ days }), 'periods');
+
+		expect(summary.periods!.length).toBeGreaterThan(0);
+		expect(summary.periods!.every((p) => p.direction === 'ned' || p.direction === 'opp')).toBe(true);
+		expect(summary.current?.ongoing).toBe(true);
+		// Setningen bærer forbeholdene; modellen skal si den framfor å regne selv.
+		expect(summary.currentSentence).toContain('siden toppen');
+	});
+
+	it('holder nedgangs-statistikken på nedgangene', () => {
+		const summary = summarizeWeightForChat(input({ days }), 'periods');
+
+		expect(summary.largestDecline?.lostKg).toBeGreaterThan(0);
+		expect(summary.averageKgPerWeek).toBeGreaterThan(0);
+	});
+
+	it('sier fra når ingenting nådde terskelen', () => {
+		// Flat serie: ingen periode over 2 kg, og da skal svaret si det framfor å
+		// returnere en tom liste uten forklaring.
+		const flat = decliningDays(120, 88, 0);
+		const summary = summarizeWeightForChat(
+			input({ days: flat, latest: flat.at(-1), today: flat.at(-1)!.date }),
+			'periods'
+		);
+
+		expect(summary.periods).toEqual([]);
+		expect(summary.current).toBeNull();
+		expect(summary.missing).toContain('Ingen perioder');
+	});
+});
+
 describe('summarizeWeightForChat — composition', () => {
 	it('gir setningen og rådeltaene, ikke en utregnet prosent', () => {
 		const summary = summarizeWeightForChat(

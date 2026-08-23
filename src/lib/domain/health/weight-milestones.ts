@@ -34,9 +34,18 @@ import {
 	type WeightDay
 } from './weight-series';
 import { describeCompositionChange, type BodyComposition } from './body-composition';
+import { describeSpan, formatMilestoneDate, kg } from './weight-text';
+import {
+	currentSwing,
+	describeCurrentSwing,
+	findWeightSwings,
+	isLargestInDirection,
+	type WeightSwing
+} from './weight-swings';
 
 export type MilestoneKind =
 	| 'lowest-trend'
+	| 'current-swing'
 	| 'largest-drop'
 	| 'below-goal'
 	| 'lowest-raw'
@@ -61,6 +70,14 @@ export interface WeightMilestone {
 
 export interface WeightMilestoneResult {
 	milestones: WeightMilestone[];
+	/**
+	 * Periodene kurven er delt i — topper og bunner, begge retninger.
+	 *
+	 * Returneres herfra framfor å regnes en gang til i lasteren: samme input gir
+	 * samme svar, men to kallsteder er to steder å endre, og flaten og setningen
+	 * skal ikke kunne komme til å vise ulike perioder.
+	 */
+	swings: WeightSwing[];
 	/** Dager mellom første og siste veiing. */
 	historyDays: number;
 	weighIns: number;
@@ -119,47 +136,27 @@ export const MUSCLE_SHARE_WARN = 0.5;
 /** Under dette står du praktisk talt PÅ lavpunktet, og setningen er innholdsløs. */
 export const NADIR_DISTANCE_FLOOR_KG = 0.3;
 
-export const MAX_MILESTONES = 3;
+/**
+ * Så nær lavpunktet at en pågående oppgang og «over lavpunktet» er samme setning.
+ *
+ * Starter oppgangen PÅ historikkens lavpunkt, sier de to bullettene det samme med
+ * ulike ord — og den svakeste låner troverdighet fra den sterkeste. Samme regel som
+ * `echoesTrendRecord` bruker mot rå-rekorden. Toleransen finnes fordi et platå i
+ * bunnen kan flytte periodens grense en dag eller to fra lavpunktets dato.
+ */
+export const NADIR_ECHO_DAYS = 7;
 
-const MONTHS = [
-	'januar',
-	'februar',
-	'mars',
-	'april',
-	'mai',
-	'juni',
-	'juli',
-	'august',
-	'september',
-	'oktober',
-	'november',
-	'desember'
-];
+export const MAX_MILESTONES = 3;
 
 function round1(value: number): number {
 	return Math.round(value * 10) / 10;
 }
 
-function kg(value: number): string {
-	return Math.abs(value).toFixed(1).replace('.', ',');
-}
-
-/** Alltid med årstall: milepælene handler om dybde, og da er året poenget. */
-export function formatMilestoneDate(iso: string): string {
-	const [year, month, day] = iso.split('-').map(Number);
-	return `${day}. ${MONTHS[month - 1]} ${year}`;
-}
-
-/** «3 måneder», «1 år og 5 måneder» — spennet i ord. */
-export function describeSpan(days: number): string {
-	if (days < 60) return `${days} dager`;
-	const months = Math.round(days / 30.44);
-	if (months < 12) return `${months} måneder`;
-	const years = Math.floor(months / 12);
-	const rest = months % 12;
-	const yearPart = years === 1 ? '1 år' : `${years} år`;
-	return rest === 0 ? yearPart : `${yearPart} og ${rest} ${rest === 1 ? 'måned' : 'måneder'}`;
-}
+/**
+ * Datoene, spennene og kilotallene bor i `weight-text.ts` og deles med
+ * periodemodulen. Re-eksporteres her fordi testene og flatene importerer dem her.
+ */
+export { describeSpan, formatMilestoneDate } from './weight-text';
 
 /** Lengste strekk uten veiing mellom to datoer. Sier hvor mye claimet ikke vet. */
 export function longestGapBetween(days: WeightDay[], fromDate: string, toDate: string): number {
@@ -257,6 +254,8 @@ function lastTimeStrictlyBelow(
 interface RecordContext {
 	days: WeightDay[];
 	points: MetricPoint[];
+	/** Periodene kurven er delt i. Regnet én gang, lest av setningene. */
+	swings: WeightSwing[];
 	dayByDate: Map<string, WeightDay>;
 	trendByDay: Map<number, number>;
 	latestTrend: { index: number; point: MetricPoint; value: number } | null;
@@ -427,6 +426,48 @@ function nearestDay(ctx: RecordContext, targetDay: number): WeightDay | undefine
 	return undefined;
 }
 
+/**
+ * Den pågående perioden som milepæl — kurvens egne grenser framfor et fast vindu.
+ *
+ * ## Hvorfor denne finnes ved siden av `largest-drop`
+ *
+ * Et fast vindu treffer sjelden der bevegelsen begynte. Målt i prod 23. august
+ * 2026 sa 365-dagersvinduet «ned 1,8 kg på et år» om en bruker som hadde gått ned
+ * nesten seks kilo siden april — sant, og likevel en dårlig beskrivelse, fordi
+ * vinduet blandet inn en oppgang som lå foran nedgangen.
+ *
+ * Perioden bærer forbeholdene sine selv (tilbakeslag fra ytterpunktet, sluttempo
+ * som avviker), så setningen kommer ferdig fra `describeCurrentSwing`.
+ */
+function currentSwingMilestone(ctx: RecordContext, swing: WeightSwing): WeightMilestone {
+	let sentence = describeCurrentSwing(swing, {
+		largestInDirection: isLargestInDirection(swing, ctx.swings)
+	});
+	let tone: WeightMilestone['tone'] = swing.direction === 'ned' ? 'positiv' : 'nøytral';
+
+	// Samme kvalifisering som det faste vinduet får: er mesteparten av nedgangen
+	// muskel, er den ikke en seier.
+	if (swing.direction === 'ned') {
+		const qualification = qualifyByMuscleLoss(
+			ctx.dayByDate.get(swing.startDate) ?? nearestDay(ctx, dayNumber(swing.startDate)),
+			ctx.dayByDate.get(swing.endDate) ?? nearestDay(ctx, dayNumber(swing.endDate))
+		);
+		if (qualification) {
+			sentence += ` ${qualification.sentence}`;
+			tone = 'nøytral';
+		}
+	}
+
+	return {
+		kind: 'current-swing',
+		sentence,
+		tone,
+		basis: 'trend',
+		sinceDate: swing.startDate,
+		longestGapDays: swing.longestGapDays
+	};
+}
+
 function goalMilestone(ctx: RecordContext, goalKg: number | null | undefined): WeightMilestone | null {
 	if (typeof goalKg !== 'number' || !Number.isFinite(goalKg) || goalKg <= 0) return null;
 	const current = ctx.latestTrend?.value ?? ctx.points.at(-1)?.raw ?? null;
@@ -529,14 +570,17 @@ function nadirMilestone(ctx: RecordContext): WeightMilestone | null {
 
 const RANK: Record<MilestoneKind, number> = {
 	'lowest-trend': 0,
-	'largest-drop': 1,
-	'below-goal': 2,
-	'lowest-raw': 3,
-	'weigh-in-streak': 4,
-	'weigh-in-coverage': 5,
-	'goal-distance': 6,
-	'above-nadir': 7,
-	stale: 8
+	// Over det faste vinduet, med vilje: «ned 5,9 kg siden toppen i april» er den
+	// samme historien fortalt der den faktisk begynte.
+	'current-swing': 1,
+	'largest-drop': 2,
+	'below-goal': 3,
+	'lowest-raw': 4,
+	'weigh-in-streak': 5,
+	'weigh-in-coverage': 6,
+	'goal-distance': 7,
+	'above-nadir': 8,
+	stale: 9
 };
 
 export interface WeightMilestoneInput {
@@ -553,7 +597,7 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 	const weighIns = days.length;
 
 	if (weighIns === 0) {
-		return { milestones: [], historyDays: 0, weighIns: 0, enoughHistory: false };
+		return { milestones: [], swings: [], historyDays: 0, weighIns: 0, enoughHistory: false };
 	}
 
 	const firstDate = days[0].date;
@@ -562,6 +606,7 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 	const enoughHistory = historyDays >= MIN_HISTORY_DAYS && weighIns >= MIN_HISTORY_WEIGH_INS;
 
 	const points = buildMetricSeries(days, 'weight').points;
+	const swings = findWeightSwings(points);
 	const trendByDay = new Map<number, number>();
 	for (const point of points) {
 		if (point.trend !== null) trendByDay.set(dayNumber(point.date), point.trend);
@@ -589,6 +634,7 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 	const ctx: RecordContext = {
 		days,
 		points,
+		swings,
 		dayByDate: new Map(days.map((d) => [d.date, d])),
 		trendByDay,
 		latestTrend,
@@ -626,14 +672,26 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 		});
 		const goal = goalMilestone(ctx, goalKg);
 		if (goal) milestones.push(goal);
-		return { milestones: sortAndCap(milestones), historyDays, weighIns, enoughHistory };
+		return { milestones: sortAndCap(milestones), swings, historyDays, weighIns, enoughHistory };
 	}
 
 	if (enoughHistory) {
 		const lowestTrend = lowestTrendMilestone(ctx);
 		if (lowestTrend) milestones.push(lowestTrend);
 
-		const drop = largestDropMilestone(ctx);
+		const current = currentSwing(ctx.swings);
+		if (current) milestones.push(currentSwingMilestone(ctx, current));
+
+		/**
+		 * Det faste vinduet vikes for en pågående NEDGANG.
+		 *
+		 * De to forteller da samme historie, og vinduet forteller den dårligere —
+		 * det starter et vilkårlig antall dager tilbake framfor på toppen. En
+		 * pågående OPPGANG er en annen historie enn et fall over året, og da får
+		 * begge stå: «opp 2 kg siden juni, men fortsatt ned 4 kg på et år».
+		 */
+		const dropIsRetold = current?.direction === 'ned';
+		const drop = dropIsRetold ? null : largestDropMilestone(ctx);
 		if (drop) milestones.push(drop);
 
 		const lowestRaw = lowestRawMilestone(ctx);
@@ -645,14 +703,20 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 		if (lowestRaw && !echoesTrendRecord(lowestRaw, lowestTrend)) milestones.push(lowestRaw);
 
 		const nadir = nadirMilestone(ctx);
-		// Står du på lavpunktet, sier `lowest-trend` det bedre.
-		if (nadir && !lowestTrend) milestones.push(nadir);
+		// Står du på lavpunktet, sier `lowest-trend` det bedre. Og er du på vei OPP
+		// fra nettopp det lavpunktet, har `current-swing` alt sagt det — med tempo.
+		// `currentSwing` gir bare en pågående periode, så retningen er nok her.
+		const nadirRetold =
+			nadir?.sinceDate !== undefined &&
+			current?.direction === 'opp' &&
+			Math.abs(daysBetween(current.startDate, nadir.sinceDate)) <= NADIR_ECHO_DAYS;
+		if (nadir && !lowestTrend && !nadirRetold) milestones.push(nadir);
 	}
 
 	const goal = goalMilestone(ctx, goalKg);
 	if (goal) milestones.push(goal);
 
-	return { milestones: sortAndCap(milestones), historyDays, weighIns, enoughHistory };
+	return { milestones: sortAndCap(milestones), swings, historyDays, weighIns, enoughHistory };
 }
 
 /** Sann når de to rekordene handler om samme periode. */

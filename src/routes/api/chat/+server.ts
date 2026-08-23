@@ -657,8 +657,8 @@ const tools = [
 				properties: {
 					queryType: {
 						type: 'string',
-						enum: ['trend', 'milestones', 'composition', 'monthly', 'declines'],
-						description: 'Hvilket utsnitt. Default trend. monthly gir snittvekt per måned gjennom hele historikken; declines gir tidligere nedgangsperioder med varighet, samlet nedgang og snittempo.'
+						enum: ['trend', 'milestones', 'composition', 'monthly', 'periods'],
+						description: 'Hvilket utsnitt. Default trend. monthly gir snittvekt per måned gjennom hele historikken; periods gir periodene kurven er delt i — nedganger OG oppganger med varighet, endring og tempo, pluss den pågående perioden ferdig formulert.'
 					}
 				}
 			}
