@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
 	ASSISTANT_FUNCTION_DECLARATIONS,
 	COACH_FUNCTION_DECLARATIONS,
+	COACH_TONES,
+	DEFAULT_COACH_TONE,
 	MINT_RATE_LIMIT_PER_HOUR,
 	MINT_RATE_WINDOW_MS,
 	TOOLSET_VERSION,
 	evaluateMintRateLimit,
 	isProfileDisabled,
 	personaForProfile,
+	resolveCoachTone,
 	resolveTokenProfile,
 	toolNamesForProfile,
 	toolsForProfile
@@ -134,7 +137,8 @@ describe('personaForProfile', () => {
 	it('assistant og coach har versjonert preamble på norsk', () => {
 		for (const profile of ['assistant', 'coach'] as const) {
 			const persona = personaForProfile(profile);
-			expect(persona?.version).toBe(1);
+			// Bumpet til 2 da personaen fikk et tonetillegg (22. august 2026).
+			expect(persona?.version).toBe(2);
 			expect(persona?.preamble).toMatch(/norsk/i);
 		}
 	});
@@ -147,6 +151,70 @@ describe('personaForProfile', () => {
 
 	it('assistant-personaen krever muntlig bekreftelse før startWorkout', () => {
 		expect(personaForProfile('assistant')?.preamble).toContain('startWorkout');
+	});
+});
+
+describe('coach-toner', () => {
+	it('ukjent, tom og manglende tone gir nøytral — en tone kan ikke gjøre noe galt', () => {
+		for (const raw of [undefined, null, '', 'pushy', 'nøytral', 42, {}]) {
+			expect(resolveCoachTone(raw)).toBe('noytral');
+		}
+	});
+
+	it('alle kjente toner overlever oppslaget', () => {
+		for (const tone of COACH_TONES) {
+			expect(resolveCoachTone(tone)).toBe(tone);
+		}
+	});
+
+	it('nøkkelnavnene er ASCII — «ø» blir spørsmålstegn i det laget ingen tester', () => {
+		for (const tone of COACH_TONES) {
+			expect(tone).toMatch(/^[a-z]+$/);
+		}
+	});
+
+	it('tonen ekkoes på personaen, så et valg som ikke nådde fram er synlig', () => {
+		expect(personaForProfile('coach', 'vennlig')?.tone).toBe('vennlig');
+		expect(personaForProfile('coach')?.tone).toBe(DEFAULT_COACH_TONE);
+	});
+
+	it('hver tone gir en MERKBART ulik coach-preamble', () => {
+		// Fire valg som gir samme prompt er fire valg som ikke finnes.
+		const preambles = COACH_TONES.map((tone) => personaForProfile('coach', tone)!.preamble);
+		expect(new Set(preambles).size).toBe(COACH_TONES.length);
+	});
+
+	it('GRUNNREGLENE står uansett tone — en innstilling skal ikke kunne prompte dem bort', () => {
+		for (const tone of COACH_TONES) {
+			const coach = personaForProfile('coach', tone)!.preamble;
+			expect(coach).toContain('Siter tallene du får ordrett');
+			expect(coach).toContain('«ekko»');
+			expect(coach).toContain('Bekreft muntlig før du deler posisjon');
+
+			const assistant = personaForProfile('assistant', tone)!.preamble;
+			expect(assistant).toContain('startWorkout');
+			expect(assistant).toContain('«ekko»');
+		}
+	});
+
+	it('ingen tone lover noe om helsa — vi måler fart og puls, ikke hva som er bra for noen', () => {
+		for (const tone of COACH_TONES) {
+			const preamble = personaForProfile('coach', tone)!.preamble;
+			expect(preamble).toContain('Ikke påstå noe om helse');
+		}
+	});
+
+	it('voice-test har ingen persona og dermed ingen tone — spiken er urørt', () => {
+		for (const tone of COACH_TONES) {
+			expect(personaForProfile('voice-test', tone)).toBeNull();
+		}
+	});
+
+	it('«krevende» presser og «vennlig» gjør det motsatte', () => {
+		expect(personaForProfile('coach', 'krevende')!.preamble).toContain('presse');
+		expect(personaForProfile('coach', 'vennlig')!.preamble).toContain('uten press');
+		// Den vennlige finnes for lange, rolige turer — lav fart er MENINGEN der, ikke et avvik.
+		expect(personaForProfile('coach', 'vennlig')!.preamble).toContain('lav fart er meningen');
 	});
 });
 
