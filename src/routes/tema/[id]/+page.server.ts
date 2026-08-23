@@ -12,6 +12,8 @@ import { getThemeFindsByName } from '$lib/server/services/finds-service';
 import { listThemeResearch } from '$lib/server/services/theme-research-service';
 import { findThemeByName } from '$lib/server/themes';
 import { resolveParentThemeId } from '$lib/domain/theme-hierarchy';
+import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { loadRelevantStreaks } from '$lib/server/services/streak-service';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -87,7 +89,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research, themeFindsRaw] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research, themeFindsRaw, relevantStreaks] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			// NB: SISTE side, ikke de første radene. Fram til august 2026 var dette
@@ -141,12 +143,23 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.orderBy(asc(projectContacts.sortOrder), asc(projectContacts.createdAt))
 				: Promise.resolve([]),
 			listThemeResearch(theme.id, locals.userId),
-			getThemeFindsByName(locals.userId, theme.name)
+			getThemeFindsByName(locals.userId, theme.name),
+			/**
+			 * Streaks som hører på temaet — utledet av kilden, ikke av en liste over
+			 * temanavn. `loadRelevantStreaks` filtrerer definisjonene FØR tilstanden
+			 * regnes, så et tema uten relevante streaks betaler bare for
+			 * definisjonslista.
+			 */
+			loadRelevantStreaks(locals.userId, {
+				themeId: theme.id,
+				dashboardKind: resolveThemeDashboardKind(theme.name)
+			})
 		]);
 
 	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.messages.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
 
 	return {
+		relevantStreaks,
 		theme: {
 			id: theme.id,
 			name: theme.name,

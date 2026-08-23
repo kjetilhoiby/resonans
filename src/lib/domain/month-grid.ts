@@ -1,6 +1,10 @@
 /**
- * Ren måneds-matematikk for MonthCalendar: uker som starter på mandag, dag-nøkler
- * «YYYY-MM-DD» (samme format som chat-ankrene) og norske etiketter.
+ * Ren måneds-matematikk: uker som starter på mandag, dag-nøkler «YYYY-MM-DD»
+ * (samme format som chat-ankrene) og norske etiketter.
+ *
+ * Lå under `client/` da MonthCalendar var eneste kaller. Flyttet til domenelaget
+ * da streak-historikken tok den i bruk — et domenemodul som importerer fra
+ * `client/` snur lagene, og modulen har alltid vært ren matematikk.
  */
 
 /** Ukedagsinitialer, mandag først (nb-NO). */

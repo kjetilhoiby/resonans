@@ -25,6 +25,7 @@
 	import WeightDashboard from '../WeightDashboard.svelte';
 	import WritingDashboard from '../WritingDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
+	import StreakStrip, { type StreakStripItem } from '../streak/StreakStrip.svelte';
 	import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 	import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
@@ -95,6 +96,11 @@
 		tripProfile?: Record<string, unknown> | null;
 		ferieProfile?: Record<string, unknown> | null;
 		themeConversationId?: string | null;
+		/**
+		 * Streaks som hører på dette temaet, fra `loadRelevantStreaks`. Tom liste
+		 * skjuler strippen — en tom rad ser ut som noe som mangler.
+		 */
+		streaks?: StreakStripItem[];
 		onSwitchToChat?: (draft?: string) => void;
 		onStartFlow?: (flow: Flow) => void;
 	}
@@ -107,6 +113,7 @@
 		tripProfile = null,
 		ferieProfile = null,
 		themeConversationId = null,
+		streaks = [],
 		onSwitchToChat,
 		onStartFlow
 	}: Props = $props();
@@ -510,6 +517,14 @@
 	}
 </script>
 
+<!-- Streakene står ØVERST, før dashboardet: rekka er et svar på «hvordan går det
+     her», og et svar som ligger under dashboardet finnes ikke for den som skanner. -->
+{#if streaks.length > 0}
+	<div class="streak-row">
+		<StreakStrip {streaks} area="tema" />
+	</div>
+{/if}
+
 {#if isBooks}
 	<BookDashboard themeId={theme.id} />
 {:else if isFilm}
@@ -817,6 +832,10 @@
 	}
 
 	/* ── Data tab ── */
+	.streak-row {
+		padding: 12px var(--page-px) 0;
+	}
+
 	.data-panel {
 		padding: 16px var(--page-px);
 		overflow-y: auto;

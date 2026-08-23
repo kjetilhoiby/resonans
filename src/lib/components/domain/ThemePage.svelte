@@ -154,10 +154,12 @@
 		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
 		cutLists?: Array<{ id: string; title: string; kerfMm: number; transportEnabled: boolean; transportMaxLengthMm: number; transportMaxWidthMm: number; guillotine: boolean; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
 		contacts?: ProjectContact[];
+		/** Streaks som hører på dette temaet — vises øverst i oversikten. */
+		streaks?: import('./streak/StreakStrip.svelte').StreakStripItem[];
 	}
 
 	let { theme, initialMessages, hasMoreMessages = false, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, parentThemeId = null,
-		projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
+		projectProfile = null, tasks = [], cutLists = [], contacts = [], streaks = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
@@ -451,6 +453,7 @@
 				bind:this={dataTabRef}
 				{theme}
 				{goals}
+				{streaks}
 				projects={projects}
 				initialMetricSettings={initialMetricSettings}
 				{tripProfile}

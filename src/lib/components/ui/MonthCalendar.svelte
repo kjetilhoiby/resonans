@@ -6,7 +6,7 @@
   Brukes til å hoppe til en dag i dagbok-chatten.
 -->
 <script lang="ts">
-	import { WEEKDAY_INITIALS, monthGrid, monthTitle, addMonths, monthKey } from '$lib/client/month-grid';
+	import { WEEKDAY_INITIALS, monthGrid, monthTitle, addMonths, monthKey } from '$lib/domain/month-grid';
 	import { dayKey } from '$lib/client/chat-day-sections';
 	import Icon from './Icon.svelte';
 

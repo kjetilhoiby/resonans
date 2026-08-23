@@ -113,8 +113,17 @@ export function dayKeyFromNumber(n: number): string {
  * kalenderuker (mandag–søndag) og ikke et rullerende vindu som flytter seg
  * hver dag — «uker på rad» skal betyde det samme for brukeren som for koden.
  */
-function windowIndex(dayNum: number, windowDays: number): number {
+export function windowIndex(dayNum: number, windowDays: number): number {
 	return Math.floor((dayNum - MONDAY_ANCHOR) / windowDays);
+}
+
+/**
+ * Første dag i en periode. Brukes av historikk-kalenderen, som må gruppere på de
+ * SAMME periodene streaken telles i — en kalenderrad som dekker en annen uke enn
+ * streaken bruker, viser et tall brukeren ikke kan kjenne igjen.
+ */
+export function windowStartDay(index: number, windowDays: number): number {
+	return index * windowDays + MONDAY_ANCHOR;
 }
 
 /** Lengste sammenhengende rekke av tall i et sett (brukt for bestCount). */

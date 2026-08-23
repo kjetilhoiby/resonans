@@ -4,6 +4,8 @@
  * Fixtures deles mellom demosidene; komponenter importeres der de brukes.
  */
 import { buildMetricSeries } from '$lib/domain/health/weight-series';
+import { countByDay } from '$lib/domain/streak-history';
+import { computeStreak } from '$lib/domain/streaks';
 import { findWeightSwings } from '$lib/domain/health/weight-swings';
 import type { Checklist } from '$lib/components/composed/ChecklistWidget.svelte';
 import type { ChecklistItemLike } from '$lib/types/checklist';
@@ -1961,5 +1963,44 @@ export const weightMilestonesStale = [
 			'Siste veiing var 16. juli 2026, 20 dager siden. Rekordene venter på en ferskere måling.',
 		tone: 'nøytral' as const,
 		basis: 'atferd' as const
+	}
+];
+
+/* ── Streaks ────────────────────────────────────────────────────────────── */
+
+/**
+ * Dagene bak en løpestreak, regnet av den ekte kalendermotoren.
+ *
+ * Tre uker tett, ett hull, og en dobbeltdag — nok til å vise fylte celler,
+ * multi-ringen og et brudd. Datoene er faste, ikke relative til i dag: en mock som
+ * flytter seg gjør piksel-baselinene ustabile.
+ */
+export const streakHistoryToday = '2026-08-23';
+
+export const streakHistoryDays = countByDay([
+	...['2026-07-28', '2026-07-29', '2026-07-31', '2026-08-01', '2026-08-02'],
+	...['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-05', '2026-08-06', '2026-08-07'],
+	...['2026-08-08', '2026-08-09', '2026-08-11', '2026-08-12', '2026-08-13'],
+	...['2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21'],
+	...['2026-08-22', '2026-08-23']
+]);
+
+/** Streaks slik en temaside mottar dem — tilstanden regnet av samme motor som flaten. */
+export const themeStreaks = [
+	{
+		definition: { id: 'streak-lop', title: 'Løpe minst 15 minutter hver dag', emoji: '🏃' },
+		state: computeStreak(
+			{ rule: 'consecutive_days', config: {} },
+			streakHistoryDays.flatMap((d) => Array(d.count).fill(d.date)),
+			streakHistoryToday
+		)
+	},
+	{
+		definition: { id: 'streak-uker', title: 'Uker med minst to løpeturer', emoji: '📅' },
+		state: computeStreak(
+			{ rule: 'count_per_window', config: { windowDays: 7, threshold: 2 } },
+			streakHistoryDays.flatMap((d) => Array(d.count).fill(d.date)),
+			streakHistoryToday
+		)
 	}
 ];

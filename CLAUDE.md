@@ -627,6 +627,34 @@ ble flyttet ut da det ble et eget fokusområde.
   hull i veiingene blir et tomrom.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Streaks: én motor, tre flater
+
+Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
+`$lib/domain/streaks.ts`, kalenderen i `streak-history.ts`, tilhørigheten i
+`streak-relevance.ts`.
+
+- **Streaks lagres aldri som en teller.** De regnes on-demand fra hendelser, så en
+  økt som kommer inn i etterkant reparerer rekka selv. Historikken i bunnpanelet er
+  samme lesing med dagene beholdt — ikke en ny spørring med et eget vindu, for da
+  ville kalenderen ikke summert til tallet på kortet den ble åpnet fra.
+- **Kalenderradene ER periodene.** For ukesregler grupperer streaken på
+  mandag-ankrede uker (`windowIndex`), og radene bærer periodens fasit regnet på
+  HELE historikken — en uke som krysser månedsskiftet må vise samme tall i begge
+  månedene. Andre vindulengder enn sju dager får ingen markør i det hele tatt: en
+  rad merket «1 av 2» for en periode den bare dekker halve er verre enn ingen.
+- **Framtida er tom, ikke glemt.** En dag som ikke har vært kan ikke være brutt, og
+  dekningstall teller bare dager som er gått.
+- **Trykkflaten på `StreakCard` dekker ring + tekst, ikke hele kortet.** `action` er
+  ofte en «Logg»-knapp, og en knapp inni en knapp er ugyldig markup.
+- **Tilhørighet utledes av KILDEN, ikke av temanavn.** En `workout`-streak hører på
+  `training`-dashboardet; utledningen treffer `DashboardKind`, så et tema som heter
+  «Løping» fanges uten en navneliste. En eksplisitt `metadata.themeId` overstyrer og
+  **utelukker** andre temaer. Manuelle streaks utledes ingen steder — «Badevask»
+  hører kanskje på Hjem, men tekstgjetningen treffer bare nesten.
+- **`loadRelevantStreaks` filtrerer definisjonene før tilstanden regnes.** Relevansen
+  er ren og gratis; hver tilstand er en spørring. Et tema uten streaks skal ikke
+  betale for dem.
+
 ### Perioder i vektkurven: én motor, to retninger
 
 Se `docs/changelog/2026-08-23-perioder-i-vektkurven.md`. Avgrensingen bor i

@@ -20,6 +20,11 @@
     titleLines  hvor mange linjer tittelen får før den klippes (default 2).
                 Sett 1 der korthøyden må være forutsigbar — f.eks. i widget-sonen
                 på hjemmeskjermen, der tre kort skal passe i en fast høyde.
+    onpress  gjør ring+tekst til en trykkflate (åpner historikken).
+
+  NB: trykkflaten dekker ring + tekst, IKKE hele kortet. `action` er ofte en knapp
+  («Logg»), og en knapp inni en knapp er ugyldig markup som nettleseren løser opp
+  på hver sin måte. Derfor er de to søsken.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -34,6 +39,9 @@
 		muted?: boolean;
 		action?: Snippet;
 		titleLines?: 1 | 2;
+		/** Trykk på ring+tekst. Uten den er kortet ikke interaktivt. */
+		onpress?: () => void;
+		dataTrack?: string;
 	}
 
 	let {
@@ -46,6 +54,8 @@
 		muted = false,
 		action,
 		titleLines = 2,
+		onpress,
+		dataTrack,
 	}: Props = $props();
 
 	const isMuted = $derived(muted || count === 0);
@@ -54,7 +64,7 @@
 	const latestIdx = $derived(dots.reduce((acc, v, i) => (v ? i : acc), -1));
 </script>
 
-<div class="streak-card" class:is-muted={isMuted} style="--c:{accent}; --title-lines:{titleLines}">
+{#snippet inner()}
 	<div class="ring" aria-hidden="true">
 		<span class="flame">{isMuted ? '💤' : '🔥'}</span>
 		<span class="num">{count}</span>
@@ -73,6 +83,22 @@
 			{#if meta}<span class="meta">{meta}</span>{/if}
 		</div>
 	</div>
+{/snippet}
+
+<div class="streak-card" class:is-muted={isMuted} style="--c:{accent}; --title-lines:{titleLines}">
+	{#if onpress}
+		<button
+			type="button"
+			class="hit"
+			data-track={dataTrack}
+			aria-label={meta ? `${title}: ${meta}` : title}
+			onclick={onpress}
+		>
+			{@render inner()}
+		</button>
+	{:else}
+		<div class="hit">{@render inner()}</div>
+	{/if}
 
 	{#if action}
 		<div class="action">{@render action()}</div>
@@ -91,6 +117,27 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
 		min-height: 52px;
+	}
+
+	/* Trykkflaten arver kortets radlayout, så markupen kan legges inn uten at
+	   ring/tekst flytter seg. */
+	.hit {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 1;
+		min-width: 0;
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+	}
+
+	button.hit {
+		cursor: pointer;
 	}
 
 	.ring {

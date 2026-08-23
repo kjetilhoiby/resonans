@@ -21,6 +21,8 @@ import {
 	type StreakSource,
 	type StreakState
 } from '$lib/domain/streaks';
+import { countByDay, type StreakHistoryDay } from '$lib/domain/streak-history';
+import { isStreakRelevantForTheme, type StreakRelevanceTarget } from '$lib/domain/streak-relevance';
 
 /** Hvor langt tilbake vi leser hendelser. Nok til å finne beste rekke uten å lese alt. */
 const LOOKBACK_DAYS = 400;
@@ -312,6 +314,82 @@ export async function loadStreaks(
 			)
 		}))
 	);
+}
+
+/**
+ * Streaks som hører på ett tema, med beregnet tilstand.
+ *
+ * Filtrerer på definisjonene FØR tilstanden regnes: relevansen er ren og krever
+ * ingen hendelser, mens hver tilstand koster en spørring. Et tema uten relevante
+ * streaks (film, økonomi) betaler da bare for definisjonslista.
+ */
+export async function loadRelevantStreaks(
+	userId: string,
+	target: StreakRelevanceTarget,
+	opts: { now?: Date } = {}
+): Promise<StreakWithState[]> {
+	const definitions = (await listStreakDefinitions(userId)).filter((definition) =>
+		isStreakRelevantForTheme(definition, target)
+	);
+	if (definitions.length === 0) return [];
+
+	const now = opts.now ?? new Date();
+	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+	const todayKey = osloDayKey(now);
+
+	return Promise.all(
+		definitions.map(async (definition) => ({
+			definition,
+			state: computeStreak(definition, await readEventDayKeys(userId, definition, since), todayKey)
+		}))
+	);
+}
+
+export interface StreakHistory {
+	definition: StreakDefinition;
+	state: StreakState;
+	/** Dager med hendelse, stigende. Antall per dag, siden duplikater teller. */
+	days: StreakHistoryDay[];
+	/** Hvor langt tilbake historikken er lest. Flaten skal kunne si det. */
+	lookbackDays: number;
+	/** Dagens Oslo-dato, så kalenderen ikke regner den ut på nytt. */
+	today: string;
+}
+
+/**
+ * Historikken bak én streak: dagene, og tilstanden regnet av de samme dagene.
+ *
+ * Samme kilde og samme vindu som `loadStreaks` bruker — kalenderen i
+ * bunnpanelet skal vise nøyaktig de hendelsene telleren på kortet er bygget av.
+ * En egen spørring med et annet vindu ville gitt en kalender som ikke summerer
+ * til tallet ved siden av.
+ */
+export async function loadStreakHistory(
+	userId: string,
+	definitionId: string,
+	opts: { now?: Date } = {}
+): Promise<StreakHistory | null> {
+	const [row] = await db
+		.select()
+		.from(streakDefinitions)
+		.where(and(eq(streakDefinitions.id, definitionId), eq(streakDefinitions.userId, userId)))
+		.limit(1);
+	if (!row) return null;
+
+	const definition = toDefinition(row);
+	const now = opts.now ?? new Date();
+	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+	const todayKey = osloDayKey(now);
+
+	const dayKeys = await readEventDayKeys(userId, definition, since);
+
+	return {
+		definition,
+		state: computeStreak(definition, dayKeys, todayKey),
+		days: countByDay(dayKeys),
+		lookbackDays: LOOKBACK_DAYS,
+		today: todayKey
+	};
 }
 
 export interface DueMaintenance {

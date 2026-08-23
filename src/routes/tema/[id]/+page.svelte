@@ -47,6 +47,7 @@
 		tasks={data.tasks}
 		cutLists={data.cutLists}
 		contacts={data.contacts}
+		streaks={data.relevantStreaks}
 	/>
 	{/key}
 	{/if}
