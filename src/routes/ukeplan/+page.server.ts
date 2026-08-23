@@ -11,6 +11,8 @@ import { materializeRoutinesForDates } from '$lib/server/services/routine-servic
 import { listDueMaintenance } from '$lib/server/services/streak-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
+import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
+import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 
 function detectItemDomain(text: string | null | undefined): DomainType | null {
 	if (!text) return null;
@@ -506,25 +508,34 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		console.log(`[ukeplan/load] running progress via aggregates: ${(performance.now() - tRun).toFixed(0)}ms (${runningGoals.length} goals, ${dailyRows.length} daily rows)`);
 	}
 
+	// NB: baselinen (`metadata.startValue`) er ikke et filter. Mål opprettet uten den
+	// ble ellers borte fra ukeplanen i det stille; tallene resolves per mål nedenfor,
+	// med første måling i vinduet som fallback-baseline.
 	const weightGoals = longTermGoals
 		.map((goal) => {
 			const meta = goal.metadata as any;
-			if (meta?.metricId !== 'weight_change' || typeof meta?.startValue !== 'number') return null;
+			if (meta?.metricId !== 'weight_change') return null;
+			const rawTargetValue = readGoalTargetValue(meta);
+			if (rawTargetValue === null) return null;
 			const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
 			const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : null);
 			if (!endDate) return null;
-			const targetDelta = Number(meta?.goalTrack?.targetValue ?? 0);
 			return {
 				goal,
 				startDate,
 				endDate,
-				startWeight: Number(meta.startValue),
-				targetWeight: Math.round((Number(meta.startValue) + targetDelta) * 10) / 10
+				startValue: typeof meta?.startValue === 'number' ? meta.startValue : null,
+				rawTargetValue
 			};
 		})
 		.filter(
-			(g): g is { goal: typeof longTermGoals[number]; startDate: Date; endDate: Date; startWeight: number; targetWeight: number } =>
-				g !== null
+			(g): g is {
+				goal: typeof longTermGoals[number];
+				startDate: Date;
+				endDate: Date;
+				startValue: number | null;
+				rawTargetValue: number;
+			} => g !== null
 		);
 
 	if (weightGoals.length > 0) {
@@ -557,11 +568,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			}))
 			.filter((row) => Number.isFinite(row.weight));
 
-		for (const { goal, startDate, endDate, startWeight, targetWeight } of weightGoals) {
+		for (const { goal, startDate, endDate, startValue, rawTargetValue } of weightGoals) {
 			const points = normalizedWeightRows.filter((row) => {
 				const rowDate = new Date(`${row.date}T12:00:00Z`);
 				return rowDate >= startDate && rowDate <= endDate;
 			});
+
+			const resolved = resolveWeightGoalNumbers({
+				rawTargetValue,
+				startValue,
+				fallbackStartWeight: points[0]?.weight ?? null
+			});
+			if (!resolved) continue;
+			const { startWeight, targetWeight } = resolved;
 
 			const latestPoint = [...points].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
 			const currentWeight = latestPoint ? Math.round(latestPoint.weight * 10) / 10 : startWeight;

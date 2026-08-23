@@ -10,7 +10,7 @@ import { isMetaGoalTitle } from '$lib/domain/goal-validation';
 export const createGoalTool = {
 	name: 'create_goal',
 	description:
-		'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen. ALDRI opprett mål med meta-titler som "Planlegging" eller "Plan" — kun konkrete livsmål.',
+		'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen. VEKTMÅL ("ned til 95 kg innen 15. november"): metricId=weight_change, targetValue=95 (målvekten i kg), startDate og endDate satt — startVerdien hentes fra siste vektmåling, så la startValue stå tom med mindre brukeren oppgir en annen startvekt. Svaret forteller hvilke tall målet faktisk måles mot: bruk DEM i kvitteringen til brukeren, aldri egne anslag. ALDRI opprett mål med meta-titler som "Planlegging" eller "Plan" — kun konkrete livsmål.',
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
@@ -40,7 +40,18 @@ export const createGoalTool = {
 			.enum(['week', 'month', 'quarter', 'year', 'custom'])
 			.optional()
 			.describe('Hvilken horisont målet gjelder for'),
-		targetValue: z.number().optional().describe('Målverdien for metrikksporet (f.eks. 20 km/uke, -3 kg)'),
+		targetValue: z
+			.number()
+			.optional()
+			.describe(
+				'Målverdien for metrikksporet (f.eks. 20 km/uke). For metricId=weight_change: oppgi MÅLVEKTEN i kg (f.eks. 95 for «ned til 95 kg») — serveren regner endringen selv.'
+			),
+		startValue: z
+			.number()
+			.optional()
+			.describe(
+				'Fraverdi/baseline. Kun for metricId=weight_change: startvekten i kg. Utelat den hvis brukeren ikke har oppgitt en startvekt — serveren bruker siste målte vekt, som er riktigere enn et anslag. IKKE gjett et tall her.'
+			),
 		unit: z.string().optional().describe('Enhet for målverdien, f.eks. km, kg eller kr'),
 		durationDays: z.number().optional().describe('Brukes kun når goalWindow er custom (f.eks. 60)')
 	}),
@@ -60,6 +71,7 @@ export const createGoalTool = {
 		goalKind?: 'level' | 'change' | 'trajectory';
 		goalWindow?: 'week' | 'month' | 'quarter' | 'year' | 'custom';
 		targetValue?: number;
+		startValue?: number;
 		unit?: string;
 		durationDays?: number;
 	}) => {
@@ -86,14 +98,29 @@ export const createGoalTool = {
 				goalKind: args.goalKind,
 				goalWindow: args.goalWindow,
 				targetValue: args.targetValue,
+				startValue: args.startValue,
 				unit: args.unit,
 				durationDays: args.durationDays
 			});
+			// Tallene rapporteres slik de faktisk BLE LAGRET, ikke slik modellen ba om dem.
+			// Baselinen fylles serverside fra siste vektmåling, og målverdien tolkes der —
+			// et svar bygget på argumentene ville sagt «fraverdi 100 kg» om en bruker som
+			// veier 98,2, og brukeren har ingen måte å se at tallet var oppdiktet.
+			const meta = (goal.metadata ?? {}) as {
+				metricId?: string | null;
+				startValue?: number | null;
+				goalTrack?: { targetValue?: number; unit?: string } | null;
+			};
+			const measurement = describeMeasurement(meta);
+
 			return {
 				success: true as const,
 				goalId: goal.id,
 				goalTitle: goal.title,
-				message: `✅ Målet "${goal.title}" er opprettet med ID: ${goal.id}. VIKTIG: Bruk denne eksakte ID-en hvis du skal lage oppgaver for dette målet!`
+				...measurement,
+				message: `✅ Målet "${goal.title}" er opprettet med ID: ${goal.id}. VIKTIG: Bruk denne eksakte ID-en hvis du skal lage oppgaver for dette målet!${
+					measurement.warning ? ` OBS: ${measurement.warning}` : ''
+				}`
 			};
 		} catch (error) {
 			console.error('[create_goal] feilet:', error);
@@ -101,3 +128,42 @@ export const createGoalTool = {
 		}
 	}
 };
+
+/**
+ * Hva målet faktisk kan måles mot etter opprettelsen. Et vektmål uten baseline er
+ * umålbart og havner under «Uten måling» på /plan/mal — det skal modellen si til
+ * brukeren, ikke oppdage senere.
+ */
+export function describeMeasurement(meta: {
+	metricId?: string | null;
+	startValue?: number | null;
+	goalTrack?: { targetValue?: number; unit?: string } | null;
+}): { measurement?: string; warning?: string } {
+	const target = meta.goalTrack?.targetValue;
+
+	if (meta.metricId === 'weight_change') {
+		if (typeof meta.startValue !== 'number' || typeof target !== 'number') {
+			return {
+				warning:
+					'målet har ingen målbar startvekt, så det vises uten fremdrift. Be brukeren veie seg (eller oppgi en startvekt), så kan målet måles.'
+			};
+		}
+		const targetWeight = Math.round((meta.startValue + target) * 10) / 10;
+		return {
+			measurement: `Måles fra ${meta.startValue} kg til ${targetWeight} kg (${
+				target > 0 ? '+' : ''
+			}${target} kg). Oppgi disse tallene til brukeren — ikke egne anslag.`
+		};
+	}
+
+	if (!meta.metricId) {
+		return {
+			warning:
+				'målet er ikke koblet til en metrikk, så fremdrift må følges med oppgaver framfor målinger.'
+		};
+	}
+	if (typeof target !== 'number') {
+		return { warning: 'målet mangler en målverdi, så fremdrift kan ikke måles automatisk.' };
+	}
+	return { measurement: `Måles mot ${target} ${meta.goalTrack?.unit ?? ''}`.trim() };
+}

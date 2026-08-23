@@ -25,6 +25,24 @@ export interface GoalTrack {
 	};
 }
 
+/**
+ * Målverdien på et mål, lest fra begge formene den finnes i.
+ *
+ * `createGoal` skriver den i `metadata.goalTrack.targetValue`; den flate
+ * `metadata.targetValue` er en gammel form bare redigeringsskjemaet skrev. En leser
+ * som bare kjenner én av dem viser null fremdrift for mål opprettet et annet sted —
+ * det traff både løpe- og vektmål. Se
+ * `docs/changelog/2026-08-23-vektmal-uten-maaling.md`.
+ */
+export function readGoalTargetValue(metadata: unknown): number | null {
+	const meta = (metadata ?? {}) as {
+		targetValue?: unknown;
+		goalTrack?: { targetValue?: unknown } | null;
+	};
+	const raw = meta.goalTrack?.targetValue ?? meta.targetValue;
+	return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+}
+
 export interface TrackMatchResult {
 	track: GoalTrack;
 	score: number;

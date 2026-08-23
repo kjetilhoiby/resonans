@@ -627,6 +627,33 @@ ble flyttet ut da det ble et eget fokusområde.
   hull i veiingene blir et tomrom.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Vektmål: baselinen er halve målet
+
+Se `docs/changelog/2026-08-23-vektmal-uten-maaling.md`. Tolkningen bor rent i
+`$lib/domain/health/weight-goal.ts`.
+
+- **`goalTrack.targetValue` er en ENDRING i kg, og endringen er meningsløs uten
+  `metadata.startValue`.** Alle fire leserne (`/plan/mal`, `/plan/drommer`,
+  `/ukeplan`, ThemeDataTab) hoppet stille over vektmål uten baseline, og
+  `create_goal` hadde ikke parameteren i det hele tatt — et vektmål opprettet i
+  chatten *kunne* ikke bli målbart, og havnet under «Uten måling».
+- **Kontrakten mot språkmodellen er absolutt, lagringen er relativ.** Modellen
+  tenker «ned til 95 kg», så `create_goal` tar målvekten og `createGoal` regner
+  deltaet. Oversettelsen skjer i skrivelaget, ikke i prompten.
+- **Baselinen gjettes ikke, den måles.** Mangler den: siste veiing ved skriving
+  (`readLatestWeight`), første måling i vinduet ved lesing. Finnes ingen veiing i
+  det hele tatt, sier verktøysvaret det — et umålbart mål skal ikke se vellykket ut.
+- **Verdier ≥ 30 kg leses som en målvekt, ikke som et delta.** Et bevisst delta på
+  +30 kg finnes ikke, og tolkningen redder rader som alt ligger i basen med 95 i
+  delta-feltet (de siktet mot startvekt + 95 kg).
+- **`Number(null)` er 0, altså «hold vekta».** Nullsjekken må stå før konverteringen,
+  ellers blir et mål uten målverdi et gyldig mål.
+- **Metrikkfelt skrives gjennom `createGoal`/`updateGoalMetric`, aldri som rå
+  metadata fra en klient.** `metadata.targetValue` (flat) er en gammel form bare
+  `GoalEditCard` skrev; leserne slår opp `metadata.goalTrack.targetValue`, og
+  `goal_tracks`-raden må følge med. `PATCH /api/goals/[id]` tar `metric: {...}` og
+  fletter rå `metadata` framfor å erstatte den.
+
 ### Livvidde
 
 Se `docs/changelog/2026-08-09-livvidde.md`. Logikken i `$lib/domain/health/waist.ts`,

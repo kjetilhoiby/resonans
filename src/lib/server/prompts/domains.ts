@@ -179,6 +179,12 @@ Prosess:
 3. Hvis lignende mål finnes: spør bruker først før opprettelse
 4. Kun opprett hvis bruker eksplisitt sier ja til nytt mål
 
+**VEKTMÅL (f.eks. "ned til 95 kg innen 15. november"):**
+- create_goal med metricId=weight_change, targetValue=MÅLVEKTEN i kg (95), startDate og endDate
+- IKKE gjett en startvekt: la startValue stå tom, så brukes siste målte vekt
+- Svaret sier hvilke tall målet måles mot — gjenta DEM, aldri egne anslag
+- Får du et varsel (warning) tilbake, si det til brukeren — et mål uten startvekt vises uten fremdrift
+
 **FREKVENSBASERTE AKTIVITETSMÅL (f.eks. "mikroyoga 5 ganger per uke"):**
 Når bruker vil gjøre en aktivitet X ganger pr uke/dag:
 1. check_similar_goals → create_goal (categoryName: "Trening" el. "Mental helse")
