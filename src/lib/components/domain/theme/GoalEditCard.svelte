@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import DateInput from '$lib/components/ui/DateInput.svelte';
+	import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 
 	interface Goal {
 		id: string;
@@ -32,14 +33,29 @@
 	let editGoalSaving = $state(false);
 	let editGoalError = $state('');
 
-	// Initialize from goal metadata
+	// Initialize from goal metadata.
+	// NB: målverdien bor i `metadata.goalTrack.targetValue` — den flate `targetValue`
+	// er en gammel form bare dette skjemaet har skrevet, så et oppslag på den alene
+	// ga tomme felt for alle mål opprettet gjennom chatten eller helsemål-skjemaet.
 	{
 		const metadata = goal.metadata as any;
+		const storedTarget = metadata?.goalTrack?.targetValue ?? metadata?.targetValue ?? null;
 		editGoalMetricId = metadata?.metricId ?? '';
 		editGoalStartDate = metadata?.startDate ?? '';
 		editGoalEndDate = metadata?.endDate ?? '';
-		editGoalTargetValue = metadata?.targetValue?.toString() ?? '';
 		editGoalStartValue = metadata?.startValue?.toString() ?? '';
+		if (editGoalMetricId === 'weight_change') {
+			// Feltet spør om MÅLVEKT, mens lagringen er et delta — vis vekta, ikke endringen.
+			const resolved = resolveWeightGoalNumbers({
+				rawTargetValue: storedTarget,
+				startValue: metadata?.startValue,
+				fallbackStartWeight: null
+			});
+			editGoalTargetValue = resolved ? resolved.targetWeight.toString() : '';
+			editGoalStartValue = resolved ? resolved.startWeight.toString() : editGoalStartValue;
+		} else {
+			editGoalTargetValue = storedTarget !== null ? storedTarget.toString() : '';
+		}
 		if (metadata?.targetDate) {
 			editGoalTargetDate = metadata.targetDate;
 		} else if (metadata?.endDate) {
@@ -60,10 +76,12 @@
 				targetDate: editGoalTargetDate || null
 			};
 
+			// Metrikkfeltene sendes som `metric`, ikke som ferdigbygget metadata: serveren
+			// normaliserer tallene, skriver goalTrack og holder goal_tracks-raden i synk.
 			if (editGoalMetricId === 'running_distance') {
 				const targetKm = Number.parseFloat(String(editGoalTargetValue).replace(',', '.'));
 				if (editGoalStartDate && editGoalEndDate && Number.isFinite(targetKm)) {
-					updateData.metadata = {
+					updateData.metric = {
 						metricId: 'running_distance',
 						goalKind: 'level',
 						goalWindow: 'custom',
@@ -77,17 +95,17 @@
 			} else if (editGoalMetricId === 'weight_change') {
 				const startVal = Number.parseFloat(String(editGoalStartValue).replace(',', '.'));
 				const targetVal = Number.parseFloat(String(editGoalTargetValue).replace(',', '.'));
-				if (editGoalStartDate && editGoalEndDate && Number.isFinite(startVal) && Number.isFinite(targetVal)) {
-					const change = targetVal - startVal;
-					updateData.metadata = {
+				// Startvekt kan stå tom: serveren bruker siste måling. Målvekta må oppgis.
+				if (editGoalStartDate && editGoalEndDate && Number.isFinite(targetVal)) {
+					updateData.metric = {
 						metricId: 'weight_change',
 						goalKind: 'trajectory',
 						goalWindow: 'custom',
-						targetValue: change,
+						targetValue: targetVal,
 						unit: 'kg',
 						startDate: editGoalStartDate,
 						endDate: editGoalEndDate,
-						startValue: startVal
+						startValue: Number.isFinite(startVal) ? startVal : null
 					};
 					updateData.targetDate = editGoalEndDate;
 				}
@@ -150,7 +168,8 @@
 			</label>
 			<label class="goal-edit-label">
 				Startvekt (kg)
-				<input class="goal-edit-input" type="number" step="0.1" bind:value={editGoalStartValue} placeholder="85" />
+				<input class="goal-edit-input" type="number" step="0.1" bind:value={editGoalStartValue} placeholder="Siste måling" />
+				<span class="goal-edit-hint">Tom = siste målte vekt brukes som fraverdi.</span>
 			</label>
 			<label class="goal-edit-label">
 				Måldato
@@ -248,6 +267,7 @@
 		resize: vertical;
 	}
 	.goal-edit-textarea:focus { outline: none; border-color: #3c4f9f; }
+	.goal-edit-hint { color: var(--tp-text-dim, hsl(228 12% 62%)); font-size: 0.68rem; font-weight: 400; }
 	.goal-edit-error { margin: 0; color: #ee8c8c; font-size: 0.72rem; }
 	.goal-edit-actions { display: flex; gap: 8px; }
 	.goal-edit-save {

@@ -4,6 +4,7 @@ import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { normalizeBodyComposition } from '$lib/domain/health/body-composition';
+import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 import { readTransactions } from '$lib/server/economics/transactions';
 import { osloDayKey } from '$lib/domain/oslo-time';
 
@@ -93,13 +94,20 @@ export type WeightProgress = {
 	pct: number;
 };
 
-/** Vektprogresjon for et weight_change-mål: startValue-baseline + målt vekt i vinduet. */
+/**
+ * Vektprogresjon for et weight_change-mål: baseline + målt vekt i vinduet.
+ *
+ * `startWeight` kan være null: mangler `metadata.startValue` (mål opprettet før
+ * baselinen ble et krav), brukes den FØRSTE målingen i vinduet i stedet. Uten det
+ * kunne et slikt mål aldri måles, og flaten viste det bare som «Uten måling».
+ * `targetValue` er råverdien fra `goalTrack` og tolkes av `resolveWeightGoalNumbers`
+ * — en målvekt lagret i delta-feltet siktet ellers mot startvekt + 95 kg.
+ */
 export async function readWeightProgress(
 	userId: string,
-	args: { startDate: Date; endDate: Date; startWeight: number; targetDelta: number }
+	args: { startDate: Date; endDate: Date; startWeight: number | null; targetValue: number }
 ): Promise<WeightProgress | null> {
-	const { startDate, endDate, startWeight, targetDelta } = args;
-	const targetWeight = startWeight + targetDelta;
+	const { startDate, endDate } = args;
 
 	const rows = await db
 		.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
@@ -128,9 +136,16 @@ export async function readWeightProgress(
 	const latestPoint = points.length > 0 ? points[points.length - 1] : null;
 	if (!latestPoint) return null;
 
+	const resolved = resolveWeightGoalNumbers({
+		rawTargetValue: args.targetValue,
+		startValue: args.startWeight,
+		fallbackStartWeight: points[0].weight
+	});
+	if (!resolved) return null;
+
 	const currentWeight = latestPoint.weight;
-	const totalDelta = targetWeight - startWeight;
-	const achievedDelta = currentWeight - startWeight;
+	const totalDelta = resolved.targetDelta;
+	const achievedDelta = currentWeight - resolved.startWeight;
 	const pct = totalDelta !== 0
 		? Math.max(0, Math.min(100, Math.round((achievedDelta / totalDelta) * 100)))
 		: 0;
@@ -139,8 +154,8 @@ export async function readWeightProgress(
 		startDate: startDate.toISOString().slice(0, 10),
 		endDate: endDate.toISOString().slice(0, 10),
 		currentWeight,
-		startWeight,
-		targetWeight,
+		startWeight: resolved.startWeight,
+		targetWeight: resolved.targetWeight,
 		points,
 		pct
 	};

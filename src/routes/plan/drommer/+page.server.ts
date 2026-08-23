@@ -5,6 +5,7 @@ import { dreams, goals, memories } from '$lib/db/schema';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { getLatestReflection } from '$lib/server/reflections';
 import { read10kBest, readMonthlySavings, readWeightProgress } from '$lib/server/goal-progress';
+import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 import { formatLongTermValue } from '$lib/components/domain/plan/helpers.js';
 
 export type LangtidsmaalView = {
@@ -33,7 +34,7 @@ async function loadLangtidsmaal(userId: string): Promise<LangtidsmaalView[]> {
 	for (const goal of rows) {
 		const meta = goal.metadata as any;
 		const metricId: string | null = meta?.metricId ?? null;
-		const targetValue: number | null = meta?.goalTrack?.targetValue ?? null;
+		const targetValue: number | null = readGoalTargetValue(meta);
 		const unit: string | null = meta?.goalTrack?.unit ?? null;
 		const targetYear = goal.targetDate ? new Date(goal.targetDate).getFullYear() : null;
 
@@ -42,12 +43,13 @@ async function loadLangtidsmaal(userId: string): Promise<LangtidsmaalView[]> {
 		let pct: number | null = null;
 
 		try {
-			if (metricId === 'weight_change' && typeof meta?.startValue === 'number' && targetValue !== null) {
+			// Baseline er valgfri: mangler den, bruker readWeightProgress første måling i vinduet
+			if (metricId === 'weight_change' && targetValue !== null) {
 				const progress = await readWeightProgress(userId, {
 					startDate: meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt),
 					endDate: goal.targetDate ? new Date(goal.targetDate) : new Date(),
-					startWeight: meta.startValue,
-					targetDelta: targetValue
+					startWeight: typeof meta?.startValue === 'number' ? meta.startValue : null,
+					targetValue
 				});
 				if (progress) {
 					currentLabel = formatLongTermValue(metricId, progress.currentWeight);

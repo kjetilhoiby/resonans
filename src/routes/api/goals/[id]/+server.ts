@@ -2,11 +2,12 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { updateGoalMetric } from '$lib/server/goals';
 import type { RequestHandler } from './$types';
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
-	const { title, description, targetDate, status, metadata, themeId } = body;
+	const { title, description, targetDate, status, metadata, metric, themeId } = body;
 
 	// Verify ownership
 	const existingGoal = await db.query.goals.findFirst({
@@ -41,7 +42,11 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		}
 		updateData.status = status;
 	}
-	if (metadata !== undefined) updateData.metadata = metadata;
+	// Rå metadata FLETTES inn — et skjema som bare eier noen felt skal ikke slette
+	// `visionHorizon` eller intent-feltene, jf. samme regel for metrikk-arket.
+	if (metadata !== undefined && metadata !== null && typeof metadata === 'object') {
+		updateData.metadata = { ...((existingGoal.metadata ?? {}) as Record<string, unknown>), ...metadata };
+	}
 	if (themeId !== undefined) updateData.themeId = typeof themeId === 'string' && themeId.length > 0 ? themeId : null;
 
 	const [updatedGoal] = await db
@@ -49,6 +54,37 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		.set(updateData)
 		.where(eq(goals.id, params.id))
 		.returning();
+
+	// Metrikkfeltene går gjennom updateGoalMetric: den normaliserer vekt-tallene,
+	// skriver `metadata.goalTrack` (der leserne finner målverdien) og holder
+	// `goal_tracks`-raden i synk. En klient som bygger metadataen selv kan ikke det.
+	if (metric !== undefined && metric !== null && typeof metric === 'object') {
+		try {
+			const withMetric = await updateGoalMetric({
+				userId: locals.userId,
+				goalId: params.id,
+				metricId: metric.metricId ?? null,
+				startDate: metric.startDate,
+				endDate: metric.endDate,
+				fields: {
+					goalKind: metric.goalKind,
+					goalWindow: metric.goalWindow,
+					targetValue: metric.targetValue,
+					startValue: metric.startValue,
+					unit: metric.unit,
+					durationDays: metric.durationDays,
+					targetDate: metric.endDate ?? metric.targetDate
+				}
+			});
+			return json({ goal: withMetric });
+		} catch (error) {
+			console.error('[goals PATCH] kunne ikke oppdatere metrikkfeltene:', error);
+			return json(
+				{ error: error instanceof Error ? error.message : 'Kunne ikke oppdatere målverdiene.' },
+				{ status: 400 }
+			);
+		}
+	}
 
 	return json({ goal: updatedGoal });
 };

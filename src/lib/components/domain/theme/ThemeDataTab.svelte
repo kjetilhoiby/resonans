@@ -25,6 +25,8 @@
 	import WeightDashboard from '../WeightDashboard.svelte';
 	import WritingDashboard from '../WritingDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
+	import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
+	import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
 	import ThemeMetricSettingsSheet from '../ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from '../ThemeMetricSettingsSheet.svelte';
@@ -267,7 +269,7 @@
 		if (goal.status === 'paused') return 35;
 
 		const metadata = goal.metadata as any;
-		if (!metadata?.startDate || !metadata?.endDate || !metadata?.targetValue) return 0;
+		if (!metadata?.startDate || !metadata?.endDate || readGoalTargetValue(metadata) === null) return 0;
 
 		const now = new Date();
 		const start = new Date(metadata.startDate);
@@ -285,7 +287,8 @@
 
 	function goalDelta(goal: Goal): { value: number; unit: string } | null {
 		const metadata = goal.metadata as any;
-		if (!metadata?.metricId || !metadata?.targetValue) return null;
+		const targetValue = readGoalTargetValue(metadata);
+		if (!metadata?.metricId || targetValue === null) return null;
 
 		if (metadata.metricId === 'running_distance' && healthDashboard?.recentEvents) {
 			const startDate = metadata.startDate ? new Date(metadata.startDate) : new Date(0);
@@ -314,7 +317,7 @@
 
 			const totalDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
 			const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-			const expectedKm = (elapsedDays / totalDays) * metadata.targetValue;
+			const expectedKm = (elapsedDays / totalDays) * targetValue;
 
 			const delta = totalKm - expectedKm;
 			return { value: delta, unit: 'km' };
@@ -331,12 +334,21 @@
 			if (weightEvents.length === 0) return null;
 
 			const latestWeight = typeof weightEvents[0].data.weight === 'number' ? weightEvents[0].data.weight : null;
-			const startWeight = metadata.startValue;
+			if (latestWeight === null) return null;
 
-			if (latestWeight === null || startWeight === null) return null;
+			// Baselinen kan mangle (mål opprettet uten startvekt) — da er eldste måling i
+			// vinduet baselinen, samme regel som /plan/mal bruker.
+			const oldest = weightEvents[weightEvents.length - 1];
+			const resolved = resolveWeightGoalNumbers({
+				rawTargetValue: targetValue,
+				startValue: metadata.startValue,
+				fallbackStartWeight: typeof oldest?.data.weight === 'number' ? oldest.data.weight : null
+			});
+			if (!resolved) return null;
 
+			const startWeight = resolved.startWeight;
 			const actualChange = latestWeight - startWeight;
-			const targetChange = metadata.targetValue;
+			const targetChange = resolved.targetDelta;
 
 			const totalDays = metadata.endDate ?
 				(new Date(metadata.endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) : 90;

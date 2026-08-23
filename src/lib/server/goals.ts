@@ -7,6 +7,8 @@ import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-trac
 import { upsertGoalTrack } from './goal-tracks';
 import { openai } from './openai';
 import { PersonMentionService } from './services/person-mention-service';
+import { readLatestWeight } from './goal-progress';
+import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 
 export interface GoalCreationParams {
 	userId: string;
@@ -24,7 +26,12 @@ export interface GoalCreationParams {
 	// Health goal specific fields
 	startDate?: string; // For date-bounded goals (running) and baseline tracking (weight)
 	endDate?: string;   // For explicit period end (running goals)
-	startValue?: number; // Baseline value for trajectory goals (weight)
+	/**
+	 * Baseline for trajectory-mål (vekt). Utelates den på et `weight_change`-mål,
+	 * fylles den fra siste vektmåling — uten baseline er målet umålbart, og alle
+	 * fire leserne hopper over det uten å si fra.
+	 */
+	startValue?: number;
 	/** Kobler målet til en brukerforfattet visjon (Retning-fanen). */
 	visionHorizon?: 'vision_yearly' | 'vision_5year' | 'vision_10year';
 	/** For category_spend-mål: hvilken categorized_events-kategori taket gjelder. */
@@ -149,13 +156,116 @@ async function sanitizeMetricId(params: GoalCreationParams): Promise<MetricId | 
 	return requestedMetric;
 }
 
+/** Metrikkfelt et mål kan bære. Delt mellom opprettelse og redigering. */
+export interface GoalMetricFields {
+	goalKind?: GoalTrackKind;
+	goalWindow?: GoalWindow;
+	targetValue?: number | null;
+	startValue?: number | null;
+	unit?: string;
+	durationDays?: number | null;
+	targetDate?: string;
+}
+
+function finiteOrNull(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Vektmål har TO tall, og lagringen bærer bare deltaet — baselinen er derfor ikke et
+ * ekstra felt, den er halve målet. Alle leserne hopper over et vektmål uten
+ * `startValue`, så et mål opprettet uten den havner under «Uten måling» uten at noe
+ * sier fra. Baselinen fylles fra siste måling når kalleren ikke oppgir den, og
+ * målverdien tolkes: 95 er en målvekt, −3 er en endring.
+ */
+async function resolveWeightGoalFields(
+	userId: string,
+	fields: { targetValue: number | null; startValue: number | null },
+	context: string
+): Promise<{ targetValue: number | null; startValue: number | null }> {
+	const fallbackStartWeight = fields.startValue === null ? await readLatestWeight(userId) : null;
+	const resolved = resolveWeightGoalNumbers({
+		rawTargetValue: fields.targetValue,
+		startValue: fields.startValue,
+		fallbackStartWeight
+	});
+
+	if (!resolved) {
+		console.warn(
+			`[${context}] vektmål uten målbare tall (målverdi=${fields.targetValue}, startvekt=${fields.startValue}, siste måling=${fallbackStartWeight}) — målet lagres, men uten måling`
+		);
+		return fields;
+	}
+
+	console.log(
+		`[${context}] vektmål: fra ${resolved.startWeight} kg (${resolved.startSource}) til ${resolved.targetWeight} kg (delta ${resolved.targetDelta}, råverdi lest som ${resolved.targetInterpretation})`
+	);
+	return { targetValue: resolved.targetDelta, startValue: resolved.startWeight };
+}
+
+type GoalTrackMetadata = {
+	kind: GoalTrackKind;
+	window: GoalWindow;
+	targetValue: number;
+	unit: string;
+	durationDays: number | null;
+};
+
+/** `metadata.goalTrack` — formen leserne slår opp målverdien i. */
+function buildGoalTrackMetadata(
+	metricId: MetricId | null,
+	targetValue: number | null,
+	fields: GoalMetricFields
+): GoalTrackMetadata | null {
+	if (!metricId || targetValue === null) return null;
+	return {
+		kind: fields.goalKind ?? inferGoalKind(metricId, targetValue),
+		window: fields.goalWindow ?? inferGoalWindow(fields.targetDate),
+		targetValue,
+		unit: fields.unit || METRIC_CATALOG[metricId].defaultUnit,
+		durationDays:
+			(fields.goalWindow ?? inferGoalWindow(fields.targetDate)) === 'custom'
+				? finiteOrNull(fields.durationDays)
+				: null
+	};
+}
+
+/** Raden i `goal_tracks` — samme tall som metadataen, aldri bygget for seg. */
+function buildGoalTrack(
+	metricId: MetricId,
+	goal: { id: string; title: string },
+	track: GoalTrackMetadata,
+	source: 'goal_create' | 'goal_edit'
+): GoalTrack {
+	return {
+		id: `goal-${goal.id}`,
+		metricId,
+		label: goal.title,
+		kind: track.kind,
+		window: track.window,
+		durationDays: track.durationDays ?? undefined,
+		targetValue: track.targetValue,
+		unit: track.unit,
+		priority: 80,
+		metadata: { goalId: goal.id, source }
+	};
+}
+
 export async function createGoal(params: GoalCreationParams) {
 	const resolvedMetricId = await sanitizeMetricId(params);
-	const numericTargetValue =
-		typeof params.targetValue === 'number' && Number.isFinite(params.targetValue)
-			? params.targetValue
-			: null;
-	
+	let numericTargetValue = finiteOrNull(params.targetValue);
+	let startValue = finiteOrNull(params.startValue);
+
+	if (resolvedMetricId === 'weight_change') {
+		({ targetValue: numericTargetValue, startValue } = await resolveWeightGoalFields(
+			params.userId,
+			{ targetValue: numericTargetValue, startValue },
+			'createGoal'
+		));
+	}
+
+	const goalTrackMetadata = buildGoalTrackMetadata(resolvedMetricId, numericTargetValue, params);
+
 	// Build health-aware metadata
 	const metadata = {
 		metricId: resolvedMetricId,
@@ -168,20 +278,8 @@ export async function createGoal(params: GoalCreationParams) {
 			: {}),
 		startDate: params.startDate || null,
 		endDate: params.endDate || null,
-		startValue: typeof params.startValue === 'number' && Number.isFinite(params.startValue) ? params.startValue : null,
-		goalTrack:
-			resolvedMetricId && numericTargetValue !== null
-				? {
-					kind: params.goalKind ?? inferGoalKind(resolvedMetricId, numericTargetValue),
-					window: params.goalWindow ?? inferGoalWindow(params.targetDate),
-					targetValue: numericTargetValue,
-					unit: params.unit || METRIC_CATALOG[resolvedMetricId].defaultUnit,
-					durationDays:
-						params.goalWindow === 'custom' && typeof params.durationDays === 'number'
-							? params.durationDays
-							: null
-				}
-				: null
+		startValue,
+		goalTrack: goalTrackMetadata
 	};
 
 	// Finn eller opprett kategori
@@ -209,30 +307,80 @@ export async function createGoal(params: GoalCreationParams) {
 		metadata
 	}).returning();
 
-	if (resolvedMetricId && numericTargetValue !== null) {
-		const goalTrack: GoalTrack = {
-			id: `goal-${goal.id}`,
-			metricId: resolvedMetricId,
-			label: goal.title,
-			kind: params.goalKind ?? inferGoalKind(resolvedMetricId, numericTargetValue),
-			window: params.goalWindow ?? inferGoalWindow(params.targetDate),
-			durationDays:
-				params.goalWindow === 'custom' && typeof params.durationDays === 'number'
-					? params.durationDays
-					: undefined,
-			targetValue: numericTargetValue,
-			unit: params.unit || METRIC_CATALOG[resolvedMetricId].defaultUnit,
-			priority: 80,
-			metadata: {
-				goalId: goal.id,
-				source: 'goal_create'
-			}
-		};
-
-		await upsertGoalTrack(params.userId, resolvedMetricId, goalTrack);
+	if (resolvedMetricId && goalTrackMetadata) {
+		await upsertGoalTrack(
+			params.userId,
+			resolvedMetricId,
+			buildGoalTrack(resolvedMetricId, goal, goalTrackMetadata, 'goal_create')
+		);
 	}
 
 	return goal;
+}
+
+/**
+ * Oppdaterer metrikkfeltene på et eksisterende mål — én vei inn, samme normalisering
+ * som opprettelsen. Redigeringen skrev tidligere metadata rått fra klienten: uten
+ * `goalTrack` (som er der leserne finner målverdien), uten `goal_tracks`-raden, og
+ * den slettet nøkler skjemaet ikke eier (`visionHorizon`, intent-feltene). Et
+ * vektmål «reparert» i skjemaet mistet altså målverdien sin.
+ */
+export async function updateGoalMetric(params: {
+	userId: string;
+	goalId: string;
+	metricId?: string | null;
+	fields: GoalMetricFields;
+	startDate?: string | null;
+	endDate?: string | null;
+}) {
+	const goal = await db.query.goals.findFirst({
+		where: and(eq(goals.id, params.goalId), eq(goals.userId, params.userId))
+	});
+	if (!goal) throw new Error('Goal not found for user');
+
+	// Kaster framfor å skrive `metricId: null`: en oppdatering uten gjenkjennelig
+	// metrikk ville tømt målet for både spor og målverdi, og sett ut som en lagring
+	// som gikk bra.
+	const resolvedMetricId = params.metricId ? resolveMetricId(params.metricId) : null;
+	if (!resolvedMetricId) throw new Error(`Unknown metric id: ${params.metricId}`);
+	let targetValue = finiteOrNull(params.fields.targetValue);
+	let startValue = finiteOrNull(params.fields.startValue);
+
+	if (resolvedMetricId === 'weight_change') {
+		({ targetValue, startValue } = await resolveWeightGoalFields(
+			params.userId,
+			{ targetValue, startValue },
+			'updateGoalMetric'
+		));
+	}
+
+	const goalTrackMetadata = buildGoalTrackMetadata(resolvedMetricId, targetValue, params.fields);
+	const existing = (goal.metadata ?? {}) as Record<string, unknown>;
+	// `undefined` = feltet ble ikke sendt (behold), `null` = tømt med vilje.
+	const metadata: Record<string, unknown> = {
+		...existing,
+		metricId: resolvedMetricId,
+		startDate: params.startDate !== undefined ? params.startDate || null : (existing.startDate ?? null),
+		endDate: params.endDate !== undefined ? params.endDate || null : (existing.endDate ?? null),
+		startValue,
+		goalTrack: goalTrackMetadata
+	};
+
+	const [updated] = await db
+		.update(goals)
+		.set({ metadata, updatedAt: new Date() })
+		.where(eq(goals.id, goal.id))
+		.returning();
+
+	if (resolvedMetricId && goalTrackMetadata) {
+		await upsertGoalTrack(
+			params.userId,
+			resolvedMetricId,
+			buildGoalTrack(resolvedMetricId, updated, goalTrackMetadata, 'goal_edit')
+		);
+	}
+
+	return updated;
 }
 
 function inferGoalWindow(targetDate?: string): GoalWindow {
