@@ -12,6 +12,12 @@ export default defineConfig({
 	},
 	use: {
 		baseURL: 'http://localhost:5174',
+		// Miljøer som har Chromium et annet sted enn Playwrights egen nedlasting — en
+		// container med forhåndsinstallert nettleser, typisk — peker hit framfor å
+		// hente den pinnede byggversjonen på nytt. Uten variabelen er alt som før.
+		...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+			? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } }
+			: {}),
 		extraHTTPHeaders: {
 			'x-resonans-user-id': '8e8b4aae-14f4-4e79-8fc3-ec5f37b0579d',
 			// Headeren godtas fritt mot en lokal dev-server. Peker man testene mot et

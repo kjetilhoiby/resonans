@@ -121,3 +121,31 @@ export function trendSegmentsOf<T extends TrendPoint>(points: T[], maxGapDays: n
 	if (current.length > 0) segments.push(current);
 	return segments;
 }
+
+/**
+ * Spennet et sett punkter dekker — BEGGE kurvene, rå og trend.
+ *
+ * Regnes av punktene som faktisk skal tegnes, ikke av hele historikken. Den
+ * forskjellen var en reell feil på vektflaten: grafen spredte hele seriens
+ * `range` inn i en klippet serie (`{ ...full, points: klippet }`), så
+ * 30-dagersvisningen fikk aksen fra ni år med veiinger — 80 til 110 kg — og en
+ * nedgang på to kilo ble en flat strek. Aksen tilpasser seg vinduet bare hvis
+ * spennet regnes av vinduet.
+ *
+ * Rå OG trend, fordi begge tegnes: en akse som bare dekker trenden klipper
+ * målepunktene mot kanten av feltet.
+ */
+export function trendRange(points: readonly TrendPoint[]): { min: number; max: number } | null {
+	if (points.length === 0) return null;
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
+	for (const point of points) {
+		min = Math.min(min, point.raw);
+		max = Math.max(max, point.raw);
+		if (point.trend !== null) {
+			min = Math.min(min, point.trend);
+			max = Math.max(max, point.trend);
+		}
+	}
+	return { min, max };
+}

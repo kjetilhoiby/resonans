@@ -34,6 +34,7 @@ import {
 	dayNumber,
 	daysBetween,
 	trailingTrend,
+	trendRange,
 	trendSegmentsOf,
 	type TrendPoint
 } from './trailing-trend';
@@ -193,23 +194,16 @@ export function buildWaistSeries(days: WaistDay[]): WaistSeries {
 	);
 
 	let nadir: WaistSeries['nadir'] = null;
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
 	for (const point of points) {
-		min = Math.min(min, point.raw);
-		max = Math.max(max, point.raw);
-		if (point.trend !== null) {
-			min = Math.min(min, point.trend);
-			max = Math.max(max, point.trend);
-			if (!nadir || point.trend < nadir.value) nadir = { date: point.date, value: point.trend };
-		}
+		if (point.trend === null) continue;
+		if (!nadir || point.trend < nadir.value) nadir = { date: point.date, value: point.trend };
 	}
 
 	return {
 		points,
 		latest: points.at(-1) ?? null,
 		nadir,
-		range: points.length > 0 ? { min, max } : null
+		range: trendRange(points)
 	};
 }
 

@@ -8,7 +8,9 @@ import {
 	filterByRange,
 	seriesForRange,
 	daysBetween,
+	dayNumber,
 	axisForSeries,
+	clipSeriesToWindow,
 	WEIGHT_RANGES,
 	MIN_AXIS_SPAN,
 	MIN_TREND_SAMPLES,
@@ -203,10 +205,38 @@ describe('axisForSeries', () => {
 		expect(built!.max).toBeGreaterThanOrEqual(90);
 	});
 
-	it('utvider domenet så mållinja får plass', () => {
+	it('utvider domenet så en mållinje innen rekkevidde får plass', () => {
 		// En stiplet strek utenfor feltet er en strek brukeren ikke ser.
-		const built = axis([84, 84, 84, 84, 84, 84, 84], 78);
-		expect(built!.min).toBeLessThanOrEqual(78);
+		const built = axis([84.0, 83.6, 83.2, 82.8, 82.4, 82.0, 81.6], 81);
+		expect(built!.min).toBeLessThanOrEqual(81);
+		expect(built!.goalOutside).toBeNull();
+	});
+
+	it('lar ikke et fjernt mål flate ut utviklingen', () => {
+		/**
+		 * Regresjonen brukeren så: aksen sto 80–110 kg på en 30-dagersvisning der
+		 * vekta gikk fra 100,6 til 98,0. Et mål femten kilo unna ber om et felt der
+		 * de to kiloene er en flat strek. Målet vises i kanten i stedet.
+		 */
+		const built = axis([100.6, 100.2, 99.8, 99.4, 99.0, 98.4, 98.0], 85);
+		expect(built!.goalOutside).toBe('under');
+		expect(built!.min).toBeGreaterThan(90);
+		expect(built!.max - built!.min).toBeLessThan(6);
+	});
+
+	it('slipper inn et mål man nærmer seg', () => {
+		// Samme data, men målet er innen rekkevidde: da er det verdt plassen.
+		const built = axis([100.6, 100.2, 99.8, 99.4, 99.0, 98.4, 98.0], 95);
+		expect(built!.goalOutside).toBeNull();
+		expect(built!.min).toBeLessThanOrEqual(95);
+	});
+
+	it('dytter ikke ut et nært mål i en rolig periode', () => {
+		// Spennet er ~0, så sammenligningen må skje mot det gulvede spennet —
+		// ellers ville ethvert mål havnet utenfor når vekta står stille.
+		const built = axis([82.0, 82.1, 82.0, 82.1, 82.0, 82.1, 82.0], 81.5);
+		expect(built!.goalOutside).toBeNull();
+		expect(built!.min).toBeLessThanOrEqual(81.5);
 	});
 
 	it('gir pene aksetall', () => {
@@ -235,6 +265,58 @@ describe('axisForSeries', () => {
 		const built = axis([90, 89, 88, 87, 86, 85, 84]);
 		// Like mye luft over som under, altså symmetrisk om dataene selv.
 		expect(Math.abs((built!.max - 90) - (84 - built!.min))).toBeLessThanOrEqual(1);
+	});
+});
+
+describe('clipSeriesToWindow', () => {
+	/**
+	 * Lang historikk mellom 88 og 107, der de siste tretti dagene ligger rolig
+	 * rundt 99. Det er formen på brukerens egen kurve, og det var her aksen sto
+	 * 80–110 i alle perioder.
+	 */
+	const days = dailyWeights(
+		series([
+			...Array.from({ length: 300 }, (_, i) => 107 - (i % 40) * 0.475),
+			...Array.from({ length: 30 }, (_, i) => 100.6 - i * 0.09)
+		])
+	);
+	const full = buildMetricSeries(days, 'weight');
+	const lastDay = dayNumber(days.at(-1)!.date);
+	const window = { firstDay: lastDay - 29, lastDay };
+
+	it('regner spennet av vinduet, ikke av historikken', () => {
+		const clipped = clipSeriesToWindow(full, window);
+		expect(full.range!.max - full.range!.min).toBeGreaterThan(15);
+		expect(clipped.range!.max - clipped.range!.min).toBeLessThan(5);
+	});
+
+	it('gir en akse som viser utviklingen i en kort periode', () => {
+		// Selve regresjonen: aksen skal ikke lenger spenne 80–110 for tretti dager.
+		const built = axisForSeries(clipSeriesToWindow(full, window))!;
+		expect(built.max - built.min).toBeLessThan(6);
+		expect(built.min).toBeGreaterThan(90);
+	});
+
+	it('beholder lavpunktet fra hele historikken', () => {
+		// Et «lavpunkt» som bare gjelder de tretti dagene man ser på, er ikke et
+		// lavpunkt — det er den minste av dem.
+		const clipped = clipSeriesToWindow(full, window);
+		expect(clipped.nadir).toEqual(full.nadir);
+		expect(clipped.nadir!.date < clipped.points[0].date).toBe(true);
+	});
+
+	it('flytter siste punkt til vinduets siste måling', () => {
+		const earlier = { firstDay: lastDay - 200, lastDay: lastDay - 100 };
+		const clipped = clipSeriesToWindow(full, earlier);
+		expect(clipped.latest!.date).toBe(clipped.points.at(-1)!.date);
+		expect(clipped.latest!.date).not.toBe(full.latest!.date);
+	});
+
+	it('gir en tom serie uten vindu', () => {
+		const clipped = clipSeriesToWindow(full, null);
+		expect(clipped.points).toHaveLength(0);
+		expect(clipped.range).toBeNull();
+		expect(clipped.latest).toBeNull();
 	});
 });
 
