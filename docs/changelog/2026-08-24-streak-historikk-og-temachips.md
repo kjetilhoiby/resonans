@@ -97,6 +97,67 @@ relevant, siden en tom rad med et seksjonsnavn ser ut som noe som mangler.
 MonthCalendar var eneste kaller. Et domenemodul som importerer fra `client/` snur
 lagene, så den ligger nå i `$lib/domain/month-grid.ts`.
 
+### Fase 5: Se forbi «møtte opp» — areal og lyshet i cellene
+
+En kalender som bare viser at dagen ble holdt, skjuler forskjellen mellom en rolig
+treningstur på tre kilometer og en hard tolv. For trenings-streaks bærer marken nå
+to tall: **arealet er distansen, lysheten er tempoet.**
+
+**Det opplagte forslaget ble bygget og forkastet.** Et fargefelt med fire hjørner —
+gult for kort, rødt for langt, lyst for fort, mørkt for rolig — ser riktig ut på
+papiret. Palettvalidatoren sier hvorfor det ikke er det, målt mot flaten #141414:
+
+| Sjekk | Resultat |
+|---|---|
+| CVD-separasjon, alle par | **ΔE 0,7** (deuteranopi) mellom `rolig+kort` og `rolig+lang` |
+| Normalsyn-gulv | ΔE 12,9 mellom `fort+kort` og `fort+lang` — under gulvet på 15 |
+| Kontrast mot flaten | 2,0–2,2:1 for de to mørke hjørnene |
+| Kromagulv | mørk oliven på C 0,084 — leses som grå, gjør ingen fargejobb |
+
+Altså: for en rødgrønn-blind leser forsvinner distanse-aksen fullstendig, og selv
+med fullt fargesyn er de to lyse hjørnene vanskelige å skille. Kulør kan ikke bære
+distansen når lysheten alt bærer tempoet.
+
+**Areal kan ikke kollapse for noen.** Distansen ligger derfor i størrelsen på marken
+— som også er slik Tempo gjør det — og fargen får bære tempoet alene som en ordinal
+rampe: én kulør (60°), lys → mørk, `L 0,82 → 0,47`. Den passerer alle rampesjekkene
+(monoton lyshet, ΔL ≥ 0,06 per steg, mørkeste ende 2,6:1 mot flaten med synlig
+etikett som avlastning).
+
+Detaljer som gjør den lesbar:
+
+- **Arealet er lineært, ikke sidekanten.** En mark med dobbel bredde dekker fire
+  ganger flaten og leses som fire ganger så mye, så sidekanten går gjennom
+  kvadratroten (`distanceSize`).
+- **Skalaen er brukerens egen** — 10.–90. persentil av egne dager. Persentiler
+  framfor min/maks fordi én glemt tracker (2 t 20 min på 9 km) ellers presser alle
+  andre dager sammen i den lyse enden. Tempoet regnes på elapsed tid, som er den
+  eneste varigheten `canonical_workouts` bærer; skalaen tåler det, men tallet er
+  ikke korrigert.
+- **Gulv på spennet** (`MIN_DISTANCE_SPAN_KM` 2, `MIN_PACE_SPAN_SEC` 30): er alle
+  turene like, skal de SE like ut. Samme lærdom som `MIN_AXIS_SPAN` i vektgrafen.
+- **Under fem målte dager fargelegges ingenting**, og panelet sier hvorfor. En
+  kalender som plutselig er ensfarget ser ellers ut som en feil.
+- **Hendelse uten tall får en grå mark** — en styrkeøkt inne i en løpestreak møtte
+  opp, men har ingen distanse. Grå er utenfor rampen, så den kan ikke forveksles
+  med «rolig».
+- **Verdien er aldri bare farge.** Trykk på en dag skriver tallene under kalenderen
+  («11. august · 1 økt · 12,1 km · 6:23 /km»). På en telefon finnes ingen hover, så
+  en `title` alene ville gjort tallene utilgjengelige. Trykkflaten er hele cella,
+  ikke marken: en mark på 52 % er 21 px, under minstemålet for en trykkflate.
+- **Tegnforklaringen er to én-dimensjonale skalaer**, ikke et 3×3-felt. «rask →
+  rolig» og «kort → lang» kan leses hver for seg; et rutenett ville bedt leseren slå
+  opp en klasse i to akser samtidig i en rute på fjorten piksler.
+
+OKLCH regnes til hex i domenelaget (`$lib/domain/oklch.ts`) framfor å bruke `oklch()`
+i CSS: en ugyldig fargeverdi i en gammel nettleser gir en gjennomsiktig celle, altså
+en kalender som ser ødelagt ut framfor en farge som ser litt annerledes ut. Utenfor
+sRGB reduseres kroma — aldri lysheten (det ville brutt rampen) eller kuløren.
+
+Trenings-streaks leser nå historikken gjennom metrikk-spørringen framfor
+`readEventDayKeys`, så kalenderen, telleren og fargene er bygget av nøyaktig de
+samme radene.
+
 ## Beslutninger
 
 - **`StreakCalendar` er en egen komponent, ikke MonthCalendar med flere props.**
@@ -116,6 +177,9 @@ lagene, så den ligger nå i `$lib/domain/month-grid.ts`.
 - **Ingen ny lagring.** Streaks beregnes fortsatt on-demand fra hendelser, og
   historikken er samme lesing med dagene beholdt. En teller i basen ville måttet
   vedlikeholdes av alt som skriver en økt.
+- **Fargevalg regnes, ikke vurderes.** Fire-hjørners-feltet ble ikke forkastet på
+  smak, men på validatortall. Beholdes tallene i changeloggen kan valget etterprøves
+  — og gjøres om, hvis noen finner en kulørakse som holder under CVD.
 
 ## Verifisering
 
@@ -126,6 +190,10 @@ lagene, så den ligger nå i `$lib/domain/month-grid.ts`.
   regner (8 dager på rad, 4 uker på rad fra samme mockdager), og bunnpanelet åpnes
   fra en chip med kalender, fasit-kolonne, dekningstall og lenke videre. Panelets
   API-kall ble mocket, siden dev-miljøet her er uten database.
+- Fase 5 verifisert i Chromium på 390 px: den to-kanals kalenderen leses som den
+  skal (12,1 km @ 6:23 er stor og mørk, 3,2 km @ 4:50 er liten og lys, styrkeøkta
+  uten distanse er grå), og trykk på en dag skriver tallene under kalenderen. Nye
+  tester: `oklch.test.ts` (5), `workout-day-scale.test.ts` (15).
 - **Piksel-baselines er ikke oppdatert:** `dashboardkort`-seksjonen har nye demoer,
   og temasider med relevante streaks får en rad mer. `npm run test:visual:update`
   krever databasetilgang som ikke fantes i miljøet endringen ble skrevet i.

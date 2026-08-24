@@ -787,6 +787,26 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
 - **`loadRelevantStreaks` filtrerer definisjonene før tilstanden regnes.** Relevansen
   er ren og gratis; hver tilstand er en spørring. Et tema uten streaks skal ikke
   betale for dem.
+- **Kalendercellene bærer to tall for trenings-streaks: AREAL er distanse, LYSHET er
+  tempo** (`$lib/domain/health/workout-day-scale.ts`). Et fargefelt med fire hjørner
+  (gul/rød × lys/mørk) ble bygget og forkastet på validatortall: **ΔE 0,7 under
+  deuteranopi** mellom de to mørke hjørnene, altså forsvinner distanse-aksen for en
+  rødgrønn-blind leser; de to lyse lå på 12,9, under normalsyn-gulvet på 15; og de
+  mørke havnet under 3:1 mot flaten og under kromagulvet. Kulør kan ikke bære
+  distansen når lysheten bærer tempoet. Areal kan ikke kollapse for noen.
+- **Skalaen er brukerens egne dager** (10.–90. persentil), med gulv på spennet: én
+  glemt tracker skal ikke presse alle andre dager sammen, og like turer skal SE like
+  ut. Under `MIN_MEASURED_DAYS` fargelegges ingenting, og flaten sier hvorfor — en
+  kalender som plutselig er ensfarget ser ut som en feil.
+- **Arealet er lineært i verdien, ikke sidekanten.** Dobbel bredde dekker fire ganger
+  flaten og leses som fire ganger så mye; `distanceSize` går derfor gjennom
+  kvadratroten.
+- **OKLCH regnes til hex i domenelaget** (`$lib/domain/oklch.ts`), ikke med `oklch()`
+  i CSS: en ugyldig fargeverdi gir en gjennomsiktig celle — en kalender som ser
+  ødelagt ut — framfor en farge som ser litt annerledes ut. Utenfor sRGB reduseres
+  KROMA, aldri lysheten (det bryter rampen) eller kuløren (det flytter betydningen).
+- **Verdien er aldri bare farge.** Trykk på en dag skriver tallene under kalenderen;
+  på en telefon finnes ingen hover, så en `title` alene gjør dem utilgjengelige.
 
 ### Perioder i vektkurven: én motor, to retninger
 

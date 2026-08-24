@@ -52,6 +52,8 @@
 		weightSwingsRich,
 		streakHistoryDays,
 		streakHistoryToday,
+		streakDayMetrics,
+		streakDayScale,
 		themeStreaks,
 		loadSeries,
 		effortByDay,
@@ -146,6 +148,35 @@
 			rule="count_per_window"
 			config={{ windowDays: 7, threshold: 2 }}
 			color="var(--success-text)"
+		/>
+	</div>
+
+	<h3 class="subsection">StreakCalendar — areal for distanse, lyshet for tempo</h3>
+	<p class="section-desc">
+		Samme kalender med tallene på: <em>arealet</em> er distansen, <em>lysheten</em> er tempoet.
+		Det er poenget med historikken — å se forbi «møtte opp». Skalaen er brukerens egne dager
+		(10.–90. persentil), så «langt» betyr langt <em>for deg</em>, og et gulv på spennet gjør at
+		like turer ser like ut framfor å spres over hele skalaen.
+	</p>
+	<p class="section-desc">
+		Det opplagte forslaget — et fargefelt med gult/rødt for kort/lang og lyst/mørkt for
+		fort/rolig — ble bygget og forkastet: palettvalidatoren gir <strong>ΔE 0,7 under
+		deuteranopi</strong> mellom de to mørke hjørnene, altså forsvinner distanse-aksen for en
+		rødgrønn-blind leser, og de to lyse hjørnene lå under normalsyn-gulvet. Areal kan ikke
+		kollapse for noen, så distansen ligger der og fargen får bære tempoet alene som en ordinal
+		rampe (én kulør, lys→mørk, validert). Grå mark = hendelse uten tall, f.eks. en styrkeøkt
+		inne i en løpestreak.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<StreakCalendar
+			month="2026-08"
+			days={streakHistoryDays}
+			todayKey={streakHistoryToday}
+			rule="consecutive_days"
+			config={{}}
+			dayMetrics={streakDayMetrics}
+			scale={streakDayScale}
+			sportFamily="running"
 		/>
 	</div>
 

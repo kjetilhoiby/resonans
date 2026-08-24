@@ -25,6 +25,7 @@
 		monthOf,
 		type StreakHistoryDay
 	} from '$lib/domain/streak-history';
+	import type { DayScale, WorkoutDayMetrics } from '$lib/domain/health/workout-day-scale';
 	import type { StreakRule, StreakConfig } from '$lib/domain/streaks';
 
 	interface Props {
@@ -45,6 +46,9 @@
 		days: StreakHistoryDay[];
 		lookbackDays: number;
 		today: string;
+		dayMetrics: WorkoutDayMetrics[] | null;
+		scale: DayScale | null;
+		sportFamily: string | null;
 	}
 
 	let history = $state<History | null>(null);
@@ -119,10 +123,20 @@
 				config={history.definition.config}
 				{color}
 				earliestMonth={earliest}
+				dayMetrics={history.dayMetrics}
+				scale={history.scale}
+				sportFamily={history.sportFamily}
 			/>
 
 			<div class="sh-facts">
 				{#if best}<span class="sh-fact">Beste: {best}</span>{/if}
+				{#if history.dayMetrics && history.scale && !history.scale.usable}
+					<!-- Fargeleggingen er av, og hvorfor står her: en kalender som PLUTSELIG
+					     er ensfarget ser ut som en feil. -->
+					<span class="sh-fact">
+						{history.scale.measuredDays} dager med distanse — for få til å fargelegge
+					</span>
+				{/if}
 				<span class="sh-fact">
 					{history.days.length}
 					{history.days.length === 1 ? 'dag' : 'dager'} registrert siste {history.lookbackDays}
