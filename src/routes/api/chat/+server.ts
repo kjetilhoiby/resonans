@@ -158,7 +158,12 @@ async function executeWebSearch(
 		days: scope.days,
 		deep: opts.deep,
 		deepTopic: scope.topic,
-		includeImages: true
+		// Bilder bare for steds-treff, av samme grunn som kartet (se changelog
+		// 2026-07-23): et bilde av et sted viser noe. På et kunnskaps- eller
+		// helsespørsmål er Tavilys bildestripe sjangerfoto — tre sjablongbilder av
+		// løpere over et svar om brukerens egne vintre — og pynt gjør et tynt svar
+		// tynnere, ikke rikere.
+		includeImages: scope.topic === 'travel'
 	});
 
 	if (sources.length === 0) {
@@ -2691,6 +2696,26 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
 		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
 
+		/**
+		 * REFLEKSJON ER IKKE DET SAMME SOM Å VÆRE UTEN DATA.
+		 *
+		 * `isConversationalMode` styrte fram til august 2026 både modellvalg, token-tak
+		 * OG om verktøy ble sendt i det hele tatt. Konsekvensen var at idet brukeren gikk
+		 * fra å spørre («hvor mange økter har jeg hatt?») til å tenke høyt («hvordan ser
+		 * en april etter en vinter der jeg løp seks av sju dager ut?»), ruta AI-ruteren
+		 * meldingen til `conversation` — og da mistet coachen tilgangen til brukerens egne
+		 * tall. Det er i refleksjonen de betyr mest; uten dem er det bare generelle råd
+		 * igjen. Brukeren kalte det «venterommet hos legen», og det var presist.
+		 *
+		 * Nå går bare de virkelig spesialiserte flatene uten verktøy — bok, film og flyt,
+		 * altså de som sender sitt eget systemprompt. Ellers følger verktøyene med, med
+		 * `tool_choice: 'auto'`: modellen KAN la dem være, men den kan velge dem.
+		 */
+		const hasDataDomain = routingDecision.domains.some((d) =>
+			['health', 'economics', 'food', 'family', 'self', 'home', 'jobb', 'planning', 'themes'].includes(d)
+		);
+		const skipTools = isSpecializedContext || (isConversationalMode && !hasDataDomain);
+
 		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
 		// verktøy (selv i conversational-modus) og låser første kall til web_search.
 		const forceWebSearch = Boolean(routingDecision.forceWebSearch) && !isSpecializedContext;
@@ -2717,7 +2742,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			messages,
 			...(forceWebSearch
 				? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
-				: isConversationalMode
+				: skipTools
 					? {}
 					: { tools, tool_choice: 'auto' as const }),
 			temperature: 0.8,

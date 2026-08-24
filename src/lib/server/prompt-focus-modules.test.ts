@@ -106,8 +106,17 @@ describe('detectPromptFocusModules — perioder i vektkurven', () => {
 
 	it('lar kilometer være i fred', () => {
 		// «kilo» med ordgrense, ellers drar hver løpetur inn vekt-verktøyene.
-		expect(detectPromptFocusModules('hvor mange kilometer løp jeg i juli')).not.toContain(
-			'health'
-		);
+		//
+		// NB: eksempelet var «hvor mange kilometer løp jeg i juli» fram til august 2026,
+		// og forventningen var at den IKKE traff health. Det var feil om selve
+		// meldingen — et spørsmål om egne løpte kilometer er nettopp et helsespørsmål,
+		// og at den falt utenfor var grunnen til at chatten svarte med generelle råd i
+		// stedet for tall. Invarianten som skulle testes er `\bkilo\b` mot «kilometer»,
+		// så eksempelet er byttet til en setning uten andre helseord.
+		expect(detectPromptFocusModules('vi kjørte 40 kilometer til hytta')).not.toContain('health');
+	});
+
+	it('ruter løpte kilometer TIL health', () => {
+		expect(detectPromptFocusModules('hvor mange kilometer løp jeg i juli')).toContain('health');
 	});
 });

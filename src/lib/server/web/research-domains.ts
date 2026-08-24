@@ -74,8 +74,20 @@ const TRAVEL_RE =
 	/\b(hva kan (jeg|man|vi) (gjøre|se|oppleve)|ting å gjøre|severdigheter|attraksjoner|aktiviteter|utflukt|restaurant(er)?|spisesteder|hotell|overnatting|reisetips|reiseguide|things to do|what to do|sightseeing|itinerary)\b/i;
 
 // Ferske/tidsavhengige utløsere.
+//
+// NB: RENE TIDSORD HØRER IKKE HIT. «i dag», «denne uka», «aktuelt» og «oppdatering»
+// sto her fram til august 2026, og da var «hvor mye har jeg sovet denne uka?» et
+// nyhetsspørsmål: søket ble låst til NEWS_DOMAINS (nrk.no, vg.no) og svaret hentet
+// fra aviser i stedet for fra brukerens egne netter. Et tidsord sier NÅR, ikke at
+// svaret finnes ute på nettet — brukerens egne data er også ferske.
+//
+// «konflikt» er ute av samme grunn: bar, uten geografi, gjorde den «vi har en
+// konflikt hjemme» til et nyhetssøk. «krig» krever nå «i/mellom» etter seg.
+//
+// NB2: `\b` er ASCII i JS, så den virker IKKE etter «å»/«ø»/«æ» («været nå\b»
+// matcher aldri). Grensene står derfor per alternativ, ikke som en felles hale.
 const NEWS_RE =
-	/\b(nyhet(er)?|siste nytt|akkurat nå|i dag|denne uk[ae]|aktuelt|oppdatering|krig|konflikt|valg(et)?|børs|marked|streik|været i dag)\b/i;
+	/\bnyhet(er)?\b|\bsiste nytt|\bhva skjer i\b|\bkrig(en)?\s+(i|mellom)\b|\bvalget\b|\bvalgkamp|\bbørs(en)?\b|\bstreik(en)?\b|\bværet (i dag|nå|i morgen)/i;
 
 /** Rydder en domeneliste: trimmer, fjerner protokoll/www/sti, dropper tomme. Ren. */
 export function normalizeDomains(input: string[] | undefined | null): string[] {

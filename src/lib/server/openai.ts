@@ -298,8 +298,18 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // «vekt», og traff derfor ingen modul — da finnes ikke query_weight for modellen,
    // og den svarer på siste enkeltmåling i stedet. `\bkilo\b` holder «kilometer»
    // utenfor.
+   //
+   // AKTIVITETSORDENE er den samme fella én runde senere. «Hvordan ser en april der
+   // jeg har løpt minst et kvarter seks av sju dager ut sammenliknet med tre skiturer
+   // og ti trege løp?» traff INGEN modul — hverken «løp», «skitur», «sykkel»,
+   // «intervall», «puls» eller «økter» sto her, og ordet «trening» brukte brukeren
+   // ikke. Uten health-blokka finnes ikke query_training for modellen, og et
+   // spørsmål om brukerens EGEN historikk blir besvart med generelle råd.
+   // NB: «løp» står uten o-variant med vilje — `\bl[øo]p` treffer «loppemarked».
+   // «økter»/«økta» er med, men ikke «økt»: sistnevnte er også partisipp av «øke»
+   // («forbruket har økt») og ville dratt helse-blokka inn i økonomi-samtaler.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden/.test(
          text
       )
    )

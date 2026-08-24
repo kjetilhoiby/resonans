@@ -310,6 +310,50 @@ Ernæring, Vekt, Egenfrekvens, Søvn, Skjermtid).
 - Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra —
   gjennom `readHealthMetricSettings` i `$lib/server/health/metric-settings.ts`.
 
+### Refleksjon er ikke et oppslag — og aldri et websøk
+
+Se `docs/changelog/2026-08-24-helsechat-refleksjon-uten-lenker.md`. En reflekterende
+melding om brukerens egen treningshistorikk fikk to symmetriske punktlister, en
+«Konklusjon»-overskrift, tre sjablongbilder av løpere og seks lenker — uten ett tall
+fra brukerens ni år med økter. Fire uavhengige feil, hver av dem nok alene.
+
+- **Tvang er ikke et hint.** `forceWebSearch` låser `tool_choice` til `web_search`,
+  så det FØRSTE modellen gjør er å søke. En løs regex ved siden av
+  `classifyResearchTopic` — `/…|siste|…|valg|marked|…/` uten ordgrenser — traff
+  «siste halvår», «valgt», «markedet» og «aktuelle». Den er slettet:
+  **klassifiseringen skjer ett sted**, i `classifyResearchTopic`.
+- **Spørsmål om brukerens egne data er aldri et nyhetsspørsmål.** Treffer meldingen
+  health/economics/self/family, tvinges det ikke websøk. Reise beholder tvangen —
+  et sted finnes faktisk ute; brukerens aprilmåneder gjør det ikke.
+- **Rene tidsord hører ikke i `NEWS_RE`.** Med `i dag` og `denne uk[ae]` der var
+  «hvor mye har jeg sovet denne uka?» et nyhetsspørsmål, søkt opp på nrk.no og
+  vg.no. Et tidsord sier NÅR, ikke at svaret finnes ute. Bar `konflikt` er ute av
+  samme grunn — «vi har en konflikt hjemme» ble et nyhetssøk.
+- **`\b` er ASCII i JS.** `været nå\b` matcher aldri: «å» er ikke et ordtegn, så
+  grensen finnes ikke der. Skriv grensene per alternativ, ikke som en felles hale.
+- **Refleksjon var det samme som å være uten data, og det er den dypeste feilen.**
+  `isConversationalMode` styrte modellvalg, token-tak OG om `tools` ble sendt i det
+  hele tatt. Idet AI-ruteren sa `conversation` — altså når brukeren sluttet å slå
+  opp og begynte å tenke høyt — mistet coachen brukerens egne tall. Det er i
+  refleksjonen de betyr mest. Nå går bare flatene med eget systemprompt (bok, film,
+  flyt) uten verktøy; ellers følger de med på `tool_choice: 'auto'`.
+- **Ord brukeren faktisk skriver, igjen.** `detectPromptFocusModules` hadde hverken
+  «løp», «skitur», «sykkel», «intervall», «puls» eller «økter» — meldingen ruta til
+  `general`, og da finnes ikke `query_training` for modellen. Sjekk ordene, ikke
+  domenet du hadde i hodet. To bevisste utelatelser: `\bl[øo]p` treffer
+  «loppemarked», og `\bøkt` er også partisipp av «øke» («forbruket har økt») —
+  derfor `\bløp` og `\bøkter\b`/`\bøkta\b`.
+- **Formregelen bor i `BASE_PROMPT`, ikke i helse-blokka.** Punktlister er for ting
+  som ER en liste; ingen «Konklusjon»-overskrift; ta stilling framfor to
+  symmetriske fordel/ulempe-lister; ikke avslutt med «Er det noe mer spesifikt du
+  vil utforske?»; bruk brukerens egne ord. Den samme punktliste-refleksen ville
+  truffet en karriere- eller samlivsrefleksjon like hardt.
+- **Lenker er ikke et svar**, og bilder er pynt utenfor steds-treff
+  (`includeImages` er nå gatet på `scope.topic === 'travel'`, som kartet alltid har
+  vært). Pynt gjør et tynt svar tynnere.
+- Kjent rest: ingen dashboard-laster har et historisk vindu — alle fire svarer på
+  NÅ, så «april etter en tett vinter» må bygges av `query_sensor_data`-rader.
+
 ### Et dashboard uten verktøy er data assistenten ikke har
 
 Se `docs/changelog/2026-08-07-domenedata-til-assistenten.md`.
