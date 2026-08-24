@@ -787,6 +787,34 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
 - **`loadRelevantStreaks` filtrerer definisjonene før tilstanden regnes.** Relevansen
   er ren og gratis; hver tilstand er en spørring. Et tema uten streaks skal ikke
   betale for dem.
+- **Kalendercellene bærer to akser for trenings-streaks** (`workout-day-scale.ts`):
+  **LYSHET er tempo** (lyst er fort) og **KULØR er distanse** (gult er kort, rødt er
+  langt). Feltet interpoleres bilineært mellom fire validerte hjørner.
+- **ÉN dimensjon, ÉN kanal.** Distansen lå en periode i både kulør og areal, som
+  ekstra sikkerhet mot fargeblindhet. Det gjorde tempo-aksen usynlig: to kanaler som
+  beveger seg sammen viser bare diagonalen — «små gule flekker og store rosa
+  flekker» — og en størrelsesforskjell skriker høyere enn en lyshetsforskjell.
+  Cellene har derfor fast størrelse. Redundans er ikke gratis; den koster den andre
+  dimensjonen.
+- **Lysheten er tempoets akse ALENE.** Gir man de lange dagene litt mørkere farge
+  også — det ser rikere ut — leses en lang rask dag som roligere enn en kort rask.
+  Kroma og kulør varierer med distansen; lysheten aldri.
+- **Kulør-aksen er et bevisst valg med en kjent pris.** De to mørke hjørnene skiller
+  seg med ΔE 3,6 under deuteranopi, altså er distanse-aksen praktisk borte for en
+  rødgrønn-blind leser. Akseptert på en personlig flate, og tallene finnes ved trykk.
+  Endrer du hjørnene, kjør palettvalidatoren på nytt: normalsyn-gulvet (ΔE ≥ 15
+  mellom hjørner med samme tempo) og 3:1 mot flaten er de to som IKKE er smakssaker —
+  første utgave brøt begge (12,6 og 2,0:1), og det var dårlig lesbarhet for alle.
+- **Skalaen er brukerens egne dager** (10.–90. persentil), med gulv på spennet: én
+  glemt tracker skal ikke presse alle andre dager sammen, og like turer skal SE like
+  ut. Under `MIN_MEASURED_DAYS` fargelegges ingenting, og flaten sier hvorfor — en
+  kalender som plutselig er ensfarget ser ut som en feil.
+- **OKLCH regnes til hex i domenelaget** (`$lib/domain/oklch.ts`), ikke med `oklch()`
+  i CSS: en ugyldig fargeverdi gir en gjennomsiktig celle — en kalender som ser
+  ødelagt ut — framfor en farge som ser litt annerledes ut. Utenfor sRGB reduseres
+  KROMA, aldri lysheten (det bryter rampen) eller kuløren (det flytter betydningen).
+- **Verdien er aldri bare farge.** Trykk på en dag skriver tallene under kalenderen;
+  på en telefon finnes ingen hover, så en `title` alene gjør dem utilgjengelige.
 
 ### Perioder i vektkurven: én motor, to retninger
 

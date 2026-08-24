@@ -22,7 +22,17 @@ import {
 	type StreakState
 } from '$lib/domain/streaks';
 import { countByDay, type StreakHistoryDay } from '$lib/domain/streak-history';
-import { isStreakInHealthFamily, isStreakRelevantForTheme, type StreakRelevanceTarget } from '$lib/domain/streak-relevance';
+import { normalizeDistanceMeters } from '$lib/server/activity-layer';
+import {
+	buildDayScale,
+	type DayScale,
+	type WorkoutDayMetrics
+} from '$lib/domain/health/workout-day-scale';
+import {
+	isStreakInHealthFamily,
+	isStreakRelevantForTheme,
+	type StreakRelevanceTarget
+} from '$lib/domain/streak-relevance';
 
 /** Hvor langt tilbake vi leser hendelser. Nok til å finne beste rekke uten å lese alt. */
 const LOOKBACK_DAYS = 400;
@@ -375,6 +385,70 @@ export async function loadHealthFamilyStreaks(
 	);
 }
 
+/**
+ * Distanse og tempo per dag for en trenings-streak.
+ *
+ * Leser `canonical_workouts` — den dedupliserte utgaven — så samme tur skrevet av
+ * klokka, Dropbox og Ekko teller én gang. Samme filter som `readEventDayKeys`
+ * bruker, så kalenderens dager er de samme dagene telleren er bygget av.
+ *
+ * **Tempoet regnes på ELAPSED tid**, som er den eneste varigheten canonical bærer.
+ * Glemmer man å stoppe sporingen, ser dagen derfor svært treg ut. Det er ikke rettet
+ * her, men skalaen tåler det: persentiler gjør en slik dag til en ytterlighet framfor
+ * til hele spennet. Se `moving-time.ts` for hvorfor korreksjonen bor i Ekko.
+ */
+async function readWorkoutDayMetrics(
+	userId: string,
+	sportFamily: string,
+	since: Date
+): Promise<WorkoutDayMetrics[]> {
+	const rows = await db
+		.select({
+			at: canonicalWorkouts.startTime,
+			distanceMeters: canonicalWorkouts.distanceMeters,
+			durationSeconds: canonicalWorkouts.durationSeconds
+		})
+		.from(canonicalWorkouts)
+		.where(
+			and(
+				eq(canonicalWorkouts.userId, userId),
+				eq(canonicalWorkouts.sportFamily, sportFamily),
+				gte(canonicalWorkouts.startTime, since)
+			)
+		);
+
+	const byDay = new Map<string, { count: number; meters: number; seconds: number }>();
+	for (const row of rows) {
+		const day = osloDayKey(row.at);
+		const entry = byDay.get(day) ?? { count: 0, meters: 0, seconds: 0 };
+		entry.count += 1;
+		// Aldri rått: verdier ≤ 80 tolkes som kilometer. Se workout-sport.ts.
+		const meters = normalizeDistanceMeters(Number(row.distanceMeters));
+		if (meters !== null) entry.meters += meters;
+		const seconds = Number(row.durationSeconds);
+		if (Number.isFinite(seconds) && seconds > 0) entry.seconds += seconds;
+		byDay.set(day, entry);
+	}
+
+	return [...byDay.entries()]
+		.map(([date, { count, meters, seconds }]) => {
+			const distanceKm = meters > 0 ? Math.round((meters / 1000) * 100) / 100 : null;
+			return {
+				date,
+				count,
+				distanceKm,
+				// Vektet tempo: hele dagens tid delt på hele dagens distanse. To turer
+				// samme dag blir én verdi, og den lange veier mest — et snitt av
+				// tempoene ville latt en kort spurt dominere en langtur.
+				paceSecPerKm:
+					distanceKm !== null && seconds > 0
+						? Math.round(seconds / distanceKm)
+						: null
+			};
+		})
+		.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
 export interface StreakHistory {
 	definition: StreakDefinition;
 	state: StreakState;
@@ -384,6 +458,15 @@ export interface StreakHistory {
 	lookbackDays: number;
 	/** Dagens Oslo-dato, så kalenderen ikke regner den ut på nytt. */
 	today: string;
+	/**
+	 * Distanse og tempo per dag — bare for trenings-streaks. Null ellers, og da
+	 * viser kalenderen ren tilstedeværelse.
+	 */
+	dayMetrics: WorkoutDayMetrics[] | null;
+	/** Spennet dagene fargelegges mot, regnet av brukerens egne dager. */
+	scale: DayScale | null;
+	/** Idretten, så flaten kan velge «tempo» eller «fart». */
+	sportFamily: string | null;
 }
 
 /**
@@ -411,6 +494,27 @@ export async function loadStreakHistory(
 	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 	const todayKey = osloDayKey(now);
 
+	/**
+	 * Trenings-streaks leses gjennom metrikk-spørringen, ikke gjennom
+	 * `readEventDayKeys`: da er kalenderen, telleren og fargene bygget av NØYAKTIG
+	 * de samme radene. To spørringer mot samme tabell kan gi ulike svar i det
+	 * sekundet en synk skriver mellom dem.
+	 */
+	if (definition.source.kind === 'workout') {
+		const metrics = await readWorkoutDayMetrics(userId, definition.source.sportFamily, since);
+		const dayKeys = metrics.flatMap((m) => Array<string>(m.count).fill(m.date));
+		return {
+			definition,
+			state: computeStreak(definition, dayKeys, todayKey),
+			days: metrics.map(({ date, count }) => ({ date, count })),
+			lookbackDays: LOOKBACK_DAYS,
+			today: todayKey,
+			dayMetrics: metrics,
+			scale: buildDayScale(metrics),
+			sportFamily: definition.source.sportFamily
+		};
+	}
+
 	const dayKeys = await readEventDayKeys(userId, definition, since);
 
 	return {
@@ -418,7 +522,10 @@ export async function loadStreakHistory(
 		state: computeStreak(definition, dayKeys, todayKey),
 		days: countByDay(dayKeys),
 		lookbackDays: LOOKBACK_DAYS,
-		today: todayKey
+		today: todayKey,
+		dayMetrics: null,
+		scale: null,
+		sportFamily: null
 	};
 }
 
