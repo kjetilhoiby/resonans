@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 // Allow up to 120 seconds — syncs multiple users sequentially
 export const config = { maxDuration: 120 };
@@ -16,10 +16,8 @@ export const config = { maxDuration: 120 };
  * Kjøres automatisk via GitHub Actions (se /api/cron/jobs for schedule).
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const result = await withCronTracking('/api/cron/sparebank1-sync', async () => {
 		// Find all users with an active SpareBank 1 sensor

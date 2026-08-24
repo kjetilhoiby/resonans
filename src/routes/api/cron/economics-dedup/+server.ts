@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { deactivateBookedDuplicates } from '$lib/server/economics/deactivate-booked-duplicates';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 export const config = { maxDuration: 120 };
 
@@ -59,10 +59,8 @@ export const config = { maxDuration: 120 };
 const WINDOW_DAYS = 180;
 
 export const GET: RequestHandler = async ({ request, url }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	// `?dryRun=1` for verifisering uten å skrive. Standard er å SKRIVE — motsatt av
 	// admin-endepunktet, og med vilje: en cron som må bes om å gjøre jobben sin gjør den ikke.

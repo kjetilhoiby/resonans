@@ -1,17 +1,15 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { syncSpondData } from '$lib/server/integrations/spond-sync';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 export const GET: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const result = await withCronTracking('/api/cron/spond-sync', async () => {
 		const activeSensors = await db.query.sensors.findMany({

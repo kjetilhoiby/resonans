@@ -1,19 +1,17 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { evaluateTasksForWeek } from '$lib/server/task-evaluation';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 /**
  * GET /api/cron/task-evaluation
  * Evaluate all active tasks for all users for the current ISO week
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const result = await withCronTracking('/api/cron/task-evaluation', async () => {
 		// Get current ISO week boundaries

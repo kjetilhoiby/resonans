@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { sendGroceryWeeklyNudgesForAllUsers } from '$lib/server/grocery-nudge';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 export const config = { maxDuration: 120 };
 
@@ -13,10 +14,8 @@ export const config = { maxDuration: 120 };
  * ?force=1 hopper over ukedag/tid/dedup — for manuell verifisering.
  */
 export const GET: RequestHandler = async ({ request, url }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const force = url.searchParams.get('force') === '1';
 
