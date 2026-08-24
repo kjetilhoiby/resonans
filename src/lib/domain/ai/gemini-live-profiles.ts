@@ -205,7 +205,111 @@ export function toolNamesForProfile(profile: TokenProfile): string[] {
 export interface TokenPersona {
 	version: number;
 	preamble: string;
+	/** Tonen som faktisk ble brukt — ekkoet flaten viser, og beviset på at valget nådde fram. */
+	tone: CoachTone;
 }
+
+/**
+ * ## Toner: hvordan den LYDER, ikke hva den kan
+ *
+ * Tonen er **ortogonal til profilen**, og det er hele poenget med å skille dem. Profilen
+ * bestemmer hva tokenet får GJØRE (verktøyskjemaene, altså sikkerhetsgrensa); tonen
+ * bestemmer hvordan den snakker. Var de samme akse, ville fire toner × tre profiler
+ * blitt tolv verktøyskjemaer å holde i sync — og et skjema som driver er nettopp feilen
+ * `TOOLSET_VERSION` finnes for å fange.
+ *
+ * **Grunnreglene tilhører ikke tonen.** «Siter tallene ordrett», «bekreft muntlig før du
+ * handler», «unngå ordet ekko» og «ingen medisinske påstander» står i basen, og en tone
+ * kan bare legge til stil. En tone som kunne overstyre dem, ville vært en vei til å
+ * prompte bort en sikkerhetsregel gjennom en innstilling — og «Krevende» ville vært den
+ * som gjorde det først, siden press er nettopp det som frister til å love noe om kroppen.
+ *
+ * **Nøkkelnavnene er ASCII med vilje** (`noytral`, ikke `nøytral`): de går gjennom JSON,
+ * UserDefaults og en URL-fri men logget kontrakt, og «ø» er den bokstaven som blir
+ * spørsmålstegn i det ene laget ingen tester.
+ *
+ * **Én ærlig begrensning, som må sies i flaten også:** tonen styrer hvor MYE som sies per
+ * melding, ikke hvor OFTE det sies. Frekvensen bor i `CoachMessageGate` i appen (gulv per
+ * kategori), og «Stille» kan derfor ikke gjøre coachen sjeldnere — bare kortere. Å love
+ * noe annet her ville vært et løfte serveren ikke kan holde.
+ */
+export const COACH_TONES = ['krevende', 'noytral', 'vennlig', 'stille'] as const;
+export type CoachTone = (typeof COACH_TONES)[number];
+
+export const DEFAULT_COACH_TONE: CoachTone = 'noytral';
+
+/**
+ * Ukjent/manglende tone → `noytral`, aldri en 400. Samme resonnement som
+ * `resolveTokenProfile`: en gammel app sender ingen tone, en ny app kan sende en tone en
+ * gammel server ikke kjenner, og ingen av tilfellene er en feil verdt å avbryte en økt
+ * for. Tonen er kosmetikk — i motsetning til `startWorkout.type`, der en gjettet verdi
+ * ble en løpeøkt på en elsykkel. **Skillet er om en stille default kan gjøre noe galt.**
+ *
+ * Derfor ekkoes den valgte tonen i svaret (`persona.tone`): et valg som ikke nådde fram
+ * skal være synlig i flaten, ikke bare hørbart som «hun er jo like streng som før».
+ */
+export function resolveCoachTone(raw: unknown): CoachTone {
+	return typeof raw === 'string' && (COACH_TONES as readonly string[]).includes(raw)
+		? (raw as CoachTone)
+		: DEFAULT_COACH_TONE;
+}
+
+interface ToneVoice {
+	/** Tillegget coach-personaen får. */
+	coach: string;
+	/** Tillegget assistent-personaen får. Kortere: den svarer på spørsmål, den pusher ikke. */
+	assistant: string;
+}
+
+/**
+ * **Etikettene bor i appen, ikke her — og det er et bevisst brudd med «serveren eier ordene».**
+ * Innstillingsskjermen skal virke i flymodus og på et fjell uten dekning; en velger som må
+ * hente fire ord over nett er dårligere enn en som ikke kan drifte. Det serveren eier er
+ * PROMPTEN, som er det som faktisk må kunne itereres uten et bygg.
+ *
+ * Det som holder de to sidene sammen er `id`-ene og ekkoet: appens råverdier må matche
+ * `COACH_TONES`, og `persona.tone` i svaret er runtime-beviset på at valget nådde fram.
+ */
+
+const TONE_VOICES: Record<CoachTone, ToneVoice> = {
+	krevende: {
+		coach: [
+			'Tonen er krevende: du er der for å presse, og du sier fra når tempoet faller.',
+			'Bruk imperativ («hold tempoet», «opp med frekvensen»), ikke spørsmål.',
+			'Ligger brukeren bak planen, si det direkte i den første setningen — ikke pakk det inn.',
+			'Ros er kort og sjelden, og bare når et tall fortjener den.',
+			'Aldri sarkasme, aldri nedlatende. Krevende er ikke det samme som ufin.'
+		].join(' '),
+		assistant: 'Tonen er kort og effektiv: svar først, høflighetsfraser sist eller ikke i det hele tatt.'
+	},
+	noytral: {
+		coach: [
+			'Tonen er nøytral: du rapporterer det som er, uten å heie og uten å presse.',
+			'Ingen utropstegn, ingen «bra jobbet» uten at et tall begrunner det.',
+			'Er alt som det skal, er den korte konstateringen hele meldingen.'
+		].join(' '),
+		assistant: 'Tonen er nøytral og saklig.'
+	},
+	vennlig: {
+		coach: [
+			'Tonen er vennlig og uten press: dette er en lang, rolig tur, og lav fart er meningen.',
+			'Sier tallene faller, er det ikke en beskjed om å ta seg sammen — nevn dem rolig, eller la dem være.',
+			'Du kan kommentere at det går fint, at turen er kommet langt, at det er lenge til snupunktet.',
+			'Aldri «du burde», aldri en oppfordring til å øke farten med mindre brukeren spør om det selv.',
+			'Ikke lov noe om kroppen. «Det ser rolig ut» er greit; «dette er sunt for deg» er ikke.'
+		].join(' '),
+		assistant: 'Tonen er vennlig og rolig, men fortsatt kort — du blir lest høyt.'
+	},
+	stille: {
+		coach: [
+			'Tonen er minimal: si det aller nødvendigste og stopp.',
+			'Én setning, helst under ti ord. Ingen innledning, ingen avslutning, ingen heiarop.',
+			'«Fem kilometer, fem femti per kilometer» er en komplett melding.',
+			'Er det ingenting nytt i tallene, sier du bare tallet — ikke en kommentar om det.'
+		].join(' '),
+		assistant: 'Tonen er minimal: svar med det korteste som er sant, og stopp der.'
+	}
+};
 
 /**
  * Persona-preamblene bor på serveren så stemmen kan itereres på Vercel uten et
@@ -213,35 +317,42 @@ export interface TokenPersona {
  *
  * «Unngå ordet ekko» er ikke stil: «ekko» er vekkeordet for barge-inn, og en
  * modell som sier det avbryter seg selv.
+ *
+ * Versjonen er bumpet til 2 fordi preamblene nå bærer et tonetillegg; klienten bruker
+ * den bare til visning og logging, så en bump er billig og gjør en gammel logglinje
+ * lesbar i ettertid.
  */
-const PERSONAS: Record<TokenProfile, TokenPersona | null> = {
+const PERSONA_BASE: Record<TokenProfile, string | null> = {
 	'voice-test': null,
-	assistant: {
-		version: 1,
-		preamble: [
-			'Du er Ekko, en norsk stemmeassistent for trening, kjøring og hverdagslogistikk.',
-			'Svar på norsk bokmål, i korte talte setninger — du blir lest høyt, ikke vist på skjerm.',
-			'Ett spørsmål om gangen når noe er uklart.',
-			'Før du kaller startWorkout: gjenta hva du starter og få et muntlig ja.',
-			'Tall sies naturlig («fem kilometer», ikke «5,0 km»).',
-			'Unngå ordet «ekko» i svarene dine.'
-		].join(' ')
-	},
-	coach: {
-		version: 1,
-		preamble: [
-			'Du er en norsk løpecoach som snakker i ørepropper under en økt.',
-			'Norsk bokmål, én til to korte setninger per melding, aldri lister.',
-			'Siter tallene du får ordrett — regn aldri om dem selv.',
-			'Du kan starte og stoppe posisjonsdeling og sende meldinger til dem som følger økta.',
-			'Bekreft muntlig før du deler posisjon — det er en handling brukeren skal ha bedt om.',
-			'Unngå ordet «ekko» i svarene dine.'
-		].join(' ')
-	}
+	assistant: [
+		'Du er Ekko, en norsk stemmeassistent for trening, kjøring og hverdagslogistikk.',
+		'Svar på norsk bokmål, i korte talte setninger — du blir lest høyt, ikke vist på skjerm.',
+		'Ett spørsmål om gangen når noe er uklart.',
+		'Før du kaller startWorkout: gjenta hva du starter og få et muntlig ja.',
+		'Tall sies naturlig («fem kilometer», ikke «5,0 km»).',
+		'Unngå ordet «ekko» i svarene dine.'
+	].join(' '),
+	coach: [
+		'Du er en norsk løpecoach som snakker i ørepropper under en økt.',
+		'Norsk bokmål, én til to korte setninger per melding, aldri lister.',
+		'Siter tallene du får ordrett — regn aldri om dem selv.',
+		'Du kan starte og stoppe posisjonsdeling og sende meldinger til dem som følger økta.',
+		'Bekreft muntlig før du deler posisjon — det er en handling brukeren skal ha bedt om.',
+		'Ikke påstå noe om helse — vi måler fart, puls og høyde, ikke hva som er bra for noen.',
+		'Unngå ordet «ekko» i svarene dine.'
+	].join(' ')
 };
 
-export function personaForProfile(profile: TokenProfile): TokenPersona | null {
-	return PERSONAS[profile];
+const PERSONA_VERSION = 2;
+
+export function personaForProfile(profile: TokenProfile, tone: CoachTone = DEFAULT_COACH_TONE): TokenPersona | null {
+	const base = PERSONA_BASE[profile];
+	if (!base) return null;
+	const voice = TONE_VOICES[tone];
+	// Tonen står SIST, etter grunnreglene. Rekkefølgen er ikke tilfeldig: står stilen først,
+	// leses reglene som forbehold til stilen framfor omvendt.
+	const addition = profile === 'coach' ? voice.coach : voice.assistant;
+	return { version: PERSONA_VERSION, preamble: `${base} ${addition}`, tone };
 }
 
 /**

@@ -408,6 +408,27 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   er verre enn et avslag** — avslaget kan modellen rette seg selv på, i samme tur. Skillet
   som må holdes er «ikke oppgitt» (default er riktig) mot «oppgitt, men ukjent» (avslå).
   Se `docs/changelog/2026-08-17-rett-og-slett.md`.
+- **Tone er en ANNEN akse enn profil, og det er derfor de ikke er slått sammen.**
+  `COACH_TONES` (`krevende`/`noytral`/`vennlig`/`stille`, valgt i Ekkos innstillinger og
+  sendt som `tone`) bestemmer hvordan stemmen LYDER; profilen bestemmer hva tokenet får
+  GJØRE. Var det én akse, ville fire toner × tre profiler blitt tolv verktøyskjemaer å
+  holde i sync. **Grunnreglene tilhører basen, aldri tonen** — «siter tallene ordrett»,
+  «bekreft muntlig», «unngå ordet ekko», «ingen påstander om helse» — ellers er en
+  innstilling en vei til å prompte bort en sikkerhetsregel, og «Krevende» ville gjort det
+  først. En ukjent tone gir **ikke** 400 (i motsetning til `startWorkout.type`): skillet er
+  om en stille default kan gjøre noe galt, og en gjettet tone blir bare den forrige
+  stemmen. Den ekkoes i `persona.tone` nettopp fordi feilen ellers er stum — «hun er like
+  nøytral som før» ser ut som en prompt som ikke virker, men er en råverdi som ikke traff.
+  Tonen styrer hvor MYE som sies per melding, ikke hvor OFTE: frekvensen bor i appens
+  `CoachMessageGate`. Se `docs/changelog/2026-08-22-coach-toner.md`.
+- **STEMMEN (røsten) hører ikke hit — den settes av appen i setup-ramma.** Tonen er ordene,
+  stemmen er røsten: `speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName` er
+  klient-skrivbart siden masken bare låser `model,tools`. Ikke legg et stemmefelt i
+  token-svaret; det ville vært en andre vei inn til samme innstilling. **Google har ingen
+  katalog over gyldige Live-stemmer** (TTS-lista på 30 gjelder «et litt annet sett»), så et
+  navn kan bli avvist i setupet — appen forkaster da valget for økta og fortsetter med
+  standardstemmen. Kjønn, alder og dialekt er ikke parametere noe sted: native-audio-modellene
+  støtter ikke `languageCode`, og aksenten følger stemmen.
 - **Lukkekodene betyr ulike ting, og to av dem er lette å forveksle.** Målt 19. august:
   `gemini-3.1-flash-live-preview` lukker med **1008** («The operation was aborted») etter
   170–185 sekunder, hver gang — femten ganger på en økt på 52 minutter. Det er **rutine og

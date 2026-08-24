@@ -13,6 +13,7 @@ import {
 	TOOLSET_VERSION,
 	isProfileDisabled,
 	personaForProfile,
+	resolveCoachTone,
 	resolveTokenProfile,
 	toolNamesForProfile
 } from '$lib/domain/ai/gemini-live-profiles';
@@ -64,6 +65,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const num = (value: unknown): number | null =>
 		typeof value === 'number' && Number.isFinite(value) ? value : null;
 	const profile = resolveTokenProfile(body?.profile);
+	// `tone` styrer bare stilen i personaen, aldri hva tokenet får gjøre. Ukjent/manglende →
+	// nøytral framfor 400: en tone som ikke finnes kan ikke gjøre noe galt, i motsetning til en
+	// gjettet `sportType`. Den ekkoes i `persona.tone` nettopp derfor — et valg som ikke nådde
+	// fram skal være synlig i flaten, ikke noe man lurer på om man hører.
+	const tone = resolveCoachTone(body?.tone);
 
 	if (isProfileDisabled(env.GEMINI_LIVE_DISABLED_PROFILES, profile)) {
 		console.warn(`[gemini-live] profil ${profile} er avslått (kill switch) for bruker=${userId}`);
@@ -130,7 +136,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		await recordMint(userId, profile);
 		console.log(
-			`[gemini-live] mintet token for bruker=${userId} profil=${profile} modell=${token.model} uses=${token.uses} utløper=${token.expiresAt ?? 'ukjent'}`
+			`[gemini-live] mintet token for bruker=${userId} profil=${profile} tone=${tone} modell=${token.model} uses=${token.uses} utløper=${token.expiresAt ?? 'ukjent'}`
 		);
 
 		const base = {
@@ -156,7 +162,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				tools: toolNamesForProfile(profile),
 				toolsetVersion: TOOLSET_VERSION
 			},
-			persona: personaForProfile(profile)
+			persona: personaForProfile(profile, tone)
 		});
 	} catch (err) {
 		if (err instanceof GeminiNotConfiguredError) {
