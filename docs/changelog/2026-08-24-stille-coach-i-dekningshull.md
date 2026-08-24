@@ -12,6 +12,29 @@ regelcoach etter et stykke».
 Diagnoseloggen viser noe verre enn et fall tilbake til regelcoachen. Live var **oppe** hele
 veien.
 
+## Om målingen: appen ble byttet MIDT i økta
+
+Turen startet på forrige Ekko-versjon, og appen ble oppdatert to–tre minutter inn i økta.
+Det står i loggen: hendelsene 14:31–14:35 har ingen tone i `modell:`-linja, mens
+`14:37:10 modell: … tone: noytral (valgt: noytral)` er første linje fra det nye bygget.
+`stemme: Puck` og `tone: vennlig` kommer først 14:40 — altså ble innstillingene valgt mens
+turen pågikk.
+
+Det er verdt å skrive ned av tre grunner:
+
+1. **Feilen tilhører det nye bygget, ikke overgangen.** Den fatale turen begynner 14:43:12,
+   seks minutter etter at det nye bygget tok over — og med et helt vanlig 1008-brudd i
+   mellomtida (14:40:00) som hentet seg inn og spilte av lyd 14:40:12. En oppdatering
+   terminerer prosessen, så all bro-tilstand var fersk; hadde låsen skjedd før byttet, ville
+   byttet ryddet den.
+2. **Det forklarer de doble `Live-coach starter`-linjene** og at diagnoseloggen er
+   sammenhengende på tvers: den skrives til fil og overlever at appen erstattes. Nettopp
+   derfor kunne denne analysen gjøres i det hele tatt.
+3. **Innstillingsteksten lovet mindre enn den leverer.** Den sier «fra neste økt», men tonen
+   og stemmen ble plukket opp ved neste TILKOBLING, tre minutter senere, midt i en pågående
+   økt. Teksten er rettet — et løfte som er strengere enn virkeligheten får folk til å
+   avslutte økter de ikke trengte å avslutte.
+
 ## Målingen
 
 Fra økta 14:37–15:28 (`gemini-3.1-flash-live-preview`, tone `vennlig`, stemme `Puck`):
@@ -23,6 +46,12 @@ Fra økta 14:37–15:28 (`gemini-3.1-flash-live-preview`, tone `vennlig`, stemme
   åpen` og `Live-coachen er klar`.
 - Og etter 14:43:12: **ingen `sender hendelse` i det hele tatt.** Nedlasta står stille på
   0,54 MB i 45 minutter. Ingen statuspuls, ingen bakker, ingen runder.
+
+Presisjon om hva loggen beviser: den stille `[status]`-pulsen (`turnComplete: false`) logges
+IKKE, så fraværet av linjer sier ingenting om den. Men `periodisk-status` som *hendelse* logges
+— den står som `sender hendelse` hvert par minutter i alle de andre øktene, og 14:40:12 i denne
+— og i vinduet 14:43–15:28 finnes den ikke én gang. Sammen med at koden bare rydder
+`inFlightTurnId` i `finishTurn()` er det avgjørende; loggen alene ville vært et indisium.
 
 ## Årsaken
 
