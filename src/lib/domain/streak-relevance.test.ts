@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { isStreakRelevantForTheme, streakDashboardKind } from './streak-relevance';
+import {
+	isStreakInHealthFamily,
+	isStreakRelevantForTheme,
+	streakDashboardKind
+} from './streak-relevance';
 
 describe('streakDashboardKind', () => {
 	it('sender treningsøkter til trening', () => {
@@ -55,6 +59,53 @@ describe('isStreakRelevantForTheme', () => {
 		expect(isStreakRelevantForTheme(badevask, { themeId: 'hjem', dashboardKind: 'home' })).toBe(true);
 		expect(
 			isStreakRelevantForTheme({ source: { kind: 'manual' } as const }, { dashboardKind: 'home' })
+		).toBe(false);
+	});
+});
+
+describe('isStreakInHealthFamily', () => {
+	const HELSE = ['theme-helse', 'theme-trening', 'theme-vekt'];
+
+	it('tar med hele familien, ikke bare ett dashboard', () => {
+		// Dette er forskjellen fra isStreakRelevantForTheme: mortemaet er summen.
+		expect(isStreakInHealthFamily({ source: { kind: 'workout', sportFamily: 'running' } }, HELSE)).toBe(
+			true
+		);
+		expect(isStreakInHealthFamily({ source: { kind: 'sensor_event', dataType: 'weight' } }, HELSE)).toBe(
+			true
+		);
+		expect(isStreakInHealthFamily({ source: { kind: 'sensor_event', dataType: 'sleep' } }, HELSE)).toBe(
+			true
+		);
+		expect(
+			isStreakInHealthFamily({ source: { kind: 'sensor_event', dataType: 'nutrition' } }, HELSE)
+		).toBe(true);
+	});
+
+	it('holder husarbeid utenfor', () => {
+		expect(
+			isStreakInHealthFamily({ source: { kind: 'sensor_event', dataType: 'chore_done' } }, HELSE)
+		).toBe(false);
+	});
+
+	it('utleder ikke manuelle streaks — samme begrensning som flatene', () => {
+		expect(isStreakInHealthFamily({ source: { kind: 'manual' } }, HELSE)).toBe(false);
+	});
+
+	it('men en manuell streak koblet til et helse-tema blir med', () => {
+		expect(
+			isStreakInHealthFamily({ source: { kind: 'manual' }, themeId: 'theme-trening' }, HELSE)
+		).toBe(true);
+	});
+
+	it('en eksplisitt kobling utenfor familien utelukker', () => {
+		// Har brukeren sagt at streaken hører på «Maraton 2027», skal den ikke
+		// dukke opp i helsechatten fordi kilden er en løpetur.
+		expect(
+			isStreakInHealthFamily(
+				{ source: { kind: 'workout', sportFamily: 'running' }, themeId: 'theme-maraton' },
+				HELSE
+			)
 		).toBe(false);
 	});
 });

@@ -10,13 +10,16 @@
  */
 
 import { createHash } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { canonicalWorkouts, goals, sensorGoals, workoutAssessments } from '$lib/db/schema';
+import { canonicalWorkouts, workoutAssessments } from '$lib/db/schema';
 import { openai } from '$lib/server/openai';
 import { computeKmSplits, type TrackPoint } from '$lib/utils/track-stats';
 import { parseWorkoutAnalysis, type WorkoutAnalysis } from '$lib/domain/health/workout-analysis';
-import { frameGoals, type GoalInput } from '$lib/domain/health/goal-horizon';
+import { frameGoals } from '$lib/domain/health/goal-horizon';
+// Delt med helse-briefingen: øktsiden og helsechatten skal oppgi samme avstand
+// til samme mål.
+import { readGoalsWithProgress } from '$lib/server/health/goals-with-progress';
 import { aerobicDecoupling, type DecouplingSample } from '$lib/domain/health/aerobic-efficiency';
 import { cumulativeDistanceMeters } from '$lib/utils/track-stats';
 import {
@@ -57,60 +60,6 @@ function toNumber(value: unknown): number | null {
 	if (value === null || value === undefined) return null;
 	const n = typeof value === 'number' ? value : Number(value);
 	return Number.isFinite(n) ? n : null;
-}
-
-/** Målene i helse-familien, med progresjonstallene fra `sensor_goals`. */
-async function readGoalsWithProgress(userId: string, themeIds: string[]): Promise<GoalInput[]> {
-	if (themeIds.length === 0) return [];
-
-	const rows = await db.query.goals.findMany({
-		where: and(
-			eq(goals.userId, userId),
-			inArray(goals.themeId, themeIds),
-			inArray(goals.status, ['active', 'paused'])
-		),
-		columns: { id: true, title: true, description: true, targetDate: true, periodKey: true, status: true }
-	});
-	if (rows.length === 0) return [];
-
-	// Tallene ligger i sensor_goals — currentValue, targetValue, baselineValue og
-	// enhet. Den gamle vurderingen leste dem aldri, og fikk derfor «redusere
-	// vekten til 85 kg og 95 kg» ut av to måltitler uten kontekst.
-	const sensorRows = await db.query.sensorGoals.findMany({
-		where: inArray(
-			sensorGoals.goalId,
-			rows.map((r) => r.id)
-		),
-		columns: {
-			goalId: true,
-			metricType: true,
-			targetValue: true,
-			currentValue: true,
-			baselineValue: true,
-			unit: true
-		}
-	});
-	const byGoal = new Map(sensorRows.map((s) => [s.goalId, s]));
-
-	return rows.map((row) => {
-		const sensor = byGoal.get(row.id);
-		return {
-			title: row.title,
-			description: row.description,
-			targetDate: row.targetDate ?? null,
-			periodKey: row.periodKey ?? null,
-			status: row.status,
-			sensor: sensor
-				? {
-						metricType: sensor.metricType ?? null,
-						targetValue: toNumber(sensor.targetValue),
-						currentValue: toNumber(sensor.currentValue),
-						baselineValue: toNumber(sensor.baselineValue),
-						unit: sensor.unit ?? null
-					}
-				: null
-		};
-	});
 }
 
 export type AssessmentSources = {
