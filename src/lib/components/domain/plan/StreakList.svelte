@@ -8,9 +8,13 @@
 
   Brede kort framfor en rad med smale badges: titlene er brukerskrevne setninger
   som trenger horisontal plass, og på bredt skjerm legges kortene i to kolonner.
+
+  Trykk på et kort åpner historikken (`StreakHistorySheet`). «Logg»-knappen er
+  søsken til trykkflaten, ikke inni den — se NB-en i StreakCard.
 -->
 <script lang="ts">
 	import { StreakCard } from '$lib/components/ui';
+	import StreakHistorySheet from '../streak/StreakHistorySheet.svelte';
 	import { streakLabel, streakSublabel, type StreakState } from '$lib/domain/streaks';
 
 	export interface StreakListItem {
@@ -32,6 +36,10 @@
 	}
 
 	let { streaks, onLogRound, busyId = null }: Props = $props();
+
+	/** Åpen historikk. Panelet ligger utenfor lista, så det ikke arver kortets layout. */
+	let openIndex = $state<number | null>(null);
+	const open = $derived(openIndex === null ? null : (streaks[openIndex] ?? null));
 
 	// Faste aksentfarger fra designsystemet, syklet så hver streak skiller seg visuelt.
 	const PALETTE = [
@@ -60,6 +68,8 @@
 				meta={metaLine(state)}
 				dots={state.dots}
 				color={PALETTE[i % PALETTE.length]}
+				dataTrack="rutiner-streaks:apne-historikk"
+				onpress={() => (openIndex = i)}
 			>
 				{#snippet action()}
 					{#if onLogRound && definition.source.kind === 'manual'}
@@ -78,6 +88,16 @@
 			</StreakCard>
 		{/each}
 	</div>
+{/if}
+
+{#if open}
+	<StreakHistorySheet
+		definitionId={open.definition.id}
+		title={open.definition.title}
+		emoji={open.definition.emoji}
+		color={PALETTE[(openIndex ?? 0) % PALETTE.length]}
+		onclose={() => (openIndex = null)}
+	/>
 {/if}
 
 <style>

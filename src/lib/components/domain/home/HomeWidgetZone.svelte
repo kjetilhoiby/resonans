@@ -10,9 +10,10 @@
 	import ChecklistWidget from '../../composed/ChecklistWidget.svelte';
 	import PagerDots from '../../ui/PagerDots.svelte';
 	import StreakCard from '../../ui/StreakCard.svelte';
+	import StreakHistorySheet from '../streak/StreakHistorySheet.svelte';
 	import PartnerOnboardingCard from './PartnerOnboardingCard.svelte';
 	import { streakLabel, streakSublabel, type StreakState } from '$lib/domain/streaks';
-	import { HOME_CTX, type HomeContext } from './home-context';
+	import { HOME_CTX, type HomeContext, type HomeStreak } from './home-context';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
 
@@ -23,6 +24,10 @@
 		'var(--success-text)',
 		'var(--accent-muted)'
 	];
+
+	/** Åpen streak-historikk. Panelet portaleres til body, så det kan bo utenfor pageren. */
+	let openStreak = $state<HomeStreak | null>(null);
+	let openStreakColor = $state('var(--warning-text)');
 
 	/** «6 dager på rad · gjenstår i dag» — begge delene er valgfrie. */
 	function streakMeta(state: StreakState): string | null {
@@ -92,13 +97,10 @@
 							/>
 						{:else if item.kind === 'streak' && item.streak}
 							{@const streak = item.streak}
-							<button
-								type="button"
-								class="streak-widget"
-								data-track="hjem-streaks:apne-rutiner"
-								aria-label={`${streak.definition.title}: ${streakLabel(streak.state) || 'ingen aktiv streak'}`}
-								onclick={() => goto('/plan/rutiner')}
-							>
+							<!-- Trykk åpner historikken framfor å navigere til /plan/rutiner:
+							     spørsmålet man har foran en streak er «hvordan har det gått»,
+							     og svaret er kalenderen — ikke en liste over de samme kortene. -->
+							<div class="streak-widget">
 								<StreakCard
 									titleLines={1}
 									count={streak.state.count}
@@ -107,8 +109,13 @@
 									meta={streakMeta(streak.state)}
 									dots={streak.state.dots}
 									color={STREAK_PALETTE[itemIndex % STREAK_PALETTE.length]}
+									dataTrack="hjem-streaks:apne-historikk"
+									onpress={() => {
+										openStreak = streak;
+										openStreakColor = STREAK_PALETTE[itemIndex % STREAK_PALETTE.length];
+									}}
 								/>
-							</button>
+							</div>
 						{:else if item.kind === 'partner'}
 							<PartnerOnboardingCard
 								variant="widget"
@@ -133,6 +140,16 @@
 	{/if}
 
 	</section>
+{/if}
+
+{#if openStreak}
+	<StreakHistorySheet
+		definitionId={openStreak.definition.id}
+		title={openStreak.definition.title}
+		emoji={openStreak.definition.emoji}
+		color={openStreakColor}
+		onclose={() => (openStreak = null)}
+	/>
 {/if}
 
 <style>
@@ -202,17 +219,10 @@
 	}
 
 	/* Streak-kortet er hele raden — knappen er bare en trykkflate uten egen ramme. */
+	/* Kortet er hele raden. Trykkflaten bor i StreakCard, så denne er bare bredde. */
 	.streak-widget {
 		display: block;
 		width: 100%;
-		background: none;
-		border: none;
-		padding: 0;
-		margin: 0;
-		font: inherit;
-		color: inherit;
-		text-align: left;
-		cursor: pointer;
 		touch-action: manipulation;
 	}
 

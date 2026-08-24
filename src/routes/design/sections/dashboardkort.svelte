@@ -6,6 +6,8 @@
 	import WeeklyEffortCard from '$lib/components/composed/WeeklyEffortCard.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { StreakCard } from '$lib/components/ui';
+	import StreakStrip from '$lib/components/domain/streak/StreakStrip.svelte';
+	import StreakCalendar from '$lib/components/domain/streak/StreakCalendar.svelte';
 	import HealthSubthemeStrip from '$lib/components/domain/health/HealthSubthemeStrip.svelte';
 	import HealthSignalSection from '$lib/components/domain/health/HealthSignalSection.svelte';
 	import NutritionDayCard from '$lib/components/domain/nutrition/NutritionDayCard.svelte';
@@ -48,6 +50,9 @@
 		weightSwings,
 		weightDaysSwinging,
 		weightSwingsRich,
+		streakHistoryDays,
+		streakHistoryToday,
+		themeStreaks,
 		loadSeries,
 		effortByDay,
 		effortTotal,
@@ -104,6 +109,43 @@
 		<StreakCard count={0} title="Badevask" emoji="🛁"
 			meta="3 dager på overtid"
 			dots={[true, true, false]}
+		/>
+	</div>
+
+	<h3 class="subsection">StreakStrip + StreakCalendar — streaken på temasiden, og historikken bak</h3>
+	<p class="section-desc">
+		Chipen er streaken i kompakt form: på en temaside er den en påminnelse i toppen, ikke det man
+		kom for, og et bredt kort per streak ville skjøvet dashboardet under falsen. Hvilke streaks
+		som hører hvor avgjøres av kilden (<code>streak-relevance.ts</code>) — en løpestreak dukker
+		opp på Trening uten at noen har koblet den.
+	</p>
+	<p class="section-desc">
+		Kalenderen er innholdet i bunnpanelet bak et trykk. Fylt celle = hendelse, ring rundt = flere
+		samme dag, ramme = i dag. Framtidige dager er tomme <em>uten</em> å være glemt — en dag som
+		ikke har vært, kan ikke være brutt. For ukesregler bærer hver rad periodens fasit, og den
+		regnes på hele historikken: en uke som krysser månedsskiftet skal vise samme tall i begge
+		månedene.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<StreakStrip streaks={themeStreaks} area="design" />
+	</div>
+	<div class="demo-card demo-card--wide">
+		<StreakCalendar
+			month="2026-08"
+			days={streakHistoryDays}
+			todayKey={streakHistoryToday}
+			rule="consecutive_days"
+			config={{}}
+		/>
+	</div>
+	<div class="demo-card demo-card--wide">
+		<StreakCalendar
+			month="2026-08"
+			days={streakHistoryDays}
+			todayKey={streakHistoryToday}
+			rule="count_per_window"
+			config={{ windowDays: 7, threshold: 2 }}
+			color="var(--success-text)"
 		/>
 	</div>
 
