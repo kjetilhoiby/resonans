@@ -136,6 +136,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	return new Response(stream, {
 		headers: {
 			'Content-Type': 'text/event-stream',
+			// Ingen bufring underveis: en proxy som samler opp svaret og sender det
+			// i ett jafs gjør strømmingen usynlig — teksten kommer, bare ikke løpende.
+			// Traefik bufrer ikke, men nginx gjør det som standard, og headeren koster
+			// ingenting mot en proxy som ikke bryr seg.
+			'X-Accel-Buffering': 'no',
 			'Cache-Control': 'no-cache',
 			Connection: 'keep-alive'
 		}

@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import nodemailer from 'nodemailer';
+import { appOriginOrNull } from '$lib/server/app-origin';
 
 type PartnerInviteEmailInput = {
 	toEmail: string;
@@ -39,7 +40,13 @@ export async function sendPartnerInviteEmail(input: PartnerInviteEmailInput): Pr
 		return false;
 	}
 
-	const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
+	// Uten en kjent adresse ville lenken i e-posten pekt et gjettet sted. En
+	// invitasjon som ikke sendes er bedre enn en som tar mottakeren feil.
+	const appUrl = appOriginOrNull();
+	if (!appUrl) {
+		console.error('[mailer] ORIGIN er ikke satt — sender ikke partnerinvitasjon uten en gyldig lenke.');
+		return false;
+	}
 	const settingsUrl = `${appUrl}/settings`;
 	const inviteInfo = `Invitasjons-ID: ${input.inviteToken}`;
 

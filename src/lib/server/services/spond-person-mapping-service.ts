@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { affectedRows, db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { PersonService } from './person-service';
@@ -68,7 +68,7 @@ export class SpondPersonMappingService {
 				  AND person_id IS NULL
 				  AND data->>'groupId' = ${groupId}
 			`);
-			tagged += (result as unknown as { rowCount?: number }).rowCount ?? 0;
+			tagged += affectedRows(result);
 		}
 		return { tagged };
 	}

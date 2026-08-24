@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { env } from '$env/dynamic/private';
+import { appOrigin } from '$lib/server/app-origin';
 import { enqueueStaleWorkoutProjectionRefreshSweep } from '$lib/server/background-jobs';
 import { SignalService } from '$lib/server/services/signal-service';
 import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
@@ -17,6 +17,18 @@ export function startScheduler() {
 		return;
 	}
 
+	// Adressen leses ÉN gang, og en manglende ORIGIN stopper scheduleren framfor
+	// å la den kjøre. Alle jobbene her sender nudger med lenker; en scheduler som
+	// peker på feil domene er verre enn ingen scheduler, fordi den ser ut til å
+	// virke. Se app-origin.ts.
+	let appUrl: string;
+	try {
+		appUrl = appOrigin();
+	} catch (err) {
+		console.error('❌ Scheduler startet ikke:', err instanceof Error ? err.message : err);
+		return;
+	}
+
 	console.log('🚀 Starting in-app scheduler...');
 
 	// Daglig check-in kl. 09:00 norsk tid
@@ -26,7 +38,6 @@ export function startScheduler() {
 		'0 9 * * *',
 		async () => {
 			console.log('⏰ Running daily check-in at', new Date().toISOString());
-			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
 			await NudgeOrchestrationService.runDailyCheckInNudges({
 				appUrl,
 				requireRecentTimeWindow: false
@@ -42,7 +53,6 @@ export function startScheduler() {
 		'0 * * * *',
 		async () => {
 			console.log('⏰ Running local nudges (day planning/relationship/day close) at', new Date().toISOString());
-			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
 			try {
 				await NudgeOrchestrationService.runScheduledNudges(appUrl);
 			} catch (err) {
@@ -63,7 +73,6 @@ export function startScheduler() {
 	cron.schedule(
 		'*/5 * * * *',
 		async () => {
-			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
 			try {
 				await NudgeOrchestrationService.runEgenfrekvensCheckInNudges({
 					appUrl,
