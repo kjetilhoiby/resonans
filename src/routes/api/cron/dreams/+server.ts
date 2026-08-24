@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { DreamService } from '$lib/server/services/dream-service';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 export const config = { maxDuration: 300 };
 
@@ -19,10 +19,8 @@ type Level = (typeof LEVELS)[number];
  * (scheduler.ts), som ikke kjører på Vercel serverless — derfor flyttet hit.
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const levelRaw = new URL(request.url).searchParams.get('level') ?? 'daily';
 	if (!LEVELS.includes(levelRaw as Level)) {

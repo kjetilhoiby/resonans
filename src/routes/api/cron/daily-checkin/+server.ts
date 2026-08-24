@@ -1,21 +1,22 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 /**
- * Vercel Cron endpoint for daglige check-ins
- * Kjøres automatisk hver dag kl. 09:00 (UTC - juster etter tidssone)
- * 
- * VIKTIG: Denne endepunktet er beskyttet av Vercel Cron secret
+ * GET /api/cron/daily-checkin
+ *
+ * Daglige check-ins. Dispatcheren kaller hvert 5. minutt (se /api/cron/jobs for
+ * skjema); nudgen selv gater på brukerens klokkeslett innenfor et 5-minutters
+ * vindu. Beskyttet av `CRON_SECRET` som de øvrige cron-endepunktene.
+ *
+ * NB: gatet fram til august 2026 på `env.VERCEL_ENV &&`, som utenfor Vercel er
+ * alltid falsk — altså ingen auth. Se cron-auth.ts.
  */
 export const GET: RequestHandler = async ({ request, url }) => {
-	// Verify that this is a legitimate Vercel Cron request
-	const authHeader = request.headers.get('authorization');
-	if (env.VERCEL_ENV && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const result = await withCronTracking('/api/cron/daily-checkin', async () => {
 		const nudgeResult = await NudgeOrchestrationService.runDailyCheckInNudges({

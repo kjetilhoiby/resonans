@@ -5,7 +5,6 @@ import { env } from '$env/dynamic/private';
 import { DEFAULT_USER_ID, ensureUser } from '$lib/server/users';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
-import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 import { isUserHeaderTrusted } from '$lib/server/user-header-auth';
 
 export const USER_ID_HEADER_NAME = 'x-resonans-user-id';
@@ -42,14 +41,6 @@ export async function resolveRequestUserId(event: RequestEvent): Promise<string>
 
 		if (authenticatedUserId) {
 			return authenticatedUserId;
-		}
-	}
-
-	if (isPreviewEnv()) {
-		const token = event.cookies.get(PREVIEW_AUTH_COOKIE);
-		const previewUserId = token ? verifyPreviewToken(token, env.AUTH_SECRET) : null;
-		if (previewUserId) {
-			return previewUserId;
 		}
 	}
 

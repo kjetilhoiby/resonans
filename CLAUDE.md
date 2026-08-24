@@ -162,7 +162,9 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
 - `/api/health?debug=true` gir full systemstatus
 
 **Regler:**
-- Nye cron-endepunkter: wrap med `withCronTracking` fra `$lib/server/monitoring/cron-wrapper`.
+- Nye cron-endepunkter: åpne med `denyUnauthorizedCron(request)` fra
+  `$lib/server/cron-guard`, og wrap arbeidet med `withCronTracking` fra
+  `$lib/server/monitoring/cron-wrapper`.
 - Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
 - `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
 
@@ -225,6 +227,23 @@ Sensorer (Withings, SpareBank1, Spond, Dropbox, Strava, Tesla)
 Google OAuth via `@auth/sveltekit`. Allowlist-gated (`allowed_emails`). API-ruter aksepterer også `x-resonans-user-id`-header og API-hemmeligheter (`user_api_secrets`).
 
 Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
+
+**Cron og scheduler autentiseres av ÉN vakt.** `denyUnauthorizedCron(request)`
+(`$lib/server/cron-guard`) over ren logikk i `$lib/server/cron-auth.ts`. Se
+`docs/changelog/2026-08-24-herding-for-flytting.md`.
+
+- **Skriv aldri sjekken inline.** Den lå kopiert i 24 endepunkter, og seks av
+  kopiene gatet på `env.VERCEL_ENV &&` i stedet for `env.CRON_SECRET &&`. På
+  Vercel er forskjellen usynlig; utenfor Vercel er betingelsen alltid falsk, og de
+  seks nudge-endepunktene sto helt åpne. `/api/scheduler/trigger` hadde ingen
+  sjekk i det hele tatt.
+- **Vakta er fail-closed.** Uten `CRON_SECRET` avvises alt så snart vi ikke er i
+  `dev` — motsatt av den gamle `env.CRON_SECRET &&`, som slapp alt gjennom når
+  variabelen manglet.
+- **`assertBootReady` (`$lib/server/boot-checks.ts`) er den andre halvdelen.** Den
+  krever `CRON_SECRET` og konfigurert Google-auth ved oppstart, så en glemt
+  variabel blir et deploy som feiler framfor 24 stille 401-er — eller, for
+  auth-delen, en app der `authorizationHandle` slipper ALT gjennom.
 
 ### Ekstern API-flate (Ekko)
 

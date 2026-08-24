@@ -1,14 +1,14 @@
 import { sequence } from '@sveltejs/kit/hooks';
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
-import { dev } from '$app/environment';
+import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
+import { assertBootReady } from '$lib/server/boot-checks';
 import { startScheduler } from '$lib/server/scheduler';
 import { resolveRequestUserId } from '$lib/server/request-user';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
-import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 import { isPublicPath } from '$lib/server/public-paths';
 import {
 	headerAuthDiagnosis,
@@ -16,6 +16,16 @@ import {
 	unsecuredHeaderWarning
 } from '$lib/server/user-header-auth';
 import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
+
+// Konfigurasjonsfeil som ellers ville vært usynlige i drift — se boot-checks.ts.
+// `building` holder bygget utenfor: da finnes ikke miljøvariablene ennå.
+if (!building) {
+	assertBootReady({
+		isDev: dev,
+		authConfigured: isGoogleAuthConfigured(),
+		cronSecret: env.CRON_SECRET
+	});
+}
 
 // Start scheduler when server starts
 if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
@@ -42,7 +52,10 @@ function warnOnceIfUnsecured() {
 }
 
 const authorizationHandle: Handle = async ({ event, resolve }) => {
-	if (!isGoogleAuthConfigured() || isPublicPath(event.url.pathname)) {
+	// Uten Google-oppsett har vi ingen innlogging å kreve, så en fersk klone skal
+	// kunne kjøres uten OAuth. `dev &&` er ikke overflødig ved siden av
+	// oppstartsvakta: den gjør det umulig å lese grenen som noe annet enn lokal.
+	if ((dev && !isGoogleAuthConfigured()) || isPublicPath(event.url.pathname)) {
 		return resolve(event);
 	}
 
@@ -66,13 +79,6 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 	const session = await event.locals.auth();
 	if (session?.user?.id) {
 		return resolve(event);
-	}
-
-	if (isPreviewEnv()) {
-		const token = event.cookies.get(PREVIEW_AUTH_COOKIE);
-		if (token && verifyPreviewToken(token, env.AUTH_SECRET)) {
-			return resolve(event);
-		}
 	}
 
 	if (event.url.pathname.startsWith('/api/')) {

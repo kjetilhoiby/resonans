@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -9,6 +8,7 @@ import { registerWorkoutsAsProgress } from '$lib/server/sensor-goal-automation';
 import { autocheckWakeTimeForDate } from '$lib/server/checklist-autocheck';
 import { notifyWithingsSyncResults } from '$lib/server/withings-sync-notifications';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 type WithingsSyncSuccessResult = {
 	userId: string;
@@ -36,10 +36,8 @@ export const config = { maxDuration: 120 };
  * Runs sequentially per user to avoid hammering the Withings API.
  */
 export const GET: RequestHandler = async ({ request, url }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const result = await withCronTracking('/api/cron/withings-sync', async () => {
 		// Find all users with an active Withings sensor

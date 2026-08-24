@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { cronExecutions } from '$lib/db/schema';
 import { sql } from 'drizzle-orm';
 import { isDue } from '$lib/server/cron-schedule';
 import type { RequestHandler } from './$types';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 /**
  * GET /api/cron/jobs
@@ -184,10 +184,8 @@ const JOBS: CronJob[] = [
 ];
 
 export const GET: RequestHandler = async ({ request, url }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	if (url.searchParams.get('due') !== '1') {
 		return json(JOBS);

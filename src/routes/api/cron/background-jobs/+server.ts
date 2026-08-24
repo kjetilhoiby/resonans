@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 import {
 	enqueueStaleWorkoutProjectionRefreshSweep,
@@ -8,6 +7,7 @@ import {
 	processDueBackgroundJobs
 } from '$lib/server/background-jobs';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
+import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
 export const config = { maxDuration: 300 };
 
@@ -16,10 +16,8 @@ export const config = { maxDuration: 300 };
  * Processes due queued jobs (short worker burst).
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const denied = denyUnauthorizedCron(request);
+	if (denied) return denied;
 
 	const trackingResult = await withCronTracking('/api/cron/background-jobs', async () => {
 		const [result, goalIntentParse, taskIntentParse, workoutSweeper] = await Promise.all([
