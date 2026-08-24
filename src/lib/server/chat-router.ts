@@ -114,25 +114,50 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		skills.add('theme_management');
 	}
 
-	// Research-deteksjon: reise/steds-spørsmål og ferske/tidsavhengige fakta skal
-	// slå opp på nett før svar. classifyResearchTopic er felles sannhet med
-	// resolveResearchScope (samme regex-sett), så tvang og kildevalg henger sammen.
-	const researchTopic = classifyResearchTopic(input);
-	let forceWebSearch = false;
-	if (researchTopic === 'travel') {
-		forceWebSearch = true;
-		hints.push('Brukeren spør om et sted/aktiviteter. Bruk web_search FØR du svarer, og sett saveToTheme=true når spørsmålet hører til det aktive temaet.');
-	} else if (researchTopic === 'news' || /nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|politikk|valg|børs|marked|iran|ukraina|gaza/.test(text)) {
-		forceWebSearch = true;
-		hints.push('Bruk web_search for ferske eller tidsavhengige fakta før du svarer.');
-	}
-
 	if (/bursdag|fødselsdag|fodselsdag|kavalkade/.test(text)) {
 		if (!domains.has('self')) {
 			domains.add('self');
 			domainHints.push(DOMAIN_METADATA.self.systemPromptHint);
 		}
 		hints.push('Brukeren snakker om bursdag eller årsoppsummering — tips om Årskavalkaden på /kavalkade med årets tall og det årlige bursdagsintervjuet.');
+	}
+
+	// NB: research-blokka står ETTER bursdag-blokka med vilje — den legger til `self`,
+	// altså et personlig domene, og `hasPersonalData` under må lese et ferdig
+	// domenesett. Legger du til flere domener, legg dem over dette punktet.
+	// Research-deteksjon: reise/steds-spørsmål og ferske/tidsavhengige fakta skal
+	// slå opp på nett før svar. classifyResearchTopic er felles sannhet med
+	// resolveResearchScope (samme regex-sett), så tvang og kildevalg henger sammen.
+	//
+	// Det var IKKE sant fram til august 2026: her sto en andre, løsere regex ved
+	// siden av — `/…|siste|…|valg|marked|…/` uten ordgrenser — og den avgjorde
+	// tvangen alene. «siste halvår» i et spørsmål om brukerens egen treningshistorikk
+	// traff «siste», og siden tvang låser `tool_choice` til web_search, var det
+	// FØRSTE modellen gjorde å søke på nettet. Svaret ble seks lenker og fire
+	// punktlister om vintertrening til en bruker som spurte om sine egne vintre.
+	// «valg» traff «valgt», «marked» traff «markedet», «aktuell» traff «aktuelle».
+	// Regexen er slettet: klassifiseringen skal skje ett sted.
+	const researchTopic = classifyResearchTopic(input);
+
+	// Spørsmål om brukerens EGNE data er aldri et nyhetsspørsmål. Nettet kan ikke
+	// vite hvordan aprilene mine har vært, og en tvang hit gjør at modellen søker
+	// framfor å hente. Reise er unntaket og beholder tvangen: et sted finnes ute,
+	// og en reisesamtale nevner nesten alltid familie underveis.
+	const hasPersonalData =
+		domains.has('health') ||
+		domains.has('economics') ||
+		domains.has('self') ||
+		domains.has('family');
+
+	let forceWebSearch = false;
+	if (researchTopic === 'travel') {
+		forceWebSearch = true;
+		hints.push('Brukeren spør om et sted/aktiviteter. Bruk web_search FØR du svarer, og sett saveToTheme=true når spørsmålet hører til det aktive temaet.');
+	} else if (researchTopic === 'news' && !hasPersonalData) {
+		forceWebSearch = true;
+		hints.push('Bruk web_search for ferske eller tidsavhengige fakta før du svarer.');
+	} else if (hasPersonalData) {
+		hints.push('Dette handler om brukerens egne data. Hent dem med domeneverktøyene og svar fra dem — web_search er ikke en erstatning, og lenker er ikke et svar.');
 	}
 
 	if (domains.size === 0) domains.add('general');

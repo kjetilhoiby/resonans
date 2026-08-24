@@ -172,3 +172,25 @@ export function frameGoals(
 		long: framed.filter((g) => g.horizon !== 'kort').sort(rank)
 	};
 }
+
+/**
+ * Målene som linjer i en kontekstblokk til modellen.
+ *
+ * Bor her, hos `FramedGoal`, fordi to kontekstbyggere trenger dem —
+ * øktvurderingen og helse-briefingen. Lå den hos den ene, ville den andre fått
+ * en egen formulering av samme mål, og da sier øktsiden og helsechatten ulike
+ * ting om «12,4 kg igjen».
+ */
+export function describeFramedGoals(goals: FramedGoal[]): string[] {
+	return goals.map((g) => {
+		const parts = [g.title];
+		if (g.progressText) parts.push(g.progressText);
+		if (g.daysLeft !== null) {
+			parts.push(
+				g.daysLeft >= 0 ? `${g.daysLeft} dager igjen` : `frist passert for ${-g.daysLeft} dager siden`
+			);
+		}
+		if (g.paused) parts.push('PÅ PAUSE');
+		return `- ${parts.join(' — ')}`;
+	});
+}

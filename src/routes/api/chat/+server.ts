@@ -7,6 +7,11 @@ import { getOrCreateConversation, createConversation, addMessage, getConversatio
 import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import {
+	buildHealthChatContext,
+	shouldBuildHealthContext
+} from '$lib/server/health/health-chat-context';
+import { getHealthThemeIds } from '$lib/server/themes';
 import { buildPersonContext, buildFamilyOverview } from '$lib/server/person-context';
 import { stripToolLeakage } from '$lib/server/chat-sanitize';
 import { buildDayContextBlock } from '$lib/server/day-location-context';
@@ -20,6 +25,7 @@ import { buildResearchCard, type ResearchCard, type ResearchCardMap } from '$lib
 import { geocodePlace } from '$lib/utils/geocode';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
+import { updateGoalTool } from '$lib/ai/tools/update-goal';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
 import { logSleepDisturbanceTool } from '$lib/ai/tools/log-sleep-disturbance';
@@ -158,7 +164,12 @@ async function executeWebSearch(
 		days: scope.days,
 		deep: opts.deep,
 		deepTopic: scope.topic,
-		includeImages: true
+		// Bilder bare for steds-treff, av samme grunn som kartet (se changelog
+		// 2026-07-23): et bilde av et sted viser noe. På et kunnskaps- eller
+		// helsespørsmål er Tavilys bildestripe sjangerfoto — tre sjablongbilder av
+		// løpere over et svar om brukerens egne vintre — og pynt gjør et tynt svar
+		// tynnere, ikke rikere.
+		includeImages: scope.topic === 'travel'
 	});
 
 	if (sources.length === 0) {
@@ -321,6 +332,36 @@ const tools = [
 					}
 				},
 				required: ['categoryName', 'title', 'description']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: updateGoalTool.name,
+			description: updateGoalTool.description,
+			parameters: {
+				type: 'object',
+				properties: {
+					goalId: {
+						type: 'string',
+						description: 'UUID-en til målet, fra lista over aktive mål. Aldri tittel eller nummer.'
+					},
+					action: {
+						type: 'string',
+						enum: ['adjust_target', 'set_deadline', 'pause', 'resume', 'complete', 'abandon'],
+						description: 'Hva som skal endres'
+					},
+					targetValue: {
+						type: 'number',
+						description: 'Ny målverdi (adjust_target). For vektmål: MÅLVEKTEN i kg.'
+					},
+					targetDate: {
+						type: 'string',
+						description: 'Ny frist YYYY-MM-DD (set_deadline).'
+					}
+				},
+				required: ['goalId', 'action']
 			}
 		}
 	},
@@ -2077,6 +2118,7 @@ function getToolProgressMessage(toolName: string) {
 		check_similar_goals: 'Sjekker lignende mål...',
 		check_similar_tasks: 'Sjekker lignende oppgaver...',
 		create_goal: 'Oppretter mål...',
+		update_goal: 'Oppdaterer målet...',
 		create_task: 'Oppretter oppgave...',
 		log_activity: 'Registrerer aktivitet...',
 		create_memory: 'Lagrer hukommelse...',
@@ -2608,6 +2650,44 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			console.warn('buildTripContext failed:', err);
 		}
 
+		/**
+		 * Helse-briefingen: hvor brukeren står, lagt i konteksten før de spør.
+		 *
+		 * Verktøyene løste «modellen har ikke tallene». De løste ikke «modellen vet
+		 * ikke at den burde hente dem»: en reflekterende melding ser ikke ut som et
+		 * oppslag, så ingen `query_*` blir valgt, og svaret blir generelle råd. Her
+		 * ligger nå-tilstanden i konteksten uansett — vektperioden med tempo, ukas
+		 * belastning mot båndet, sammensetningen av økter, streaks og mål.
+		 *
+		 * Gatet på `shouldBuildHealthContext`, altså helse-rutet melding ELLER en
+		 * samtale som ligger på et helse-tema. Den andre halvdelen er den viktige:
+		 * «hva tenker du om dette?» midt i en tråd på Trening er et helsespørsmål
+		 * ingen av ordene avslører.
+		 */
+		let healthContext = '';
+		try {
+			// Temalista slås bare opp når gaten KAN slå til. Uten denne sjekken koster
+			// hver melding i appen to spørringer for et svar som er nei — en samtale
+			// uten tema og uten helseord kan ikke passere uansett hva lista sier.
+			const mayApply =
+				routingDecision.domains.includes('health') || Boolean(conversation.themeId);
+			const healthThemeIds = mayApply ? await getHealthThemeIds(userId) : [];
+			if (
+				mayApply &&
+				shouldBuildHealthContext({
+					domains: routingDecision.domains,
+					conversationThemeId: conversation.themeId ?? null,
+					healthThemeIds
+				})
+			) {
+				healthContext = await buildHealthChatContext(userId, healthThemeIds);
+			}
+		} catch (err) {
+			// Best-effort som dayContext/ferieContext: en briefing som feiler skal ikke
+			// velte svaret. Da mangler tallene, og det er verre — men et 500 er verst.
+			console.warn('buildHealthChatContext failed:', err);
+		}
+
 		// Bygg meldingshistorikk for OpenAI
 		const systemPrompt = buildModularSystemPrompt(routingDecision);
 		const promptPrefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
@@ -2619,7 +2699,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + contactsContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + contactsContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext + healthContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -2691,6 +2771,26 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
 		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
 
+		/**
+		 * REFLEKSJON ER IKKE DET SAMME SOM Å VÆRE UTEN DATA.
+		 *
+		 * `isConversationalMode` styrte fram til august 2026 både modellvalg, token-tak
+		 * OG om verktøy ble sendt i det hele tatt. Konsekvensen var at idet brukeren gikk
+		 * fra å spørre («hvor mange økter har jeg hatt?») til å tenke høyt («hvordan ser
+		 * en april etter en vinter der jeg løp seks av sju dager ut?»), ruta AI-ruteren
+		 * meldingen til `conversation` — og da mistet coachen tilgangen til brukerens egne
+		 * tall. Det er i refleksjonen de betyr mest; uten dem er det bare generelle råd
+		 * igjen. Brukeren kalte det «venterommet hos legen», og det var presist.
+		 *
+		 * Nå går bare de virkelig spesialiserte flatene uten verktøy — bok, film og flyt,
+		 * altså de som sender sitt eget systemprompt. Ellers følger verktøyene med, med
+		 * `tool_choice: 'auto'`: modellen KAN la dem være, men den kan velge dem.
+		 */
+		const hasDataDomain = routingDecision.domains.some((d) =>
+			['health', 'economics', 'food', 'family', 'self', 'home', 'jobb', 'planning', 'themes'].includes(d)
+		);
+		const skipTools = isSpecializedContext || (isConversationalMode && !hasDataDomain);
+
 		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
 		// verktøy (selv i conversational-modus) og låser første kall til web_search.
 		const forceWebSearch = Boolean(routingDecision.forceWebSearch) && !isSpecializedContext;
@@ -2717,7 +2817,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			messages,
 			...(forceWebSearch
 				? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
-				: isConversationalMode
+				: skipTools
 					? {}
 					: { tools, tool_choice: 'auto' as const }),
 			temperature: 0.8,
@@ -2858,6 +2958,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						themeId: args.themeId || conversation.themeId || undefined
 					});
 					if (result.success) createdGoalId = result.goalId;
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'update_goal') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await updateGoalTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
 						content: JSON.stringify(result),

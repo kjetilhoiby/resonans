@@ -33,6 +33,7 @@
 
 import type { DashboardKind } from './theme-dashboard-registry';
 import type { StreakSource } from './streaks';
+import { HEALTH_FAMILY_KINDS } from '$lib/domain/health-subthemes';
 
 /**
  * Datatype → dashboardtype. Bare typer som faktisk kan bære en streak står her;
@@ -87,4 +88,26 @@ export function isStreakRelevantForTheme(
 	if (streak.themeId) return streak.themeId === target.themeId;
 	const kind = streakDashboardKind(streak.source);
 	return kind !== null && kind === target.dashboardKind;
+}
+
+/**
+ * Hører streaken i helse-familien?
+ *
+ * Bredere enn `isStreakRelevantForTheme`, som matcher ETT dashboard: en briefing
+ * for helsechatten skal dekke trening, vekt, søvn, ernæring, skjermtid og
+ * egenfrekvens samtidig, siden mortemaet er summen av dem.
+ *
+ * NB: manuelle streaks utledes ikke — samme begrensning som på flatene. En
+ * «Badevask»-streak hører kanskje på Hjem, men tekstgjetningen treffer bare
+ * nesten, og en streak som dukker opp i helsechatten men ikke på helseflaten er
+ * verre enn en som mangler på begge. Er den eksplisitt koblet til et
+ * helse-tema, blir den med.
+ */
+export function isStreakInHealthFamily(
+	streak: StreakRelevanceInput,
+	healthThemeIds: readonly string[]
+): boolean {
+	if (streak.themeId) return healthThemeIds.includes(streak.themeId);
+	const kind = streakDashboardKind(streak.source);
+	return kind !== null && HEALTH_FAMILY_KINDS.includes(kind);
 }

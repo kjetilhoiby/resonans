@@ -38,6 +38,7 @@ import { manageTrainingProgramTool } from '$lib/ai/tools/manage-training-program
 import { weatherForecastTool } from '$lib/ai/tools/weather-forecast';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
+import { updateGoalTool } from '$lib/ai/tools/update-goal';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
 import { logChoreTool } from '$lib/ai/tools/log-chore';
@@ -244,6 +245,10 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	// Fange-handlinger (samme delte moduler som chatten bruker)
 	adaptSharedTool(createTaskTool),
 	adaptSharedTool(createGoalTool),
+	// Justering framfor et nytt mål ved siden av det gamle. Registrert på BEGGE
+	// flater etter regelen i CLAUDE.md: en beskrivelse som bare finnes ett sted gir
+	// de to flatene ulike instrukser uten at noen ser hvorfor.
+	adaptSharedTool(updateGoalTool),
 	adaptSharedTool(logActivityTool),
 	adaptSharedTool(logNapTool),
 	adaptSharedTool(logChoreTool),

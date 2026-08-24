@@ -310,6 +310,99 @@ Ernæring, Vekt, Egenfrekvens, Søvn, Skjermtid).
 - Terskler (`themes.metricSettings`) bor på mortemaet; undertemaene leser derfra —
   gjennom `readHealthMetricSettings` i `$lib/server/health/metric-settings.ts`.
 
+### Refleksjon er ikke et oppslag — og aldri et websøk
+
+Se `docs/changelog/2026-08-24-helsechat-refleksjon-uten-lenker.md`. En reflekterende
+melding om brukerens egen treningshistorikk fikk to symmetriske punktlister, en
+«Konklusjon»-overskrift, tre sjablongbilder av løpere og seks lenker — uten ett tall
+fra brukerens ni år med økter. Fire uavhengige feil, hver av dem nok alene.
+
+- **Tvang er ikke et hint.** `forceWebSearch` låser `tool_choice` til `web_search`,
+  så det FØRSTE modellen gjør er å søke. En løs regex ved siden av
+  `classifyResearchTopic` — `/…|siste|…|valg|marked|…/` uten ordgrenser — traff
+  «siste halvår», «valgt», «markedet» og «aktuelle». Den er slettet:
+  **klassifiseringen skjer ett sted**, i `classifyResearchTopic`.
+- **Spørsmål om brukerens egne data er aldri et nyhetsspørsmål.** Treffer meldingen
+  health/economics/self/family, tvinges det ikke websøk. Reise beholder tvangen —
+  et sted finnes faktisk ute; brukerens aprilmåneder gjør det ikke.
+- **Rene tidsord hører ikke i `NEWS_RE`.** Med `i dag` og `denne uk[ae]` der var
+  «hvor mye har jeg sovet denne uka?» et nyhetsspørsmål, søkt opp på nrk.no og
+  vg.no. Et tidsord sier NÅR, ikke at svaret finnes ute. Bar `konflikt` er ute av
+  samme grunn — «vi har en konflikt hjemme» ble et nyhetssøk.
+- **`\b` er ASCII i JS.** `været nå\b` matcher aldri: «å» er ikke et ordtegn, så
+  grensen finnes ikke der. Skriv grensene per alternativ, ikke som en felles hale.
+- **Refleksjon var det samme som å være uten data, og det er den dypeste feilen.**
+  `isConversationalMode` styrte modellvalg, token-tak OG om `tools` ble sendt i det
+  hele tatt. Idet AI-ruteren sa `conversation` — altså når brukeren sluttet å slå
+  opp og begynte å tenke høyt — mistet coachen brukerens egne tall. Det er i
+  refleksjonen de betyr mest. Nå går bare flatene med eget systemprompt (bok, film,
+  flyt) uten verktøy; ellers følger de med på `tool_choice: 'auto'`.
+- **Ord brukeren faktisk skriver, igjen.** `detectPromptFocusModules` hadde hverken
+  «løp», «skitur», «sykkel», «intervall», «puls» eller «økter» — meldingen ruta til
+  `general`, og da finnes ikke `query_training` for modellen. Sjekk ordene, ikke
+  domenet du hadde i hodet. To bevisste utelatelser: `\bl[øo]p` treffer
+  «loppemarked», og `\bøkt` er også partisipp av «øke» («forbruket har økt») —
+  derfor `\bløp` og `\bøkter\b`/`\bøkta\b`.
+- **Formregelen bor i `BASE_PROMPT`, ikke i helse-blokka.** Punktlister er for ting
+  som ER en liste; ingen «Konklusjon»-overskrift; ta stilling framfor to
+  symmetriske fordel/ulempe-lister; ikke avslutt med «Er det noe mer spesifikt du
+  vil utforske?»; bruk brukerens egne ord. Den samme punktliste-refleksen ville
+  truffet en karriere- eller samlivsrefleksjon like hardt.
+- **Lenker er ikke et svar**, og bilder er pynt utenfor steds-treff
+  (`includeImages` er nå gatet på `scope.topic === 'travel'`, som kartet alltid har
+  vært). Pynt gjør et tynt svar tynnere.
+- Kjent rest: ingen dashboard-laster har et historisk vindu — alle fire svarer på
+  NÅ, så «april etter en tett vinter» må bygges av `query_sensor_data`-rader.
+
+### Helsechatten får nå-tilstanden før brukeren spør
+
+Se `docs/changelog/2026-08-24-helsechatten-vet-hvor-du-star.md`. Blokka rendres
+rent i `$lib/domain/ai/health-briefing.ts`, hentes i
+`$lib/server/health/health-chat-context.ts`.
+
+- **Verktøy løser «modellen har ikke tallene», ikke «modellen vet ikke at den
+  burde hente dem».** En reflekterende melding ser ikke ut som et oppslag, så
+  ingen `query_*` blir valgt — og svaret blir generelt selv når dataene ligger ett
+  kall unna. Briefingen fjerner valget: vektperioden med tempo, ukas belastning mot
+  båndet, sammensetningen av økter, streaks og mål ligger i konteksten.
+- **Gaten har to halvdeler, og den andre er den viktige.** Helse-rutet melding
+  ELLER en samtale som ligger på et helse-tema (`shouldBuildHealthContext`). «Hva
+  tenker du om dette?» midt i en tråd på Trening er et helsespørsmål ingen av
+  ordene avslører, og det er den meldingen briefingen finnes for.
+- **Tekst, ikke JSON.** Setningene er flatens egne (`planText`, `loadText`,
+  `currentSentence`, `nudge`, `streakLabel`, `progressText`) og bærer forbeholdene
+  sine. Rå felter ville tvunget modellen til å formulere dommen selv, og «over
+  båndet» ble like gjerne «du har overtrent» som «du gjorde mer enn planen ba om».
+- **`classifyTsb` returnerer et OBJEKT, ikke en streng.** `status.label` er
+  tilstanden, `status.hint` er rådet for neste økt — begge skal med, ellers finner
+  modellen sine egne ord for hva «Sliten» bør føre til. `${status}` rett i en
+  streng gir `[object Object]`; typesjekken fanget det, ikke testene.
+- **Briefingen sier at den er et UTSNITT.** Uten den setningen tror modellen den
+  har sett alt og slutter å hente historikk den trenger.
+- **Ingen tomme rubrikker, ingen tomme seksjoner, ingen tom blokk.** Samme regel
+  som `workout-assessment-context.ts`: en modell som ser mange «ukjent» begynner å
+  gjette, og en overskrift uten innhold ser ut som at data mangler.
+- **Navngi kilden når to kilder betyr det samme.** Målvekt finnes både i
+  terskelarket (`metricSettings.weight.goal`) og i `sensor_goals`. To tall uten
+  kilde gir «redusere vekten til 85 kg og 95 kg» på nytt.
+- **Prompten må være ærlig om mekanismen.** Handlingsrom-seksjonen i
+  `DOMAIN_PROMPTS.health` sier eksplisitt at påminnelser IKKE er push:
+  `manage_routine` legger dem på ukedag + slot, `add_to_week_plan` på ukelista, og
+  en `max_interval`-streak løftes fram ved forfall. Et grep modellen ikke kan
+  utføre er en tom setning — og det var nettopp klagen.
+- **`update_goal` finnes nå** (`$lib/ai/tools/update-goal.ts`): `adjust_target`,
+  `set_deadline`, `pause`, `resume`, `complete`, `abandon`. Uten den kunne chatten
+  bare opprette mål, så «kan vi si 98 kg i stedet?» ga et NYTT mål ved siden av det
+  gamle. **Metrikk-id-en leses fra målet**, aldri fra modellen (den ser en tittel),
+  og **alt som ikke endres må sendes med på nytt** — `buildGoalTrackMetadata`
+  faller tilbake på `inferGoalKind`/`inferGoalWindow`/standardenhet for hvert felt
+  som mangler, så en justering av målverdien alene stiller et kvartalsmål tilbake
+  til «month».
+- **Ingen backticks i prompt-tekstene.** `DOMAIN_PROMPTS` er template-literaler;
+  en backtick rundt et verktøynavn terminerer strengen og river hele modulen.
+- Kjent rest: ernæring, søvn og kapasitet er ikke i briefingen; den bygges på hver
+  melding i en helsesamtale (ingen caching); Ekko-assistenten har den ikke.
+
 ### Et dashboard uten verktøy er data assistenten ikke har
 
 Se `docs/changelog/2026-08-07-domenedata-til-assistenten.md`.

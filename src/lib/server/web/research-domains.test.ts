@@ -39,6 +39,27 @@ describe('classifyResearchTopic', () => {
 	it('faller tilbake til general', () => {
 		expect(classifyResearchTopic('forklar fotosyntese')).toBe('general');
 	});
+
+	it('leser IKKE rene tidsord som nyheter', () => {
+		// «i dag», «denne uka» og «aktuelt» sto i NEWS_RE fram til august 2026, og da
+		// ble et spørsmål om brukerens egne netter søkt opp på nrk.no og vg.no.
+		expect(classifyResearchTopic('hvor mye har jeg sovet denne uka?')).toBe('general');
+		expect(classifyResearchTopic('hvor mange skritt har jeg gått i dag?')).toBe('general');
+		expect(classifyResearchTopic('er det noe aktuelt jeg bør gjøre med treningen?')).toBe('general');
+		expect(classifyResearchTopic('gi meg en oppdatering på målene mine')).toBe('general');
+	});
+
+	it('leser IKKE en konflikt hjemme som nyheter', () => {
+		expect(classifyResearchTopic('vi har en konflikt hjemme om husarbeid')).toBe('general');
+	});
+
+	it('kjenner fortsatt igjen ekte nyhetssignaler', () => {
+		expect(classifyResearchTopic('hva skjer i Ukraina nå?')).toBe('news');
+		expect(classifyResearchTopic('krigen i Gaza')).toBe('news');
+		expect(classifyResearchTopic('hvordan går børsen?')).toBe('news');
+		expect(classifyResearchTopic('nyheter om renta')).toBe('news');
+		expect(classifyResearchTopic('hvordan blir været i dag?')).toBe('news');
+	});
 });
 
 describe('resolveResearchScope', () => {

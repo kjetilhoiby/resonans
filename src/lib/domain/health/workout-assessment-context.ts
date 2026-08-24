@@ -32,7 +32,9 @@
 import { formatPaceOrSpeed, isWheeledSport } from '$lib/utils/activity-metrics';
 import type { KmSplit } from '$lib/utils/track-stats';
 import type { WorkoutAnalysis } from './workout-analysis';
-import type { FramedGoal } from './goal-horizon';
+// describeFramedGoals bor hos FramedGoal: helse-briefingen bruker den samme,
+// og to formuleringer av samme mål blir aldri like.
+import { describeFramedGoals, type FramedGoal } from './goal-horizon';
 
 /**
  * Hvor mange kilometersplitter vi lister enkeltvis.
@@ -233,18 +235,6 @@ export function describeHillReps(analysis: WorkoutAnalysis | null): string[] {
 	});
 }
 
-function describeGoals(goals: FramedGoal[]): string[] {
-	return goals.map((g) => {
-		const parts = [g.title];
-		if (g.progressText) parts.push(g.progressText);
-		if (g.daysLeft !== null) {
-			parts.push(g.daysLeft >= 0 ? `${g.daysLeft} dager igjen` : `frist passert for ${-g.daysLeft} dager siden`);
-		}
-		if (g.paused) parts.push('PÅ PAUSE');
-		return `- ${parts.join(' — ')}`;
-	});
-}
-
 function section(title: string, lines: string[]): string | null {
 	if (lines.length === 0) return null;
 	return `${title}:\n${lines.map((l) => (l.startsWith('-') ? l : `- ${l}`)).join('\n')}`;
@@ -296,8 +286,8 @@ export function buildAssessmentContext(input: AssessmentInput): string {
 					[input.weekStanding.planText, input.weekStanding.loadText].filter((t): t is string => Boolean(t))
 				)
 			: null,
-		section('Kortsiktige mål', describeGoals(input.goals.short)),
-		section('Lange og løpende mål', describeGoals(input.goals.long))
+		section('Kortsiktige mål', describeFramedGoals(input.goals.short)),
+		section('Lange og løpende mål', describeFramedGoals(input.goals.long))
 	].filter((b): b is string => b !== null);
 
 	return blocks.join('\n\n');

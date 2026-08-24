@@ -22,7 +22,7 @@ import {
 	type StreakState
 } from '$lib/domain/streaks';
 import { countByDay, type StreakHistoryDay } from '$lib/domain/streak-history';
-import { isStreakRelevantForTheme, type StreakRelevanceTarget } from '$lib/domain/streak-relevance';
+import { isStreakInHealthFamily, isStreakRelevantForTheme, type StreakRelevanceTarget } from '$lib/domain/streak-relevance';
 
 /** Hvor langt tilbake vi leser hendelser. Nok til å finne beste rekke uten å lese alt. */
 const LOOKBACK_DAYS = 400;
@@ -330,6 +330,36 @@ export async function loadRelevantStreaks(
 ): Promise<StreakWithState[]> {
 	const definitions = (await listStreakDefinitions(userId)).filter((definition) =>
 		isStreakRelevantForTheme(definition, target)
+	);
+	if (definitions.length === 0) return [];
+
+	const now = opts.now ?? new Date();
+	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+	const todayKey = osloDayKey(now);
+
+	return Promise.all(
+		definitions.map(async (definition) => ({
+			definition,
+			state: computeStreak(definition, await readEventDayKeys(userId, definition, since), todayKey)
+		}))
+	);
+}
+
+/**
+ * Streaks i helse-familien, med beregnet tilstand.
+ *
+ * Samme mønster som `loadRelevantStreaks` — filtrer definisjonene FØR tilstanden
+ * regnes, siden relevansen er ren og gratis mens hver tilstand er en spørring —
+ * men bredere: helsechatten skal se trening, vekt, søvn, ernæring, skjermtid og
+ * egenfrekvens i samme briefing.
+ */
+export async function loadHealthFamilyStreaks(
+	userId: string,
+	healthThemeIds: readonly string[],
+	opts: { now?: Date } = {}
+): Promise<StreakWithState[]> {
+	const definitions = (await listStreakDefinitions(userId)).filter((definition) =>
+		isStreakInHealthFamily(definition, healthThemeIds)
 	);
 	if (definitions.length === 0) return [];
 
