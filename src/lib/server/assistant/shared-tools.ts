@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { toParametersSchema } from './tool-schema';
 import type { AssistantTool } from './tools';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
@@ -53,8 +53,8 @@ import { ASSISTANT_SOURCE } from './conversation';
  * Adapter som gjør de delte chat-verktøyene i `$lib/ai/tools/*` tilgjengelige for den
  * server-kjørte assistent-agenten — uten å duplisere logikk. De delte verktøyene har formen
  * `{ name, description?, parameters?: zod, execute(args) }` og forventer at `userId` injiseres
- * ved kall (aldri fra modellen). Her konverteres zod-skjemaet til JSON-schema (zod v4
- * `z.toJSONSchema`), `userId` (+ ev. andre injiserte nøkler) fjernes fra det modellen ser, og
+ * ved kall (aldri fra modellen). Konverteringen zod → JSON-schema bor i `tool-schema.ts` og deles
+ * med chat-endepunktet, `userId` (+ ev. andre injiserte nøkler) fjernes fra det modellen ser, og
  * `execute` pakkes i assistentens `run(userId, args)`-kontrakt.
  *
  * Verktøy uten zod-`parameters` (noen er bare `{ name, execute }` og har skjemaet sitt inline i
@@ -83,27 +83,6 @@ interface AdaptOptions {
 }
 
 /** Konverter en (zod) `parameters` til JSON-schema, minus de injiserte nøklene. */
-function toParametersSchema(parameters: unknown, omit: Set<string>): Record<string, unknown> {
-	const hasShape =
-		!!parameters && typeof parameters === 'object' && 'shape' in (parameters as Record<string, unknown>);
-	if (!hasShape) return { type: 'object', properties: {} };
-
-	const shape = { ...((parameters as { shape: Record<string, z.ZodType> }).shape) };
-	for (const key of omit) delete shape[key];
-
-	try {
-		const schema = z.toJSONSchema(z.object(shape), {
-			io: 'input',
-			unrepresentable: 'any'
-		}) as Record<string, unknown>;
-		delete schema.$schema;
-		return schema;
-	} catch (error) {
-		console.warn('[assistant] kunne ikke konvertere parameters-skjema:', error);
-		return { type: 'object', properties: {}, additionalProperties: true };
-	}
-}
-
 /** Pakk et delt chat-verktøy som et assistent-verktøy. */
 export function adaptSharedTool(tool: SharedToolLike, opts: AdaptOptions = {}): AssistantTool {
 	const omit = new Set(['userId', ...(opts.omit ?? [])]);

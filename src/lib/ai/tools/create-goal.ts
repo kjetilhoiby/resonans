@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { createGoal } from '$lib/server/goals';
 import { isMetaGoalTitle } from '$lib/domain/goal-validation';
+import { resolveMetricId } from '$lib/domain/metric-catalog';
+import { validateWeightGoalTarget } from '$lib/domain/health/weight-goal';
 
 /**
  * Delt AI-verktøy: opprett et nytt mål. Logikken (tidligere inline i `/api/chat`) bor nå her, så
@@ -10,7 +12,7 @@ import { isMetaGoalTitle } from '$lib/domain/goal-validation';
 export const createGoalTool = {
 	name: 'create_goal',
 	description:
-		'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen. VEKTMÅL ("ned til 95 kg innen 15. november"): metricId=weight_change, targetValue=95 (målvekten i kg), startDate og endDate satt — startVerdien hentes fra siste vektmåling, så la startValue stå tom med mindre brukeren oppgir en annen startvekt. Svaret forteller hvilke tall målet faktisk måles mot: bruk DEM i kvitteringen til brukeren, aldri egne anslag. ALDRI opprett mål med meta-titler som "Planlegging" eller "Plan" — kun konkrete livsmål.',
+		'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen. VEKTMÅL ("ned til 95 kg innen 15. november"): metricId=weight_change, targetWeightKg=95 (MÅLVEKTEN i kg — aldri endringen), startDate og endDate satt. Startvekten hentes fra siste vektmåling, så la startValue stå tom med mindre brukeren oppgir en annen. Målvekten må stemme med tittelen: sier tittelen «til 95 kg», må targetWeightKg være 95. Svaret forteller hvilke tall målet faktisk måles mot: bruk DEM i kvitteringen til brukeren, aldri egne anslag. ALDRI opprett mål med meta-titler som "Planlegging" eller "Plan" — kun konkrete livsmål.',
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
@@ -26,7 +28,9 @@ export const createGoalTool = {
 		metricId: z
 			.string()
 			.optional()
-			.describe('Canonical metric id når målet er målbart, f.eks. running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori).'),
+			.describe(
+				'Canonical metric id når målet er målbart: running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori), sleep_avg_night, sleep_lag, steps_avg_day, active_minutes_avg_day, resting_heart_rate, weekly_effort, running_5k_time, running_10k_time, fat_mass, muscle_mass, monthly_savings, parent_time.'
+			),
 		spendCategory: z
 			.string()
 			.optional()
@@ -45,6 +49,12 @@ export const createGoalTool = {
 			.optional()
 			.describe(
 				'Målverdien for metrikksporet (f.eks. 20 km/uke). For metricId=weight_change: oppgi MÅLVEKTEN i kg (f.eks. 95 for «ned til 95 kg») — serveren regner endringen selv.'
+			),
+		targetWeightKg: z
+			.number()
+			.optional()
+			.describe(
+				'Kun for metricId=weight_change: MÅLVEKTEN i kg (f.eks. 95 for «ned til 95 kg»). Aldri endringen — serveren regner den selv fra startvekten.'
 			),
 		startValue: z
 			.number()
@@ -71,6 +81,7 @@ export const createGoalTool = {
 		goalKind?: 'level' | 'change' | 'trajectory';
 		goalWindow?: 'week' | 'month' | 'quarter' | 'year' | 'custom';
 		targetValue?: number;
+		targetWeightKg?: number;
 		startValue?: number;
 		unit?: string;
 		durationDays?: number;
@@ -82,6 +93,25 @@ export const createGoalTool = {
 				error: `«${args.title}» er en meta-tittel, ikke et konkret livsmål. Lag et mål som beskriver hva som faktisk skal oppnås — f.eks. «Løpe 60 km i juli» eller «Redusere vekt til 85 kg» — eller dropp målet hvis det ikke finnes noe konkret.`
 			};
 		}
+		/**
+		 * Vektmål valideres FØR skrivingen, mot ordene målet beskrives med.
+		 *
+		 * Kontrakten er målvekten, men modellen sender av og til endringen: prod fikk
+		 * «Redusere vekt til 95 kg» med −5 i målfeltet, og målet siktet mot 93 kg.
+		 * Tittelen er det brukeren leser, så den er både kryssjekk og siste utvei.
+		 */
+		let targetValue = args.targetValue;
+		if (resolveMetricId(args.metricId ?? '') === 'weight_change') {
+			const target = validateWeightGoalTarget({
+				title: args.title,
+				description: args.description,
+				targetWeightKg: args.targetWeightKg,
+				targetValue: args.targetValue
+			});
+			if (!target.ok) return { success: false as const, error: target.error };
+			targetValue = target.targetWeightKg;
+		}
+
 		try {
 			const goal = await createGoal({
 				userId: args.userId,
@@ -97,7 +127,7 @@ export const createGoalTool = {
 				childName: args.childName,
 				goalKind: args.goalKind,
 				goalWindow: args.goalWindow,
-				targetValue: args.targetValue,
+				targetValue,
 				startValue: args.startValue,
 				unit: args.unit,
 				durationDays: args.durationDays
