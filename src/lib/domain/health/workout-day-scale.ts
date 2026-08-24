@@ -9,10 +9,20 @@
  *
  *   LYSHET = tempo      lyst er fort, mørkt er rolig
  *   KULØR  = distanse   gult er kort, rødt er langt
- *   AREAL  = distanse   samme akse igjen, i en kanal fargen ikke eier
  *
- * Feltet interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen
- * havner midt i fargefeltet framfor i nærmeste hjørne.
+ * Én dimensjon, én kanal. Feltet interpoleres bilineært mellom fire hjørner, så en
+ * dag midt på skalaen havner midt i fargefeltet framfor i nærmeste hjørne.
+ *
+ * ## Hvorfor arealet ble fjernet
+ *
+ * Første utgave la distansen i BÅDE areal og kulør, som ekstra sikkerhet. Det så
+ * riktig ut i teorien og feilet i praksis: to kanaler som beveger seg sammen gjør at
+ * bare diagonalen er synlig — «små gule flekker og store rosa flekker» — og
+ * tempo-aksen drukner, fordi en størrelsesforskjell skriker høyere enn en
+ * lyshetsforskjell. Leseren ser da ÉN akse der det er to.
+ *
+ * Med fast størrelse er farge den eneste variasjonen, og da er lysheten umiddelbart
+ * synlig. Redundans er ikke gratis: den koster den andre dimensjonen.
  *
  * ## Lysheten er BARE tempo
  *
@@ -25,9 +35,8 @@
  * Kulør-aksen er et bevisst valg fra brukeren: flaten skal være vakker og
  * informativ for den som ser farger godt. Prisen står i validatoren — de to mørke
  * hjørnene skiller seg med **ΔE 3,6 under deuteranopi**, altså er distanse-aksen
- * praktisk borte for en rødgrønn-blind leser. Derfor er distansen OGSÅ areal: den
- * kanalen kan ikke kollapse for noen, og den koster ingenting for den som ser
- * fargene.
+ * praktisk borte for en rødgrønn-blind leser. Det er akseptert her: dette er en
+ * personlig flate, og verdiene finnes som tall ved trykk.
  *
  * Tre funn fra validatoren handlet ikke om fargesyn, og de er rettet i tallene
  * under:
@@ -79,10 +88,6 @@ export const CHROMA_LONG = 0.19;
  */
 export const CHROMA_DARK_TAPER = 0.25;
 
-/** Arealet marken dekker av cella, i prosent av sidekanten. */
-export const SIZE_MIN_PCT = 52;
-export const SIZE_MAX_PCT = 100;
-
 /** Under dette er det ingen fordeling å normalisere mot. */
 export const MIN_MEASURED_DAYS = 5;
 
@@ -113,8 +118,6 @@ export interface DayVisual {
 	fill: string;
 	/** Skriftfarge som holder kontrast mot `fill`. */
 	ink: string;
-	/** Sidekanten på marken, i prosent av cella. Arealet er det som er lineært. */
-	sizePct: number;
 }
 
 /**
@@ -125,8 +128,7 @@ export interface DayVisual {
  */
 export const NO_METRIC_VISUAL: DayVisual = {
 	fill: oklchToHex(0.44, 0.015, 70),
-	ink: inkForLightness(0.44),
-	sizePct: SIZE_MAX_PCT
+	ink: inkForLightness(0.44)
 };
 
 function percentile(sorted: number[], p: number): number {
@@ -201,18 +203,6 @@ export function fieldColor(paceT: number, distanceT: number): { fill: string; in
 }
 
 /**
- * Sidekanten for en distanse, 0 = kortest.
- *
- * Arealet er lineært i `t`, ikke sidekanten: en mark med dobbel bredde dekker fire
- * ganger flaten, og leses som fire ganger så mye. Derfor kvadratroten.
- */
-export function distanceSize(t: number): number {
-	const clamped = Math.min(1, Math.max(0, t));
-	const area = SIZE_MIN_PCT ** 2 + (SIZE_MAX_PCT ** 2 - SIZE_MIN_PCT ** 2) * clamped;
-	return Math.round(Math.sqrt(area) * 10) / 10;
-}
-
-/**
  * Hvordan dagen skal tegnes. Null når dagen ikke har hendelser i det hele tatt —
  * kalleren tegner da en tom celle.
  */
@@ -222,9 +212,10 @@ export function dayVisual(metrics: WorkoutDayMetrics, scale: DayScale): DayVisua
 		return NO_METRIC_VISUAL;
 	}
 
-	const distanceT = normalize(metrics.distanceKm, scale.distance);
-	const { fill, ink } = fieldColor(normalize(metrics.paceSecPerKm, scale.pace), distanceT);
-	return { fill, ink, sizePct: distanceSize(distanceT) };
+	return fieldColor(
+		normalize(metrics.paceSecPerKm, scale.pace),
+		normalize(metrics.distanceKm, scale.distance)
+	);
 }
 
 /**
@@ -238,10 +229,5 @@ export function dayVisual(metrics: WorkoutDayMetrics, scale: DayScale): DayVisua
  * som etikettene i flaten.
  */
 export function legendSamples(): DayVisual[][] {
-	return [0, 1].map((paceT) =>
-		[0, 1].map((distanceT) => ({
-			...fieldColor(paceT, distanceT),
-			sizePct: distanceSize(distanceT)
-		}))
-	);
+	return [0, 1].map((paceT) => [0, 1].map((distanceT) => fieldColor(paceT, distanceT)));
 }

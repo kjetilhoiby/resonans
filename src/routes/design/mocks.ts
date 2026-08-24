@@ -2007,28 +2007,30 @@ export const themeStreaks = [
 ];
 
 /**
- * Distanse og tempo per dag, til den to-kanals kalenderen.
+ * Distanse og tempo per dag, til fargefeltet.
  *
- * Spredningen er med vilje: 3–12 km og 4:50–6:40 per km, én dag med to turer, og én
- * dag uten distanse (styrke inne i en løpe-streak) — nok til å vise areal, lyshet,
- * multi-ringen og gråtonen for «hendelse uten tall».
+ * Tallene er brukerens EGEN fordeling, ikke en jevn spredning: stort sett 3 km med
+ * et par turer på 8, tempo 4:50–7:00. En jevn 3–12 km-mock ga et galleri som ikke
+ * lignet flaten — feltet fylles i praksis langs en diagonal, fordi lange turer også
+ * er roligere. Én dag med to turer og én uten distanse (styrke inne i en
+ * løpe-streak) er med for å vise multi-ringen og gråtonen.
  */
 export const streakDayMetrics: WorkoutDayMetrics[] = [
 	{ date: '2026-08-01', count: 1, distanceKm: 4.9, paceSecPerKm: 372 },
 	{ date: '2026-08-03', count: 1, distanceKm: 4.5, paceSecPerKm: 355 },
 	{ date: '2026-08-04', count: 1, distanceKm: 2.7, paceSecPerKm: 398 },
-	{ date: '2026-08-05', count: 2, distanceKm: 8.0, paceSecPerKm: 344 },
+	{ date: '2026-08-05', count: 1, distanceKm: 3.0, paceSecPerKm: 344 },
 	{ date: '2026-08-06', count: 1, distanceKm: 3.2, paceSecPerKm: 290 },
-	{ date: '2026-08-07', count: 1, distanceKm: 6.9, paceSecPerKm: 366 },
+	{ date: '2026-08-07', count: 2, distanceKm: 6.9, paceSecPerKm: 366 },
 	{ date: '2026-08-08', count: 1, distanceKm: 2.9, paceSecPerKm: 402 },
 	{ date: '2026-08-09', count: 1, distanceKm: 3.4, paceSecPerKm: 351 },
-	{ date: '2026-08-11', count: 1, distanceKm: 12.1, paceSecPerKm: 383 },
-	{ date: '2026-08-12', count: 1, distanceKm: 8.1, paceSecPerKm: 358 },
+	{ date: '2026-08-11', count: 1, distanceKm: 8.1, paceSecPerKm: 383 },
+	{ date: '2026-08-12', count: 1, distanceKm: 3.4, paceSecPerKm: 358 },
 	{ date: '2026-08-13', count: 1, distanceKm: 3.4, paceSecPerKm: 300 },
 	{ date: '2026-08-16', count: 1, distanceKm: 3.4, paceSecPerKm: 347 },
 	{ date: '2026-08-17', count: 1, distanceKm: 2.9, paceSecPerKm: 311 },
 	{ date: '2026-08-18', count: 1, distanceKm: null, paceSecPerKm: null },
-	{ date: '2026-08-19', count: 1, distanceKm: 8.2, paceSecPerKm: 375 },
+	{ date: '2026-08-19', count: 1, distanceKm: 8.2, paceSecPerKm: 340 },
 	{ date: '2026-08-20', count: 1, distanceKm: 3.0, paceSecPerKm: 336 },
 	{ date: '2026-08-21', count: 1, distanceKm: 2.2, paceSecPerKm: 419 },
 	{ date: '2026-08-22', count: 1, distanceKm: 3.0, paceSecPerKm: 329 },

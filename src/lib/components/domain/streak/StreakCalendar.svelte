@@ -21,17 +21,19 @@
   under kalenderen. I dag har ramme. Framtidige dager er tomme uten å være «glemt» —
   en dag som ikke har vært, kan ikke være brutt.
 
-  ## Tre kanaler for trenings-streaks
+  ## To akser, to kanaler
 
-  Har dagen distanse og tempo, bærer marken dem:
+  Har dagen distanse og tempo, bærer fargen dem:
 
     lyshet = tempo      lyst er fort, mørkt er rolig
     kulør  = distanse   gult er kort, rødt er langt
-    areal  = distanse   samme akse igjen, i en kanal fargen ikke eier
 
-  Det er poenget med kalenderen — å se forbi «møtte opp». Feltet og tallene bak det
-  bor i `workout-day-scale.ts`; arealet er med fordi kulør-aksen er praktisk borte
-  for en rødgrønn-blind leser, og fordi det ikke koster den som ser fargene noe.
+  Det er poenget med kalenderen — å se forbi «møtte opp». Feltet bor i
+  `workout-day-scale.ts`.
+
+  Cellene har FAST størrelse. Første utgave lot distansen slå ut i arealet også, og
+  det gjorde tempo-aksen usynlig: to kanaler som beveger seg sammen viser bare
+  diagonalen, og en størrelsesforskjell skriker høyere enn en lyshetsforskjell.
 
   Verdien er aldri bare farge: trykk på en dag skriver tallene under kalenderen. På
   en telefon finnes ingen hover, så en `title` alene ville gjort tallene utilgjengelige.
@@ -174,9 +176,7 @@
 						>
 							<span
 								class="sc-mark"
-								style={visual
-									? `--f:${visual.fill}; --ink:${visual.ink}; --size:${visual.sizePct}%`
-									: undefined}
+								style={visual ? `--f:${visual.fill}; --ink:${visual.ink}` : undefined}
 							>
 								{Number(cell.date.slice(8))}
 							</span>
@@ -230,14 +230,14 @@
 						{ri === 0 ? 'rask' : 'rolig'}
 					</span>
 					{#each row as sample, ci (ci)}
-						<span class="sc-swatch" style={`--f:${sample.fill}; --size:${sample.sizePct}%`}></span>
+						<span class="sc-swatch" style={`--f:${sample.fill}`}></span>
 					{/each}
 				{/each}
 			</div>
 			<p class="sc-legend-note">
-				{paceOrSpeedLabel(sportFamily ?? '')} er lysheten, lengden er farge og størrelse.
-				Skalaen er dine egne dager (10.–90. persentil av {scale?.measuredDays} målte) — trykk på
-				en dag for tallene.
+				{paceOrSpeedLabel(sportFamily ?? '')} er lysheten, lengden er kuløren. Skalaen er dine
+				egne dager (10.–90. persentil av {scale?.measuredDays} målte) — trykk på en dag for
+				tallene.
 			</p>
 		</div>
 	{/if}
@@ -324,12 +324,14 @@
 
 	/* Marken er dagen. Uten tall dekker den hele cella (ren tilstedeværelse); med
 	   tall er sidekanten satt av distansen og fargen av tempoet. */
+	/* Marken er dagen, og den dekker cella. Fast størrelse med vilje: se
+	   komponentkommentaren om hvorfor arealet ikke bærer distansen. */
 	.sc-mark {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: var(--size, 100%);
-		height: var(--size, 100%);
+		width: 100%;
+		height: 100%;
 		border-radius: 7px;
 		background: var(--f, transparent);
 		color: var(--ink, inherit);
@@ -430,19 +432,10 @@
 	/* Samme form som marken i kalenderen, i miniatyr: prøvene skal kunne kjennes
 	   igjen som det samme merket. */
 	.sc-swatch {
-		display: inline-flex;
+		display: inline-block;
 		width: 20px;
 		height: 20px;
 		border-radius: 6px;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.sc-swatch::after {
-		content: '';
-		width: var(--size, 100%);
-		height: var(--size, 100%);
-		border-radius: 4px;
 		background: var(--f);
 	}
 

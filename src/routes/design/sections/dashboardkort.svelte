@@ -154,17 +154,24 @@
 	<h3 class="subsection">StreakCalendar — fargefeltet: tempo × lengde</h3>
 	<p class="section-desc">
 		Samme kalender med tallene på. <em>Lysheten</em> er tempoet (lyst er fort), <em>kuløren</em>
-		er lengden (gult er kort, rødt er langt), og <em>arealet</em> er lengden igjen. Feltet
-		interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen havner midt i feltet
-		framfor i nærmeste hjørne. Det er poenget med historikken — å se forbi «møtte opp».
+		er lengden (gult er kort, rødt er langt). Feltet interpoleres bilineært mellom fire hjørner,
+		så en dag midt på skalaen havner midt i feltet framfor i nærmeste hjørne. Det er poenget med
+		historikken — å se forbi «møtte opp».
+	</p>
+	<p class="section-desc">
+		<strong>Én dimensjon, én kanal.</strong> Første utgave la lengden i arealet også, som ekstra
+		sikkerhet mot fargeblindhet. Det gjorde tempo-aksen usynlig: to kanaler som beveger seg
+		sammen viser bare diagonalen — «små gule flekker og store rosa flekker» — og en
+		størrelsesforskjell skriker høyere enn en lyshetsforskjell. Med fast cellestørrelse er farge
+		den eneste variasjonen, og da leses lysheten umiddelbart.
 	</p>
 	<p class="section-desc">
 		Lysheten er tempoets akse <em>alene</em>: gir man de lange dagene litt mørkere farge også,
 		leses en lang rask dag som roligere enn en kort rask. Hjørnene er validert mot flaten —
 		normalsyn-gulv ΔE 16,8 (over 15) og alle fire over 3:1 kontrast. Kulør-aksen er praktisk
-		borte under rødgrønn fargeblindhet (ΔE 3,6), og derfor ligger lengden <em>også</em> i
-		arealet: en kanal som ikke kan kollapse, og som ikke koster den som ser fargene noe. Grå
-		mark = hendelse uten tall, f.eks. en styrkeøkt inne i en løpestreak.
+		borte under rødgrønn fargeblindhet (ΔE 3,6); det er et bevisst valg på en personlig flate,
+		og tallene finnes ved trykk. Grå mark = hendelse uten tall, f.eks. en styrkeøkt inne i en
+		løpestreak.
 	</p>
 	<div class="demo-card demo-card--wide">
 		<StreakCalendar

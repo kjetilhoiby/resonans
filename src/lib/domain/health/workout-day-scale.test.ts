@@ -2,15 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
 	buildDayScale,
 	dayVisual,
-	distanceSize,
 	fieldColor,
 	legendSamples,
 	MIN_DISTANCE_SPAN_KM,
 	MIN_MEASURED_DAYS,
 	MIN_PACE_SPAN_SEC,
 	NO_METRIC_VISUAL,
-	SIZE_MAX_PCT,
-	SIZE_MIN_PCT,
 	type WorkoutDayMetrics
 } from './workout-day-scale';
 
@@ -60,7 +57,6 @@ describe('buildDayScale', () => {
 
 		const visuals = flat.map((d) => dayVisual(d, scale)!);
 		expect(new Set(visuals.map((v) => v.fill)).size).toBe(1);
-		expect(new Set(visuals.map((v) => v.sizePct)).size).toBe(1);
 	});
 
 	it('gir ingen skala under gulvet for antall dager', () => {
@@ -86,23 +82,14 @@ describe('dayVisual', () => {
 		expect(brightness(fast.fill)).toBeGreaterThan(brightness(slow.fill));
 	});
 
-	it('tegner lange dager større enn korte', () => {
+	it('gir hver dimensjon ÉN kanal', () => {
+		// Distansen er kulør og bare kulør. Lå den også i arealet, beveget de to seg
+		// sammen, og da var bare diagonalen synlig — tempo-aksen druknet.
 		const short = dayVisual(day('x', 3, 330), scale)!;
 		const long = dayVisual(day('x', 12, 330), scale)!;
 
-		expect(long.sizePct).toBeGreaterThan(short.sizePct);
-		expect(short.sizePct).toBeGreaterThanOrEqual(SIZE_MIN_PCT);
-		expect(long.sizePct).toBeLessThanOrEqual(SIZE_MAX_PCT);
-	});
-
-	it('lar distansen slå ut i BÅDE areal og kulør', () => {
-		// Samme tempo, ulik distanse: ulik størrelse og ulik farge. Arealet er
-		// redundant med kuløren, og det er meningen — kuløren er den som forsvinner
-		// for en rødgrønn-blind leser.
-		const a = dayVisual(day('x', 4, 330), scale)!;
-		const b = dayVisual(day('x', 10, 330), scale)!;
-		expect(a.sizePct).not.toBe(b.sizePct);
-		expect(a.fill).not.toBe(b.fill);
+		expect(Object.keys(short).sort()).toEqual(['fill', 'ink']);
+		expect(short.fill).not.toBe(long.fill);
 	});
 
 	it('bruker gråtonen når dagen mangler tall', () => {
@@ -122,20 +109,7 @@ describe('dayVisual', () => {
 	it('klipper verdier utenfor spennet framfor å tegne utenfor skalaen', () => {
 		const beyond = dayVisual(day('x', 40, 120), scale)!;
 		const atMax = dayVisual(day('x', 11.1, 297), scale)!;
-		expect(beyond.sizePct).toBe(SIZE_MAX_PCT);
 		expect(beyond.fill).toBe(atMax.fill);
-	});
-});
-
-describe('distanceSize', () => {
-	it('er lineær i AREAL, ikke i sidekant', () => {
-		// Halvveis i skalaen skal marken dekke halvparten av arealspennet.
-		const mid = distanceSize(0.5);
-		const midArea = mid ** 2;
-		const expected = (SIZE_MIN_PCT ** 2 + SIZE_MAX_PCT ** 2) / 2;
-		expect(midArea).toBeCloseTo(expected, 0);
-		// …og altså IKKE midt mellom sidekantene.
-		expect(mid).toBeGreaterThan((SIZE_MIN_PCT + SIZE_MAX_PCT) / 2);
 	});
 });
 
@@ -190,11 +164,8 @@ describe('legendSamples', () => {
 
 		expect(grid).toHaveLength(2);
 		expect(grid[0]).toHaveLength(2);
-		// Alle fire er ulike farger.
+		// Alle fire er ulike farger — det er hele tegnforklaringen.
 		expect(new Set(grid.flat().map((s) => s.fill)).size).toBe(4);
-		// Kolonnene er distanse, så størrelsen følger dem — ikke radene.
-		expect(grid[0][0].sizePct).toBe(grid[1][0].sizePct);
-		expect(grid[0][0].sizePct).toBeLessThan(grid[0][1].sizePct);
 	});
 
 	it('er prøver av det SAMME feltet cellene bruker', () => {

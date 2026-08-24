@@ -105,10 +105,20 @@ tre kanaler over to akser:
 
     lyshet = tempo      lyst er fort, mørkt er rolig
     kulør  = distanse   gult er kort, rødt er langt
-    areal  = distanse   samme akse igjen, i en kanal fargen ikke eier
 
 Feltet interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen havner
 midt i feltet framfor i nærmeste hjørne.
+
+**Én dimensjon, én kanal — og det tok to forsøk.** Utgaven før denne la distansen i
+arealet *også*, som sikkerhet mot at kulør-aksen forsvinner under fargeblindhet.
+Brukeren så resultatet og kjente igjen feilen med én setning: «små gule flekker og
+store rosa flekker». To kanaler som beveger seg sammen viser bare diagonalen, og en
+størrelsesforskjell skriker høyere enn en lyshetsforskjell — så tempo-aksen druknet,
+og kalenderen viste ÉN akse der det er to. Cellene har nå fast størrelse, og da er
+farge den eneste variasjonen: to dager på samme distanse med ulikt tempo (8,1 km @
+6:23 mot 8,2 km @ 5:40) er umiddelbart ulike, og det var usynlig før.
+
+Redundant koding er ikke gratis. Den koster den andre dimensjonen.
 
 **Lysheten er tempoets akse alene.** Fristelsen er å gjøre de lange dagene litt
 mørkere også — det ser rikere ut. Da er lysheten ikke lenger tempo, og en lang rask
@@ -136,16 +146,16 @@ De tre siste radene handlet ikke om fargesyn — de var dårlig lesbarhet for al
 de er rettet: kulørspennet er utvidet (105° → 22°), lysheten løftet i den mørke
 enden, og kroma taper mot mørkt framfor å bli klippet uforutsigbart av gamut.
 
-CVD-raden står igjen som et bevisst valg. Distansen ligger derfor **også** i arealet:
-en kanal som ikke kan kollapse for noen, og som ikke koster den som ser fargene noe.
-Lys rød kan ikke bli mettet i sRGB — den blir korall — og det er en gamut-grense, ikke
-et valg, siden lysheten eies av tempoet og ikke kan senkes for å gi rødt mer kroma.
+CVD-raden står igjen som et bevisst valg på en personlig flate; verdiene finnes som
+tall ved trykk. Lys rød kan ikke bli mettet i sRGB — den blir korall — og det er en
+gamut-grense, ikke et valg, siden lysheten eies av tempoet og ikke kan senkes for å
+gi rødt mer kroma. Konsekvensen er verdt å kjenne: en lang, rask dag er den BLEKESTE
+cella i kalenderen, selv om den er den hardeste økta. Vil man at hard innsats skal
+lese som intens farge, er det lyshetsaksen som må snus (mørkt = fort), og det er én
+konstant i `workout-day-scale.ts`.
 
 #### Resten av skalaen
 
-- **Arealet er lineært, ikke sidekanten.** En mark med dobbel bredde dekker fire
-  ganger flaten og leses som fire ganger så mye, så sidekanten går gjennom
-  kvadratroten (`distanceSize`).
 - **Skalaen er brukerens egen** — 10.–90. persentil av egne dager. Persentiler
   framfor min/maks fordi én glemt tracker (2 t 20 min på 9 km) ellers presser alle
   andre dager sammen i den lyse enden. Tempoet regnes på elapsed tid, som er den
@@ -165,6 +175,11 @@ et valg, siden lysheten eies av tempoet og ikke kan senkes for å gi rødt mer k
 - **Tegnforklaringen er feltets fire hjørner**, i det samme rutenettet aksene har.
   Fire ruter framfor ni: hjørnene er det leseren skal kjenne igjen, og alt mellom
   dem leses som en retning.
+- **Mock-dataene er brukerens egen fordeling**, ikke en jevn spredning. Galleriet
+  hadde 3–12 km jevnt fordelt, og det lignet ikke flaten: i praksis er det stort sett
+  3 km med et par turer på 8, og feltet fylles langs en diagonal fordi lange turer
+  også er roligere. En mock som spenner bredere enn dataene får en encoding til å se
+  bedre ut enn den er.
 
 OKLCH regnes til hex i domenelaget (`$lib/domain/oklch.ts`) framfor å bruke `oklch()`
 i CSS: en ugyldig fargeverdi i en gammel nettleser gir en gjennomsiktig celle, altså
@@ -202,6 +217,10 @@ samme radene.
 - **En overstyrt anbefaling skal etterlate seg tallene.** Neste gang noen ser på
   feltet, er spørsmålet ikke «var dette gjennomtenkt» men «gjelder avveiningen
   fortsatt».
+- **Sikkerhetsnettet var selv en feil.** Arealet ble lagt til for å dekke over at
+  kulør-aksen svikter under fargeblindhet — og gjorde flaten dårligere for alle, ved
+  å skjule den andre aksen. En avveining som ikke ble tatt (to kanaler til to
+  dimensjoner) er ikke det samme som en avveining som ble kjøpt billig.
 
 ## Verifisering
 
@@ -212,11 +231,12 @@ samme radene.
   regner (8 dager på rad, 4 uker på rad fra samme mockdager), og bunnpanelet åpnes
   fra en chip med kalender, fasit-kolonne, dekningstall og lenke videre. Panelets
   API-kall ble mocket, siden dev-miljøet her er uten database.
-- Fase 5 verifisert i Chromium på 390 px: feltet leses som det skal (12,1 km @ 6:23
-  er stor og mørk rød, 3,2 km @ 4:50 er liten og knallgul, 2,2 km @ 6:59 er liten og
-  mørk oliven, styrkeøkta uten distanse er grå), tegnforklaringens fire hjørner
-  stemmer med cellene, og trykk på en dag skriver tallene under kalenderen. Nye
-  tester: `oklch.test.ts` (5), `workout-day-scale.test.ts` (19).
+- Fase 5 verifisert i Chromium på 390 px med brukerens egen fordeling: 3,2 km @ 4:50
+  er knallgul, 2,2 km @ 6:59 er mørk oliven, 8,1 km @ 6:23 er mørk rød og 8,2 km @
+  5:40 er lys korall — altså er de to 8-kilometerne synlig ulike, som er hele
+  poenget. Styrkeøkta uten distanse er grå, tegnforklaringens fire hjørner stemmer
+  med cellene, og trykk på en dag skriver tallene under kalenderen. Nye tester:
+  `oklch.test.ts` (5), `workout-day-scale.test.ts` (17).
 - **Piksel-baselines er ikke oppdatert:** `dashboardkort`-seksjonen har nye demoer,
   og temasider med relevante streaks får en rad mer. `npm run test:visual:update`
   krever databasetilgang som ikke fantes i miljøet endringen ble skrevet i.
