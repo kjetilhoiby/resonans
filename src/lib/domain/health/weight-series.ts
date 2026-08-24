@@ -20,7 +20,14 @@
  * ikke vet at ±1 kg er normalt, leser hver svingning som en beskjed.
  */
 
-import { dayNumber, daysBetween, trailingTrend, trendSegmentsOf } from './trailing-trend';
+import { clipToWindow, type ChartWindow } from './body-chart-window';
+import {
+	dayNumber,
+	daysBetween,
+	trailingTrend,
+	trendRange,
+	trendSegmentsOf
+} from './trailing-trend';
 
 /** En enkelt veiing, som den ligger i sensor_events. */
 export interface WeightMeasurement {
@@ -206,16 +213,9 @@ export function buildMetricSeries(days: WeightDay[], metricId: WeightMetricId): 
 	const points = withTrend(days, metric);
 
 	let nadir: MetricSeries['nadir'] = null;
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
 	for (const point of points) {
-		min = Math.min(min, point.raw);
-		max = Math.max(max, point.raw);
-		if (point.trend !== null) {
-			min = Math.min(min, point.trend);
-			max = Math.max(max, point.trend);
-			if (!nadir || point.trend < nadir.value) nadir = { date: point.date, value: point.trend };
-		}
+		if (point.trend === null) continue;
+		if (!nadir || point.trend < nadir.value) nadir = { date: point.date, value: point.trend };
 	}
 
 	return {
@@ -225,7 +225,7 @@ export function buildMetricSeries(days: WeightDay[], metricId: WeightMetricId): 
 		points,
 		latest: points.at(-1) ?? null,
 		nadir,
-		range: points.length > 0 ? { min, max } : null
+		range: trendRange(points)
 	};
 }
 
@@ -258,7 +258,24 @@ export interface ValueAxis {
 	ticks: number[];
 	/** Sann når gulvet utvidet aksen forbi det målingene krevde. */
 	spanFloored: boolean;
+	/**
+	 * Satt når mållinja ligger UTENFOR domenet, med retningen dit den ligger.
+	 * Flaten skal da vise målet som et merke i kanten framfor en strek over feltet
+	 * — en strek utenfor feltet finnes ikke, og et tomt felt sier ingenting.
+	 */
+	goalOutside: 'over' | 'under' | null;
 }
+
+/**
+ * Hvor mye mållinja får utvide aksen forbi det dataene krever.
+ *
+ * Mållinja MÅ være synlig — men ikke for enhver pris. Veier man 100 kg med et mål
+ * på 85, gir et krav om at streken skal inn en akse på femten kilo, og da er en
+ * nedgang på to kilo over tretti dager en flat strek. Dataene skal eie minst
+ * omtrent halve feltet; ligger målet lenger unna enn det, tegnes det i kanten i
+ * stedet. Et mål man nærmer seg slippes inn og gir konteksten det er verdt.
+ */
+export const MAX_GOAL_AXIS_STRETCH = 2.2;
 
 /**
  * Verdiaksen for en serie, eventuelt utvidet så mållinja får plass.
@@ -277,9 +294,20 @@ export function axisForSeries(
 
 	let lo = series.range.min;
 	let hi = series.range.max;
+	let goalOutside: ValueAxis['goalOutside'] = null;
 	if (typeof opts.goal === 'number' && Number.isFinite(opts.goal)) {
-		lo = Math.min(lo, opts.goal);
-		hi = Math.max(hi, opts.goal);
+		const goal = opts.goal;
+		// Aksen dataene alene ville fått, mot aksen målet ber om. Sammenligningen
+		// skjer på de GULVEDE spennene, ellers ville en periode der vekta nesten
+		// ikke beveget seg (spenn ~0) dyttet ethvert mål ut av feltet.
+		const dataSpan = Math.max((hi - lo) * 1.2, minSpan);
+		const withGoal = Math.max((Math.max(hi, goal) - Math.min(lo, goal)) * 1.2, minSpan);
+		if (withGoal > dataSpan * MAX_GOAL_AXIS_STRETCH) {
+			goalOutside = goal < lo ? 'under' : 'over';
+		} else {
+			lo = Math.min(lo, goal);
+			hi = Math.max(hi, goal);
+		}
 	}
 
 	const observed = hi - lo;
@@ -316,7 +344,7 @@ export function axisForSeries(
 		ticks.push(Math.round(value * 1000) / 1000);
 	}
 
-	return { min, max, ticks, spanFloored: padded < minSpan };
+	return { min, max, ticks, spanFloored: padded < minSpan, goalOutside };
 }
 
 export type WeightRangeId = '30d' | '90d' | '6m' | '1y' | '3y' | 'alt';
@@ -369,25 +397,34 @@ export function seriesForRange(
 	if (range === 'alt' || full.points.length === 0) return full;
 
 	const visible = new Set(filterByRange(days, range).map((d) => d.date));
-	const points = full.points.filter((p) => visible.has(p.date));
+	return withVisiblePoints(
+		full,
+		full.points.filter((p) => visible.has(p.date))
+	);
+}
 
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
-	for (const point of points) {
-		min = Math.min(min, point.raw);
-		max = Math.max(max, point.raw);
-		if (point.trend !== null) {
-			min = Math.min(min, point.trend);
-			max = Math.max(max, point.trend);
-		}
-	}
+/**
+ * Serien med bare punktene i vinduet, og de avledede feltene regnet om.
+ *
+ * **Dette er fella `{ ...full, points: klippet }` går i.** Spreaden ser komplett
+ * ut, men `range` og `latest` beskriver da fortsatt hele historikken. Grafen
+ * gjorde nettopp det fra livvidde-panelet kom, og aksen sto på 80–110 kg i alle
+ * perioder — ni års spenn tegnet over tretti dager.
+ *
+ * `nadir` beholdes med vilje fra hele historikken: et «lavpunkt» som bare gjelder
+ * de tretti dagene man ser på, er ikke et lavpunkt — det er den minste av dem.
+ * Flaten viser merket bare når lavpunktet ligger i vinduet, og da ER det også
+ * vinduets minimum.
+ */
+export function clipSeriesToWindow(series: MetricSeries, window: ChartWindow | null): MetricSeries {
+	return withVisiblePoints(series, clipToWindow(series.points, window));
+}
 
+function withVisiblePoints(series: MetricSeries, points: MetricPoint[]): MetricSeries {
 	return {
-		...full,
+		...series,
 		points,
 		latest: points.at(-1) ?? null,
-		// Lavpunktet er fra hele historikken. Et «lavpunkt» som bare gjelder de
-		// 30 dagene man ser på, er ikke et lavpunkt — det er den minste av dem.
-		range: points.length > 0 ? { min, max } : null
+		range: trendRange(points)
 	};
 }

@@ -45,7 +45,7 @@
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import PeriodPills from '../../ui/PeriodPills.svelte';
 	import {
-		seriesForRange,
+		clipSeriesToWindow,
 		trendSegments,
 		axisForSeries,
 		buildMetricSeries,
@@ -69,7 +69,7 @@
 		waistTrendSegments,
 		type WaistDay
 	} from '$lib/domain/health/waist';
-	import { dayNumber, type TrendPoint } from '$lib/domain/health/trailing-trend';
+	import { dayNumber, trendRange, type TrendPoint } from '$lib/domain/health/trailing-trend';
 	import type { WeightSwing } from '$lib/domain/health/weight-swings';
 
 	interface Props {
@@ -128,14 +128,14 @@
 
 	/**
 	 * Trenden regnes på HELE historikken, og klippes så til det delte vinduet.
-	 * Motsatt rekkefølge gir en periode uten trend den første uka — samme grunn som
-	 * `seriesForRange` gjør det slik.
+	 * Motsatt rekkefølge gir en periode uten trend den første uka.
+	 *
+	 * Klippingen går gjennom `clipSeriesToWindow`, aldri gjennom en spread: `range`
+	 * og `latest` må regnes om for vinduet. Sto det `{ ...fullSeries, points: … }`
+	 * her, fikk aksen spennet fra hele historikken — 80 til 110 kg i alle perioder.
 	 */
 	const fullSeries = $derived(buildMetricSeries(days, metricId));
-	const series = $derived({
-		...fullSeries,
-		points: clipToWindow(fullSeries.points, chartWindow)
-	});
+	const series = $derived(clipSeriesToWindow(fullSeries, chartWindow));
 	/** Mållinja gjelder bare vekt — det finnes ingen målverdi for muskelmasse. */
 	const activeGoal = $derived(metricId === 'weight' ? goalKg : null);
 	const axis = $derived(axisForSeries(series, { goal: activeGoal }));
@@ -300,31 +300,14 @@
 	 * finnes, og det er verre enn en linje som sier «ingen måling i denne perioden».
 	 */
 	const waistFull = $derived(buildWaistSeries(waistDays));
-	const waistSeries = $derived({
-		...waistFull,
-		points: clipToWindow(waistFull.points, chartWindow)
+	const waistSeries = $derived.by(() => {
+		const points = clipToWindow(waistFull.points, chartWindow);
+		// Samme regel som for vekta: spennet er vinduets, ikke historikkens.
+		return { ...waistFull, points, latest: points.at(-1) ?? null, range: trendRange(points) };
 	});
-	const waistAxisValues = $derived(
-		waistSeries.points.length > 0 ? waistAxis({ ...waistSeries, range: rangeOf(waistSeries.points) }) : null
-	);
+	const waistAxisValues = $derived(waistSeries.points.length > 0 ? waistAxis(waistSeries) : null);
 	const waistSegments = $derived(waistTrendSegments(waistSeries.points));
 	const waistInnerHeight = WAIST_HEIGHT - PAD.top - PAD.bottom;
-
-	/** Spennet en klippet serie dekker. `buildWaistSeries` regner det for hele. */
-	function rangeOf(points: TrendPoint[]): { min: number; max: number } | null {
-		if (points.length === 0) return null;
-		let min = Number.POSITIVE_INFINITY;
-		let max = Number.NEGATIVE_INFINITY;
-		for (const p of points) {
-			min = Math.min(min, p.raw);
-			max = Math.max(max, p.raw);
-			if (p.trend !== null) {
-				min = Math.min(min, p.trend);
-				max = Math.max(max, p.trend);
-			}
-		}
-		return { min, max };
-	}
 
 	function waistY(value: number): number {
 		if (!waistAxisValues) return PAD.top;
@@ -422,7 +405,7 @@
 					<text x={PAD.left - 6} y={yOf(tick) + 3} text-anchor="end" class="tick">{fmt(tick)}</text>
 				{/each}
 
-				{#if activeGoal !== null}
+				{#if activeGoal !== null && axis.goalOutside === null}
 					<line
 						x1={PAD.left}
 						x2={PAD.left + innerWidth}
@@ -444,6 +427,34 @@
 						paint-order="stroke"
 					>
 						Mål {fmt(activeGoal)}
+					</text>
+				{:else if activeGoal !== null}
+					<!-- Målet ligger for langt unna for å slippes inn i domenet: en akse
+					     strukket femten kilo gjør en nedgang på to til en flat strek. Det
+					     tegnes derfor som et merke i kanten, med en pil som sier hvilken
+					     vei. Streken er svakere og tettere stiplet enn mållinja, så den
+					     ikke leses som en verdi i feltet. -->
+					{@const edgeY = axis.goalOutside === 'under' ? PAD.top + innerHeight : PAD.top}
+					<line
+						x1={PAD.left}
+						x2={PAD.left + innerWidth}
+						y1={edgeY}
+						y2={edgeY}
+						stroke={GOAL_COLOR}
+						stroke-width="1"
+						stroke-dasharray="2 5"
+						opacity="0.55"
+					/>
+					<text
+						x={PAD.left + 2}
+						y={axis.goalOutside === 'under' ? edgeY - 5 : edgeY + 12}
+						text-anchor="start"
+						class="goal-label"
+						stroke={SURFACE}
+						stroke-width="2.5"
+						paint-order="stroke"
+					>
+						Mål {fmt(activeGoal)} {axis.goalOutside === 'under' ? '↓' : '↑'}
 					</text>
 				{/if}
 
@@ -629,9 +640,10 @@
 	<p class="note">
 		Punktene er de faktiske veiingene, linja er et etterslepende sjudagerssnitt. Spriket mellom
 		dem er normalt — kroppsvekt svinger et kilo på væske alene, og det er trenden som forteller
-		hvor du er.{#if axis?.spanFloored}
-			Aksen er utvidet til {fmt(axis.max - axis.min)} {metric.unit} her, slik at en rolig periode
-			ikke ser dramatisk ut.{/if}
+		hvor du er.{#if axis?.spanFloored}{' '}Aksen er utvidet til {fmt(axis.max - axis.min)} {metric.unit} her, slik at en rolig periode
+			ikke ser dramatisk ut.{/if}{#if axis?.goalOutside && activeGoal !== null}{' '}Aksen følger perioden, så målet på {fmt(activeGoal)}
+			{metric.unit} ligger {axis.goalOutside === 'under' ? 'under' : 'over'} feltet — ellers ville
+			utviklingen her blitt en flat strek.{/if}
 	</p>
 </section>
 

@@ -40,7 +40,6 @@
 		macroSplitTypical,
 		macroSplitHighProtein,
 		macroSplitUnaccounted,
-		weightDays,
 		weightLatest,
 		weightComposition,
 		weightCompositionMuscleGain,
@@ -415,6 +414,12 @@
 		et stup — samme lærdom som vektaksen i ernæringshistorikken. x-aksen er tidsproporsjonal, så
 		et hull i veiingene blir et tomrom og ikke to punkter ved siden av hverandre.
 	</p>
+	<p class="section-desc">
+		<strong>Aksen følger perioden, ikke historikken.</strong> De to grafene under er samme serie:
+		åtte år med veiinger, og de siste tretti dagene av dem. Et mål som ligger utenfor det vinduet
+		tegnes som et merke i kanten med en pil — å strekke aksen ned til det ville gjort utviklingen
+		i perioden til en flat strek, og det er nettopp den avveiningen mållinja ikke får vinne.
+	</p>
 	<div class="demo-card demo-card--wide">
 		<WeightTrendChart
 			days={weightDaysSwinging}
@@ -424,7 +429,7 @@
 		/>
 	</div>
 	<div class="demo-card demo-card--wide">
-		<WeightTrendChart days={weightDays.slice(-24)} initialRange="30d" />
+		<WeightTrendChart days={weightDaysSwinging} goalKg={75} initialRange="30d" />
 	</div>
 
 	<h3 class="subsection">WeightPeriodsCard — kurvens egne perioder</h3>

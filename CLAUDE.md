@@ -758,6 +758,21 @@ ble flyttet ut da det ble et eget fokusområde.
   kilo på væske; bare punktene gir støy uten retning. `MIN_AXIS_SPAN` er gulvet som
   hindrer at tre hundre gram tegnes som et stup, og x-aksen er tidsproporsjonal så et
   hull i veiingene blir et tomrom.
+- **Aksen følger PERIODEN, ikke historikken**, og fella er en spread. Se
+  `docs/changelog/2026-08-24-vektaksen-folger-perioden.md`.
+  `{ ...fullSeries, points: klippet }` ser komplett ut, men `range` og `latest`
+  beskriver da fortsatt hele serien — grafen sto på 80–110 kg i alle perioder, så
+  en nedgang på to kilo over tretti dager var en flat strek. Klipp alltid med
+  `clipSeriesToWindow`; `nadir` beholdes global med vilje, siden et lavpunkt er en
+  rekord og ikke en tegneflate. Spennet regnes ett sted, `trendRange` i
+  `trailing-trend.ts` — det lå i fire kopier, og den ene som manglet, manglet stille.
+- **Mållinja taper mot dataene når de ikke får plass sammen.** `axisForSeries`
+  trekker målet inn i domenet bare så lenge det ikke sluker feltet
+  (`MAX_GOAL_AXIS_STRETCH`); ellers settes `goalOutside` og flaten tegner målet
+  som et merke i kanten med en pil. Et mål femten kilo unna ville ellers gjort
+  utviklingen til en flat strek igjen, denne gangen med en forklaring.
+  Sammenligningen skjer på de **gulvede** spennene — uten det dyttes ethvert mål
+  ut i en periode der vekta står stille.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
 ### Streaks: én motor, tre flater
