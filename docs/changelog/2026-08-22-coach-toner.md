@@ -76,6 +76,34 @@ setningene som før, er det gulvet man hører.
 **Standarden er `noytral`**, som er byte-nær stemmen fra før tonene fantes. En ny innstilling
 skal ikke endre oppførselen for noen som ikke har valgt.
 
+## Fase 3: Stemmen, som er en tredje ting
+
+Spørsmålet som fulgte var om det også er serveren som setter kjønn, alder og dialekt. Svaret var
+nei — og det viste seg at ingen satte dem: setup-ramma sendte ingen `speechConfig` i det hele
+tatt, så Google valgte stemme selv.
+
+Stemmen ble derfor en app-innstilling (`GeminiLiveVoice` i Ekko), ikke et felt i token-svaret.
+**Tonen er ordene, stemmen er røsten**, og de to hører på hver sin side: personaen itereres
+etter en tur og må kunne endres uten et bygg, mens `speechConfig` er klient-skrivbart (masken
+låser bare `model,tools`) og ikke endrer seg av seg selv. Et stemmefelt i token-svaret ville
+vært en andre vei inn til samme innstilling.
+
+Tre grenser vi ikke kan flytte, og som derfor står i flatens tekst framfor å bli oppdaget:
+
+- **Det finnes ingen katalog over gyldige Live-stemmer.** Google dokumenterer 30 for
+  TTS-modellene og skriver at Live har «et litt annet sett» — for Live nevnes bare «Kore». Lista
+  i appen er kandidater. Et ugyldig navn avvises i setupet, og en avvist setup er en død økt
+  (samme klasse feil som 1007-en fra 2.5), så sesjonen forkaster stemmevalget og kobler til uten
+  det når socketen dør før `setupComplete`. **Et feil stemmenavn skal koste en logglinje, ikke
+  turen.**
+- **Kjønn og alder er ikke parametere.** Google oppgir et karaktertrekk per stemme («Firm»,
+  «Youthful», «Warm»), ikke kjønn. Velgeren viser trekket oversatt og påstår ikke mer — en
+  gjetning om kjønn ut fra hvordan et navn høres ut, ville vært samme feil som en stille default
+  som gjetter en konkret verdi.
+- **Dialekt kan ikke velges.** Native-audio-modellene «velger språk automatisk og støtter ikke å
+  sette språkkode eksplisitt», og aksenten følger stemmemodellen. En prompt som ber om østnorsk
+  endrer ordvalg, ikke uttale.
+
 ## Verifisering
 
 `npm test`: 3632 tester i 260 filer passerer, inkludert åtte nye på tonene — at ukjente

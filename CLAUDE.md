@@ -421,6 +421,14 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   nøytral som før» ser ut som en prompt som ikke virker, men er en råverdi som ikke traff.
   Tonen styrer hvor MYE som sies per melding, ikke hvor OFTE: frekvensen bor i appens
   `CoachMessageGate`. Se `docs/changelog/2026-08-22-coach-toner.md`.
+- **STEMMEN (røsten) hører ikke hit — den settes av appen i setup-ramma.** Tonen er ordene,
+  stemmen er røsten: `speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName` er
+  klient-skrivbart siden masken bare låser `model,tools`. Ikke legg et stemmefelt i
+  token-svaret; det ville vært en andre vei inn til samme innstilling. **Google har ingen
+  katalog over gyldige Live-stemmer** (TTS-lista på 30 gjelder «et litt annet sett»), så et
+  navn kan bli avvist i setupet — appen forkaster da valget for økta og fortsetter med
+  standardstemmen. Kjønn, alder og dialekt er ikke parametere noe sted: native-audio-modellene
+  støtter ikke `languageCode`, og aksenten følger stemmen.
 - **Lukkekodene betyr ulike ting, og to av dem er lette å forveksle.** Målt 19. august:
   `gemini-3.1-flash-live-preview` lukker med **1008** («The operation was aborted») etter
   170–185 sekunder, hver gang — femten ganger på en økt på 52 minutter. Det er **rutine og
