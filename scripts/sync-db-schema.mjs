@@ -3,9 +3,12 @@
  * Synkroniserer Drizzle-skjemaet (src/lib/db/schema.ts) mot live-DB-en, og
  * kjører idempotente data-migreringer som må følge med kode-endringer.
  *
- * Kjøres som en del av Vercel build (se vercel.json) slik at endringer i
- * schema.ts blir applisert automatisk ved deploy — uten å måtte kjøre
- * `npm run db:push` eller standalone migration-scripts manuelt.
+ * Kjøres ved deploy slik at endringer i schema.ts blir applisert automatisk —
+ * uten å måtte kjøre `npm run db:push` eller standalone migration-scripts
+ * manuelt. På Vercel er det en del av `buildCommand`; i containeren kjører
+ * `docker/entrypoint.sh` den før serveren startes. Forskjellen er ikke
+ * kosmetisk: i containeren skjer migreringen mot databasen deployet FAKTISK
+ * skal snakke med, ikke mot den byggemiljøet tilfeldigvis har.
  *
  * Deploy-flow:
  *   1. apply-sql-migrations.mjs — eksplisitte SQL-migrasjoner
@@ -16,11 +19,15 @@
  *   3. Idempotente data-migreringer (UPDATE/INSERT) som må følge kode.
  *
  * Sikkerhetsnett:
- *   - Hopper over alt utenom VERCEL_ENV=production (preview-deploys får ikke
- *     trash prod-DB-en).
+ *   - På Vercel: hopper over alt utenom VERCEL_ENV=production (preview-deploys
+ *     får ikke trash prod-DB-en). Utenfor Vercel er den betingelsen alltid
+ *     falsk og altså ikke noe vern i det hele tatt — derfor skriver skriptet i
+ *     stedet ut HVILKEN database det er i ferd med å endre, før det gjør noe.
+ *     En vakt som ikke kan skille prod fra lokalt er teater; et utskrevet mål
+ *     kan etterprøves.
  *   - SKIP_DB_SYNC=1 lar deg deakt­ivere uten å fjerne hooken.
  *   - SKIP_SQL_MIGRATIONS=1 hopper kun over SQL-runner-steget.
- *   - Krever DATABASE_URL (Vercel setter denne).
+ *   - Krever DATABASE_URL.
  *
  * Lokalt: bruk `npm run db:sync` (eller `npm run db:push`).
  */
@@ -49,6 +56,19 @@ if (!process.env.DATABASE_URL) {
 	process.exit(1);
 }
 
+// Målet skrives ut uten passord. Poenget er at en kjøring mot feil base skal
+// være synlig i loggen FØR skjemaet endres, ikke etterpå.
+function describeTarget(url) {
+	try {
+		const parsed = new URL(url);
+		return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}${parsed.pathname} som ${parsed.username || '<ukjent>'}`;
+	} catch {
+		return '<utolkbar DATABASE_URL>';
+	}
+}
+
+console.log(`[db:sync] Mål: ${describeTarget(process.env.DATABASE_URL)}`);
+
 console.log('[db:sync] Steg 1/2 — kjører eksplisitte SQL-migrasjoner …');
 const migrationsResult = spawnSync('node', [join(__dirname, 'apply-sql-migrations.mjs')], {
 	stdio: 'inherit',
@@ -60,24 +80,47 @@ if (migrationsResult.status !== 0) {
 	process.exit(migrationsResult.status ?? 1);
 }
 
-console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force (best-effort) …');
-// drizzle-kit push spør interaktivt om nye tabeller er rename av eksisterende,
-// selv med --force, og crasher på CI uten TTY (sett som "Error: Interactive
-// prompts require a TTY terminal"). Vi skipper det med exit-code non-fatal.
-const result = spawnSync('npx', ['drizzle-kit', 'push', '--force'], {
-	stdio: 'inherit',
-	env: process.env
-});
-
-if (result.status !== 0) {
-	// SQL-migrasjonene er autoritative (se CLAUDE.md). drizzle push er bare
-	// et sikkerhetsnett for endringer i schema.ts som ikke har fått en
-	// SQL-migrasjon ennå. Hvis push feiler — f.eks. fordi den tolker en
-	// kolonne som usikker å endre — så logger vi det og fortsetter. Build
-	// skal ikke ryke på denne grunn.
-	console.warn(`[db:sync] drizzle-kit push exited ${result.status} — fortsetter likevel (SQL-migrasjoner er autoritative).`);
+// ────────────────────────────────────────────────────────────────────────
+// Steg 2 er BEVISST av i containeren (SKIP_DRIZZLE_PUSH=1 i entrypointet).
+//
+// `drizzle-kit push` er et skjemadiff-verktøy som spør interaktivt om nye
+// tabeller er rename av eksisterende — også med `--force` — og det er en
+// devDependency som ikke finnes i runtime-imaget. Å kjøre det ved HVER
+// containerstart, mot prod, er en dårligere idé enn å ikke ha nettet:
+// entrypointet kjører ved restart og redeploy, ikke bare ved en bevisst deploy.
+//
+// Konsekvensen skal sies høyt: en endring i `schema.ts` UTEN en tilhørende
+// SQL-migrasjon når ikke basen i containeren. Det er allerede regelen i
+// CLAUDE.md («alle schema-endringer skal ha en eksplisitt SQL-migrasjon — også
+// additive; drizzle-kit push er bare et sikkerhetsnett»), men på Vercel fanget
+// nettet en glemt migrasjon. Her gjør det ikke det. `npm run db:push` fra en
+// utviklermaskin er den bevisste veien.
+// ────────────────────────────────────────────────────────────────────────
+if (process.env.SKIP_DRIZZLE_PUSH === '1') {
+	console.log(
+		'[db:sync] SKIP_DRIZZLE_PUSH=1 — hopper over drizzle-kit push. ' +
+			'SQL-migrasjonene er autoritative; en schema.ts-endring uten migrasjon når IKKE basen.'
+	);
 } else {
-	console.log('[db:sync] drizzle push OK.');
+	console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force (best-effort) …');
+	// drizzle-kit push spør interaktivt om nye tabeller er rename av eksisterende,
+	// selv med --force, og crasher på CI uten TTY (sett som "Error: Interactive
+	// prompts require a TTY terminal"). Vi skipper det med exit-code non-fatal.
+	const result = spawnSync('npx', ['drizzle-kit', 'push', '--force'], {
+		stdio: 'inherit',
+		env: process.env
+	});
+
+	if (result.status !== 0) {
+		// SQL-migrasjonene er autoritative (se CLAUDE.md). drizzle push er bare
+		// et sikkerhetsnett for endringer i schema.ts som ikke har fått en
+		// SQL-migrasjon ennå. Hvis push feiler — f.eks. fordi den tolker en
+		// kolonne som usikker å endre — så logger vi det og fortsetter. Build
+		// skal ikke ryke på denne grunn.
+		console.warn(`[db:sync] drizzle-kit push exited ${result.status} — fortsetter likevel (SQL-migrasjoner er autoritative).`);
+	} else {
+		console.log('[db:sync] drizzle push OK.');
+	}
 }
 
 console.log('[db:sync] Skjema synkronisert.');
@@ -236,7 +279,7 @@ const DATA_MIGRATIONS = [
 
 if (DATA_MIGRATIONS.length > 0) {
 	console.log(`[db:sync] Kjører ${DATA_MIGRATIONS.length} data-migrering(er) …`);
-	const sql = postgres(process.env.DATABASE_URL, { max: 1, ssl: 'require' });
+	const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 	try {
 		for (const stmt of DATA_MIGRATIONS) {
 			const res = await sql.unsafe(stmt);

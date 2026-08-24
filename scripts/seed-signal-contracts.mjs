@@ -36,7 +36,7 @@ if (!process.env.DATABASE_URL) {
 	process.exit(1);
 }
 
-const sql = postgres(process.env.DATABASE_URL, { max: 1, ssl: 'require' });
+const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 
 const contracts = [
 	{

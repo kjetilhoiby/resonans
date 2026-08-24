@@ -1577,7 +1577,54 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 
 ## Deployment
 
-Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.json` kjører `sync-db-schema.mjs && npm run build`. GitHub Actions dispatcher kjører cron-jobber hvert 5. minutt.
+**To mål, samme `main`.** `svelte.config.js` velger adapter av miljøet:
+`DEPLOY_TARGET` når den er satt, ellers `vercel` hvis `VERCEL` finnes, ellers
+`node`. Begge adaptere beholdes med vilje mens flyttingen til egen plattform
+pågår — kan ikke samme commit bygges begge steder, finnes rullbacken bare på
+papiret. Se `docs/changelog/2026-08-24-plattformport.md`.
+
+- **Vercel** (i drift): `@sveltejs/adapter-vercel`, Node.js 22.x. `buildCommand` i
+  `vercel.json` kjører `sync-db-schema.mjs && npm run build`. GitHub Actions
+  dispatcher kjører cron-jobber hvert 5. minutt.
+- **Container** (`resonans.apps.hoi.by`, under flytting): `@sveltejs/adapter-node`,
+  `Dockerfile` + `docker/entrypoint.sh`.
+
+**Databasedriveren velges eksplisitt, ikke gjettes.** `DB_DRIVER`
+(`postgres`/`neon-http`) i `$lib/db/driver-choice.ts`; uten variabelen utledes den
+av verten, og bare en Neon-vert får HTTP-driveren. Valget logges ved oppstart.
+Den gamle localhost-regexen ville sendt en Coolify-URL (`@postgres:5432`) til
+Neon HTTP-driveren, og feilen kom først ved første spørring.
+
+- **`rowsOf()` har en tvilling: `affectedRows()`** (`$lib/db/result-shape.ts`).
+  Neon HTTP legger radtallet på `rowCount`, postgres-js på `count` — og
+  `.rowCount` på en array er `undefined`, altså en stille 0. Les aldri noen av
+  dem rått.
+- **Poolen lukkes ved SIGTERM.** En container redeployes ved hver push;
+  `max_connections` er en telling som ikke tilgir.
+
+**Ting som er ulikt i containeren, og hvorfor:**
+
+- **`drizzle-kit push` kjøres IKKE der** (`SKIP_DRIZZLE_PUSH=1` i entrypointet).
+  Den krever TTY — uten en gir den «Interactive prompts require a TTY terminal»,
+  med en henger den på et rename-spørsmål — og den er en devDependency som ikke
+  finnes i runtime-imaget. Konsekvensen: **en `schema.ts`-endring uten SQL-migrasjon
+  når ikke basen.** Det er alt regelen over, men på Vercel fanget nettet en glemt
+  migrasjon. `npm run db:push` fra en utviklermaskin er den bevisste veien.
+- **SQL-migrasjonene kan ikke bygge et skjema fra bunnen.** Mot en tom base feiler
+  `0004_create_program_tables.sql` med `relation "users" does not exist`. Et tomt
+  miljø må bootstrappes med `db:push`; containeren forutsetter en base som alt
+  finnes (fra `pg_restore`, som bærer `_sql_migrations` med seg).
+- **`ORIGIN` er påkrevd.** `appOrigin()` (`$lib/server/app-origin.ts`) kaster uten
+  den, scheduleren nekter å starte, og mailer sender ikke. Fram til august 2026 sto
+  det `env.ORIGIN || 'https://resonans.vercel.app'` fire steder — en fallback som
+  etter en flytting ville sendt nudger med lenker til gammel adresse, helt stille.
+- **`BODY_SIZE_LIMIT=25M`**: adapter-node defaulter til 512 kB, og
+  `/api/apps/upload` tar imot 20 MB.
+- **Healthcheck mot `127.0.0.1`, aldri `localhost`** — det siste kan resolve til
+  `::1` mens adapter-node lytter på `0.0.0.0`. Symptomet er «unhealthy» ved siden
+  av en logg som sier «Listening on 0.0.0.0:3000».
+- **`pgvector` må være i Postgres-imaget** (`pgvector/pgvector:pg17`). Tre tabeller
+  har `vector(1536)`.
 
 ---
 
@@ -1610,7 +1657,15 @@ hvorfor. For langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 
-**Scheduling:** `ENABLE_IN_APP_SCHEDULER=true`, `CRON_SECRET`, `ORIGIN`
+**Scheduling:** `ENABLE_IN_APP_SCHEDULER=true` (nøyaktig ÉN instans — `isSchedulerRunning`
+er per prosess, så to containere sender hver sin nudge), `CRON_SECRET`, `ORIGIN`.
+
+**Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
+`DB_POOL_MAX` (default 10, ignoreres av neon-http).
+
+**Container:** `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER` og
+`SKIP_DRIZZLE_PUSH` settes i `Dockerfile`/entrypointet, ikke per miljø.
+`DEPLOY_TARGET=node|vercel` overstyrer adaptervalget.
 
 ---
 
