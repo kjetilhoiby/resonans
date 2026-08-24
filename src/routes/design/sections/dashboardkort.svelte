@@ -151,21 +151,20 @@
 		/>
 	</div>
 
-	<h3 class="subsection">StreakCalendar — areal for distanse, lyshet for tempo</h3>
+	<h3 class="subsection">StreakCalendar — fargefeltet: tempo × lengde</h3>
 	<p class="section-desc">
-		Samme kalender med tallene på: <em>arealet</em> er distansen, <em>lysheten</em> er tempoet.
-		Det er poenget med historikken — å se forbi «møtte opp». Skalaen er brukerens egne dager
-		(10.–90. persentil), så «langt» betyr langt <em>for deg</em>, og et gulv på spennet gjør at
-		like turer ser like ut framfor å spres over hele skalaen.
+		Samme kalender med tallene på. <em>Lysheten</em> er tempoet (lyst er fort), <em>kuløren</em>
+		er lengden (gult er kort, rødt er langt), og <em>arealet</em> er lengden igjen. Feltet
+		interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen havner midt i feltet
+		framfor i nærmeste hjørne. Det er poenget med historikken — å se forbi «møtte opp».
 	</p>
 	<p class="section-desc">
-		Det opplagte forslaget — et fargefelt med gult/rødt for kort/lang og lyst/mørkt for
-		fort/rolig — ble bygget og forkastet: palettvalidatoren gir <strong>ΔE 0,7 under
-		deuteranopi</strong> mellom de to mørke hjørnene, altså forsvinner distanse-aksen for en
-		rødgrønn-blind leser, og de to lyse hjørnene lå under normalsyn-gulvet. Areal kan ikke
-		kollapse for noen, så distansen ligger der og fargen får bære tempoet alene som en ordinal
-		rampe (én kulør, lys→mørk, validert). Grå mark = hendelse uten tall, f.eks. en styrkeøkt
-		inne i en løpestreak.
+		Lysheten er tempoets akse <em>alene</em>: gir man de lange dagene litt mørkere farge også,
+		leses en lang rask dag som roligere enn en kort rask. Hjørnene er validert mot flaten —
+		normalsyn-gulv ΔE 16,8 (over 15) og alle fire over 3:1 kontrast. Kulør-aksen er praktisk
+		borte under rødgrønn fargeblindhet (ΔE 3,6), og derfor ligger lengden <em>også</em> i
+		arealet: en kanal som ikke kan kollapse, og som ikke koster den som ser fargene noe. Grå
+		mark = hendelse uten tall, f.eks. en styrkeøkt inne i en løpestreak.
 	</p>
 	<div class="demo-card demo-card--wide">
 		<StreakCalendar

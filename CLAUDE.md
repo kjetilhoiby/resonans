@@ -787,13 +787,20 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
 - **`loadRelevantStreaks` filtrerer definisjonene før tilstanden regnes.** Relevansen
   er ren og gratis; hver tilstand er en spørring. Et tema uten streaks skal ikke
   betale for dem.
-- **Kalendercellene bærer to tall for trenings-streaks: AREAL er distanse, LYSHET er
-  tempo** (`$lib/domain/health/workout-day-scale.ts`). Et fargefelt med fire hjørner
-  (gul/rød × lys/mørk) ble bygget og forkastet på validatortall: **ΔE 0,7 under
-  deuteranopi** mellom de to mørke hjørnene, altså forsvinner distanse-aksen for en
-  rødgrønn-blind leser; de to lyse lå på 12,9, under normalsyn-gulvet på 15; og de
-  mørke havnet under 3:1 mot flaten og under kromagulvet. Kulør kan ikke bære
-  distansen når lysheten bærer tempoet. Areal kan ikke kollapse for noen.
+- **Kalendercellene bærer to akser for trenings-streaks** (`workout-day-scale.ts`):
+  **LYSHET er tempo** (lyst er fort), **KULØR er distanse** (gult er kort, rødt er
+  langt), og **AREAL er distanse igjen**. Feltet interpoleres bilineært mellom fire
+  validerte hjørner.
+- **Lysheten er tempoets akse ALENE.** Gir man de lange dagene litt mørkere farge
+  også — det ser rikere ut — leses en lang rask dag som roligere enn en kort rask.
+  Kroma og kulør varierer med distansen; lysheten aldri.
+- **Kulør-aksen er et bevisst valg med en kjent pris, og arealet er prisen betalt.**
+  De to mørke hjørnene skiller seg med ΔE 3,6 under deuteranopi, altså er kuløren
+  praktisk borte for en rødgrønn-blind leser; derfor ligger distansen også i arealet,
+  en kanal som ikke kan kollapse og ikke koster den som ser fargene noe. Endrer du
+  hjørnene, kjør palettvalidatoren på nytt: normalsyn-gulvet (ΔE ≥ 15 mellom hjørner
+  med samme tempo) og 3:1 mot flaten er de to som IKKE er smakssaker — første utgave
+  brøt begge (12,6 og 2,0:1), og det var dårlig lesbarhet for alle.
 - **Skalaen er brukerens egne dager** (10.–90. persentil), med gulv på spennet: én
   glemt tracker skal ikke presse alle andre dager sammen, og like turer skal SE like
   ut. Under `MIN_MEASURED_DAYS` fargelegges ingenting, og flaten sier hvorfor — en

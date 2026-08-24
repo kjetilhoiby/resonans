@@ -21,14 +21,17 @@
   under kalenderen. I dag har ramme. Framtidige dager er tomme uten å være «glemt» —
   en dag som ikke har vært, kan ikke være brutt.
 
-  ## To kanaler for trenings-streaks
+  ## Tre kanaler for trenings-streaks
 
-  Har dagen distanse og tempo, bærer marken dem: **arealet er distansen, lysheten er
-  tempoet**. Det er poenget med kalenderen — å se forbi «møtte opp». Hvorfor ikke et
-  fargefelt med fire hjørner (gult/rødt for kort/lang, lyst/mørkt for fort/rolig):
-  se `workout-day-scale.ts`, som bærer validatortallene. Kort sagt kollapser
-  distanse-aksen til ΔE 0,7 under deuteranopi når den er en kulør, og areal kan ikke
-  kollapse for noen.
+  Har dagen distanse og tempo, bærer marken dem:
+
+    lyshet = tempo      lyst er fort, mørkt er rolig
+    kulør  = distanse   gult er kort, rødt er langt
+    areal  = distanse   samme akse igjen, i en kanal fargen ikke eier
+
+  Det er poenget med kalenderen — å se forbi «møtte opp». Feltet og tallene bak det
+  bor i `workout-day-scale.ts`; arealet er med fordi kulør-aksen er praktisk borte
+  for en rødgrønn-blind leser, og fordi det ikke koster den som ser fargene noe.
 
   Verdien er aldri bare farge: trykk på en dag skriver tallene under kalenderen. På
   en telefon finnes ingen hover, så en `title` alene ville gjort tallene utilgjengelige.
@@ -215,26 +218,26 @@
 	</p>
 
 	{#if scaled}
-		<!-- To én-dimensjonale skalaer framfor et 3×3-felt: hver rad viser én ting, og
-		     kan leses uten den andre. -->
+		<!-- Feltets fire hjørner, i det samme rutenettet aksene har: rader = tempo,
+		     kolonner = distanse. Alt mellom hjørnene leses som en retning. -->
 		<div class="sc-legend">
-			<div class="sc-legend-row">
-				<span class="sc-legend-end">{paceOrSpeedLabel(sportFamily ?? '').toLowerCase()}: rask</span>
-				{#each legend.pace as sample, i (i)}
-					<span class="sc-swatch" style={`--f:${sample.fill}; --size:${sample.sizePct}%`}></span>
+			<div class="sc-legend-grid">
+				<span class="sc-legend-corner"></span>
+				<span class="sc-legend-axis">kort</span>
+				<span class="sc-legend-axis">lang</span>
+				{#each legend as row, ri (ri)}
+					<span class="sc-legend-axis sc-legend-axis-row">
+						{ri === 0 ? 'rask' : 'rolig'}
+					</span>
+					{#each row as sample, ci (ci)}
+						<span class="sc-swatch" style={`--f:${sample.fill}; --size:${sample.sizePct}%`}></span>
+					{/each}
 				{/each}
-				<span class="sc-legend-end">rolig</span>
-			</div>
-			<div class="sc-legend-row">
-				<span class="sc-legend-end">lengde: kort</span>
-				{#each legend.distance as sample, i (i)}
-					<span class="sc-swatch" style={`--f:${sample.fill}; --size:${sample.sizePct}%`}></span>
-				{/each}
-				<span class="sc-legend-end">lang</span>
 			</div>
 			<p class="sc-legend-note">
-				Skalaen er dine egne dager (10.–90. persentil av {scale?.measuredDays} målte). Trykk på en
-				dag for tallene.
+				{paceOrSpeedLabel(sportFamily ?? '')} er lysheten, lengden er farge og størrelse.
+				Skalaen er dine egne dager (10.–90. persentil av {scale?.measuredDays} målte) — trykk på
+				en dag for tallene.
 			</p>
 		</div>
 	{/if}
@@ -399,25 +402,38 @@
 		margin-top: 2px;
 	}
 
-	.sc-legend-row {
-		display: flex;
+	/* Fast bredde på etikettkolonnen: med `auto` ble «rask»/«rolig» klippet på
+	   venstre kant, fordi kolonnen ble målt på den tomme hjørnecella. */
+	.sc-legend-grid {
+		display: grid;
+		grid-template-columns: 38px 20px 20px;
+		gap: 4px 6px;
 		align-items: center;
-		gap: 5px;
+		justify-items: center;
+		width: fit-content;
 	}
 
-	.sc-legend-end {
-		font-size: 0.64rem;
+	.sc-legend-axis {
+		font-size: 0.62rem;
 		color: var(--text-muted, #777);
 		white-space: nowrap;
+	}
+
+	.sc-legend-axis-row {
+		justify-self: end;
+	}
+
+	.sc-legend-corner {
+		width: 0;
 	}
 
 	/* Samme form som marken i kalenderen, i miniatyr: prøvene skal kunne kjennes
 	   igjen som det samme merket. */
 	.sc-swatch {
 		display: inline-flex;
-		width: 16px;
-		height: 16px;
-		border-radius: 5px;
+		width: 20px;
+		height: 20px;
+		border-radius: 6px;
 		align-items: center;
 		justify-content: center;
 	}

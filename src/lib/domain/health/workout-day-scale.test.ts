@@ -3,8 +3,8 @@ import {
 	buildDayScale,
 	dayVisual,
 	distanceSize,
+	fieldColor,
 	legendSamples,
-	paceFill,
 	MIN_DISTANCE_SPAN_KM,
 	MIN_MEASURED_DAYS,
 	MIN_PACE_SPAN_SEC,
@@ -95,12 +95,14 @@ describe('dayVisual', () => {
 		expect(long.sizePct).toBeLessThanOrEqual(SIZE_MAX_PCT);
 	});
 
-	it('holder distanse og tempo uavhengige', () => {
-		// Samme tempo, ulik distanse: samme farge, ulik størrelse.
+	it('lar distansen slå ut i BÅDE areal og kulør', () => {
+		// Samme tempo, ulik distanse: ulik størrelse og ulik farge. Arealet er
+		// redundant med kuløren, og det er meningen — kuløren er den som forsvinner
+		// for en rødgrønn-blind leser.
 		const a = dayVisual(day('x', 4, 330), scale)!;
 		const b = dayVisual(day('x', 10, 330), scale)!;
-		expect(a.fill).toBe(b.fill);
 		expect(a.sizePct).not.toBe(b.sizePct);
+		expect(a.fill).not.toBe(b.fill);
 	});
 
 	it('bruker gråtonen når dagen mangler tall', () => {
@@ -119,7 +121,7 @@ describe('dayVisual', () => {
 
 	it('klipper verdier utenfor spennet framfor å tegne utenfor skalaen', () => {
 		const beyond = dayVisual(day('x', 40, 120), scale)!;
-		const atMax = dayVisual(day('x', 11.1, 300), scale)!;
+		const atMax = dayVisual(day('x', 11.1, 297), scale)!;
 		expect(beyond.sizePct).toBe(SIZE_MAX_PCT);
 		expect(beyond.fill).toBe(atMax.fill);
 	});
@@ -137,23 +139,67 @@ describe('distanceSize', () => {
 	});
 });
 
-describe('paceFill', () => {
+describe('fieldColor', () => {
 	it('velger mørk skrift på den lyse enden og lys på den mørke', () => {
-		expect(paceFill(0).ink).toBe('#14130f');
-		expect(paceFill(1).ink).toBe('#f2eee4');
+		expect(fieldColor(0, 0).ink).toBe('#14130f');
+		expect(fieldColor(1, 0).ink).toBe('#f2eee4');
+	});
+
+	it('holder LYSHETEN som tempoets akse alene', () => {
+		// Kort og lang tur i samme tempo skal ha samme lyshet: ellers leses en lang
+		// rask dag som roligere enn en kort rask.
+		const luminance = (hex: string) =>
+			0.2126 * parseInt(hex.slice(1, 3), 16) +
+			0.7152 * parseInt(hex.slice(3, 5), 16) +
+			0.0722 * parseInt(hex.slice(5, 7), 16);
+
+		// Samme tempo, ulik distanse: kuløren dreier, men ingen av dem blir markert
+		// mørkere enn den andre (gul og rød har ulik iboende luminans, så vi tester
+		// mot tempo-aksen: skrittet mellom tempoene skal være mye større).
+		const shortFast = luminance(fieldColor(0, 0).fill);
+		const longFast = luminance(fieldColor(0, 1).fill);
+		const shortSlow = luminance(fieldColor(1, 0).fill);
+
+		expect(Math.abs(shortFast - longFast)).toBeLessThan(shortFast - shortSlow);
+	});
+
+	it('dreier kuløren fra gul mot rød med distansen', () => {
+		const short = fieldColor(0.5, 0);
+		const long = fieldColor(0.5, 1);
+		const greenish = (hex: string) => parseInt(hex.slice(3, 5), 16);
+		// Gult har mye grønt i seg, rødt lite.
+		expect(greenish(short.fill)).toBeGreaterThan(greenish(long.fill) + 40);
+	});
+
+	it('interpolerer bilineært — midten er ikke et hjørne', () => {
+		const mid = fieldColor(0.5, 0.5).fill;
+		for (const corner of [
+			fieldColor(0, 0).fill,
+			fieldColor(0, 1).fill,
+			fieldColor(1, 0).fill,
+			fieldColor(1, 1).fill
+		]) {
+			expect(mid).not.toBe(corner);
+		}
 	});
 });
 
 describe('legendSamples', () => {
-	it('lar hver skala vise ÉN ting', () => {
-		const { pace, distance } = legendSamples();
+	it('gir feltets fire hjørner, i aksenes rekkefølge', () => {
+		const grid = legendSamples();
 
-		// Tempo-raden varierer farge og holder størrelsen fast.
-		expect(new Set(pace.map((s) => s.fill)).size).toBe(3);
-		expect(new Set(pace.map((s) => s.sizePct)).size).toBe(1);
+		expect(grid).toHaveLength(2);
+		expect(grid[0]).toHaveLength(2);
+		// Alle fire er ulike farger.
+		expect(new Set(grid.flat().map((s) => s.fill)).size).toBe(4);
+		// Kolonnene er distanse, så størrelsen følger dem — ikke radene.
+		expect(grid[0][0].sizePct).toBe(grid[1][0].sizePct);
+		expect(grid[0][0].sizePct).toBeLessThan(grid[0][1].sizePct);
+	});
 
-		// Distanse-raden varierer størrelse og holder fargen fast.
-		expect(new Set(distance.map((s) => s.sizePct)).size).toBe(3);
-		expect(new Set(distance.map((s) => s.fill)).size).toBe(1);
+	it('er prøver av det SAMME feltet cellene bruker', () => {
+		const grid = legendSamples();
+		expect(grid[0][0].fill).toBe(fieldColor(0, 0).fill);
+		expect(grid[1][1].fill).toBe(fieldColor(1, 1).fill);
 	});
 });

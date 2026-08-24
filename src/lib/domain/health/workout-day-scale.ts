@@ -1,28 +1,47 @@
 /**
  * Fargen og størrelsen på en treningsdag: hvor langt, og hvor fort.
  *
- * ## Hvorfor to kanaler
+ * ## To akser i ett merke
  *
  * En streak-kalender som bare viser «møtte opp» skjuler forskjellen mellom en
  * rolig treningstur på tre kilometer og en hard tolv. Dagen bærer to tall, og de
  * svarer på ulike spørsmål: distansen er hvor mye, tempoet er hvor hardt.
  *
- * ## Hvorfor distansen er STØRRELSE og tempoet er FARGE
+ *   LYSHET = tempo      lyst er fort, mørkt er rolig
+ *   KULØR  = distanse   gult er kort, rødt er langt
+ *   AREAL  = distanse   samme akse igjen, i en kanal fargen ikke eier
  *
- * Det opplagte forslaget er et fargefelt med fire hjørner — lyst for fort, mørkt
- * for langsomt, gult for kort, rødt for langt. Det ble bygget og forkastet, og
- * palettvalidatoren sier hvorfor: de to *mørke* hjørnene (rolig+kort mot
- * rolig+lang) skiller seg med **ΔE 0,7 under deuteranopi** — for en rødgrønn-blind
- * leser er de samme farge, altså forsvinner distanse-aksen helt. De to *lyse*
- * hjørnene lå på ΔE 12,9 for normalt fargesyn, under gulvet på 15, og de mørke
- * hjørnene havnet under 3:1 mot flaten og under kromagulvet (mørk oliven leses som
- * grå og slutter å gjøre fargejobb).
+ * Feltet interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen
+ * havner midt i fargefeltet framfor i nærmeste hjørne.
  *
- * Løsningen er å flytte distansen ut av fargen: **areal** er en robust
- * størrelseskanal som ikke kan kollapse for noen, og det er også slik Tempo gjør
- * det. Da står fargen fri til å bære tempoet alene som en ordinal rampe — én
- * kulør, lys → mørk — som passerer alle sjekkene (monoton L, ΔL ≥ 0,06 per steg,
- * lyseste/mørkeste ende mot flaten).
+ * ## Lysheten er BARE tempo
+ *
+ * Fristelsen er å gi de lange dagene litt mørkere farge også — det ser rikere ut.
+ * Da er lysheten ikke lenger tempo alene, og en lang, rask dag leses som roligere
+ * enn en kort, rask. Kroma og kulør varierer med distansen; lysheten aldri.
+ *
+ * ## Hva fargevalget koster, og hva som ble rettet
+ *
+ * Kulør-aksen er et bevisst valg fra brukeren: flaten skal være vakker og
+ * informativ for den som ser farger godt. Prisen står i validatoren — de to mørke
+ * hjørnene skiller seg med **ΔE 3,6 under deuteranopi**, altså er distanse-aksen
+ * praktisk borte for en rødgrønn-blind leser. Derfor er distansen OGSÅ areal: den
+ * kanalen kan ikke kollapse for noen, og den koster ingenting for den som ser
+ * fargene.
+ *
+ * Tre funn fra validatoren handlet ikke om fargesyn, og de er rettet i tallene
+ * under:
+ *
+ * 1. Første utgave hadde de mørke hjørnene på 2,0–2,2:1 mot flaten — nesten
+ *    usynlige blokker. Nå er alle fire hjørner over 3:1.
+ * 2. Mørk gul er oliven og falt under kromagulvet (C 0,084, «leses som grå»).
+ *    Kuløren er dreid mot 105° og kroma hevet, så den mørke enden fortsatt har
+ *    farge.
+ * 3. De to hjørnene med samme tempo lå på ΔE 12,6 for normalt fargesyn, under
+ *    gulvet på 15. Med et bredere kulørspenn (105° → 22°) er de på **16,8**.
+ *
+ * Lys rød kan ikke bli mettet i sRGB — den blir korall. Det er en gamut-grense, ikke
+ * et valg: lysheten eies av tempoet, så den kan ikke senkes for å gi rødt mer kroma.
  *
  * ## Skalaen er brukerens egen
  *
@@ -38,11 +57,27 @@
 
 import { inkForLightness, oklchToHex } from '../oklch';
 
-/** Tempo-rampen: én kulør, lys = fort. Validert som ordinal rampe mot #141414. */
-export const PACE_HUE = 60;
-export const PACE_CHROMA = 0.13;
-export const PACE_L_FAST = 0.82;
-export const PACE_L_SLOW = 0.47;
+/**
+ * Feltets fire hjørner. Validert mot flaten #141414: normalsyn-gulv ΔE 16,8 (over
+ * 15) og alle fire hjørner over 3:1 kontrast.
+ *
+ * Lysheten er tempoets akse alene — samme verdi for kort og lang tur.
+ */
+export const L_FAST = 0.87;
+export const L_SLOW = 0.52;
+/** Kulør: gul for kort, rød for lang. */
+export const HUE_SHORT = 105;
+export const HUE_LONG = 22;
+/** Kroma per kulør, før tapering mot den mørke enden. */
+export const CHROMA_SHORT = 0.18;
+export const CHROMA_LONG = 0.19;
+/**
+ * Hvor mye kroma gir seg i den mørke enden.
+ *
+ * Uten taperingen ba vi om metning sRGB ikke har på mørke farger, og gamut-klippet
+ * tok den likevel — men da uforutsigbart per kulør. Bedre å be om det som finnes.
+ */
+export const CHROMA_DARK_TAPER = 0.25;
 
 /** Arealet marken dekker av cella, i prosent av sidekanten. */
 export const SIZE_MIN_PCT = 52;
@@ -82,10 +117,15 @@ export interface DayVisual {
 	sizePct: number;
 }
 
-/** Dag med hendelse, men uten tall å fargelegge etter. Grå, altså «ingen data». */
+/**
+ * Dag med hendelse, men uten tall å fargelegge etter.
+ *
+ * Nesten uten kroma, og med vilje: den skal ikke kunne forveksles med et hjørne i
+ * feltet. En styrkeøkt inne i en løpestreak møtte opp — den var ikke rolig.
+ */
 export const NO_METRIC_VISUAL: DayVisual = {
-	fill: oklchToHex(0.42, 0.02, PACE_HUE),
-	ink: inkForLightness(0.42),
+	fill: oklchToHex(0.44, 0.015, 70),
+	ink: inkForLightness(0.44),
 	sizePct: SIZE_MAX_PCT
 };
 
@@ -143,10 +183,21 @@ function normalize(value: number, range: { min: number; max: number }): number {
 	return Math.min(1, Math.max(0, (value - range.min) / span));
 }
 
-/** Farge for et tempo, 0 = raskest. Delt med tegnforklaringen. */
-export function paceFill(t: number): { fill: string; ink: string } {
-	const L = PACE_L_FAST - (PACE_L_FAST - PACE_L_SLOW) * Math.min(1, Math.max(0, t));
-	return { fill: oklchToHex(L, PACE_CHROMA, PACE_HUE), ink: inkForLightness(L) };
+/**
+ * Fargen i et punkt av feltet. `paceT` 0 = raskest, `distanceT` 0 = kortest.
+ *
+ * Delt med tegnforklaringen, så prøvene der ER feltet og ikke en håndplukket
+ * etterligning av det.
+ */
+export function fieldColor(paceT: number, distanceT: number): { fill: string; ink: string } {
+	const p = Math.min(1, Math.max(0, paceT));
+	const d = Math.min(1, Math.max(0, distanceT));
+
+	const L = L_FAST + (L_SLOW - L_FAST) * p;
+	const hue = HUE_SHORT + (HUE_LONG - HUE_SHORT) * d;
+	const chroma = (CHROMA_SHORT + (CHROMA_LONG - CHROMA_SHORT) * d) * (1 - CHROMA_DARK_TAPER * p);
+
+	return { fill: oklchToHex(L, chroma, hue), ink: inkForLightness(L) };
 }
 
 /**
@@ -171,23 +222,26 @@ export function dayVisual(metrics: WorkoutDayMetrics, scale: DayScale): DayVisua
 		return NO_METRIC_VISUAL;
 	}
 
-	const { fill, ink } = paceFill(normalize(metrics.paceSecPerKm, scale.pace));
-	return { fill, ink, sizePct: distanceSize(normalize(metrics.distanceKm, scale.distance)) };
+	const distanceT = normalize(metrics.distanceKm, scale.distance);
+	const { fill, ink } = fieldColor(normalize(metrics.paceSecPerKm, scale.pace), distanceT);
+	return { fill, ink, sizePct: distanceSize(distanceT) };
 }
 
 /**
- * Tegnforklaringen: to ÉN-dimensjonale skalaer, ikke et 3×3-felt.
+ * Tegnforklaringen: feltets fire hjørner, i det samme rutenettet aksene har.
  *
- * Et rutenett ville bedt leseren om å slå opp en klasse i to akser samtidig i en
- * rute på fjorten piksler. To små skalaer med endepunkter navngitt — «rask → rolig»
- * og «kort → lang» — sier det samme med tre klasser hver, og hver av dem kan leses
- * uten den andre. Tempo-prøvene holder størrelsen fast og distanse-prøvene holder
- * fargen fast, slik at hver rad viser én ting.
+ * Fire ruter framfor ni: hjørnene er det leseren skal kunne kjenne igjen («liten og
+ * blek» mot «stor og mørk rød»), og alt mellom dem leses som en retning. Ni ruter
+ * ville krevd oppslag i to akser samtidig i en rute på seksten piksler.
+ *
+ * Radene er tempo (rask først), kolonnene distanse (kort først) — samme rekkefølge
+ * som etikettene i flaten.
  */
-export function legendSamples(): { pace: DayVisual[]; distance: DayVisual[] } {
-	const mid = distanceSize(0.5);
-	return {
-		pace: [0, 0.5, 1].map((t) => ({ ...paceFill(t), sizePct: mid })),
-		distance: [0, 0.5, 1].map((t) => ({ ...paceFill(0.5), sizePct: distanceSize(t) }))
-	};
+export function legendSamples(): DayVisual[][] {
+	return [0, 1].map((paceT) =>
+		[0, 1].map((distanceT) => ({
+			...fieldColor(paceT, distanceT),
+			sizePct: distanceSize(distanceT)
+		}))
+	);
 }

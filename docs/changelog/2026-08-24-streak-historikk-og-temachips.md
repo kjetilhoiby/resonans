@@ -97,34 +97,51 @@ relevant, siden en tom rad med et seksjonsnavn ser ut som noe som mangler.
 MonthCalendar var eneste kaller. Et domenemodul som importerer fra `client/` snur
 lagene, så den ligger nå i `$lib/domain/month-grid.ts`.
 
-### Fase 5: Se forbi «møtte opp» — areal og lyshet i cellene
+### Fase 5: Se forbi «møtte opp» — fargefeltet i cellene
 
 En kalender som bare viser at dagen ble holdt, skjuler forskjellen mellom en rolig
 treningstur på tre kilometer og en hard tolv. For trenings-streaks bærer marken nå
-to tall: **arealet er distansen, lysheten er tempoet.**
+tre kanaler over to akser:
 
-**Det opplagte forslaget ble bygget og forkastet.** Et fargefelt med fire hjørner —
-gult for kort, rødt for langt, lyst for fort, mørkt for rolig — ser riktig ut på
-papiret. Palettvalidatoren sier hvorfor det ikke er det, målt mot flaten #141414:
+    lyshet = tempo      lyst er fort, mørkt er rolig
+    kulør  = distanse   gult er kort, rødt er langt
+    areal  = distanse   samme akse igjen, i en kanal fargen ikke eier
 
-| Sjekk | Resultat |
-|---|---|
-| CVD-separasjon, alle par | **ΔE 0,7** (deuteranopi) mellom `rolig+kort` og `rolig+lang` |
-| Normalsyn-gulv | ΔE 12,9 mellom `fort+kort` og `fort+lang` — under gulvet på 15 |
-| Kontrast mot flaten | 2,0–2,2:1 for de to mørke hjørnene |
-| Kromagulv | mørk oliven på C 0,084 — leses som grå, gjør ingen fargejobb |
+Feltet interpoleres bilineært mellom fire hjørner, så en dag midt på skalaen havner
+midt i feltet framfor i nærmeste hjørne.
 
-Altså: for en rødgrønn-blind leser forsvinner distanse-aksen fullstendig, og selv
-med fullt fargesyn er de to lyse hjørnene vanskelige å skille. Kulør kan ikke bære
-distansen når lysheten alt bærer tempoet.
+**Lysheten er tempoets akse alene.** Fristelsen er å gjøre de lange dagene litt
+mørkere også — det ser rikere ut. Da er lysheten ikke lenger tempo, og en lang rask
+dag leses som roligere enn en kort rask. Kroma og kulør varierer med distansen;
+lysheten aldri.
 
-**Areal kan ikke kollapse for noen.** Distansen ligger derfor i størrelsen på marken
-— som også er slik Tempo gjør det — og fargen får bære tempoet alene som en ordinal
-rampe: én kulør (60°), lys → mørk, `L 0,82 → 0,47`. Den passerer alle rampesjekkene
-(monoton lyshet, ΔL ≥ 0,06 per steg, mørkeste ende 2,6:1 mot flaten med synlig
-etikett som avlastning).
+#### Runden om kulør-aksen
 
-Detaljer som gjør den lesbar:
+Første utgave droppet kulør-aksen og la distansen i arealet alene, etter
+palettvalidatoren. Brukeren overstyrte: han er ikke fargeblind, dette er ikke
+kritisk funksjonalitet, og en tjeneste skal være vakker og informativ også for den
+som ser godt. Det er hans flate og hans kall — men rundens tall er verdt å beholde,
+fordi de skiller det som er en smakssak fra det som var reelle feil.
+
+Prisen ved kulør-aksen, målt mot flaten #141414:
+
+| Sjekk | Første utgave | Nå |
+|---|---|---|
+| CVD-separasjon (alle par) | ΔE 0,7 (deuteranopi) | ΔE 3,6 — fortsatt praktisk borte |
+| Normalsyn-gulv (≥ 15) | **ΔE 12,6 — FAIL** | **ΔE 16,8 — PASS** |
+| Kontrast mot flaten | 2,0–2,2:1 på mørke hjørner | alle fire **over 3:1** |
+| Kromagulv | mørk gul på C 0,084 («leses som grå») | kulør dreid til 105°, kroma hevet |
+
+De tre siste radene handlet ikke om fargesyn — de var dårlig lesbarhet for alle, og
+de er rettet: kulørspennet er utvidet (105° → 22°), lysheten løftet i den mørke
+enden, og kroma taper mot mørkt framfor å bli klippet uforutsigbart av gamut.
+
+CVD-raden står igjen som et bevisst valg. Distansen ligger derfor **også** i arealet:
+en kanal som ikke kan kollapse for noen, og som ikke koster den som ser fargene noe.
+Lys rød kan ikke bli mettet i sRGB — den blir korall — og det er en gamut-grense, ikke
+et valg, siden lysheten eies av tempoet og ikke kan senkes for å gi rødt mer kroma.
+
+#### Resten av skalaen
 
 - **Arealet er lineært, ikke sidekanten.** En mark med dobbel bredde dekker fire
   ganger flaten og leses som fire ganger så mye, så sidekanten går gjennom
@@ -139,20 +156,21 @@ Detaljer som gjør den lesbar:
 - **Under fem målte dager fargelegges ingenting**, og panelet sier hvorfor. En
   kalender som plutselig er ensfarget ser ellers ut som en feil.
 - **Hendelse uten tall får en grå mark** — en styrkeøkt inne i en løpestreak møtte
-  opp, men har ingen distanse. Grå er utenfor rampen, så den kan ikke forveksles
-  med «rolig».
+  opp, men har ingen distanse. Nesten uten kroma, så den ikke kan forveksles med et
+  hjørne i feltet.
 - **Verdien er aldri bare farge.** Trykk på en dag skriver tallene under kalenderen
   («11. august · 1 økt · 12,1 km · 6:23 /km»). På en telefon finnes ingen hover, så
   en `title` alene ville gjort tallene utilgjengelige. Trykkflaten er hele cella,
   ikke marken: en mark på 52 % er 21 px, under minstemålet for en trykkflate.
-- **Tegnforklaringen er to én-dimensjonale skalaer**, ikke et 3×3-felt. «rask →
-  rolig» og «kort → lang» kan leses hver for seg; et rutenett ville bedt leseren slå
-  opp en klasse i to akser samtidig i en rute på fjorten piksler.
+- **Tegnforklaringen er feltets fire hjørner**, i det samme rutenettet aksene har.
+  Fire ruter framfor ni: hjørnene er det leseren skal kjenne igjen, og alt mellom
+  dem leses som en retning.
 
 OKLCH regnes til hex i domenelaget (`$lib/domain/oklch.ts`) framfor å bruke `oklch()`
 i CSS: en ugyldig fargeverdi i en gammel nettleser gir en gjennomsiktig celle, altså
 en kalender som ser ødelagt ut framfor en farge som ser litt annerledes ut. Utenfor
-sRGB reduseres kroma — aldri lysheten (det ville brutt rampen) eller kuløren.
+sRGB reduseres kroma — aldri lysheten (det ville brutt tempo-aksen) eller kuløren
+(det ville flyttet betydningen).
 
 Trenings-streaks leser nå historikken gjennom metrikk-spørringen framfor
 `readEventDayKeys`, så kalenderen, telleren og fargene er bygget av nøyaktig de
@@ -177,9 +195,13 @@ samme radene.
 - **Ingen ny lagring.** Streaks beregnes fortsatt on-demand fra hendelser, og
   historikken er samme lesing med dagene beholdt. En teller i basen ville måttet
   vedlikeholdes av alt som skriver en økt.
-- **Fargevalg regnes, ikke vurderes.** Fire-hjørners-feltet ble ikke forkastet på
-  smak, men på validatortall. Beholdes tallene i changeloggen kan valget etterprøves
-  — og gjøres om, hvis noen finner en kulørakse som holder under CVD.
+- **Fargevalg regnes, men avgjøres av brukeren.** Validatoren fant fire problemer med
+  fire-hjørners-feltet; tre var reell dårlig lesbarhet og er rettet, det fjerde er
+  fargeblindhet og ble et bevisst valg. Tallene står i tabellen over nettopp fordi de
+  to slagene ikke skal blandes: det ene er en feil, det andre er en prioritering.
+- **En overstyrt anbefaling skal etterlate seg tallene.** Neste gang noen ser på
+  feltet, er spørsmålet ikke «var dette gjennomtenkt» men «gjelder avveiningen
+  fortsatt».
 
 ## Verifisering
 
@@ -190,10 +212,11 @@ samme radene.
   regner (8 dager på rad, 4 uker på rad fra samme mockdager), og bunnpanelet åpnes
   fra en chip med kalender, fasit-kolonne, dekningstall og lenke videre. Panelets
   API-kall ble mocket, siden dev-miljøet her er uten database.
-- Fase 5 verifisert i Chromium på 390 px: den to-kanals kalenderen leses som den
-  skal (12,1 km @ 6:23 er stor og mørk, 3,2 km @ 4:50 er liten og lys, styrkeøkta
-  uten distanse er grå), og trykk på en dag skriver tallene under kalenderen. Nye
-  tester: `oklch.test.ts` (5), `workout-day-scale.test.ts` (15).
+- Fase 5 verifisert i Chromium på 390 px: feltet leses som det skal (12,1 km @ 6:23
+  er stor og mørk rød, 3,2 km @ 4:50 er liten og knallgul, 2,2 km @ 6:59 er liten og
+  mørk oliven, styrkeøkta uten distanse er grå), tegnforklaringens fire hjørner
+  stemmer med cellene, og trykk på en dag skriver tallene under kalenderen. Nye
+  tester: `oklch.test.ts` (5), `workout-day-scale.test.ts` (19).
 - **Piksel-baselines er ikke oppdatert:** `dashboardkort`-seksjonen har nye demoer,
   og temasider med relevante streaks får en rad mer. `npm run test:visual:update`
   krever databasetilgang som ikke fantes i miljøet endringen ble skrevet i.
