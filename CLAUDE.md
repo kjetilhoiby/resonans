@@ -1977,6 +1977,24 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
 
 **Påkrevd:** `DATABASE_URL`, `OPENAI_API_KEY`, `AUTH_SECRET`
 
+**`AUTH_SECRET` gjør TO jobber, og den andre er usynlig.** Den signerer
+øktene — og den er **krypteringsnøkkelen for lagrede tokens**, siden
+`getKey()` i `$lib/server/crypto.ts` leser `TOKEN_ENCRYPTION_KEY || AUTH_SECRET`
+og `TOKEN_ENCRYPTION_KEY` ikke er satt i noe miljø. Alle krypterte Strava- og
+Tesla-credentials ligger altså under `AUTH_SECRET`.
+
+- **Bytter du den, er de radene tapt.** Permanent, og uten feilmelding: appen
+  svarer som normalt, integrasjonene svarer bare ikke.
+- **Å SETTE `TOKEN_ENCRYPTION_KEY` er samme skade.** En tilfeldig verdi i et
+  tomt felt ser ut som å tette et hull; den bytter nøkkel på data som alt er
+  kryptert. Skal den innføres, må rotasjonen lese med gammel nøkkel og skrive
+  med ny — `v1:`-prefikset finnes for det, men jobben er ikke gjort.
+- **Samme felle for `EXTERNAL_API_SECRET_PEPPER`:** `hashApiSecret()` leser
+  `env.EXTERNAL_API_SECRET_PEPPER ?? ''`, så peppern i bruk er den **tomme
+  strengen**, og alle Ekko-tokens er hashet med den. Setter du en verdi, slutter
+  hvert token å validere — og her finnes ingen rotasjonsvei i det hele tatt,
+  siden en hash ikke kan leses tilbake.
+
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 
