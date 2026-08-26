@@ -3,6 +3,12 @@
 	 * ScreenTimeCard — viser skjermtid for siste uke: total/snitt, scrolling (sosiale
 	 * medier), endring fra forrige uke, fordeling per dag og per time på døgnet,
 	 * kategorisplitt og evt. ukesmål med progresjon. Rent presentasjonell.
+	 *
+	 * Skiller **oppmerksomhet** fra **skjermtid** når `attention` er sendt inn: iOS
+	 * teller minutter skjermen var på, også de man sov gjennom. Visuelt språk:
+	 * **dempet = filtrert bort**. Søylene beholder rå høyde, så natta man sovnet fra
+	 * telefonen blir SYNLIG framfor bare å forsvinne — et tall som bare krymper er
+	 * ikke til å etterprøve.
 	 */
 	import SectionLabel from '../ui/SectionLabel.svelte';
 
@@ -34,6 +40,29 @@
 		totalMinutes: number;
 		socialMinutes: number;
 		detailed: boolean;
+		/** Det som står igjen etter filtrering. Lik `totalMinutes` uten filtrering. */
+		attentionMinutes?: number;
+		passiveMinutes?: number;
+		ignoredAppMinutes?: number;
+		hasHourly?: boolean;
+	}
+	interface Attention {
+		enabled: boolean;
+		rawMinutes: number;
+		rawSocialMinutes: number;
+		passiveMinutes: number;
+		ignoredAppMinutes: number;
+		attentionMinutes: number;
+		attentionSocialMinutes: number;
+		avgPerDayMinutes: number;
+		socialAvgPerDayMinutes: number;
+		byHour: number[];
+		socialByHour: number[];
+		dayCount: number;
+		hourlyDayCount: number;
+		passiveHourCount: number;
+		ignoredApps: Array<{ name: string; minutes: number }>;
+		note: string | null;
 	}
 
 	let {
@@ -44,7 +73,11 @@
 		categoryLabels = {},
 		compact = false,
 		cumulative = [],
-		cumulativeRefs = []
+		cumulativeRefs = [],
+		cumulativeRaw = [],
+		cumulativeRawRefs = [],
+		attention = null,
+		prevAttention = null
 	}: {
 		thisWeek: ScreenTimeMetric | null;
 		prevWeek?: ScreenTimeMetric | null;
@@ -56,6 +89,13 @@
 		cumulative?: number[];
 		/** Tilsvarende serier for tidligere uker — tegnes som tynne grå referanselinjer. */
 		cumulativeRefs?: number[][];
+		/** Samme serier på iOS' ufiltrerte grunnlag, for «Slik iOS teller»-visningen. */
+		cumulativeRaw?: number[];
+		cumulativeRawRefs?: number[][];
+		/** Filtrert («oppmerksomhet») for valgt uke. Null = ingen filtrering å vise. */
+		attention?: Attention | null;
+		/** Samme for uka før — sammenligningen må stå på samme grunnlag. */
+		prevAttention?: Attention | null;
 	} = $props();
 
 	function fmt(min: number | null | undefined): string {
@@ -70,12 +110,46 @@
 	// Fast man–søn-rekkefølge. weekDays er alltid lengde 7, index 0 = mandag.
 	const dayLabels = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
 
-	// Endring i snitt/dag mot forrige uke
-	const totalDelta = $derived(
-		thisWeek && prevWeek ? thisWeek.avgPerDayMinutes - prevWeek.avgPerDayMinutes : null
+	/* ── Oppmerksomhet vs. skjermtid ──────────────────────── */
+
+	/** Hvor mye som ble trukket fra denne uka. 0 = filtreringen fant ingenting. */
+	const removedMinutes = $derived(
+		attention ? attention.passiveMinutes + attention.ignoredAppMinutes : 0
 	);
+	/** Filtreringen er både slått på OG har funnet noe å trekke fra. */
+	const canFilter = $derived(Boolean(attention?.enabled) && removedMinutes > 0);
+
+	let showRaw = $state(false);
+	/** Sant når tallene på skjermen er de filtrerte. */
+	const filtering = $derived(canFilter && !showRaw);
+
+	// Snitt/dag: filtrert eller rått, men ALLTID mot samme grunnlag forrige uke —
+	// ellers ser filtreringen ut som en nedgang fra forrige uke.
+	const avgPerDay = $derived(
+		filtering ? attention!.avgPerDayMinutes : thisWeek?.avgPerDayMinutes ?? 0
+	);
+	const socialAvgPerDay = $derived(
+		filtering ? attention!.socialAvgPerDayMinutes : thisWeek?.socialAvgPerDayMinutes ?? 0
+	);
+	const prevAvgPerDay = $derived(
+		!prevWeek
+			? null
+			: filtering && prevAttention?.enabled
+				? prevAttention.avgPerDayMinutes
+				: prevWeek.avgPerDayMinutes
+	);
+	const prevSocialAvgPerDay = $derived(
+		!prevWeek
+			? null
+			: filtering && prevAttention?.enabled
+				? prevAttention.socialAvgPerDayMinutes
+				: prevWeek.socialAvgPerDayMinutes
+	);
+
+	// Endring i snitt/dag mot forrige uke
+	const totalDelta = $derived(prevAvgPerDay === null ? null : avgPerDay - prevAvgPerDay);
 	const socialDelta = $derived(
-		thisWeek && prevWeek ? thisWeek.socialAvgPerDayMinutes - prevWeek.socialAvgPerDayMinutes : null
+		prevSocialAvgPerDay === null ? null : socialAvgPerDay - prevSocialAvgPerDay
 	);
 
 	const hasWeekDays = $derived(weekDays.some((d) => d.totalMinutes > 0));
@@ -86,12 +160,38 @@
 	const thisHourAvg = $derived(
 		(thisWeek?.byHour ?? []).map((v) => v / Math.max(1, thisWeek?.hourlyDayCount ?? 1))
 	);
-	const prevHourAvg = $derived(
-		prevWeek && prevWeek.hourlyDayCount > 0 && (prevWeek.byHour ?? []).some((v) => v > 0)
-			? prevWeek.byHour.map((v) => v / Math.max(1, prevWeek.hourlyDayCount))
+	/**
+	 * Samme profil etter filtrering. Skalaen (`maxHourAvg`) holdes på de RÅ
+	 * verdiene, slik at søylene ikke bytter høyde når man veksler visning —
+	 * det som endrer seg skal være hva som er dempet, ikke hele grafen.
+	 */
+	const attentionHourAvg = $derived(
+		attention
+			? attention.byHour.map((v) => v / Math.max(1, thisWeek?.hourlyDayCount ?? 1))
 			: null
 	);
-	const maxHourAvg = $derived(Math.max(1, ...thisHourAvg, ...(prevHourAvg ?? [])));
+	/**
+	 * Forrige uke, på SAMME grunnlag som denne. Uten det sto sammenligningssøylene
+	 * ufiltrerte ved siden av de filtrerte — og siden nattetimene er de høyeste,
+	 * så en filtrert uke ut som et kraftig fall mot en uke som var like ille.
+	 */
+	const prevHourAvg = $derived.by(() => {
+		if (!prevWeek || prevWeek.hourlyDayCount <= 0) return null;
+		const source = filtering && prevAttention?.enabled ? prevAttention.byHour : prevWeek.byHour;
+		if (!(source ?? []).some((v) => v > 0)) return null;
+		return source.map((v) => v / Math.max(1, prevWeek.hourlyDayCount));
+	});
+	// Skalaen står på de RÅ verdiene for begge uker, så søylene ikke endrer høyde
+	// når man veksler visning: det som skal endre seg er hva som er skravert.
+	const maxHourAvg = $derived(
+		Math.max(
+			1,
+			...thisHourAvg,
+			...(prevWeek && prevWeek.hourlyDayCount > 0
+				? (prevWeek.byHour ?? []).map((v) => v / Math.max(1, prevWeek.hourlyDayCount))
+				: [])
+		)
+	);
 
 	/* ── Akkumulert ukegraf (man 00 → søn 24) ─────────────── */
 	const HOURS_PER_WEEK = 168;
@@ -101,7 +201,16 @@
 	const plotW = CHART_W - PAD.left - PAD.right;
 	const plotH = CHART_H - PAD.top - PAD.bottom;
 
-	const hasCumulative = $derived(cumulative.length > 1);
+	// Grafen må stå på samme grunnlag som tallene over den. Faller tilbake på den
+	// filtrerte serien når rå-serien ikke er sendt (f.eks. eldre kallsteder).
+	const activeCumulative = $derived(
+		filtering || cumulativeRaw.length <= 1 ? cumulative : cumulativeRaw
+	);
+	const activeCumulativeRefs = $derived(
+		filtering || cumulativeRawRefs.length === 0 ? cumulativeRefs : cumulativeRawRefs
+	);
+
+	const hasCumulative = $derived(activeCumulative.length > 1);
 	let hourViewChoice = $state<'cumulative' | 'hours'>('cumulative');
 	const hourView = $derived(
 		hasCumulative && (hourViewChoice === 'cumulative' || !hasHourly) ? 'cumulative' : 'hours'
@@ -110,8 +219,8 @@
 	const cumulativeMax = $derived(
 		Math.max(
 			1,
-			cumulative[cumulative.length - 1] ?? 0,
-			...cumulativeRefs.map((r) => r[r.length - 1] ?? 0)
+			activeCumulative[activeCumulative.length - 1] ?? 0,
+			...activeCumulativeRefs.map((r) => r[r.length - 1] ?? 0)
 		)
 	);
 
@@ -129,15 +238,15 @@
 	}
 	const cumulativeArea = $derived(
 		hasCumulative
-			? `${cumulativePath(cumulative)} L${cumX(cumulative.length - 1).toFixed(1)},${(PAD.top + plotH).toFixed(1)} L${cumX(0).toFixed(1)},${(PAD.top + plotH).toFixed(1)} Z`
+			? `${cumulativePath(activeCumulative)} L${cumX(activeCumulative.length - 1).toFixed(1)},${(PAD.top + plotH).toFixed(1)} L${cumX(0).toFixed(1)},${(PAD.top + plotH).toFixed(1)} Z`
 			: ''
 	);
 	const cumulativeEnd = $derived(
 		hasCumulative
 			? {
-					x: cumX(cumulative.length - 1),
-					y: cumY(cumulative[cumulative.length - 1]),
-					value: cumulative[cumulative.length - 1]
+					x: cumX(activeCumulative.length - 1),
+					y: cumY(activeCumulative[activeCumulative.length - 1]),
+					value: activeCumulative[activeCumulative.length - 1]
 				}
 			: null
 	);
@@ -171,10 +280,29 @@
 			<p class="hint">Legg inn et iOS Skjermtid-skjermbilde for å komme i gang.</p>
 		</div>
 	{:else}
+		{#if !compact && canFilter}
+			<div class="filter-head">
+				<div class="view-toggle" role="group" aria-label="Velg om skjermtiden er filtrert">
+					<button
+						class:active={filtering}
+						onclick={() => (showRaw = false)}
+						data-track="skjermtid:vis-oppmerksomhet">Oppmerksomhet</button
+					>
+					<button
+						class:active={!filtering}
+						onclick={() => (showRaw = true)}
+						data-track="skjermtid:vis-raa-skjermtid">Slik iOS teller</button
+					>
+				</div>
+			</div>
+		{/if}
+
 		<div class="st-headline">
 			<div class="metric">
-				<SectionLabel tag="span">Skjermtid · snitt/dag</SectionLabel>
-				<span class="metric-value">{fmt(thisWeek.avgPerDayMinutes)}</span>
+				<SectionLabel tag="span">
+					{filtering ? 'Oppmerksomhet · snitt/dag' : 'Skjermtid · snitt/dag'}
+				</SectionLabel>
+				<span class="metric-value">{fmt(avgPerDay)}</span>
 				{#if deltaText(totalDelta)}
 					{@const d = deltaText(totalDelta)}
 					<span class="delta {d?.tone}">{d?.label} fra forrige uke</span>
@@ -182,7 +310,7 @@
 			</div>
 			<div class="metric">
 				<SectionLabel tag="span">Scrolling · snitt/dag</SectionLabel>
-				<span class="metric-value social">{fmt(thisWeek.socialAvgPerDayMinutes)}</span>
+				<span class="metric-value social">{fmt(socialAvgPerDay)}</span>
 				{#if deltaText(socialDelta)}
 					{@const d = deltaText(socialDelta)}
 					<span class="delta {d?.tone}">{d?.label}</span>
@@ -190,17 +318,44 @@
 			</div>
 		</div>
 
+		{#if !compact && canFilter}
+			<p class="filter-note">
+				{#if filtering}
+					<strong>{fmt(attention!.attentionMinutes)}</strong> av iOS' {fmt(attention!.rawMinutes)} denne
+					uka. {attention!.note}
+				{:else}
+					iOS teller <strong>{fmt(attention!.rawMinutes)}</strong>. {attention!.note} Trykk
+					«Oppmerksomhet» for tallet uten dem.
+				{/if}
+			</p>
+		{:else if !compact && attention?.enabled && attention.hourlyDayCount === 0 && attention.dayCount > 0}
+			<p class="filter-note">
+				Ingen av ukas {attention.dayCount} dager har time-for-time, så ingenting kunne filtreres bort.
+				Last opp dagsbilder (Dag-fanen) for å skille bort timer der skjermen bare sto på.
+			</p>
+		{/if}
+
 		{#if !compact && hasWeekDays}
 			<div class="st-section">
 				<SectionLabel tag="span">Per dag</SectionLabel>
 				<div class="day-bars">
 					{#each weekDays as d, i}
-						<div class="day-col" title={`${d.date}: ${fmt(d.totalMinutes)} (scrolling ${fmt(d.socialMinutes)})`}>
+						{@const counted = filtering ? d.attentionMinutes ?? d.totalMinutes : d.totalMinutes}
+						{@const removed = Math.max(0, d.totalMinutes - counted)}
+						<div
+							class="day-col"
+							title={`${d.date}: ${fmt(counted)}${
+								removed > 0 ? ` (+ ${fmt(removed)} filtrert bort)` : ''
+							} · scrolling ${fmt(d.socialMinutes)}`}
+						>
 							<div class="bar-track">
-								<div class="bar-total" style={`height:${(d.totalMinutes / maxDay) * 100}%`}>
+								{#if removed > 0}
+									<div class="bar-removed" style={`height:${(removed / maxDay) * 100}%`}></div>
+								{/if}
+								<div class="bar-total" style={`height:${(counted / maxDay) * 100}%`}>
 									<div
 										class="bar-social"
-										style={`height:${d.totalMinutes > 0 ? (d.socialMinutes / d.totalMinutes) * 100 : 0}%`}
+										style={`height:${counted > 0 ? Math.min(100, (d.socialMinutes / counted) * 100) : 0}%`}
 									></div>
 								</div>
 							</div>
@@ -274,33 +429,39 @@
 							<text x={cumX(i * 24 + 12)} y={CHART_H - 5} class="cum-axis-x">{label}</text>
 						{/each}
 
-						{#each cumulativeRefs as ref}
+						{#each activeCumulativeRefs as ref}
 							<path d={cumulativePath(ref)} class="cum-ref" />
 						{/each}
 
 						<path d={cumulativeArea} class="cum-area" />
-						<path d={cumulativePath(cumulative)} class="cum-line" />
+						<path d={cumulativePath(activeCumulative)} class="cum-line" />
 						{#if cumulativeEnd}
 							<circle cx={cumulativeEnd.x} cy={cumulativeEnd.y} r="3" class="cum-dot" />
 						{/if}
 					</svg>
 					<div class="cum-legend">
 						<span class="legend-item"><span class="swatch this"></span>Denne uka ({fmt(Math.round(cumulativeEnd?.value ?? 0))})</span>
-						{#if cumulativeRefs.length > 0}
+						{#if activeCumulativeRefs.length > 0}
 							<span class="legend-item">
-								<span class="swatch ref"></span>Siste {cumulativeRefs.length} uke{cumulativeRefs.length === 1 ? '' : 'r'}
+								<span class="swatch ref"></span>Siste {activeCumulativeRefs.length} uke{activeCumulativeRefs.length === 1 ? '' : 'r'}
 							</span>
 						{/if}
 					</div>
 				{:else}
 					<div class="hour-bars">
 						{#each thisHourAvg as v, hour}
+							{@const counted = filtering ? attentionHourAvg?.[hour] ?? v : v}
+							{@const removed = Math.max(0, v - counted)}
 							{@const prev = prevHourAvg?.[hour] ?? null}
-							{@const delta = prev === null ? null : Math.round(v - prev)}
-							{@const total = thisWeek.byHour[hour] ?? 0}
+							{@const delta = prev === null ? null : Math.round(counted - prev)}
+							{@const total = (filtering ? attention?.byHour[hour] : thisWeek.byHour[hour]) ?? 0}
+							{@const social =
+								(filtering ? attention?.socialByHour[hour] : thisWeek.socialByHour[hour]) ?? 0}
 							<div
 								class="hour-col"
-								title={`kl. ${String(hour).padStart(2, '0')}: ${fmt(Math.round(v))} /dag${
+								title={`kl. ${String(hour).padStart(2, '0')}: ${fmt(Math.round(counted))} /dag${
+									removed > 0 ? ` (+ ${fmt(Math.round(removed))} filtrert bort)` : ''
+								}${
 									prev === null
 										? ''
 										: ` · forrige uke ${fmt(Math.round(prev))}${delta === 0 ? '' : ` (${delta! > 0 ? '+' : '−'}${fmt(Math.abs(delta!))})`}`
@@ -310,11 +471,16 @@
 									{#if prevHourAvg}
 										<div class="hour-prev" style={`height:${(prev! / maxHourAvg) * 100}%`}></div>
 									{/if}
-									<div class="hour-total" style={`height:${(v / maxHourAvg) * 100}%`}>
-										<div
-											class="hour-social"
-											style={`height:${total > 0 ? ((thisWeek.socialByHour[hour] ?? 0) / total) * 100 : 0}%`}
-										></div>
+									<div class="hour-stack">
+										{#if removed > 0}
+											<div class="hour-removed" style={`height:${(removed / maxHourAvg) * 100}%`}></div>
+										{/if}
+										<div class="hour-total" style={`height:${(counted / maxHourAvg) * 100}%`}>
+											<div
+												class="hour-social"
+												style={`height:${total > 0 ? Math.min(100, (social / total) * 100) : 0}%`}
+											></div>
+										</div>
 									</div>
 								</div>
 								{#if hour % 6 === 0}
@@ -323,12 +489,15 @@
 							</div>
 						{/each}
 					</div>
-					{#if prevHourAvg}
-						<div class="cum-legend">
+					<div class="cum-legend">
+						{#if prevHourAvg}
 							<span class="legend-item"><span class="swatch this"></span>Denne uka</span>
 							<span class="legend-item"><span class="swatch ref"></span>Forrige uke</span>
-						</div>
-					{/if}
+						{/if}
+						{#if filtering}
+							<span class="legend-item"><span class="swatch removed"></span>Filtrert bort</span>
+						{/if}
+					</div>
 				{/if}
 			</div>
 		{:else if !compact}
@@ -408,6 +577,23 @@
 		font-size: 0.85rem;
 		opacity: 0.7;
 	}
+	.filter-head {
+		display: flex;
+		justify-content: flex-end;
+	}
+	.filter-note {
+		margin: 0;
+		font-size: 0.78rem;
+		line-height: 1.45;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+		padding: 0.5rem 0.7rem;
+		background: rgba(255, 255, 255, 0.03);
+		border-radius: 8px;
+	}
+	.filter-note strong {
+		color: var(--text-primary, #fff);
+		font-weight: 600;
+	}
 	.st-headline {
 		display: grid;
 		/* minmax(0, …) lar labelene wrappe pent i stedet for å sprenge kolonnen */
@@ -469,7 +655,27 @@
 		flex: 1;
 		width: 70%;
 		display: flex;
-		align-items: flex-end;
+		flex-direction: column;
+		justify-content: flex-end;
+	}
+	/* Dempet = filtrert bort. Ligger OVER den tellende delen, slik at søylen
+	   beholder rå høyde og natta man sovnet fra telefonen forblir synlig. */
+	.bar-removed,
+	.hour-removed {
+		width: 100%;
+		/* Skravur PLUSS en flat bunntone. Timesøylene er bare noen piksler brede,
+		   og der forsvinner et stripemønster helt — den flate tonen er det som
+		   gjør «filtrert bort» synlig på begge bredder. */
+		background-color: rgba(255, 255, 255, 0.07);
+		background-image: repeating-linear-gradient(
+			-45deg,
+			rgba(255, 255, 255, 0.18) 0 2px,
+			transparent 2px 5px
+		);
+		border-radius: 4px 4px 0 0;
+	}
+	.hour-removed {
+		border-radius: 2px 2px 0 0;
 	}
 	.bar-total {
 		width: 100%;
@@ -586,11 +792,23 @@
 	.swatch.ref {
 		background: rgba(255, 255, 255, 0.3);
 	}
+	.swatch.removed {
+		height: 6px;
+		background: repeating-linear-gradient(
+			-45deg,
+			rgba(255, 255, 255, 0.28) 0 2px,
+			transparent 2px 5px
+		);
+	}
 	.hour-bars {
 		display: flex;
 		gap: 1px;
 		align-items: flex-end;
 		height: 64px;
+		/* `.hour-label` er absolutt posisjonert på bottom: -16px og ligger altså
+		   UTENFOR denne boksen. Uten plass under kolliderer klokkeslettene med
+		   legenden rett etter. */
+		margin-bottom: 20px;
 	}
 	.hour-col {
 		flex: 1;
@@ -614,9 +832,20 @@
 		border-radius: 2px 2px 0 0;
 		min-height: 1px;
 	}
-	.hour-total {
+	.hour-stack {
 		flex: 1;
 		min-width: 0;
+		/* `height: 100%` er ikke pynt: `.hour-track` har `align-items: flex-end`, så
+		   et barn uten eksplisitt høyde blir innholdsstyrt — og da har segmentene
+		   inni ingen definert høyde å regne prosentene sine mot. Uten denne linja
+		   er de skraverte (filtrerte) timene 0 piksler høye og altså usynlige. */
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+	}
+	.hour-total {
+		width: 100%;
 		background: var(--text-secondary, rgba(255, 255, 255, 0.22));
 		border-radius: 2px 2px 0 0;
 		display: flex;

@@ -910,6 +910,78 @@ Se `docs/changelog/2026-08-23-vektmal-uten-maaling.md`. Tolkningen bor rent i
   `goal_tracks`-raden må følge med. `PATCH /api/goals/[id]` tar `metric: {...}` og
   fletter rå `metadata` framfor å erstatte den.
 
+### Skjermtid: oppmerksomhet er ikke at skjermen sto på
+
+Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i
+`$lib/domain/health/screen-time-attention.ts`, innstillingene i
+`$lib/server/health/screen-time-settings.ts`.
+
+- **iOS teller minutter skjermen var på, også de man sov gjennom.** Målt 24. august
+  2026: timene 00–05 sto alle på 60 av 60 minutter — seks fulle timer av dagens
+  13t 24m, og de var Sosialt (Instagram 7t 12m). Uten filtrering måler flaten noe
+  brukeren ikke kan handle på.
+- **To mønstre, to mekanismer, og det er derfor de er to felt.** Passive timer kan
+  **leses ut av timeprofilen** (ingen konfigurasjon). At en treningscoach med
+  skjermen på under en løpetur ikke teller, kan ingen timeprofil avsløre — det må
+  brukeren si (`ignoredApps`). Ikke slå dem sammen.
+- **Terskelen er 57 minutter, ikke 60.** Timeprofilen leses av GPT-4o fra
+  søylehøyder i et skjermbilde, så en søyle som traff taket kommer tilbake som
+  57–63. En terskel på 60 slipper gjennom nettopp de timene regelen finnes for.
+- **Én full time er en film; to på rad er skjermen som står på.**
+  `MIN_PASSIVE_RUN_HOURS` = 2 er den ene knappen som avgjør aggressiviteten, og
+  den er bevisst forsiktig: å filtrere bort en time brukeren faktisk brukte er
+  verre enn å la en passiv time stå. Bare hele timer trekkes fra — sovner man
+  23:40, står time 23.
+- **Rekka skjøtes over midnatt, og naboen må være KALENDERnaboen.** Sovner man
+  22:30 og skjermen slukker 01:10, er hver dag bare én full time — under
+  terskelen — mens rekka i virkeligheten er to. Men en liste som mangler 24.
+  august gjør ikke 23. til nabo av 25.: da skjøtes rekka over en natt vi ikke har
+  målt. `buildAttentionDays` slår derfor opp på dato, ikke på posisjon i lista.
+- **Filtreringen skjer ved LESING, aldri lagret i `sensor_aggregates`.** Legger
+  brukeren en app i ignoreringslista, skal historikken endres med — uten en
+  reberegningsjobb. Samme felle som lagret `effortScore`. Aggregatet betyr derfor
+  fortsatt «det iOS rapporterte».
+- **Fradraget er det nye; NIVÅET er fortsatt iOS'.** Ukesbildet er autoritativt
+  for ukestotalen og kan avvike fra summen av dagsevents. Bygger du et eget nivå
+  av dagene, får flaten to konkurrerende ukestotaler som begge ser plausible ut —
+  og de spriker nettopp i ukene der data mangler. Snittet skaleres med samme brøk
+  (`buildWeekAttention`) framfor å regne nevneren på nytt: aggregatet deler på 7
+  med ukesbilde og på antall dager ellers.
+- **Passive timer og apper trekkes aldri fra samme minutt.** Appfradraget kappes
+  mot det som er igjen etter passivfiltreringen; ellers blir en app som kjørte
+  inne i en passiv time trukket to ganger og dagen havner under det som skjedde.
+- **Appfradraget rører IKKE kategorisplitten.** Skjermbildet sier ikke hvilken
+  kategori en app hører til, så vi kan ikke vite om minuttene var Sosialt. Flaten
+  sier det i klartekst framfor å gjette.
+- **Fire flater leser det samme:** `loadScreenTimeDashboardData` (flate +
+  undertema), `query_sensor_data` med `metric='screen_time'` (alle fire stiene,
+  gjennom `attentionForPeriods`), `/api/widget-data/[id]` (egen rad-lesende sti —
+  den generiske SQL-stien aggregerer `data->>'totalMinutes'` rått i basen) og
+  målene. En widget på hjemskjermen som viste 13t 24m ved siden av en flate på
+  7t 24m ville sett riktig ut på begge steder.
+- **Visuelt språk: dempet/skravert = filtrert bort, og søylen beholder rå høyde.**
+  Natta man sovnet fra telefonen skal bli SYNLIG, ikke bare forsvinne — et tall
+  som krymper er ikke til å etterprøve. Skalaen står på de rå verdiene, så
+  søylene ikke endrer høyde når man veksler visning.
+- **Toggelen bytter grunnlag på ALT, ikke bare overskriften.** Begge akkumulerte
+  serier sendes ned (`cumulativeSeries` + `cumulativeRawSeries`), og «forrige
+  uke»-søylene følger med: nattetimene er de høyeste, så en filtrert uke mot en
+  ufiltrert forrige uke ser ut som et kraftig fall mot en uke som var like ille.
+- **`.hour-stack` MÅ ha `height: 100%`.** `.hour-track` har
+  `align-items: flex-end`, så et barn uten eksplisitt høyde blir innholdsstyrt —
+  og da har segmentene inni ingen definert høyde å regne prosentene sine mot. Uten
+  linja er de skraverte timene 0 piksler høye: regelen virker, men er usynlig.
+- **Ingen påstander om søvn.** En full time betyr at skjermen sto på. Vi sier
+  «passiv», ikke «sov» — vi måler skjermen, ikke brukeren.
+- **Innstillingene bor på Skjermtid-flaten, ikke i metrikk-arket** (de justeres
+  mens man ser på loggen, som ernæringens dagsmål), men LAGRES i Helse-mortemaets
+  `metricSettings.screenTime`. Én skrivevei: `saveScreenTimeSettings`, som bevarer
+  nøkler den ikke eier.
+- Kjent rest: dager uten time-for-time kan ikke filtreres (ukesbilder gir bare
+  dagstotaler — flaten sier hvor mange), «Mest brukt» er avkortet i skjermbildet,
+  og en overlapp mot `canonical_workouts` ville truffet løpeturens minutter mer
+  presist enn en appliste.
+
 ### Livvidde
 
 Se `docs/changelog/2026-08-09-livvidde.md`. Logikken i `$lib/domain/health/waist.ts`,

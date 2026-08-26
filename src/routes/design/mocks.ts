@@ -3,6 +3,12 @@
  * Regler: faste datoer, ingen Math.random() — /design er med i visuell regresjon.
  * Fixtures deles mellom demosidene; komponenter importeres der de brukes.
  */
+
+import {
+	buildAttentionDays,
+	buildWeekAttention
+} from '$lib/domain/health/screen-time-attention';
+import { buildCumulativeWeekSeries } from '$lib/utils/screen-time-series';
 import { buildMetricSeries } from '$lib/domain/health/weight-series';
 import { countByDay } from '$lib/domain/streak-history';
 import { buildDayScale, type WorkoutDayMetrics } from '$lib/domain/health/workout-day-scale';
@@ -155,39 +161,95 @@ export const effortByFamily = { running: 290, strength: 160, walking: 100, cycli
 export const effortBaseline = { p4wAvg: 540, delta: 80 };
 
 // ── ScreenTimeCard ───────────────────────────────────────────────────────────
+//
+// Fixturen bygges FRA timeprofilene, ikke ved siden av dem: dagstotaler, byHour,
+// kategorisplitt og oppmerksomhetstid utledes alle av de samme 7 × 24 tallene.
+// Første utgave satte byHour og dagstotalene hver for seg, og da hadde galleriet
+// netter som var fulle i den ene serien og tomme i den andre — kortet viste en
+// kombinasjon koden ikke kan produsere.
 const stHourAvg = [0, 0, 0, 0, 0, 5, 12, 18, 10, 8, 6, 9, 14, 11, 8, 10, 12, 15, 22, 30, 38, 32, 18, 6];
-const stAvgPerDay = stHourAvg.reduce((a, b) => a + b, 0); // 284
+const stDayTotals = [262, 301, 198, 340, 270, 332, 285];
+/** Tre av ukas netter er «sovnet fra telefonen»: timene 00–02 står fulle. */
+const stFullNights = [0, 3, 5];
 
-export const screenWeekDays = [262, 301, 198, 340, 270, 332, 285].map((totalMinutes, i) => ({
+const stDayHourly = stDayTotals.map((total, i) => {
+	const night = stFullNights.includes(i) ? [0, 1, 2] : [];
+	const nightMinutes = night.length * 60;
+	// Resten av døgnet skaleres slik at timesummen treffer dagstotalen eksakt.
+	const awake = stHourAvg.map((v, h) => (night.includes(h) ? 0 : v));
+	const awakeSum = awake.reduce((a, b) => a + b, 0);
+	const scale = awakeSum > 0 ? Math.max(0, total - nightMinutes) / awakeSum : 0;
+	return awake.map((v, h) => (night.includes(h) ? 60 : Math.round(v * scale)));
+});
+
+// Natta er sosiale medier (det er dit man scroller seg i søvn); resten deles.
+const stSocialHourly = stDayHourly.map((hours, i) =>
+	hours.map((v, h) => (stFullNights.includes(i) && h <= 2 ? v : Math.round(v * (h >= 18 ? 0.55 : 0.25))))
+);
+
+const stSum = (rows: number[][]) => {
+	const out = new Array(24).fill(0);
+	for (const row of rows) for (let h = 0; h < 24; h++) out[h] += row[h];
+	return out;
+};
+const stByHour = stSum(stDayHourly);
+const stSocialByHour = stSum(stSocialHourly);
+const stTotalMinutes = stDayTotals.reduce((a, b) => a + b, 0);
+const stSocialMinutes = stSocialHourly.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
+
+const stAttentionDays = buildAttentionDays(
+	stDayTotals.map((totalMinutes, i) => ({
+		dateISO: `2026-06-0${i + 1}`,
+		totalMinutes,
+		socialMinutes: stSocialHourly[i].reduce((a, b) => a + b, 0),
+		hourly: stDayHourly[i],
+		socialHourly: stSocialHourly[i]
+	}))
+);
+
+export const screenWeekDays = stDayTotals.map((totalMinutes, i) => ({
 	date: `2026-06-0${i + 1}`,
 	totalMinutes,
-	socialMinutes: [70, 95, 55, 120, 80, 130, 95][i],
-	detailed: true
+	socialMinutes: stSocialHourly[i].reduce((a, b) => a + b, 0),
+	detailed: true,
+	attentionMinutes: stAttentionDays[i].attentionMinutes,
+	passiveMinutes: stAttentionDays[i].passiveMinutes,
+	ignoredAppMinutes: stAttentionDays[i].ignoredAppMinutes,
+	hasHourly: true
 }));
 
 export const screenThisWeek = {
-	totalMinutes: 1988,
-	avgPerDayMinutes: stAvgPerDay,
-	maxDayMinutes: 340,
-	socialMinutes: 645,
-	socialAvgPerDayMinutes: 92,
-	byCategory: { social: 645, entertainment: 520, productivity: 420, other: 403 },
-	byHour: stHourAvg.map((v) => v * 7),
-	socialByHour: stHourAvg.map((v, h) => Math.round(v * 7 * (h >= 18 ? 0.55 : 0.25))),
+	totalMinutes: stTotalMinutes,
+	avgPerDayMinutes: Math.round(stTotalMinutes / 7),
+	maxDayMinutes: Math.max(...stDayTotals),
+	socialMinutes: stSocialMinutes,
+	socialAvgPerDayMinutes: Math.round(stSocialMinutes / 7),
+	byCategory: {
+		social: stSocialMinutes,
+		entertainment: Math.round((stTotalMinutes - stSocialMinutes) * 0.4),
+		productivity: Math.round((stTotalMinutes - stSocialMinutes) * 0.33),
+		other: stTotalMinutes - stSocialMinutes - Math.round((stTotalMinutes - stSocialMinutes) * 0.73)
+	},
+	byHour: stByHour,
+	socialByHour: stSocialByHour,
 	dayCount: 7,
 	hourlyDayCount: 7
 };
 
 export const screenPrevWeek = {
 	...screenThisWeek,
-	totalMinutes: 2240,
-	avgPerDayMinutes: 320,
+	totalMinutes: Math.round(stTotalMinutes * 1.13),
+	avgPerDayMinutes: Math.round((stTotalMinutes * 1.13) / 7),
 	maxDayMinutes: 380,
-	socialMinutes: 740,
-	socialAvgPerDayMinutes: 106,
-	byHour: stHourAvg.map((v) => Math.round(v * 7 * 1.13)),
-	socialByHour: stHourAvg.map((v, h) => Math.round(v * 7 * 1.13 * (h >= 18 ? 0.55 : 0.25)))
+	socialMinutes: Math.round(stSocialMinutes * 1.15),
+	socialAvgPerDayMinutes: Math.round((stSocialMinutes * 1.15) / 7),
+	byHour: stByHour.map((v) => Math.round(v * 1.13)),
+	socialByHour: stSocialByHour.map((v) => Math.round(v * 1.15))
 };
+
+/** Ukas oppmerksomhetstid — regnet mot iOS-nivået, som på flaten. */
+export const screenAttention = buildWeekAttention(screenThisWeek, stAttentionDays);
+export const screenPrevAttention = buildWeekAttention(screenPrevWeek, stAttentionDays);
 
 export const screenGoals = [
 	{
@@ -202,22 +264,26 @@ export const screenGoals = [
 	}
 ];
 
-export const screenCumulative = (() => {
-	const out: number[] = [0];
-	let acc = 0;
-	for (let d = 0; d < 7; d++) {
-		const scale = screenWeekDays[d].totalMinutes / stAvgPerDay;
-		for (let h = 0; h < 24; h++) {
-			acc += stHourAvg[h] * scale;
-			out.push(Math.round(acc));
-		}
-	}
-	return out;
-})();
+// Begge grunnlag, bygget med den samme funksjonen serveren bruker — toggelen i
+// kortet bytter graf, og to serier laget på ulikt vis ville ikke stemt med
+// hverandre eller med tallene over dem.
+export const screenCumulativeRaw = buildCumulativeWeekSeries(
+	screenWeekDays.map((d, i) => ({ totalMinutes: d.totalMinutes, hourly: stDayHourly[i] })),
+	screenThisWeek.byHour
+).map((v) => Math.round(v));
+
+export const screenCumulative = buildCumulativeWeekSeries(
+	stAttentionDays.map((d) => ({ totalMinutes: d.attentionMinutes, hourly: d.attentionHourly })),
+	screenAttention.byHour
+).map((v) => Math.round(v));
 
 export const screenCumulativeRefs = [
 	screenCumulative.map((v) => Math.round(v * 1.18)),
 	screenCumulative.map((v) => Math.round(v * 0.84))
+];
+export const screenCumulativeRawRefs = [
+	screenCumulativeRaw.map((v) => Math.round(v * 1.18)),
+	screenCumulativeRaw.map((v) => Math.round(v * 0.84))
 ];
 
 export const screenCategoryLabels = {

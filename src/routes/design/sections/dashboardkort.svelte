@@ -60,6 +60,10 @@
 		effortByFamily,
 		effortBaseline,
 		screenThisWeek,
+		screenAttention,
+		screenCumulativeRaw,
+		screenCumulativeRawRefs,
+		screenPrevAttention,
 		screenPrevWeek,
 		screenGoals,
 		screenWeekDays,
@@ -228,7 +232,9 @@
 
 	<h3 class="subsection">ScreenTimeCard — skjermtid</h3>
 	<p class="section-desc">
-		Full variant med ukesmål, dagsfordeling, akkumulert ukegraf og kategorisplitt — som på Skjermtid-undertemaet.
+		Full variant med ukesmål, dagsfordeling, akkumulert ukegraf og kategorisplitt — som på
+		Skjermtid-undertemaet. Tre av ukas netter står som «sovnet fra telefonen»: de skraverte
+		søyletoppene er timene som er filtrert bort, og toggelen øverst viser iOS' eget tall.
 	</p>
 	<div class="demo-card demo-card--wide">
 		<ScreenTimeCard
@@ -239,6 +245,10 @@
 			categoryLabels={screenCategoryLabels}
 			cumulative={screenCumulative}
 			cumulativeRefs={screenCumulativeRefs}
+			cumulativeRaw={screenCumulativeRaw}
+			cumulativeRawRefs={screenCumulativeRawRefs}
+			attention={screenAttention}
+			prevAttention={screenPrevAttention}
 		/>
 	</div>
 

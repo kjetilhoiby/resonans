@@ -308,8 +308,14 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // NB: «løp» står uten o-variant med vilje — `\bl[øo]p` treffer «loppemarked».
    // «økter»/«økta» er med, men ikke «økt»: sistnevnte er også partisipp av «øke»
    // («forbruket har økt») og ville dratt helse-blokka inn i økonomi-samtaler.
+   //
+   // SKJERMTID hadde bare «skjermtid» og «skjermbilde». «Hvor mye scroller jeg?» og
+   // «kan vi filtrere bort natta jeg sovnet fra telefonen?» traff derfor health bare
+   // via `\bsov` — og «hvor mye scrollet jeg i går» traff ingenting. `scroll` dekker
+   // scroller/scrolling/scrollet; «mobilbruk»/«telefonbruk» er ordene folk bruker når
+   // de IKKE sier skjermtid.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk/.test(
          text
       )
    )

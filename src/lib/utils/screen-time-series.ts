@@ -35,6 +35,28 @@ export function hourlyArrayFromBuckets(
 }
 
 /**
+ * Samme, men for én kategori på timenivå (f.eks. `social` → «scrolling per time»).
+ * Skilt ut hit fordi bøtte→array-konverteringen skal bo ett sted: en andre kopi
+ * ville fort blitt uenig om hva en manglende kategori betyr (0, ikke «utelatt»).
+ */
+export function categoryHourlyFromBuckets(
+	buckets: Array<{ hour: number; categories?: Record<string, number> }> | undefined | null,
+	category: string
+): number[] | undefined {
+	if (!Array.isArray(buckets) || buckets.length === 0) return undefined;
+	const out = new Array(24).fill(0);
+	let any = false;
+	for (const b of buckets) {
+		if (!b || typeof b.hour !== 'number' || b.hour < 0 || b.hour > 23) continue;
+		const v = b.categories?.[category];
+		if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+		out[b.hour] += Math.max(0, v);
+		any = true;
+	}
+	return any ? out : undefined;
+}
+
+/**
  * Fordel en dagstotal utover døgnet når time-detalj mangler.
  * Bruker ukeprofilen (sum per klokketime fra dager med detalj) som fasong,
  * ellers flat fordeling over døgnet.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	hourlyArrayFromBuckets,
+	categoryHourlyFromBuckets,
 	buildCumulativeWeekSeries,
 	mondayOfWeekISO,
 	previousWeekMondayISO,
@@ -140,5 +141,41 @@ describe('previousWeekMondayISO', () => {
 
 	it('gir forrige mandag også når ref er en mandag', () => {
 		expect(previousWeekMondayISO(new Date(2026, 5, 8))).toBe('2026-06-01');
+	});
+});
+
+describe('categoryHourlyFromBuckets', () => {
+	it('plukker ut én kategori per klokketime', () => {
+		const out = categoryHourlyFromBuckets(
+			[
+				{ hour: 0, categories: { social: 40, other: 20 } },
+				{ hour: 20, categories: { social: 15 } }
+			],
+			'social'
+		);
+		expect(out?.[0]).toBe(40);
+		expect(out?.[20]).toBe(15);
+		expect(out?.[12]).toBe(0);
+	});
+
+	it('returnerer undefined når ingen bøtte har kategorien', () => {
+		expect(categoryHourlyFromBuckets([{ hour: 0, categories: { other: 20 } }], 'social')).toBeUndefined();
+		expect(categoryHourlyFromBuckets([{ hour: 0 }], 'social')).toBeUndefined();
+		expect(categoryHourlyFromBuckets(undefined, 'social')).toBeUndefined();
+		expect(categoryHourlyFromBuckets([], 'social')).toBeUndefined();
+	});
+
+	it('summerer duplikate timer og hopper over ugyldige', () => {
+		const out = categoryHourlyFromBuckets(
+			[
+				{ hour: 3, categories: { social: 10 } },
+				{ hour: 3, categories: { social: 5 } },
+				{ hour: 99, categories: { social: 100 } },
+				{ hour: 4, categories: { social: Number.NaN } }
+			],
+			'social'
+		);
+		expect(out?.[3]).toBe(15);
+		expect(out?.[4]).toBe(0);
 	});
 });

@@ -19,6 +19,13 @@ import { readTransactions } from '$lib/server/economics/transactions';
 import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-definition-service';
 import { minutesInWindow, normalizeHourWindow, type HourBucket, type HourWindow } from '$lib/server/services/screen-time-window';
+import { readScreenTimeSettings } from '$lib/server/health/screen-time-settings';
+import { buildAttentionDays } from '$lib/domain/health/screen-time-attention';
+import {
+	categoryHourlyFromBuckets,
+	hourlyArrayFromBuckets,
+	toISODate
+} from '$lib/utils/screen-time-series';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
 import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
@@ -250,34 +257,80 @@ async function fetchCategorizedAmountRows(
 }
 
 /**
- * Henter skjermtid-minutter innenfor et timevindu per event (én per dag).
- * Kun events med `hourly`-oppløsning (daglige skjermbilder) kan vindus-filtreres —
- * dager uten hourly-data utelates i stedet for å telle som 0.
+ * Henter skjermtid per dag — filtrert for passive timer og ignorerte apper, samme
+ * beregning som Skjermtid-flaten og chatten bruker.
+ *
+ * Denne stien finnes fordi den generiske SQL-stien aggregerer
+ * `data->>'totalMinutes'` rått i basen: en widget på hjemskjermen ville da vist
+ * iOS' 13t 24m ved siden av en flate som sier 7t 24m for samme dag, og begge
+ * ville sett riktige ut. Filtreringen kan ikke gjøres i SQL — den leser
+ * timeprofilen og skjøter rekker over midnatt — så radene leses ut og bøttes med
+ * den samme `bucketRows`-maskineriet de andre særtilfellene bruker.
+ *
+ * Med `window` gjelder vinduet den FILTRERTE timeprofilen. Dager uten
+ * `hourly`-oppløsning utelates da (som før) i stedet for å telle som 0; uten
+ * vindu teller de med, men er ufiltrerte — de kan ikke filtreres.
  */
-async function fetchHourWindowScreenTimeRows(
+async function fetchScreenTimeRows(
 	userId: string,
 	from: Date,
 	to: Date,
-	window: HourWindow,
+	window: HourWindow | null,
 ): Promise<Array<{ timestamp: Date; value: number }>> {
+	const settings = await readScreenTimeSettings(userId);
+	// Ett døgn ekstra i hver ende: nattas rekke skjøtes over midnatt, så dagen
+	// utenfor kanten må være lest for at kantdagen skal filtreres riktig.
+	const margin = 86400000;
 	const rows = await sql(
 		`
-		SELECT timestamp, data->'hourly' AS hourly
+		SELECT timestamp, data->>'totalMinutes' AS total, data->'hourly' AS hourly,
+		       data->'apps' AS apps, data->'categories' AS categories
 		FROM sensor_events
 		WHERE user_id = $1
 		  AND data_type = 'screen_time'
 		  AND timestamp >= $2
 		  AND timestamp <= $3
-		  AND data ? 'hourly'
+		  ${window ? "AND data ? 'hourly'" : ''}
 		ORDER BY timestamp ASC
 		`,
-		[userId, from.toISOString(), to.toISOString()]
-	) as unknown as Array<{ timestamp: Date; hourly: HourBucket[] | null }>;
+		[userId, new Date(from.getTime() - margin).toISOString(), new Date(to.getTime() + margin).toISOString()]
+	) as unknown as Array<{
+		timestamp: Date;
+		total: string | null;
+		hourly: Array<{ hour: number; totalMinutes: number; categories?: Record<string, number> }> | null;
+		apps: Record<string, number> | null;
+		categories: Record<string, number> | null;
+	}>;
+
+	const stamps = new Map<string, Date>();
+	const inputs = rows.map((row) => {
+		const ts = new Date(row.timestamp);
+		const dateISO = toISODate(ts);
+		stamps.set(dateISO, ts);
+		return {
+			dateISO,
+			totalMinutes: Number(row.total) || 0,
+			socialMinutes: Number(row.categories?.social) || 0,
+			hourly: hourlyArrayFromBuckets(row.hourly),
+			socialHourly: categoryHourlyFromBuckets(row.hourly, 'social'),
+			apps: row.apps ?? undefined
+		};
+	});
 
 	const result: Array<{ timestamp: Date; value: number }> = [];
-	for (const row of rows) {
-		const value = minutesInWindow(row.hourly, window);
-		if (value !== null) result.push({ timestamp: new Date(row.timestamp), value });
+	for (const day of buildAttentionDays(inputs, settings)) {
+		const ts = stamps.get(day.dateISO);
+		if (!ts || ts < from || ts > to) continue;
+		if (window) {
+			const buckets: HourBucket[] | undefined = day.attentionHourly?.map((minutes, hour) => ({
+				hour,
+				totalMinutes: minutes
+			}));
+			const value = minutesInWindow(buckets, window);
+			if (value !== null) result.push({ timestamp: ts, value });
+		} else {
+			result.push({ timestamp: ts, value: day.attentionMinutes });
+		}
 	}
 	return result;
 }
@@ -430,8 +483,8 @@ async function fetchTimeSeries(
 		return bucketRows(rows, period, aggregation);
 	}
 
-	if (metricConf.dataType === 'screen_time' && hourWindow) {
-		const rows = await fetchHourWindowScreenTimeRows(userId, from, to, hourWindow);
+	if (metricConf.dataType === 'screen_time') {
+		const rows = await fetchScreenTimeRows(userId, from, to, hourWindow ?? null);
 		return bucketRows(rows, period, aggregation);
 	}
 
@@ -482,8 +535,8 @@ async function fetchSingleValue(
 		return aggregateValues(rows.map((row) => row.value), aggregation);
 	}
 
-	if (metricConf.dataType === 'screen_time' && hourWindow) {
-		const rows = await fetchHourWindowScreenTimeRows(userId, from, to, hourWindow);
+	if (metricConf.dataType === 'screen_time') {
+		const rows = await fetchScreenTimeRows(userId, from, to, hourWindow ?? null);
 		if (rows.length === 0) return null;
 		return aggregateValues(rows.map((row) => row.value), aggregation);
 	}

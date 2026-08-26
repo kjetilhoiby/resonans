@@ -2,6 +2,23 @@ import { z } from 'zod';
 import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import {
+	attentionForPeriods,
+	levelsFromScreenTimeMetric
+} from '$lib/server/health/screen-time-attention';
+import { readScreenTimeSettings } from '$lib/server/health/screen-time-settings';
+import {
+	buildAttentionDays,
+	describeAttention,
+	summarizeAttention,
+	type ScreenTimeAttentionSettings,
+	type WeekAttention
+} from '$lib/domain/health/screen-time-attention';
+import {
+	categoryHourlyFromBuckets,
+	hourlyArrayFromBuckets,
+	toISODate
+} from '$lib/utils/screen-time-series';
 
 type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'effort' | 'relationship' | 'screen_time' | 'all';
 
@@ -20,21 +37,49 @@ function metricToDataType(metric?: SensorMetric): string | null {
  * Beriker skjermtid-metrikken med byHour/socialByHour + en valgfri tidsvindu-beregning
  * (snitt minutter per dag innenfor [fromHour, toHour)) slik at chatten kan svare presist
  * på spørsmål som «hvor mye scroller jeg mellom kl. 16 og 20?».
+ *
+ * Er `attention` sendt inn og aktiv, er tallene de FILTRERTE — det brukeren
+ * faktisk brukte skjermen til — og iOS' rå tall følger med som `rawMinutes`.
+ * Aggregatet lagrer bare de rå tallene, så uten dette svarer chatten et annet
+ * tall enn flaten viser for samme uke.
  */
-function screenTimeWithWindow(st: any, fromHour?: number, toHour?: number) {
+function screenTimeWithWindow(
+	st: any,
+	fromHour?: number,
+	toHour?: number,
+	attention?: WeekAttention | null
+) {
 	if (!st) return undefined;
+	const filtered = Boolean(attention?.enabled);
+	const byHour = filtered ? attention!.byHour : st.byHour;
+	const socialByHour = filtered ? attention!.socialByHour : st.socialByHour;
+
 	const base = {
-		avgPerDayMinutes: st.avgPerDayMinutes,
-		totalMinutes: st.totalMinutes,
+		avgPerDayMinutes: filtered ? attention!.avgPerDayMinutes : st.avgPerDayMinutes,
+		totalMinutes: filtered ? attention!.attentionMinutes : st.totalMinutes,
 		maxDayMinutes: st.maxDayMinutes,
-		socialAvgPerDayMinutes: st.socialAvgPerDayMinutes,
-		socialMinutes: st.socialMinutes,
+		socialAvgPerDayMinutes: filtered ? attention!.socialAvgPerDayMinutes : st.socialAvgPerDayMinutes,
+		socialMinutes: filtered ? attention!.attentionSocialMinutes : st.socialMinutes,
 		byCategory: st.byCategory,
-		byHour: st.byHour,
-		socialByHour: st.socialByHour,
-		hourlyDayCount: st.hourlyDayCount
+		byHour,
+		socialByHour,
+		hourlyDayCount: st.hourlyDayCount,
+		...(filtered
+			? {
+					filtered: {
+						rawMinutes: attention!.rawMinutes,
+						rawSocialMinutes: attention!.rawSocialMinutes,
+						passiveMinutes: attention!.passiveMinutes,
+						passiveHourCount: attention!.passiveHourCount,
+						ignoredAppMinutes: attention!.ignoredAppMinutes,
+						ignoredApps: attention!.ignoredApps,
+						daysWithoutHourly: Math.max(0, attention!.dayCount - attention!.hourlyDayCount),
+						note: attention!.note
+					}
+				}
+			: {})
 	};
-	if (typeof fromHour === 'number' && typeof toHour === 'number' && Array.isArray(st.byHour)) {
+	if (typeof fromHour === 'number' && typeof toHour === 'number' && Array.isArray(byHour)) {
 		const days = Math.max(1, st.hourlyDayCount || 0);
 		const sumRange = (arr: number[] | undefined) => {
 			let s = 0;
@@ -46,13 +91,28 @@ function screenTimeWithWindow(st: any, fromHour?: number, toHour?: number) {
 			window: {
 				fromHour,
 				toHour,
-				totalPerDayMinutes: Math.round(sumRange(st.byHour) / days),
-				scrollingPerDayMinutes: Math.round(sumRange(st.socialByHour) / days),
+				totalPerDayMinutes: Math.round(sumRange(byHour) / days),
+				scrollingPerDayMinutes: Math.round(sumRange(socialByHour) / days),
 				hasHourlyData: (st.hourlyDayCount || 0) > 0
 			}
 		};
 	}
 	return base;
+}
+
+/** Oppmerksomhetstid for aggregatradene som faktisk har skjermtid. */
+async function attentionForAggregates(
+	userId: string,
+	rows: Array<{ periodKey: string; startDate: Date; endDate: Date; metrics: unknown }>
+): Promise<Map<string, WeekAttention>> {
+	const periods = rows
+		.map((row) => {
+			const levels = levelsFromScreenTimeMetric((row.metrics as any)?.screenTime);
+			return levels ? { key: row.periodKey, start: row.startDate, end: row.endDate, levels } : null;
+		})
+		.filter((p): p is NonNullable<typeof p> => p !== null);
+	if (periods.length === 0) return new Map();
+	return attentionForPeriods(userId, periods);
 }
 
 function startForPeriod(period: 'week' | 'month' | 'year', limit: number): Date {
@@ -236,7 +296,11 @@ function rangeForPeriodKey(period: 'week' | 'month' | 'year', periodKey?: string
 	};
 }
 
-function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; data: any }>, metric?: SensorMetric) {
+function summarizeRawEvents(
+	events: Array<{ timestamp: Date; dataType: string; data: any }>,
+	metric?: SensorMetric,
+	settings?: ScreenTimeAttentionSettings
+) {
 	const safeMetric = metric ?? 'all';
 
 	const weightValues = events
@@ -362,13 +426,57 @@ function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; d
 		const socials = screenDays
 			.map((e) => (typeof e.data?.categories?.social === 'number' ? (e.data.categories.social as number) : null))
 			.filter((v): v is number => v !== null);
+
+		// Filtrer også på denne stien. Fallbacken slår inn når aggregatet mangler,
+		// og et ufiltrert tall her ville motsagt flaten nettopp i de ukene som er
+		// ferskest — der dagsbildene ligger og aggregeringen ikke har kjørt ennå.
+		const attentionDays = buildAttentionDays(
+			screenDays.map((e) => ({
+				dateISO: toISODate(e.timestamp),
+				totalMinutes: typeof e.data?.totalMinutes === 'number' ? e.data.totalMinutes : 0,
+				socialMinutes:
+					typeof e.data?.categories?.social === 'number' ? e.data.categories.social : 0,
+				hourly: hourlyArrayFromBuckets(e.data?.hourly),
+				socialHourly: categoryHourlyFromBuckets(e.data?.hourly, 'social'),
+				apps: e.data?.apps as Record<string, number> | undefined
+			})),
+			settings
+		);
+		const summary = summarizeAttention(attentionDays);
+		const filtered = (settings?.filterPassiveHours || (settings?.ignoredApps.length ?? 0) > 0) &&
+			summary.passiveMinutes + summary.ignoredAppMinutes > 0;
+
+		const rawTotal = totals.reduce((s, v) => s + v, 0);
+		const rawSocial = socials.reduce((s, v) => s + v, 0);
+		const attentionTotal = Math.max(
+			0,
+			rawTotal - summary.passiveMinutes - summary.ignoredAppMinutes
+		);
+		const attentionSocial = Math.max(0, rawSocial - summary.passiveSocialMinutes);
+
 		response.screenTime = totals.length
 			? {
-					avgPerDayMinutes: Math.round(avg(totals) ?? 0),
+					avgPerDayMinutes: Math.round((filtered ? attentionTotal : rawTotal) / totals.length),
 					maxDayMinutes: Math.max(...totals),
-					totalMinutes: totals.reduce((s, v) => s + v, 0),
-					socialAvgPerDayMinutes: socials.length ? Math.round(avg(socials) ?? 0) : undefined,
-					dayCount: totals.length
+					totalMinutes: filtered ? attentionTotal : rawTotal,
+					socialAvgPerDayMinutes: socials.length
+						? Math.round((filtered ? attentionSocial : rawSocial) / socials.length)
+						: undefined,
+					dayCount: totals.length,
+					...(filtered
+						? {
+								filtered: {
+									rawMinutes: rawTotal,
+									rawSocialMinutes: rawSocial,
+									passiveMinutes: summary.passiveMinutes,
+									passiveHourCount: summary.passiveHourCount,
+									ignoredAppMinutes: summary.ignoredAppMinutes,
+									ignoredApps: summary.ignoredApps,
+									daysWithoutHourly: summary.dayCount - summary.hourlyDayCount,
+									note: describeAttention(summary, settings)
+								}
+							}
+						: {})
 				}
 			: undefined;
 	}
@@ -433,6 +541,7 @@ Use this tool when user asks about:
 - Workouts: "What workouts did I do?", "How many kilometers did I run this month?"
 - Relationship check-ins: "Hvordan har vi hatt det den siste uka?", "Vis parsjekk-score"
 - Skjermtid/scrolling: "Hvor mye skjermtid hadde jeg sist uke?", "Hvor mye scroller jeg?", "Når på døgnet bruker jeg mest tid på sosiale medier?" (bruk metric='screen_time'). For døgnvindu-spørsmål ("hvor mye scroller jeg mellom kl. 16 og 20?") bruk metric='screen_time' med fromHour=16 og toHour=20 — verktøyet returnerer da window.totalPerDayMinutes og window.scrollingPerDayMinutes (snitt/dag i vinduet).
+  VIKTIG om skjermtid: tallene er FILTRERTE når feltet screenTime.filtered finnes — timer der skjermen sto på hele timen (sovnet fra telefonen) og apper brukeren har sagt ikke teller, er trukket fra. Det er dette tallet Skjermtid-flaten viser, så bruk det. filtered.rawMinutes er iOS' eget tall; oppgi det bare når brukeren spør hva iOS sier, eller når differansen er poenget. filtered.note sier hva som ble trukket fra — videreformidle den når du nevner filtreringen, og særlig filtered.daysWithoutHourly: dager uten time-for-time er IKKE filtrert, så et ukestall med slike dager er delvis ufiltrert. Ingen påstander om søvn av dette: en full time betyr at skjermen sto på, ikke at brukeren sov.
 - General health: "Show me my health summary", "How am I doing?"
 
 Query types:
@@ -450,7 +559,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		),
 		period: z.enum(['week', 'month', 'year']).optional().describe('Time period for aggregates'),
 		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43" or "2025-W43", "2025M10" or "2025-10", "2025")'),
-		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'effort', 'relationship', 'screen_time', 'all']).optional().describe('Which metric to focus on. "effort" returns weekly relative effort (TRIMP+MET) with byFamily and byDay breakdown. "screen_time" returns iOS-skjermtid: total/snitt per dag, scrolling (sosiale medier) og fordeling per time på døgnet.'),
+		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'effort', 'relationship', 'screen_time', 'all']).optional().describe('Which metric to focus on. "effort" returns weekly relative effort (TRIMP+MET) with byFamily and byDay breakdown. "screen_time" returns iOS-skjermtid: total/snitt per dag, scrolling (sosiale medier) og fordeling per time på døgnet — filtrert for passive timer og ignorerte apper når feltet filtered er med i svaret.'),
 		limit: z.number().optional().describe('Max number of results (for raw_events or trend)'),
 		startDate: z.string().optional().describe('Start date for raw events (ISO format)'),
 		endDate: z.string().optional().describe('End date for raw events (ISO format)'),
@@ -523,6 +632,11 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 
 				const latest = weeklyAggregates[0];
 				const metrics = latest.metrics as any;
+				// Skjermtid filtreres ved lesing (aggregatet har bare iOS' rå tall),
+				// så chatten må hente fradraget selv for å svare det flaten viser.
+				const latestAttention = (await attentionForAggregates(userId, [latest])).get(
+					latest.periodKey
+				);
 
 				// Build response based on requested metric (default: all)
 				const allMetrics = {
@@ -564,7 +678,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						workoutCount: metrics.weeklyEffort.workoutCount,
 						baseline: metrics.weeklyEffort.baseline
 					} : undefined,
-					screenTime: screenTimeWithWindow(metrics?.screenTime, fromHour, toHour)
+					screenTime: screenTimeWithWindow(metrics?.screenTime, fromHour, toHour, latestAttention)
 				};
 
 				// Filter by metric if specified
@@ -680,7 +794,11 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						};
 					}
 
-					const summary = summarizeRawEvents(fallbackEvents, metric);
+					const summary = summarizeRawEvents(
+						fallbackEvents,
+						metric,
+						await readScreenTimeSettings(userId)
+					);
 					return {
 						success: true,
 						data: {
@@ -692,6 +810,9 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				}
 
 				const metrics = aggregate.metrics as any;
+				const aggregateAttention = (await attentionForAggregates(userId, [aggregate])).get(
+					aggregate.periodKey
+				);
 
 				return {
 					success: true,
@@ -705,7 +826,12 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						heartRate: metrics?.heartRate,
 						calories: metrics?.calories,
 						distance: metrics?.distance,
-						screenTime: screenTimeWithWindow(metrics?.screenTime, fromHour, toHour)
+						screenTime: screenTimeWithWindow(
+							metrics?.screenTime,
+							fromHour,
+							toHour,
+							aggregateAttention
+						)
 					},
 					message: `Summary for ${periodKey} based on ${aggregate.eventCount} measurements`
 				};
@@ -797,8 +923,13 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 					};
 				}
 
+				// Alle periodene på én gang: skjermtidsfradraget må regnes på samme
+				// grunnlag i hele trenden, ellers ser filtreringen ut som en utvikling.
+				const trendAttention = await attentionForAggregates(userId, filteredAggregates);
 				const trendData = filteredAggregates.map((agg) => {
 					const metrics = agg.metrics as any;
+					const att = trendAttention.get(agg.periodKey);
+					const filtered = Boolean(att?.enabled);
 					return {
 						period: agg.periodKey,
 						weight: metrics?.weight?.avg,
@@ -807,8 +938,18 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						sleep: metrics?.sleep?.avg,
 						intenseMinutes: metrics?.intenseMinutes?.sum,
 						heartRate: metrics?.heartRate?.avg,
-						screenTimeAvgPerDay: metrics?.screenTime?.avgPerDayMinutes,
-						screenTimeScrollingAvgPerDay: metrics?.screenTime?.socialAvgPerDayMinutes,
+						screenTimeAvgPerDay: filtered
+							? att!.avgPerDayMinutes
+							: metrics?.screenTime?.avgPerDayMinutes,
+						screenTimeScrollingAvgPerDay: filtered
+							? att!.socialAvgPerDayMinutes
+							: metrics?.screenTime?.socialAvgPerDayMinutes,
+						...(filtered
+							? {
+									screenTimeRawAvgPerDay: metrics?.screenTime?.avgPerDayMinutes,
+									screenTimePassiveMinutes: att!.passiveMinutes
+								}
+							: {}),
 						eventCount: agg.eventCount
 					};
 				});

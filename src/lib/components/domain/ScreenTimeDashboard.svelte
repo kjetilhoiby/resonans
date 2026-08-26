@@ -11,6 +11,7 @@
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { mondayOfWeekISO, previousWeekMondayISO } from '$lib/utils/screen-time-series';
+	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import type { ScreenTimeDashboardPayload } from '$lib/server/screentime-dashboard';
 
 	interface Props {
@@ -36,16 +37,77 @@
 	});
 	const current = $derived(data.weeks[selectedIndex] ?? null);
 	const prevMetric = $derived(data.weeks[selectedIndex + 1]?.metric ?? null);
+	const prevAttention = $derived(data.weeks[selectedIndex + 1]?.attention ?? null);
 	const canOlder = $derived(selectedIndex < data.weeks.length - 1);
 	const canNewer = $derived(selectedIndex > 0);
 
 	// Referanselinjer i den akkumulerte grafen: de fire ukene før valgt uke.
+	// Begge grunnlag sendes ned, så kortets toggel kan bytte hele grafen — også
+	// referanselinjene, som ellers ville blitt liggende på det andre grunnlaget.
 	const cumulativeRefs = $derived(
 		data.weeks
 			.slice(selectedIndex + 1, selectedIndex + 5)
 			.map((w) => w.cumulativeSeries)
 			.filter((s) => Array.isArray(s) && s.length > 1)
 	);
+	const cumulativeRawRefs = $derived(
+		data.weeks
+			.slice(selectedIndex + 1, selectedIndex + 5)
+			.map((w) => w.cumulativeRawSeries)
+			.filter((s) => Array.isArray(s) && s.length > 1)
+	);
+
+	/* ── Filtrering: hva som ikke skal telle som skjermtid ── */
+	//
+	// Innstillingene bor på serveren og ikke i localStorage: chatten leser samme
+	// loader, og et valg bare klienten kjente ville gitt to ulike svar på samme
+	// spørsmål. Samme regel som bufferkontoene, se CLAUDE.md.
+	let settingsOpen = $state(false);
+	let savingSettings = $state(false);
+	let settingsError = $state<string | null>(null);
+	let filterPassive = $state(data.settings.filterPassiveHours);
+	let minRunHours = $state(String(data.settings.minPassiveRunHours));
+	let ignored = $state(new Set(data.settings.ignoredApps.map((a) => a.toLowerCase())));
+
+	/** Apper å velge blant: alt vi har sett, pluss dem som alt er ignorert. */
+	const appChoices = $derived.by(() => {
+		const seen = new Map<string, string>();
+		for (const app of data.knownApps) seen.set(app.name.toLowerCase(), app.name);
+		for (const name of data.settings.ignoredApps) {
+			if (!seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+		}
+		return [...seen.entries()].map(([key, name]) => ({ key, name }));
+	});
+
+	function toggleApp(key: string) {
+		const next = new Set(ignored);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		ignored = next;
+	}
+
+	async function saveSettings() {
+		savingSettings = true;
+		settingsError = null;
+		try {
+			const res = await fetch('/api/sensors/screen-time/settings', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					filterPassiveHours: filterPassive,
+					minPassiveRunHours: Number(minRunHours),
+					ignoredApps: appChoices.filter((a) => ignored.has(a.key)).map((a) => a.name)
+				})
+			});
+			if (!res.ok) throw new Error(extractApiErrorMessage(res.status, await res.text()));
+			await invalidateAll();
+			settingsOpen = false;
+		} catch (err) {
+			settingsError = err instanceof Error ? err.message : 'Klarte ikke å lagre innstillingene.';
+		} finally {
+			savingSettings = false;
+		}
+	}
 
 	/* ── Opplasting + tolking (kø av flere bilder) ────────── */
 	interface UploadItem {
@@ -291,6 +353,10 @@
 		categoryLabels={data.categoryLabels}
 		cumulative={current?.cumulativeSeries ?? []}
 		{cumulativeRefs}
+		cumulativeRaw={current?.cumulativeRawSeries ?? []}
+		{cumulativeRawRefs}
+		attention={current?.attention ?? null}
+		{prevAttention}
 	/>
 
 	{#if current}
@@ -298,6 +364,86 @@
 			<button class="link-danger" onclick={deleteWeek} disabled={deleting}>Slett denne uka</button>
 		</div>
 	{/if}
+
+	<!-- Filtrering -->
+	<section class="block">
+		<div class="settings-head">
+			<CardTitle>Hva skal ikke telle?</CardTitle>
+			<button
+				class="link-button"
+				onclick={() => (settingsOpen = !settingsOpen)}
+				data-track="skjermtid:apne-filterinnstillinger"
+			>
+				{settingsOpen ? 'Lukk' : 'Endre'}
+			</button>
+		</div>
+		<p class="muted">
+			iOS teller minutter skjermen var på — også timene man sov gjennom, og en app som
+			kjørte under en løpetur. Timer der skjermen sto på
+			<strong>{data.settings.minPassiveRunHours} timer på rad</strong> uten pause regnes derfor
+			som passive og trekkes fra.
+			{#if data.settings.ignoredApps.length > 0}
+				I tillegg holdes {data.settings.ignoredApps.join(', ')} utenfor.
+			{/if}
+			{#if !data.settings.filterPassiveHours}
+				<strong>Passivfiltrering er slått av</strong> — tallene er iOS' egne.
+			{/if}
+		</p>
+
+		{#if settingsOpen}
+			<div class="settings-form">
+				<label class="check-row">
+					<input type="checkbox" bind:checked={filterPassive} data-track="skjermtid:filtrer-passive-timer" />
+					<span>
+						Trekk fra timer der skjermen sto på hele timen
+						<em>Én full time kan være en film — flere på rad er skjermen som ble glemt.</em>
+					</span>
+				</label>
+
+				<label class="field">
+					<span class="field-label">Antall fulle timer på rad som kreves</span>
+					<Select bind:value={minRunHours} dataTrack="skjermtid:passiv-rekkelengde" disabled={!filterPassive}>
+						<option value="2">2 timer</option>
+						<option value="3">3 timer</option>
+						<option value="4">4 timer</option>
+						<option value="5">5 timer</option>
+						<option value="6">6 timer</option>
+					</Select>
+				</label>
+
+				{#if appChoices.length > 0}
+					<div class="field">
+						<span class="field-label">Apper som ikke er skjermtid for deg</span>
+						<p class="field-hint">
+							Trekkes fra dagstotalen. Kategorisplitten står urørt — skjermbildet sier ikke
+							hvilken kategori en app hører til.
+						</p>
+						<div class="app-checks">
+							{#each appChoices as app}
+								<label class="app-check">
+									<input
+										type="checkbox"
+										checked={ignored.has(app.key)}
+										onchange={() => toggleApp(app.key)}
+										data-track="skjermtid:ignorer-app"
+										aria-label={`Ikke tell ${app.name} som skjermtid`}
+									/>
+									<span>{app.name}</span>
+								</label>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if settingsError}
+					<p class="settings-error">{settingsError}</p>
+				{/if}
+				<Button onClick={saveSettings} disabled={savingSettings}>
+					{savingSettings ? 'Lagrer…' : 'Lagre'}
+				</Button>
+			</div>
+		{/if}
+	</section>
 
 	{#if current && current.topApps.length > 0}
 		<section class="block">
@@ -559,6 +705,80 @@
 	.muted {
 		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
 		font-size: 0.88rem;
+	}
+	.settings-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.settings-head :global(.card-title) {
+		margin-bottom: 0;
+	}
+	.link-button {
+		background: none;
+		border: none;
+		color: var(--accent-primary, #4aa8ff);
+		font-size: 0.82rem;
+		cursor: pointer;
+		padding: 0;
+	}
+	.settings-form {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-top: 0.75rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+	}
+	.check-row {
+		display: flex;
+		gap: 0.6rem;
+		align-items: flex-start;
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.check-row input {
+		margin-top: 0.2rem;
+		flex-shrink: 0;
+	}
+	.check-row em {
+		display: block;
+		font-style: normal;
+		font-size: 0.8rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+		margin-top: 0.15rem;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+	.field-label {
+		font-size: 0.82rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+	}
+	.field-hint {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+	}
+	.app-checks {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 0.9rem;
+		margin-top: 0.2rem;
+	}
+	.app-check {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.settings-error {
+		margin: 0;
+		font-size: 0.82rem;
+		color: #fb7185;
 	}
 	.error {
 		color: #fb7185;
