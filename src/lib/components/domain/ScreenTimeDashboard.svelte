@@ -447,7 +447,9 @@
 
 	{#if current && current.topApps.length > 0}
 		<section class="block">
-			<CardTitle>Mest brukt ({current.label})</CardTitle>
+			<CardTitle>
+				Mest brukt ({current.label}){current.topAppsFromDays ? ' — summert fra dagsbilder' : ''}
+			</CardTitle>
 			<div class="apps">
 				{#each current.topApps as app}
 					<div class="app-row">

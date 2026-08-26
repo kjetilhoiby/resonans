@@ -85,6 +85,37 @@ rekkelengde, og avkryssing per app fra `knownApps` (alt vi har sett i vinduet).
 Fixturen bygges FRA timeprofilene, og oppmerksomhetstiden regnes med de samme
 funksjonene flaten bruker.
 
+### Fase 6: Dagsbilder er alltid kilden
+
+Brukeren opplyste at hen **alltid** tar dagsbilder, aldri ukesbilder. Det flytter
+hvor risikoen ligger: forbeholdet om dager uten time-for-time blir uaktuelt, mens
+vision-lesingen av timegrafen blir det ENESTE som avgjør om filtreringen virker.
+To deler av den lesingen var ustyrt, og begge feiler stille.
+
+1. **Taket.** Prompten sa bare «les time-for-time-grafen så godt du kan». Leser
+   modellen en stolpe som treffer 60-minutters-taket som 50, faller den under
+   terskelen på 57 og filtreringen gjør ingenting — uten en feilmelding. Y-aksen i
+   dagsvisningen står alltid på 60 (en klokketime kan ikke inneholde mer), så
+   regelen kan gjøres eksplisitt: en stolpe som når taket ER 60.
+2. **Fargene per time.** Prompten inviterte til å utelate dem
+   («Hvis kategorifargene ikke kan skilles per time, utelat …»). Uten dem er
+   `socialHourly` fraværende, `passiveSocialMinutes` blir 0, og scrollingtallet
+   står ufiltrert ved siden av en filtrert total — 7t 53m mot 1t 53m på
+   brukerens 24. august. Prompten ber nå om fargene per time, og tillater å
+   utelate dem for en ENKELT stolpe som er for liten, aldri for hele grafen.
+
+Fordi lesingen likevel kan svikte, er utfallet gjort synlig framfor antatt:
+`AttentionDay.socialFilterable` skiller «0 vi har målt» fra «0 vi ikke har målt»,
+`WeekAttention.socialFiltered` løfter det til uka, kortet merker scrollingtallet
+«ufiltrert — se under», og `describeAttention` sier hvor mange dager det gjaldt.
+Verktøysvaret bærer `filtered.socialFiltered` med samme betydning.
+
+I tillegg: **«Mest brukt» var helt dødt** for den som bare laster opp dagsbilder.
+Seksjonen leste `screen_time_week`-eventets applister, som aldri finnes da. Den
+summerer nå dagsbildenes egne applister og merker seg selv «summert fra
+dagsbilder» — og det er nettopp den lista man trenger for å velge hvilke apper som
+ikke skal telle.
+
 ## Beslutninger
 
 - **Filtreringen skjer ved LESING, ikke i `sensor_aggregates`.** Legger brukeren
@@ -126,7 +157,7 @@ funksjonene flaten bruker.
 
 ## Verifisering
 
-- `npm test`: 3927 tester grønne (49 nye).
+- `npm test`: 3933 tester grønne (55 nye).
 - `npm run check`: 0 feil, 0 advarsler.
 - `npm run build`: OK (adapter-node).
 - Kortet rendret og inspisert i `/design` i alle tre tilstander (filtrert, rå,
@@ -146,6 +177,12 @@ funksjonene flaten bruker.
 - **Dager uten time-for-time kan ikke filtreres.** Et dagsbilde (Dag-fanen) må
   lastes opp per dag; ukesbilder gir bare dagstotaler. Flaten og verktøysvaret
   sier hvor mange dager det gjelder, men ukestallet er da delvis ufiltrert.
+  Gjelder ikke denne brukeren, som alltid tar dagsbilder.
+- **Prompt-endringene er ikke målt mot ekte skjermbilder.** Både taket-regelen og
+  fargene per time er skrevet ut fordi de er løsbærende, men ingen kjøring mot de
+  fem faktiske bildene er gjort (krever `OPENAI_API_KEY`). `socialFiltered` gjør
+  utfallet synlig på flaten, så en svikt melder seg selv framfor å bli stille — men
+  første ekte opplasting er verifikasjonen.
 - **«Mest brukt» er avkortet i skjermbildet.** Ligger en ignorert app under
   topplista for dagen, blir den ikke trukket fra den dagen.
 - **Løpeturer kunne matches mot egne økter.** Vi vet fra `canonical_workouts` når

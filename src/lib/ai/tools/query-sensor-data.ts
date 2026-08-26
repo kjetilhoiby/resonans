@@ -74,6 +74,8 @@ function screenTimeWithWindow(
 						ignoredAppMinutes: attention!.ignoredAppMinutes,
 						ignoredApps: attention!.ignoredApps,
 						daysWithoutHourly: Math.max(0, attention!.dayCount - attention!.hourlyDayCount),
+						// Falsk = scrollingtallet er iOS' eget, selv om totalen er filtrert.
+						socialFiltered: attention!.socialFiltered,
 						note: attention!.note
 					}
 				}
@@ -473,6 +475,7 @@ function summarizeRawEvents(
 									ignoredAppMinutes: summary.ignoredAppMinutes,
 									ignoredApps: summary.ignoredApps,
 									daysWithoutHourly: summary.dayCount - summary.hourlyDayCount,
+									socialFiltered: summary.socialUnfilteredDayCount === 0,
 									note: describeAttention(summary, settings)
 								}
 							}
@@ -541,7 +544,7 @@ Use this tool when user asks about:
 - Workouts: "What workouts did I do?", "How many kilometers did I run this month?"
 - Relationship check-ins: "Hvordan har vi hatt det den siste uka?", "Vis parsjekk-score"
 - Skjermtid/scrolling: "Hvor mye skjermtid hadde jeg sist uke?", "Hvor mye scroller jeg?", "Når på døgnet bruker jeg mest tid på sosiale medier?" (bruk metric='screen_time'). For døgnvindu-spørsmål ("hvor mye scroller jeg mellom kl. 16 og 20?") bruk metric='screen_time' med fromHour=16 og toHour=20 — verktøyet returnerer da window.totalPerDayMinutes og window.scrollingPerDayMinutes (snitt/dag i vinduet).
-  VIKTIG om skjermtid: tallene er FILTRERTE når feltet screenTime.filtered finnes — timer der skjermen sto på hele timen (sovnet fra telefonen) og apper brukeren har sagt ikke teller, er trukket fra. Det er dette tallet Skjermtid-flaten viser, så bruk det. filtered.rawMinutes er iOS' eget tall; oppgi det bare når brukeren spør hva iOS sier, eller når differansen er poenget. filtered.note sier hva som ble trukket fra — videreformidle den når du nevner filtreringen, og særlig filtered.daysWithoutHourly: dager uten time-for-time er IKKE filtrert, så et ukestall med slike dager er delvis ufiltrert. Ingen påstander om søvn av dette: en full time betyr at skjermen sto på, ikke at brukeren sov.
+  VIKTIG om skjermtid: tallene er FILTRERTE når feltet screenTime.filtered finnes — timer der skjermen sto på hele timen (sovnet fra telefonen) og apper brukeren har sagt ikke teller, er trukket fra. Det er dette tallet Skjermtid-flaten viser, så bruk det. filtered.rawMinutes er iOS' eget tall; oppgi det bare når brukeren spør hva iOS sier, eller når differansen er poenget. filtered.note sier hva som ble trukket fra — videreformidle den når du nevner filtreringen, og særlig filtered.daysWithoutHourly: dager uten time-for-time er IKKE filtrert, så et ukestall med slike dager er delvis ufiltrert. Er filtered.socialFiltered false, er scrollingtallet iOS' eget selv om totalen er filtrert (timegrafen manglet fargefordeling) — ikke sammenlign de to som om de står på samme grunnlag. Ingen påstander om søvn av dette: en full time betyr at skjermen sto på, ikke at brukeren sov.
 - General health: "Show me my health summary", "How am I doing?"
 
 Query types:

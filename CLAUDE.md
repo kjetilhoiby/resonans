@@ -973,6 +973,21 @@ Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i
   linja er de skraverte timene 0 piksler høye: regelen virker, men er usynlig.
 - **Ingen påstander om søvn.** En full time betyr at skjermen sto på. Vi sier
   «passiv», ikke «sov» — vi måler skjermen, ikke brukeren.
+- **Parseren er løsbærende, og to regler i prompten er det av en grunn.** `hourly`
+  er ikke pynt til en graf. (1) Y-aksen i dagsvisningen står ALLTID på 60, og en
+  stolpe som treffer taket skal leses som 60 — leses den som 50, faller den under
+  terskelen på 57 og filtreringen gjør ingenting, uten en feilmelding. (2) Fargene
+  per time SKAL leses. Prompten inviterte tidligere til å utelate dem, og uten dem
+  er `socialHourly` fraværende, `passiveSocialMinutes` blir 0, og scrollingtallet
+  står ufiltrert ved siden av en filtrert total (7t 53m mot 1t 53m på én ekte dag).
+- **Skill «0 vi har målt» fra «0 vi ikke har målt».** `socialFilterable` på dagen og
+  `socialFiltered` på uka finnes fordi den andre 0-en ellers er usynlig: kortet
+  merker scrollingtallet «ufiltrert — se under», og verktøysvaret bærer
+  `filtered.socialFiltered`. En prompt kan svikte; utfallet skal melde seg selv.
+- **«Mest brukt» må summere dagsbildenes applister når ukesbildet mangler.**
+  Seksjonen leste bare `screen_time_week`-eventet, og var derfor helt død for den
+  som alltid tar dagsbilder — samtidig som den er lista man trenger for å velge
+  hvilke apper som ikke skal telle. `topAppsFromDays` merker hvilken kilde det ble.
 - **Innstillingene bor på Skjermtid-flaten, ikke i metrikk-arket** (de justeres
   mens man ser på loggen, som ernæringens dagsmål), men LAGRES i Helse-mortemaets
   `metricSettings.screenTime`. Én skrivevei: `saveScreenTimeSettings`, som bevarer

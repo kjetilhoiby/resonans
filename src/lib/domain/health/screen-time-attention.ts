@@ -244,6 +244,16 @@ export interface AttentionDay {
 	attentionSocialHourly?: number[];
 	/** Falsk = dagen kom fra et ukesbilde og kan ikke filtreres. */
 	hasHourly: boolean;
+	/**
+	 * Falsk når dagen HAR passive timer, men timegrafen manglet fargefordeling —
+	 * da er `passiveSocialMinutes` en 0 vi ikke har målt, ikke en 0 vi har sett.
+	 *
+	 * Skillet må ut av modulen: uten det viser flaten et uendret scrollingtall ved
+	 * siden av en filtrert total, og differansen ser ut som at natta ikke var
+	 * sosiale medier. Sant også når dagen ikke har passive timer i det hele tatt —
+	 * da er det ingenting å filtrere, og ingenting å ta forbehold om.
+	 */
+	socialFilterable: boolean;
 	/** Sant når noe faktisk ble trukket fra. */
 	adjusted: boolean;
 }
@@ -331,6 +341,7 @@ export function computeAttentionDay(
 		attentionHourly: zeroRuns(day.hourly, runs),
 		attentionSocialHourly: zeroRuns(day.socialHourly, runs),
 		hasHourly,
+		socialFilterable: runs.length === 0 || Array.isArray(day.socialHourly),
 		adjusted: passiveMinutes > 0 || ignoredAppMinutes > 0
 	};
 }
@@ -353,6 +364,8 @@ export interface AttentionSummary {
 	adjustedDayCount: number;
 	/** Antall passive timer funnet i perioden. */
 	passiveHourCount: number;
+	/** Dager med passive timer der scrollingen IKKE kunne filtreres (ingen farger). */
+	socialUnfilteredDayCount: number;
 	/** Apper som ble trukket fra, summert over perioden. */
 	ignoredApps: IgnoredAppHit[];
 }
@@ -370,6 +383,7 @@ export function summarizeAttention(days: AttentionDay[]): AttentionSummary {
 		hourlyDayCount: 0,
 		adjustedDayCount: 0,
 		passiveHourCount: 0,
+		socialUnfilteredDayCount: 0,
 		ignoredApps: []
 	};
 
@@ -387,6 +401,7 @@ export function summarizeAttention(days: AttentionDay[]): AttentionSummary {
 		summary.passiveSocialMinutes += day.passiveSocialMinutes;
 		summary.attentionSocialMinutes += day.attentionSocialMinutes;
 		for (const run of day.passiveRuns) summary.passiveHourCount += run.toHour - run.fromHour;
+		if (day.passiveMinutes > 0 && !day.socialFilterable) summary.socialUnfilteredDayCount += 1;
 		for (const app of day.ignoredApps) {
 			const key = appKey(app.name);
 			const hit = appTotals.get(key);
@@ -441,10 +456,22 @@ export function describeAttention(
 			? ` ${missing} av ${summary.dayCount} dager mangler time-for-time og er ikke filtrert — last opp dagsbilder for dem.`
 			: '';
 
+	// Kunne vi ikke se fargene i de passive timene, er scrollingtallet urørt. Det
+	// skal sies: differansen mellom en filtrert total og et ufiltrert scrollingtall
+	// leses ellers som at natta ikke var sosiale medier.
+	const socialCaveat =
+		summary.socialUnfilteredDayCount > 0
+			? ` Scrollingtallet er ikke filtrert: timegrafen manglet fargefordeling ${
+					summary.socialUnfilteredDayCount === 1
+						? 'én av dagene'
+						: `${summary.socialUnfilteredDayCount} av dagene`
+				}.`
+			: '';
+
 	if (parts.length === 0) {
 		return `Ingenting filtrert bort denne uka.${caveat}`;
 	}
-	return `Trukket fra: ${parts.join(' og ')}.${caveat}`;
+	return `Trukket fra: ${parts.join(' og ')}.${caveat}${socialCaveat}`;
 }
 
 /* ── Flere dager ─────────────────────────────────────────── */
@@ -516,6 +543,12 @@ export interface WeekAttention extends ScreenTimeLevels {
 	hourlyDayCount: number;
 	adjustedDayCount: number;
 	passiveHourCount: number;
+	/**
+	 * Falsk når minst én passiv dag manglet fargefordeling per time. Da er
+	 * `attentionSocialMinutes` uendret fra iOS' tall, og flaten må si det — ellers
+	 * står et ufiltrert scrollingtall ved siden av en filtrert total.
+	 */
+	socialFiltered: boolean;
 	ignoredApps: IgnoredAppHit[];
 	note: string | null;
 }
@@ -585,6 +618,7 @@ export function buildWeekAttention(
 		hourlyDayCount: summary.hourlyDayCount,
 		adjustedDayCount: summary.adjustedDayCount,
 		passiveHourCount: summary.passiveHourCount,
+		socialFiltered: summary.socialUnfilteredDayCount === 0,
 		ignoredApps: summary.ignoredApps,
 		note: describeAttention(summary, settings)
 	};

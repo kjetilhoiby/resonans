@@ -443,3 +443,88 @@ describe('buildWeekAttention', () => {
 		expect(week.hourlyDayCount).toBe(0);
 	});
 });
+
+describe('scrolling kan ikke alltid filtreres', () => {
+	const nightHourly = hours({ 0: 60, 1: 60, 2: 60, 12: 120 });
+
+	it('flagger dagen når passive timer mangler fargefordeling', () => {
+		const day = computeAttentionDay({
+			dateISO: '2026-08-24',
+			totalMinutes: 300,
+			socialMinutes: 200,
+			hourly: nightHourly
+			// ingen socialHourly — vision leste ikke fargene per time
+		});
+		expect(day.passiveMinutes).toBe(180);
+		expect(day.socialFilterable).toBe(false);
+		// Scrollingtallet står urørt; det er en 0 vi ikke har målt.
+		expect(day.passiveSocialMinutes).toBe(0);
+		expect(day.attentionSocialMinutes).toBe(200);
+	});
+
+	it('flagger ikke når fargene finnes', () => {
+		const day = computeAttentionDay({
+			dateISO: '2026-08-24',
+			totalMinutes: 300,
+			socialMinutes: 200,
+			hourly: nightHourly,
+			socialHourly: hours({ 0: 60, 1: 60, 2: 60, 12: 20 })
+		});
+		expect(day.socialFilterable).toBe(true);
+		expect(day.attentionSocialMinutes).toBe(20);
+	});
+
+	it('flagger ikke en dag uten passive timer — det er ingenting å ta forbehold om', () => {
+		const day = computeAttentionDay({
+			dateISO: '2026-08-22',
+			totalMinutes: 300,
+			socialMinutes: 200,
+			hourly: hours({ 12: 120, 20: 45 })
+		});
+		expect(day.passiveMinutes).toBe(0);
+		expect(day.socialFilterable).toBe(true);
+	});
+
+	it('teller bare dagene der det faktisk manglet', () => {
+		const s = summarizeAttention([
+			computeAttentionDay({ dateISO: '2026-08-23', totalMinutes: 300, hourly: nightHourly }),
+			computeAttentionDay({
+				dateISO: '2026-08-25',
+				totalMinutes: 300,
+				hourly: nightHourly,
+				socialHourly: hours({ 0: 60, 1: 60, 2: 60 })
+			})
+		]);
+		expect(s.socialUnfilteredDayCount).toBe(1);
+	});
+
+	it('uka rapporterer socialFiltered=false og sier fra i teksten', () => {
+		const days = [computeAttentionDay({ dateISO: '2026-08-24', totalMinutes: 300, hourly: nightHourly })];
+		const week = buildWeekAttention(
+			{ totalMinutes: 300, avgPerDayMinutes: 300, socialMinutes: 200, socialAvgPerDayMinutes: 200 },
+			days
+		);
+		expect(week.socialFiltered).toBe(false);
+		expect(week.attentionMinutes).toBe(120);
+		expect(week.socialMinutes).toBe(200);
+		expect(week.note).toContain('Scrollingtallet er ikke filtrert');
+	});
+
+	it('sier ingenting om scrolling når alt kunne filtreres', () => {
+		const days = [
+			computeAttentionDay({
+				dateISO: '2026-08-24',
+				totalMinutes: 300,
+				socialMinutes: 200,
+				hourly: nightHourly,
+				socialHourly: hours({ 0: 60, 1: 60, 2: 60 })
+			})
+		];
+		const week = buildWeekAttention(
+			{ totalMinutes: 300, avgPerDayMinutes: 300, socialMinutes: 200, socialAvgPerDayMinutes: 200 },
+			days
+		);
+		expect(week.socialFiltered).toBe(true);
+		expect(week.note).not.toContain('Scrollingtallet');
+	});
+});

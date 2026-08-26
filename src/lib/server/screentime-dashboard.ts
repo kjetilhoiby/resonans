@@ -226,13 +226,34 @@ export async function loadScreenTimeDashboardData(userId: string) {
 			: cumulativeRawSeries;
 
 		// Ukesoppsummering (apper) i ukens intervall → samme uke som resten.
+		//
+		// Uten ukesbilde summeres dagsbildenes egne applister i stedet. Seksjonen var
+		// ellers helt død for den som bare laster opp dagsbilder — og det er nettopp
+		// den lista man trenger for å velge hvilke apper som ikke skal telle.
 		const weekEvent = weekEvents.find((w) => w.ts >= start && w.ts <= end);
-		const topApps = weekEvent?.apps
-			? Object.entries(weekEvent.apps)
-					.map(([name, minutes]) => ({ name, minutes: Number(minutes) || 0 }))
-					.sort((a, b) => b.minutes - a.minutes)
-					.slice(0, 8)
-			: [];
+		const appMinutes = new Map<string, { name: string; minutes: number }>();
+		if (weekEvent?.apps) {
+			for (const [name, minutes] of Object.entries(weekEvent.apps)) {
+				appMinutes.set(name.trim().toLowerCase(), {
+					name: name.trim(),
+					minutes: Number(minutes) || 0
+				});
+			}
+		} else {
+			for (const ev of dayEvents) {
+				if (ev.ts < start || ev.ts > end || !ev.apps) continue;
+				for (const [name, minutes] of Object.entries(ev.apps)) {
+					const key = name.trim().toLowerCase();
+					const hit = appMinutes.get(key);
+					const add = Number(minutes) || 0;
+					if (hit) hit.minutes += add;
+					else appMinutes.set(key, { name: name.trim(), minutes: add });
+				}
+			}
+		}
+		const topApps = [...appMinutes.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 8);
+		/** Sant når applista er summert fra dagsbilder framfor lest av et ukesbilde. */
+		const topAppsFromDays = !weekEvent?.apps && topApps.length > 0;
 
 		return {
 			periodKey: agg.periodKey,
@@ -245,6 +266,7 @@ export async function loadScreenTimeDashboardData(userId: string) {
 			cumulativeSeries,
 			cumulativeRawSeries,
 			topApps,
+			topAppsFromDays,
 			goals: [] as ReturnType<typeof evaluateScreenTimeGoal>[]
 		};
 	});

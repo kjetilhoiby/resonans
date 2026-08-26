@@ -6,6 +6,12 @@
  *  - dagsbilde  ("Dag"-fanen): dato + dagstotal + kategori-totaler + time-for-time + apper
  *
  * Returnerer normaliserte minutter (ikke «7t 3m»-strenger) klart for lagring.
+ *
+ * NB: `hourly` er ikke bare pynt til en graf. Fulle timer (60 av 60) er signalet
+ * passivfiltreringen hviler på, og fargene per time avgjør hvor mye av scrollingen
+ * som lå i dem — se `$lib/domain/health/screen-time-attention.ts`. Leser modellen en
+ * taket-stolpe som 50, forsvinner filtreringen stille. Derfor er begge to skrevet ut
+ * som egne regler i prompten framfor å ligge i et «les grafen så godt du kan».
  */
 
 import { openai } from '$lib/server/openai';
@@ -55,7 +61,23 @@ Svar med dette JSON-skjemaet (utelat felter du ikke ser):
 
 Regler:
 - For dagsbildet: les time-for-time-grafen så godt du kan og fyll "hourly". Hver stolpe ~ én time.
-  Hvis kategorifargene ikke kan skilles per time, utelat "categories" på timenivå, men oppgi alltid "totalMinutes" og "hour".
+
+- FULLE TIMER ER DET VIKTIGSTE Å LESE RIKTIG. Y-aksen i timegrafen går alltid til
+  60 minutter, fordi en klokketime ikke kan inneholde mer. En stolpe som strekker seg
+  helt opp til taket (den øverste rutenettlinjen, merket «60 m») er en FULL time:
+  oppgi 60 — ikke 50, ikke 55. Flere fulle stolper på rad er vanlig om natta, og de
+  brukes til å avgjøre om skjermen bare sto på mens brukeren sov. Leser du dem for
+  lavt, forsvinner det signalet. Er du i tvil om en stolpe treffer taket eller ligger
+  litt under, og den er blant de høyeste i grafen: les den som 60.
+
+- FARGENE PER TIME SKAL LESES, ikke utelates. Segmentene i hver stolpe har samme
+  farger som kategori-etikettene under grafen (typisk blå = Sosialt, turkis/grønn =
+  den andre, oransje = den tredje, grå = resten). Fyll "categories" per time med de
+  kategorinavnene som står under grafen. Dette avgjør hvor mye av scrollingen som
+  skjedde i de fulle nattetimene. Bare hvis en stolpe er så liten at fargene
+  virkelig ikke kan skilles, utelat "categories" for DEN timen — aldri for hele
+  grafen. "totalMinutes" og "hour" skal alltid med.
+
 - For ukesbildet kan «dailyTotals» være vanskelig å lese eksakt — estimer fra søylehøydene relativt til snittlinjen om nødvendig, ellers utelat.
 - Hvis bildet ikke er et iOS Skjermtid-bilde: { "kind": "unknown", "confidence": "low" }.
 - Returner KUN JSON, ingen forklaring.`;

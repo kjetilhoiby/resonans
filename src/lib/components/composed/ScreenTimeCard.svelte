@@ -61,6 +61,7 @@
 		dayCount: number;
 		hourlyDayCount: number;
 		passiveHourCount: number;
+		socialFiltered: boolean;
 		ignoredApps: Array<{ name: string; minutes: number }>;
 		note: string | null;
 	}
@@ -314,6 +315,9 @@
 				{#if deltaText(socialDelta)}
 					{@const d = deltaText(socialDelta)}
 					<span class="delta {d?.tone}">{d?.label}</span>
+				{/if}
+				{#if filtering && attention && !attention.socialFiltered}
+					<span class="delta caveat">ufiltrert — se under</span>
 				{/if}
 			</div>
 		</div>
@@ -624,6 +628,10 @@
 	}
 	.delta.flat {
 		color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+	}
+	.delta.caveat {
+		color: var(--text-secondary, rgba(255, 255, 255, 0.45));
+		font-style: italic;
 	}
 	.st-section > :global(.section-label) {
 		display: block;
