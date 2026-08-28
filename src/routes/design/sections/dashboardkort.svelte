@@ -20,6 +20,8 @@
 	import WeightMilestonesCard from '$lib/components/domain/weight/WeightMilestonesCard.svelte';
 	import WeightTrendChart from '$lib/components/domain/weight/WeightTrendChart.svelte';
 	import WeightPeriodsCard from '$lib/components/domain/weight/WeightPeriodsCard.svelte';
+	import WeightYearsCard from '$lib/components/domain/weight/WeightYearsCard.svelte';
+	import RunningCumulativeCard from '$lib/components/domain/training/RunningCumulativeCard.svelte';
 	import {
 		healthSubthemeTiles,
 		healthSignals,
@@ -48,7 +50,10 @@
 		weightMilestonesStale,
 		weightSwings,
 		weightDaysSwinging,
+		weightDaysMultiYear,
+		runningDaysMultiYear,
 		weightSwingsRich,
+		weightSwingsMultiYear,
 		streakHistoryDays,
 		streakHistoryToday,
 		streakDayMetrics,
@@ -442,6 +447,34 @@
 		<WeightTrendChart days={weightDaysSwinging} goalKg={75} initialRange="30d" />
 	</div>
 
+	<h3 class="subsection">Sesongkurver — årene lagt oppå hverandre</h3>
+	<p class="section-desc">
+		En kurve langs kalendertid svarer på «hva har skjedd». Den svarer ikke på «er dette normalt
+		for meg i august», og særlig ikke på «ligger jeg foran i fjor». Sesongkurvene legger periodene
+		i samme felt med dag 1 til dag 365 på x-aksen, så avstanden mellom to linjer på samme dato
+		blir et tall man kan handle på.
+	</p>
+	<p class="section-desc">
+		<strong>Ni år er ikke ni kategorier.</strong> Ett år er spørsmålet, resten er bakgrunnen man
+		leser det mot — derfor én markert linje og en grå rampe som koder ferskhet, ikke ni
+		kategorifarger (den niende ville uansett vært en oppfunnet nyanse). Rampen går fra #626262 til
+		#a8a8a8 mot flaten, altså over 3:1 for hver kontekstlinje, og de markerte fargene ligger ΔE
+		18,3 (vekt) og 16,9 (løp) fra den lyseste grå. De grå årene er med vilje ikke skillbare fra
+		hverandre — identitet kommer fra avlesningen ved trykk, ikke fra fargen.
+	</p>
+	<p class="section-desc">
+		Vektkortet har to moduser fordi de svarer på ulike spørsmål: <em>kilo</em> viser nivået,
+		<em>endring</em> nullstiller hvert år på sin egen første veiing og viser formen. Løpekortet er
+		akkumulert, så sammenligningen måles mot hvor fjoråret sto <em>på denne datoen</em> — «380 km
+		bak» er sant hver vår og betyr ingenting.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightYearsCard days={weightDaysMultiYear} today="2026-08-24" />
+	</div>
+	<div class="demo-card demo-card--wide">
+		<RunningCumulativeCard days={runningDaysMultiYear} today="2026-08-24" />
+	</div>
+
 	<h3 class="subsection">WeightPeriodsCard — kurvens egne perioder</h3>
 	<p class="section-desc">
 		Et fast vindu treffer sjelden der bevegelsen begynte: «ned 1,8 kg på 365 dager» var sant for
@@ -455,6 +488,14 @@
 	</p>
 	<div class="demo-card demo-card--wide">
 		<WeightPeriodsCard swings={weightSwingsRich} />
+	</div>
+	<p class="section-desc">
+		Lista viser de seks nyeste og teller resten. Periodene er uansett regnet på hele historikken —
+		det var bare visningen som stoppet — så knappen koster ingen spørring. «Hvor fort klarte jeg
+		det sist» besvares sjelden av de seks ferskeste radene.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<WeightPeriodsCard swings={weightSwingsMultiYear} />
 	</div>
 	<div class="demo-card demo-card--wide">
 		<WeightPeriodsCard swings={[]} enoughHistory={false} />

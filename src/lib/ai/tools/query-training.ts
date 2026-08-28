@@ -33,6 +33,7 @@ queryType:
 - 'capacity': VO2max og pulsfall (HRR60).
 - 'sessions': de siste utholdenhetsøktene med effort, km og minutter.
 - 'plan': aktivt treningsløp, dagens forslag, forventet tempo og milepæler.
+- 'volume': akkumulerte løpte kilometer hittil i år og hittil i måneden, mot de foregående årene og månedene PÅ SAMME DAG i perioden. Bruk denne på «hvor mye har jeg løpt i år», «ligger jeg foran i fjor», «er dette en god måned».
 
 Om tallene:
 - effort er TRIMP når puls finnes, MET-fallback ellers. El-sykkel teller mindre per minutt enn vanlig sykkel og telles som egen kategori.
@@ -40,12 +41,14 @@ Om tallene:
 - ctlSettled false betyr at serien er kortere enn CTL-ens 42-dagers tidskonstant; formtallet er da fortsatt på vei opp fra null og skal ikke leses som et nivå.
 - vo2max og pulsfall oppgis som BESTE observasjon i vinduet, ikke siste. Begge forutsetter at brukeren presset — en rolig økt gir et lavt tall som bare sier at den var rolig, ikke at formen falt. Si «beste siste åtte uker», ikke «din VO2max er».
 - wellAnchored false på pulsfall betyr at fallet var i gang før målingen startet: tallet er et gulv. Si det.
+- 'volume' sammenligner på SAMME DAG i perioden, ikke mot fjorårets sluttall. Bruk sentence-feltet ordrett; den bærer regelen. «Du ligger 380 km bak i fjor» er sant hver vår og betyr ingenting.
+- completed er tidligere perioders SLUTTALL. Det er svaret på «hvor mye løp jeg i 2024», ikke på «ligger jeg foran».
 - Mangler et felt, si hva som mangler kort — ikke påstå at du ikke har tilgang.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
 		queryType: z
-			.enum(['load', 'balance', 'capacity', 'sessions', 'plan'])
+			.enum(['load', 'balance', 'capacity', 'sessions', 'plan', 'volume'])
 			.optional()
 			.describe('Hvilket utsnitt. Default load.')
 	}),

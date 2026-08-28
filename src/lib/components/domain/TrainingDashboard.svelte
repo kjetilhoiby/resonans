@@ -21,6 +21,7 @@
 	import HealthActivityList from '$lib/components/domain/health/HealthActivityList.svelte';
 	import AerobicEfficiencyCard from '$lib/components/domain/health/AerobicEfficiencyCard.svelte';
 	import DistanceRecordsCard from '$lib/components/domain/health/DistanceRecordsCard.svelte';
+	import RunningCumulativeCard from '$lib/components/domain/training/RunningCumulativeCard.svelte';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import { formatEvent } from '$lib/components/domain/health/health-data';
 	import { computeTrainingLoad } from '$lib/util/training-load';
@@ -302,6 +303,11 @@
 		<AerobicEfficiencyCard data={data.aerobicEfficiency ?? null} />
 
 		<DistanceRecordsCard records={data.distanceRecords ?? []} />
+
+		<!-- Akkumulert løping står ved siden av rekordene: begge svarer på «hvor
+		     står jeg mot meg selv». Rekordene måler den beste dagen, kurven måler
+		     året — og det er året som flytter seg når vanen endrer seg. -->
+		<RunningCumulativeCard days={data.runningHistory?.days ?? []} today={data.runningHistory?.today ?? ''} />
 
 		<Vo2maxCard metric={data.vo2max ?? null} />
 

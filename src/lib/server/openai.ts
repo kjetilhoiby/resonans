@@ -305,6 +305,12 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // «intervall», «puls» eller «økter» sto her, og ordet «trening» brukte brukeren
    // ikke. Uten health-blokka finnes ikke query_training for modellen, og et
    // spørsmål om brukerens EGEN historikk blir besvart med generelle råd.
+   // Volumspørsmålene («hvor mye har jeg løpt i år») kommer inn på «løp», ikke på
+   // enheten. Bare «kilometer» ble prøvd og forkastet: «vi kjørte 40 kilometer til
+   // hytta» ble da et helsespørsmål, og en distanseenhet sier ikke hvem som beveget
+   // seg. Samme grunn til at rene tidsord som «i fjor» og «hittil i år» er ute — et
+   // tidsord sier NÅR, ikke hva spørsmålet handler om.
+   //
    // NB: «løp» står uten o-variant med vilje — `\bl[øo]p` treffer «loppemarked».
    // «økter»/«økta» er med, men ikke «økt»: sistnevnte er også partisipp av «øke»
    // («forbruket har økt») og ville dratt helse-blokka inn i økonomi-samtaler.

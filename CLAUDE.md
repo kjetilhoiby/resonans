@@ -784,6 +784,39 @@ ble flyttet ut da det ble et eget fokusområde.
   ut i en periode der vekta står stille.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Sesongkurver: samme periode lagt oppå hverandre
+
+Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i
+`$lib/domain/health/cycle-series.ts`, grafen i `components/charts/CycleChart.svelte`.
+
+- **Én motor for fire flater** — vekt (nivå og endring) og løp (år og måned).
+  Tre kopier av grupperingen ville blitt tre ulike svar på «hvor langt ut i
+  perioden er jeg».
+- **Sammenligningen skjer på SAMME dag i perioden, aldri mot forrige periodes
+  sluttall.** «380 km bak i fjor» er sant hver eneste vår og betyr ingenting.
+  Regelen bor i `compareCurrentToPrevious` og deles av flaten og
+  `query_training` med `queryType: 'volume'`.
+- **Ni år er ikke ni kategorier.** Ett år er spørsmålet, resten er bakgrunnen:
+  én markert linje og en grå ferskhetsrampe (#626262 → #a8a8a8, hele veien over
+  3:1 mot flaten). De grå årene er med vilje ikke skillbare fra hverandre —
+  identitet kommer fra avlesningen ved trykk.
+- **Akkumulerte kurver trenger `floorAt: 0`** i `axisForRange`. Uten gulvet dyttet
+  luften rundt dataene aksen til −250 km. Gulvet er ikke det samme som å tvinge 0
+  inn i domenet: går dataene under, følger aksen med.
+- **`change` måler fra periodens første MÅLING**, ikke fra 1. januar, og serien
+  bærer `startDate` så flaten kan si det. Skuddår forskyver med én dag etter
+  februar, og måneder normaliseres ikke — begge er dokumenterte skjevheter, ikke
+  feil.
+- **`valueAtIndex` gir null før seriens første punkt**, aldri 0: en periode som
+  ikke hadde begynt å måle skal ikke trekke snittet ned med et tall den ikke har.
+- Løpehistorikken leses av `loadRunningHistory` mot `canonical_workouts` uten
+  datogrense — aktivitetslista i trenings-dashboardet dekker 400 dager, og år mot
+  år trenger år. Funksjonen tar en `sportFamily`, så sykkel og ski er en velger
+  unna.
+- **«kilometer» hører ikke i `detectPromptFocusModules`.** Det ble prøvd og fanget
+  av en test: «vi kjørte 40 kilometer til hytta» ble da et helsespørsmål. En
+  distanseenhet sier ikke hvem som beveget seg.
+
 ### Streaks: én motor, tre flater
 
 Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
