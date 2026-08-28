@@ -22,7 +22,7 @@ import {
 	type StreakState
 } from '$lib/domain/streaks';
 import { countByDay, type StreakHistoryDay } from '$lib/domain/streak-history';
-import { normalizeDistanceMeters } from '$lib/server/activity-layer';
+import { canonicalDistanceMeters } from '$lib/server/activity-layer';
 import {
 	buildDayScale,
 	type DayScale,
@@ -422,8 +422,10 @@ async function readWorkoutDayMetrics(
 		const day = osloDayKey(row.at);
 		const entry = byDay.get(day) ?? { count: 0, meters: 0, seconds: 0 };
 		entry.count += 1;
-		// Aldri rått: verdier ≤ 80 tolkes som kilometer. Se workout-sport.ts.
-		const meters = normalizeDistanceMeters(Number(row.distanceMeters));
+		// Ekte meter: canonical er alt normalisert ved skriving, og en ny runde med
+		// km-heuristikken ville gjort en søppelrad på 53 meter til 53 kilometer —
+		// og dermed dagens raskeste tempo. Se `canonicalDistanceMeters`.
+		const meters = canonicalDistanceMeters(row.distanceMeters);
 		if (meters !== null) entry.meters += meters;
 		const seconds = Number(row.durationSeconds);
 		if (Number.isFinite(seconds) && seconds > 0) entry.seconds += seconds;

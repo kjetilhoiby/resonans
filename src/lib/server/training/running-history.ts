@@ -16,16 +16,19 @@
  * flyttet seg til året etter i sesongkurven — og «hittil i år» ville startet med
  * en tur som ikke var i år.
  *
- * ## Distansen normaliseres, aldri leses rått
+ * ## Distansen er ekte meter her, og skal IKKE normaliseres igjen
  *
- * `normalizeDistanceMeters` tolker verdier ≤ 80 som kilometer. Uten den blir en
- * rad med 8,1 til 8,1 meter, og året får et hull der en langtur var.
+ * `normalizeDistanceMeters` hører til rå sensor-events, der noen kilder skriver
+ * kilometer i et meterfelt. Canonical er alt skrevet gjennom den. Kjører man
+ * heuristikken en gang til, blir en søppelrad på 53 meter til 53 kilometer — og
+ * den akkumulerte kurven starter 53 km oppe i lufta på dag 1. Bruk
+ * `canonicalDistanceMeters`.
  */
 
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { canonicalWorkouts } from '$lib/db/schema';
-import { normalizeDistanceMeters } from '$lib/server/activity-layer';
+import { canonicalDistanceMeters } from '$lib/server/activity-layer';
 import { osloDayKey } from '$lib/domain/oslo-time';
 import type { DayValue } from '$lib/domain/health/cycle-series';
 
@@ -76,7 +79,7 @@ export async function loadRunningHistory(
 
 	const byDay = new Map<string, number>();
 	for (const row of rows) {
-		const meters = normalizeDistanceMeters(Number(row.distanceMeters));
+		const meters = canonicalDistanceMeters(row.distanceMeters);
 		if (meters === null || meters <= 0) continue;
 		const day = osloDayKey(row.startTime);
 		byDay.set(day, (byDay.get(day) ?? 0) + meters / 1000);

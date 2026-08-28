@@ -1242,6 +1242,12 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
 - **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
   kilometer. Les den aldri rå fra `data->>'distance'`.
+- **Men IKKE på `canonical_workouts`.** Den kolonnen er alt skrevet gjennom
+  `normalizeDistanceMeters`, så en ny runde med km-heuristikken gjør en
+  søppelrad på 53 meter til 53 kilometer. Bruk `canonicalDistanceMeters`. Feilen
+  er stum i basen og synlig først i en graf: den akkumulerte løpekurven startet
+  53 km oppe i lufta på dag 1, og i streak-kalenderen ble den samme raden dagens
+  raskeste tempo (sekunder delt på 53 km).
 - **Autohaking og progresjon teller økter, ikke forekomster.** Se
   `docs/changelog/2026-08-08-ivrig-autohaking.md`. `checklist-autocheck.ts`,
   `sensor-progress-sync.ts` og `signal-service.ts` (`activity_run_pr_week`) leser alle

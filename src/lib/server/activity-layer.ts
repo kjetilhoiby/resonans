@@ -155,6 +155,28 @@ export function normalizeDistanceMeters(value: unknown): number | null {
 	return value > 80 ? value : value * 1000;
 }
 
+/**
+ * Distansen fra en `canonical_workouts`-rad, i meter.
+ *
+ * **Ikke `normalizeDistanceMeters`.** Den hører til RÅ sensor-events, der noen
+ * kilder skriver kilometer i et felt som heter meter, og tolker derfor verdier
+ * ≤ 80 som kilometer. Canonical er skrevet FRA den funksjonen og inneholder
+ * ekte meter — kjører man heuristikken en gang til, blir en søppelrad på 53
+ * meter til 53 kilometer.
+ *
+ * Det var ikke teoretisk: en slik rad fikk den akkumulerte løpekurven til å
+ * starte 53 km oppe i lufta på dag 1, og i streak-kalenderen ble den samme
+ * raden dagens raskeste tempo (sekunder delt på 53 km).
+ *
+ * Kolonnen er `decimal`, altså en streng fra driveren, så konverteringen hører
+ * hjemme her framfor på hvert kallsted.
+ */
+export function canonicalDistanceMeters(value: unknown): number | null {
+	const meters = Number(value);
+	if (!Number.isFinite(meters) || meters <= 0) return null;
+	return meters;
+}
+
 function normalizeDurationSeconds(value: unknown): number | null {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
 	return value;

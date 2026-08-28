@@ -100,6 +100,24 @@ selv fra år til år, og et anker der luker bort at januar startet ulikt.
 `anchorIndex` i `buildCycleSeries` gjelder bare `change` — i `level` er nivået
 nivået, og en akkumulert sum starter alltid på null.
 
+### Fase 7: En linje som startet i lufta
+
+Brukeren så at én månedslinje i den akkumulerte løpegrafen begynte på 53 km på
+dag 1. En akkumulert kurve starter på null, så det måtte bety at én dag alene
+sto for 53 km.
+
+Årsaken var min egen: `loadRunningHistory` og `readWorkoutDayMetrics` kjørte
+`normalizeDistanceMeters` på `canonical_workouts.distanceMeters`. Den funksjonen
+hører til RÅ sensor-events, der noen kilder skriver kilometer i et meterfelt, og
+tolker derfor verdier ≤ 80 som kilometer. Canonical er skrevet *fra* den
+funksjonen og inneholder ekte meter — så en søppelrad på 53 meter ble ganget med
+tusen.
+
+`canonicalDistanceMeters` er nå den ene veien inn til den kolonnen, med en
+kommentar som sier hvorfor de to funksjonene ikke er utbyttbare. Streak-kalenderen
+hadde samme feil: der ble den samme raden dagens *raskeste* tempo, siden tempoet
+er sekunder delt på kilometer.
+
 ## Beslutninger
 
 - **Sammenligningen er på samme dag, ikke mot sluttallet.** Regelen bor i
