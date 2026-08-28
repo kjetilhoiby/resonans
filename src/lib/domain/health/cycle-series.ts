@@ -64,10 +64,24 @@ export interface CycleSeries {
 	isCurrent: boolean;
 	/** Siste punkt i serien. Null når serien er tom. */
 	last: CyclePoint | null;
-	/** Første måling i perioden — nullpunktet `change` måles fra. */
+	/** Første måling i perioden. */
 	startDate: string | null;
 	/** Verdien på den første målingen, i rå form (før modus er anvendt). */
 	startValue: number | null;
+	/**
+	 * Nullpunktet `change` faktisk målte fra — datoen og den rå verdien.
+	 *
+	 * Uten et anker er dette periodens første måling. Med et anker er det den
+	 * siste målingen på eller før ankerdagen, altså periodens EGEN verdi den
+	 * dagen. To år ankret på 1. juni nullstilles hver på sin egen 1. juni, og
+	 * det er nettopp det som gjør kurvene sammenlignbare derfra.
+	 *
+	 * Null når perioden ikke hadde noen måling så tidlig. Da er `points` tom:
+	 * en periode uten et nullpunkt kan ikke tegnes i endringsmodus, og en
+	 * gjetning ville vært en linje som påstår noe den ikke har målt.
+	 */
+	baselineDate: string | null;
+	baselineValue: number | null;
 }
 
 const MONTHS_SHORT = [
@@ -131,6 +145,19 @@ export interface BuildCycleOptions {
 	 * at året sluttet i mai.
 	 */
 	maxSeries?: number;
+	/**
+	 * Posisjonen i perioden som settes til null i `change`-modus.
+	 *
+	 * Uten den måles hver periode fra sin egen første verdi, som er riktig
+	 * standard: alle periodene får da et nullpunkt, uansett når de begynte å
+	 * måle. Med den kan man spørre et annet spørsmål — «hvordan har det gått
+	 * siden 1. juni, år for år» — og da må hver periode nullstilles på SIN egen
+	 * 1. juni, ikke på en felles verdi.
+	 *
+	 * Ignoreres i `level`- og `cumulative`-modus, der et nullpunkt ikke betyr
+	 * noe: nivået er nivået, og en akkumulert sum starter alltid på null.
+	 */
+	anchorIndex?: number;
 }
 
 /**
@@ -143,7 +170,7 @@ export interface BuildCycleOptions {
  */
 export function buildCycleSeries(
 	values: readonly DayValue[],
-	{ cycle, mode, today, maxSeries }: BuildCycleOptions
+	{ cycle, mode, today, maxSeries, anchorIndex }: BuildCycleOptions
 ): CycleSeries[] {
 	const byKey = new Map<string, Map<string, number>>();
 
@@ -170,13 +197,38 @@ export function buildCycleSeries(
 		const startDate = days[0]?.[0] ?? null;
 		const startValue = days[0]?.[1] ?? null;
 
+		/**
+		 * Nullpunktet: siste måling på eller før ankerdagen, ellers periodens
+		 * første. Bakover, aldri framover — en verdi målt etter ankeret er ikke
+		 * hva perioden sto på den dagen.
+		 */
+		let baselineDate: string | null = startDate;
+		let baselineValue: number | null = startValue;
+		if (mode === 'change' && anchorIndex !== undefined) {
+			baselineDate = null;
+			baselineValue = null;
+			for (const [date, value] of days) {
+				if (cycleIndexOf(date, cycle) > anchorIndex) break;
+				baselineDate = date;
+				baselineValue = value;
+			}
+		}
+
+		const anchored = mode !== 'change' || baselineValue !== null;
+
 		let running = 0;
-		const points: CyclePoint[] = days.map(([date, value]) => {
-			running += value;
-			const shown =
-				mode === 'cumulative' ? running : mode === 'change' ? value - (startValue ?? 0) : value;
-			return { index: cycleIndexOf(date, cycle), value: shown, date };
-		});
+		const points: CyclePoint[] = anchored
+			? days.map(([date, value]) => {
+					running += value;
+					const shown =
+						mode === 'cumulative'
+							? running
+							: mode === 'change'
+								? value - (baselineValue ?? 0)
+								: value;
+					return { index: cycleIndexOf(date, cycle), value: shown, date };
+				})
+			: [];
 
 		return {
 			key,
@@ -185,7 +237,9 @@ export function buildCycleSeries(
 			isCurrent: key === currentKey,
 			last: points.at(-1) ?? null,
 			startDate,
-			startValue
+			startValue,
+			baselineDate,
+			baselineValue
 		};
 	});
 }

@@ -804,7 +804,11 @@ Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i
   luften rundt dataene aksen til −250 km. Gulvet er ikke det samme som å tvinge 0
   inn i domenet: går dataene under, følger aksen med.
 - **`change` måler fra periodens første MÅLING**, ikke fra 1. januar, og serien
-  bærer `startDate` så flaten kan si det. Skuddår forskyver med én dag etter
+  bærer `startDate` så flaten kan si det. `anchorIndex` flytter nullpunktet til
+  en felles dag, der hvert år nullstilles på SIN egen verdi den dagen —
+  slideren på vektkortet stopper ved siste måling i inneværende periode, siden
+  «nullstilt på sin egen 1. oktober» er usant før oktober har vært. Et år uten
+  måling før ankeret tegnes ikke, og telles i notisen. Skuddår forskyver med én dag etter
   februar, og måneder normaliseres ikke — begge er dokumenterte skjevheter, ikke
   feil.
 - **`valueAtIndex` gir null før seriens første punkt**, aldri 0: en periode som

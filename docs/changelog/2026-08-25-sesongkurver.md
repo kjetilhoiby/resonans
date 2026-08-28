@@ -90,6 +90,16 @@ og hittil i måneden, mot de foregående, på samme dag i perioden.
 ikke kan si to ulike tall om samme uke. Uten dette ville år-mot-år vært et rent
 visningsfenomen, som `computeTrainingLoad` var i et halvt år.
 
+### Fase 6: Nullpunktet kan flyttes
+
+Slideren over endringsgrafen setter en felles ankerdag, og hvert år nullstilles
+på **sin egen** verdi den dagen. «Hvordan har det gått siden 1. juni, år for år»
+er et annet spørsmål enn «hvordan har året gått»: sommeren ligner mest på seg
+selv fra år til år, og et anker der luker bort at januar startet ulikt.
+
+`anchorIndex` i `buildCycleSeries` gjelder bare `change` — i `level` er nivået
+nivået, og en akkumulert sum starter alltid på null.
+
 ## Beslutninger
 
 - **Sammenligningen er på samme dag, ikke mot sluttallet.** Regelen bor i
@@ -99,6 +109,19 @@ visningsfenomen, som `computeTrainingLoad` var i et halvt år.
   Uten det dyttet luften rundt dataene aksen til −250 km, altså en fjerdedel av
   feltet brukt på et område kurven ikke kan være i. Gulvet er ikke det samme som
   å tvinge 0 inn i domenet: går dataene faktisk under, følger aksen med.
+- **Slideren stopper ved siste måling i inneværende periode.** Regelen er «siste
+  måling på eller før ankerdagen», så et anker i oktober ville nullstilt i år på
+  augustmålingen — mens kortet sa «nullstilt på sin egen 1. oktober». Det er en
+  påstand om en dag som ikke har vært. Med taket er setningen sann for alle
+  årene som tegnes.
+- **Slideren har et eget venstre ytterpunkt, «Første veiing», framfor å la 1.
+  januar bety det.** Standarden kan ikke uttrykkes som et dagnummer — den er
+  ulik per år — og et anker på dag 1 ville utelatt hvert år som ikke veide seg
+  nyttårsdag.
+- **Et år uten veiing før ankerdagen tegnes ikke, og telles i notisen.** Det har
+  ikke et nullpunkt, og en linje der ville påstått noe som ikke er målt. Punktene
+  FØR ankeret tegnes derimot — kurven krysser null på ankerdagen, og da ser man
+  hvor året kom fra.
 - **`change` måler fra periodens første MÅLING, ikke fra 1. januar.** Begynte du
   å veie deg i mars, er mars nullpunktet ditt det året. Serien bærer `startDate`,
   og kortet sier det når året startet sent — ellers ser januar–februar ut som en
@@ -121,8 +144,8 @@ visningsfenomen, som `computeTrainingLoad` var i et halvt år.
 
 ## Verifisering
 
-- `npm test` — 3905 grønne. 25 nye: 23 på `cycle-series` (gruppering, de tre
-  modusene, skuddår, avlesning bakover, sammenligningen mot samme dag),
+- `npm test` — 3966 grønne. 31 nye: 23 på `cycle-series` (gruppering, de tre
+  modusene, ankeret, skuddår, avlesning bakover, sammenligningen mot samme dag),
   2 på `axisForRange`-gulvet og 2 på `summarizeVolume`.
 - `npm run check` — 0 feil.
 - Rendret `/design#dashboardkort` på 390 px i alle fire variantene, med

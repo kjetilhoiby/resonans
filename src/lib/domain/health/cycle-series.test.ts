@@ -144,6 +144,105 @@ describe('buildCycleSeries', () => {
 	});
 });
 
+describe('buildCycleSeries med anker', () => {
+	const values = days([
+		['2025-01-05', 100],
+		['2025-06-01', 97],
+		['2025-11-01', 99],
+		['2026-01-05', 96],
+		['2026-06-01', 92],
+		['2026-08-20', 90]
+	]);
+
+	it('nullstiller hver periode på SIN egen ankerdag', () => {
+		// Dag 152 er 1. juni i et ikke-skuddår. Begge årene skal måles fra sin
+		// egen juniverdi, ikke fra en felles verdi — det er det som gjør formen
+		// derfra sammenlignbar.
+		const series = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'change',
+			today: '2026-08-24',
+			anchorIndex: 152
+		});
+
+		expect(series[0].baselineDate).toBe('2025-06-01');
+		expect(series[1].baselineDate).toBe('2026-06-01');
+		// Novembermålingen i 2025 lå 2 kg over juniverdien.
+		expect(series[0].points.at(-1)!.value).toBeCloseTo(2, 5);
+		// Augustmålingen i 2026 ligger 2 kg under.
+		expect(series[1].points.at(-1)!.value).toBeCloseTo(-2, 5);
+	});
+
+	it('tegner også punktene FØR ankeret, som negativ avstand', () => {
+		// Januarmålingen skal ikke forsvinne: den viser hvor man kom fra, og
+		// kurven krysser null på ankerdagen.
+		const series = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'change',
+			today: '2026-08-24',
+			anchorIndex: 152
+		});
+		expect(series[1].points[0].value).toBeCloseTo(4, 5);
+	});
+
+	it('velger siste måling PÅ eller FØR ankeret, aldri etter', () => {
+		const series = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'change',
+			today: '2026-08-24',
+			anchorIndex: 200
+		});
+		// Dag 200 er i midten av juli: juniverdien er den siste før den.
+		expect(series[1].baselineDate).toBe('2026-06-01');
+	});
+
+	it('lar en periode uten måling før ankeret være tom framfor å gjette', () => {
+		// 2024 begynte å måle i november; på dag 152 har den ikke noe nullpunkt.
+		// En linje der ville påstått noe som ikke er målt.
+		const series = buildCycleSeries(
+			days([
+				['2024-11-01', 105],
+				['2025-06-01', 97],
+				['2025-11-01', 99]
+			]),
+			{ cycle: 'year', mode: 'change', today: '2025-12-01', anchorIndex: 152 }
+		);
+		const y2024 = series.find((s) => s.key === '2024')!;
+		expect(y2024.points).toHaveLength(0);
+		expect(y2024.baselineValue).toBeNull();
+		expect(y2024.last).toBeNull();
+	});
+
+	it('faller tilbake på periodens første måling uten anker', () => {
+		const series = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'change',
+			today: '2026-08-24'
+		});
+		expect(series[0].baselineDate).toBe('2025-01-05');
+		expect(series[0].points[0].value).toBe(0);
+	});
+
+	it('ignorerer ankeret i nivå- og akkumulert modus', () => {
+		// Nivået er nivået, og en akkumulert sum starter alltid på null.
+		const level = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'level',
+			today: '2026-08-24',
+			anchorIndex: 300
+		});
+		expect(level[0].points[0].value).toBe(100);
+
+		const cumulative = buildCycleSeries(values, {
+			cycle: 'year',
+			mode: 'cumulative',
+			today: '2026-08-24',
+			anchorIndex: 300
+		});
+		expect(cumulative[0].points[0].value).toBe(100);
+	});
+});
+
 describe('valueAtIndex', () => {
 	const series = buildCycleSeries(
 		days([
