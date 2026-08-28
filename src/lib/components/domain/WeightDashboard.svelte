@@ -17,6 +17,7 @@
 	import WeightOutliersCard from './weight/WeightOutliersCard.svelte';
 	import WeightTrendChart from './weight/WeightTrendChart.svelte';
 	import WeightPeriodsCard from './weight/WeightPeriodsCard.svelte';
+	import WeightYearsCard from './weight/WeightYearsCard.svelte';
 	import WaistCard from './weight/WaistCard.svelte';
 	import { buildMetricSeries } from '$lib/domain/health/weight-series';
 	import type { WeightDashboardPayload } from '$lib/server/weight-dashboard';
@@ -72,6 +73,12 @@
 	     i grafen markerer de samme toppene og bunnene. Står de langt fra hverandre,
 	     må leseren holde datoene i hodet mens hen blar. -->
 	<WeightPeriodsCard swings={data.swings} enoughHistory={data.enoughHistory} />
+
+	<!-- År mot år står ETTER periodene: periodene er kurvens egne grenser, altså
+	     hva som faktisk hendte. Sesongkurvene er sammenligningen — «er dette
+	     normalt for meg i august» — og det er et spørsmål man stiller etter at
+	     man vet hva som skjedde, ikke i stedet for. -->
+	<WeightYearsCard days={data.days} today={data.today} />
 
 	<!-- Uteliggerkortet står også under grafen: uteliggeren oppdages VED å se
 	     grafen, og kortet er svaret på «hva gjør jeg med den» — ikke noe man

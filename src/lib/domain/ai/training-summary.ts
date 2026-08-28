@@ -29,12 +29,25 @@
 import { classifyTsb, computeTrainingLoad, type TsbStatus } from '$lib/util/training-load';
 // Samme ord som flaten. To formuleringer av samme dom er verre enn én.
 import { describeAcuteChronic, describeBudgetStanding } from '$lib/domain/health/effort-standing';
+import {
+	buildCycleSeries,
+	compareCurrentToPrevious,
+	describeCycleComparison,
+	type CycleKind
+} from '$lib/domain/health/cycle-series';
 
 /* ── Input: bare det sammendraget faktisk leser ──────────────────────────── */
 
 export interface TrainingSummaryInput {
 	plan: { name: string; startDate: string; durationWeeks: number } | null;
 	dailyEffort: Array<{ date: string; effort: number }>;
+	/**
+	 * Løpte kilometer per dag, hele historikken. Grunnlaget for `volume`.
+	 *
+	 * Valgfri fordi eldre kallsteder og tester ikke har den; mangler den, sier
+	 * sammendraget det framfor å svare 0 km.
+	 */
+	runningHistory?: { days: Array<{ date: string; value: number }>; today: string } | null;
 	vo2max: {
 		best: number;
 		latest: number;
@@ -105,7 +118,13 @@ export interface TrainingSummaryInput {
 	milestones: Array<{ name: string; achievedAt: string | null }>;
 }
 
-export type TrainingQueryType = 'load' | 'balance' | 'capacity' | 'sessions' | 'plan';
+export type TrainingQueryType =
+	| 'load'
+	| 'balance'
+	| 'capacity'
+	| 'sessions'
+	| 'plan'
+	| 'volume';
 
 /** Hvor mange dager tilbake CTL sammenlignes med for å si om formen stiger. */
 export const CTL_TREND_DAYS = 14;
@@ -186,6 +205,62 @@ export interface TrainingSummary {
 	capacity?: ReturnType<typeof summarizeCapacity>;
 	sessions?: ReturnType<typeof summarizeSessions>;
 	plan?: ReturnType<typeof summarizePlan>;
+	volume?: ReturnType<typeof summarizeVolume>;
+}
+
+/**
+ * Akkumulert løping, år mot år og måned mot måned — de samme tallene
+ * `RunningCumulativeCard` viser.
+ *
+ * Sammenligningen er gjort på SAMME dag i perioden, aldri mot fjorårets
+ * sluttall: «380 km bak 2025» er sant hver vår og betyr ingenting. Motoren er
+ * delt med flaten (`compareCurrentToPrevious`), så chatten og skjermen ikke kan
+ * si to ulike tall om samme uke.
+ */
+export function summarizeVolume(input: TrainingSummaryInput) {
+	const history = input.runningHistory;
+	if (!history || history.days.length === 0) {
+		return { available: false as const, note: 'Ingen registrerte løpeturer å summere.' };
+	}
+
+	function view(cycle: CycleKind, previousNoun: string) {
+		const series = buildCycleSeries(history!.days, {
+			cycle,
+			mode: 'cumulative',
+			today: history!.today,
+			maxSeries: cycle === 'year' ? 8 : 12
+		});
+		const comparison = compareCurrentToPrevious(series);
+		const current = series.find((s) => s.isCurrent) ?? null;
+		return {
+			totalKm: current?.last ? Math.round(current.last.value) : 0,
+			daysWithRun: current?.points.length ?? 0,
+			atIndex: comparison?.index ?? null,
+			previous: comparison?.previous
+				? { label: comparison.previous.label, km: Math.round(comparison.previous.value) }
+				: null,
+			averageBefore:
+				comparison?.averageBefore !== null && comparison?.averageBefore !== undefined
+					? Math.round(comparison.averageBefore)
+					: null,
+			periodsCompared: comparison?.periodsCompared ?? 0,
+			sentence: describeCycleComparison(comparison, {
+				unit: 'km',
+				higherIsBetter: true,
+				previousNoun
+			}),
+			/** Hele periodens sluttall, for hver tidligere periode. */
+			completed: series
+				.filter((s) => !s.isCurrent)
+				.map((s) => ({ label: s.label, km: Math.round(s.last?.value ?? 0) }))
+		};
+	}
+
+	return {
+		available: true as const,
+		year: view('year', 'i fjor'),
+		month: view('month', 'forrige måned')
+	};
 }
 
 export function summarizeTrainingForChat(
@@ -219,6 +294,10 @@ export function summarizeTrainingForChat(
 
 	if (queryType === 'plan') {
 		return { ...base, plan: summarizePlan(input) };
+	}
+
+	if (queryType === 'volume') {
+		return { ...base, volume: summarizeVolume(input) };
 	}
 
 	// 'load' — standardsvaret: uka mot båndet, og belastningen bak den.

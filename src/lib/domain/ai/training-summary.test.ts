@@ -278,3 +278,47 @@ describe('summarizeTrainingForChat — plan', () => {
 		expect(summarizeTrainingForChat(input({ plan: null }), 'plan').plan).toBeNull();
 	});
 });
+
+describe('summarizeVolume', () => {
+	const base = {
+		plan: null,
+		dailyEffort: [],
+		vo2max: null,
+		hrRecovery: null,
+		states: null
+	} as unknown as TrainingSummaryInput;
+
+	it('sier fra når det ikke finnes løpeturer', () => {
+		const summary = summarizeTrainingForChat(base, 'volume');
+		expect(summary.volume).toEqual({
+			available: false,
+			note: 'Ingen registrerte løpeturer å summere.'
+		});
+	});
+
+	it('sammenligner mot samme dag i fjor, ikke mot fjorårets sluttall', () => {
+		const summary = summarizeTrainingForChat(
+			{
+				...base,
+				runningHistory: {
+					today: '2026-03-01',
+					days: [
+						{ date: '2025-01-10', value: 100 },
+						{ date: '2025-09-10', value: 400 },
+						{ date: '2026-01-10', value: 130 }
+					]
+				}
+			},
+			'volume'
+		);
+
+		expect(summary.volume?.available).toBe(true);
+		const year = summary.volume!.available ? summary.volume!.year : null;
+		expect(year!.totalKm).toBe(130);
+		// Fjoråret sto på 100 km på dag 10, ikke på 500 der året endte.
+		expect(year!.previous).toEqual({ label: '2025', km: 100 });
+		expect(year!.sentence).toBe('30 km foran i fjor på samme dato.');
+		// Sluttallet finnes, men i completed — det er et annet spørsmål.
+		expect(year!.completed).toEqual([{ label: '2025', km: 500 }]);
+	});
+});

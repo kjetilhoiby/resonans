@@ -2104,3 +2104,97 @@ export const streakDayMetrics: WorkoutDayMetrics[] = [
 ];
 
 export const streakDayScale = buildDayScale(streakDayMetrics);
+
+/**
+ * Fire år med veiinger, for sesongkurvene.
+ *
+ * `weightDays` og `weightDaysSwinging` dekker under ett år hver, og en år-mot-år-graf
+ * med én linje viser ingenting av det den finnes for. Formen her er brukerens egen:
+ * et nivå rundt 100 kg som svinger med årstiden, og et inneværende år som ligger
+ * lavere enn de tre foran.
+ */
+function mockMultiYearWeightDays() {
+	const days: typeof weightDays = [];
+	const END = Date.UTC(2026, 7, 24);
+	const START = Date.UTC(2022, 0, 3);
+	const totalDays = Math.round((END - START) / 86_400_000);
+
+	for (let i = 0; i <= totalDays; i++) {
+		// Veier seg ikke hver dag: to av sju hoppes over, i et fast mønster så
+		// mocken er stabil mellom kjøringer.
+		if (i % 7 === 3 || i % 7 === 5) continue;
+		const at = new Date(START + i * 86_400_000);
+		const year = at.getUTCFullYear();
+		const doy = Math.round((at.getTime() - Date.UTC(year, 0, 1)) / 86_400_000);
+
+		// Nivået faller litt for hvert år; i år faller det mer.
+		const base = 104 - (year - 2022) * 1.4 - (year === 2026 ? 2.2 : 0);
+		// Årstidssvingning: opp gjennom vinteren, ned mot sensommeren. Amplituden og
+		// fasen varierer per år — uten variasjonen faller alle kontekstlinjene
+		// sammen i endringsmodus, og galleriet viser en rampe som ikke finnes.
+		const amplitude = [1.8, 2.6, 1.4, 2.2, 3.0][year - 2022] ?? 2;
+		const phase = [0, 0.18, -0.12, 0.3, 0.05][year - 2022] ?? 0;
+		const season = Math.cos((doy / 365) * Math.PI * 2 + phase) * amplitude;
+		const noise = Math.sin(i * 1.7) * 0.5 + Math.sin(i * 0.31) * 0.35;
+
+		days.push({
+			date: at.toISOString().slice(0, 10),
+			weightKg: Math.round((base + season + noise) * 10) / 10,
+			weighInCount: 1,
+			fatMassKg: null,
+			fatRatio: null,
+			muscleMassKg: null,
+			fatFreeMassKg: null
+		});
+	}
+	return days;
+}
+
+export const weightDaysMultiYear = mockMultiYearWeightDays();
+
+/**
+ * Fem år med løpedager, for den akkumulerte kurven.
+ *
+ * Volumet vokser år for år, og i år er våren tettere enn før — det er den
+ * formen kurven skal kunne vise uten at man legger sammen uker i hodet.
+ */
+function mockRunningDays() {
+	const days: Array<{ date: string; value: number }> = [];
+	const START = Date.UTC(2022, 0, 1);
+	const END = Date.UTC(2026, 7, 24);
+	const totalDays = Math.round((END - START) / 86_400_000);
+
+	for (let i = 0; i <= totalDays; i++) {
+		const at = new Date(START + i * 86_400_000);
+		const year = at.getUTCFullYear();
+		const doy = Math.round((at.getTime() - Date.UTC(year, 0, 1)) / 86_400_000);
+
+		// Løpedager per uke stiger med årene, og trappa må være HELE tall: med 3,5
+		// rundet to naboår til samme antall, og de to linjene lå oppå hverandre —
+		// en mock som ikke kan vise det grafen finnes for.
+		const perWeek = [2, 3, 4, 4, 5][year - 2022] ?? 3;
+		const slot = i % 7;
+		if (slot >= perWeek) continue;
+		// Vinteren er tynnere enn sommeren, som i en ekte nordisk løpelogg.
+		if (doy < 40 && (i % 3 === 0)) continue;
+
+		// Langturen på søndag, og i år er den lengre enn før.
+		const long = slot === 0 ? (year === 2026 ? 11.5 : 8.2) : 0;
+		const km = (long || 3.2) + Math.sin(i * 0.9) * 0.6;
+		days.push({ date: at.toISOString().slice(0, 10), value: Math.round(km * 100) / 100 });
+	}
+	return days;
+}
+
+export const runningDaysMultiYear = mockRunningDays();
+
+/**
+ * Periodene i den flerårige kurven.
+ *
+ * `weightSwings` og `weightSwingsRich` dekker under ett år og gir tre–fire rader,
+ * altså for få til å vise «vis eldre perioder»-knappen. Fire år med årstidssving
+ * gir en liste som faktisk må kunne utvides.
+ */
+export const weightSwingsMultiYear = findWeightSwings(
+	buildMetricSeries(weightDaysMultiYear, 'weight').points
+);

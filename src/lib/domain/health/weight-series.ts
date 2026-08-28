@@ -287,13 +287,44 @@ export function axisForSeries(
 	series: MetricSeries,
 	opts: { goal?: number | null; minSpan?: number; tickCount?: number } = {}
 ): ValueAxis | null {
-	if (!series.range) return null;
+	return axisForRange(series.range, {
+		...opts,
+		minSpan: opts.minSpan ?? MIN_AXIS_SPAN[series.unit] ?? 1
+	});
+}
+
+/**
+ * Verdiaksen for et rent spenn.
+ *
+ * Samme regler som `axisForSeries`, men uten en serie: sesongkurvene tegner
+ * flere år i samme felt og har ikke én `MetricSeries` å spørre. Å skrive en
+ * andre akseberegning ved siden av ville gitt to ulike svar på hva et pent
+ * aksetall er, i to grafer på samme flate.
+ */
+export function axisForRange(
+	range: { min: number; max: number } | null,
+	opts: {
+		goal?: number | null;
+		minSpan?: number;
+		tickCount?: number;
+		/**
+		 * Verdien aksen ikke får gå under.
+		 *
+		 * For en akkumulert kurve er det 0: luften rundt dataene dyttet ellers
+		 * aksen ned til −250 km, altså en fjerdedel av feltet brukt på et område
+		 * kurven ikke kan være i. Et gulv er ikke det samme som å tvinge 0 inn i
+		 * domenet — det hindrer bare at padding og pene steg tar aksen forbi det.
+		 */
+		floorAt?: number;
+	} = {}
+): ValueAxis | null {
+	if (!range) return null;
 
 	const tickCount = opts.tickCount ?? 4;
-	const minSpan = opts.minSpan ?? MIN_AXIS_SPAN[series.unit] ?? 1;
+	const minSpan = opts.minSpan ?? 1;
 
-	let lo = series.range.min;
-	let hi = series.range.max;
+	let lo = range.min;
+	let hi = range.max;
 	let goalOutside: ValueAxis['goalOutside'] = null;
 	if (typeof opts.goal === 'number' && Number.isFinite(opts.goal)) {
 		const goal = opts.goal;
@@ -335,7 +366,11 @@ export function axisForSeries(
 				: best
 		) * magnitude;
 
-	const min = Math.floor((lo - extra) / step) * step;
+	const rawMin = Math.floor((lo - extra) / step) * step;
+	const min =
+		opts.floorAt !== undefined && rawMin < opts.floorAt && lo >= opts.floorAt
+			? opts.floorAt
+			: rawMin;
 	const max = Math.ceil((hi + extra) / step) * step;
 
 	const ticks: number[] = [];

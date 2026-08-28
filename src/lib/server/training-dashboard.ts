@@ -28,6 +28,8 @@ import { averagePaceSecPerKm, estimateVdotFromBestEfforts } from '$lib/server/wo
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import { loadRunningHistory } from '$lib/server/training/running-history';
+import { osloDayKey } from '$lib/domain/oslo-time';
 
 /**
  * EF-historikk. Må dekke sammenligningsvinduet (8 uker tilbake pluss 28 dagers
@@ -317,13 +319,28 @@ export async function loadTrainingDashboardData(
 ) {
 	// Belastningsserien er uavhengig av om et treningsløp finnes: form og
 	// balanse er verdt å se også i oppsett-modus.
-	const [plan, dailyEffort, vo2max, hrRecovery, aerobicEfficiency, distanceRecordList] = await Promise.all([
+	const [
+		plan,
+		dailyEffort,
+		vo2max,
+		hrRecovery,
+		aerobicEfficiency,
+		distanceRecordList,
+		runningHistory
+	] = await Promise.all([
 		getActivePlan(userId),
 		loadDailyEffort(userId),
 		loadVo2max(userId).catch(() => null),
 		loadHrRecovery(userId).catch(() => null),
 		loadAerobicEfficiency(userId).catch(() => null),
-		loadDistanceRecords(userId).catch(() => [])
+		loadDistanceRecords(userId).catch(() => []),
+		// Egen spørring, ikke aktivitetslista: den leser 400 dager, og år mot år
+		// trenger år. Se `running-history.ts`.
+		loadRunningHistory(userId).catch(() => ({
+			days: [],
+			firstDay: null,
+			today: osloDayKey(new Date())
+		}))
 	]);
 
 	if (!plan) {
@@ -339,6 +356,7 @@ export async function loadTrainingDashboardData(
 			hrRecovery,
 			aerobicEfficiency,
 			distanceRecords: distanceRecordList,
+			runningHistory,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -455,6 +473,7 @@ export async function loadTrainingDashboardData(
 		hrRecovery,
 		aerobicEfficiency,
 		distanceRecords: distanceRecordList,
+		runningHistory,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

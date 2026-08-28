@@ -52,7 +52,16 @@
 	const MAX_ROWS = 6;
 
 	const newestFirst = $derived([...swings].reverse());
-	const shown = $derived(newestFirst.slice(0, MAX_ROWS));
+	/**
+	 * Utvidet lista er ikke pynt: det er sammenligningen.
+	 *
+	 * «Hvor fort klarte jeg det sist» og «hvor lenge holdt det» besvares av rader
+	 * som ligger år tilbake, og de seks ferskeste er sjelden dem. Periodene er
+	 * regnet på HELE historikken uansett — det var bare visningen som stoppet på
+	 * seks — så utvidelsen koster ingen spørring.
+	 */
+	let expanded = $state(false);
+	const shown = $derived(expanded ? newestFirst : newestFirst.slice(0, MAX_ROWS));
 	const hidden = $derived(Math.max(0, newestFirst.length - shown.length));
 
 	/**
@@ -109,14 +118,41 @@
 			Grensene er kurvens egne topper og bunner på trenden, ikke faste vinduer. Bevegelser under
 			{MIN_SWING_KG} kg eller {MIN_SWING_DAYS} dager er utelatt som væske, så lista har hull —
 			mellom to rader kan det ligge bevegelse som ikke nådde terskelen.
-			{#if hidden > 0}
-				{hidden} eldre {hidden === 1 ? 'periode' : 'perioder'} er ikke vist.
-			{/if}
 		</p>
+
+		{#if newestFirst.length > MAX_ROWS}
+			<button
+				class="more"
+				onclick={() => (expanded = !expanded)}
+				data-track="vekt-perioder:vis-flere"
+			>
+				{#if expanded}
+					Vis bare de {MAX_ROWS} nyeste
+				{:else}
+					Vis {hidden} eldre {hidden === 1 ? 'periode' : 'perioder'}
+				{/if}
+			</button>
+		{/if}
 	{/if}
 </section>
 
 <style>
+	.more {
+		align-self: flex-start;
+		padding: 7px 12px;
+		border-radius: 999px;
+		border: 1px solid var(--card-border, #2a2a2a);
+		background: transparent;
+		color: var(--color-text-secondary, #b8b8b8);
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.more:hover {
+		border-color: #3a3a3a;
+		color: var(--color-text, #ededed);
+	}
+
 	.periods {
 		display: flex;
 		flex-direction: column;

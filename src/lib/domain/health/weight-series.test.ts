@@ -10,6 +10,7 @@ import {
 	daysBetween,
 	dayNumber,
 	axisForSeries,
+	axisForRange,
 	clipSeriesToWindow,
 	WEIGHT_RANGES,
 	MIN_AXIS_SPAN,
@@ -357,5 +358,22 @@ describe('periodevalgene', () => {
 		for (let i = 1; i < bounded.length; i++) {
 			expect(bounded[i]).toBeGreaterThan(bounded[i - 1]);
 		}
+	});
+});
+
+describe('axisForRange med gulv', () => {
+	it('lar ikke luften ta aksen under gulvet', () => {
+		// Akkumulerte kilometer: 0–830 ga en akse fra −250, altså en fjerdedel av
+		// feltet brukt på et område kurven ikke kan være i.
+		const built = axisForRange({ min: 0, max: 830 }, { minSpan: 50, floorAt: 0 })!;
+		expect(built.min).toBe(0);
+		expect(built.ticks[0]).toBe(0);
+	});
+
+	it('respekterer data som faktisk ligger under gulvet', () => {
+		// Gulvet er en beskyttelse mot padding, ikke en påstand om dataene. Går
+		// kurven under, må aksen følge med.
+		const built = axisForRange({ min: -4, max: 2 }, { minSpan: 2, floorAt: 0 })!;
+		expect(built.min).toBeLessThanOrEqual(-4);
 	});
 });
