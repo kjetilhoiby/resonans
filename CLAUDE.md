@@ -804,7 +804,11 @@ Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i
   luften rundt dataene aksen til −250 km. Gulvet er ikke det samme som å tvinge 0
   inn i domenet: går dataene under, følger aksen med.
 - **`change` måler fra periodens første MÅLING**, ikke fra 1. januar, og serien
-  bærer `startDate` så flaten kan si det. Skuddår forskyver med én dag etter
+  bærer `startDate` så flaten kan si det. `anchorIndex` flytter nullpunktet til
+  en felles dag, der hvert år nullstilles på SIN egen verdi den dagen —
+  slideren på vektkortet stopper ved siste måling i inneværende periode, siden
+  «nullstilt på sin egen 1. oktober» er usant før oktober har vært. Et år uten
+  måling før ankeret tegnes ikke, og telles i notisen. Skuddår forskyver med én dag etter
   februar, og måneder normaliseres ikke — begge er dokumenterte skjevheter, ikke
   feil.
 - **`valueAtIndex` gir null før seriens første punkt**, aldri 0: en periode som
@@ -1238,6 +1242,12 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
 - **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
   kilometer. Les den aldri rå fra `data->>'distance'`.
+- **Men IKKE på `canonical_workouts`.** Den kolonnen er alt skrevet gjennom
+  `normalizeDistanceMeters`, så en ny runde med km-heuristikken gjør en
+  søppelrad på 53 meter til 53 kilometer. Bruk `canonicalDistanceMeters`. Feilen
+  er stum i basen og synlig først i en graf: den akkumulerte løpekurven startet
+  53 km oppe i lufta på dag 1, og i streak-kalenderen ble den samme raden dagens
+  raskeste tempo (sekunder delt på 53 km).
 - **Autohaking og progresjon teller økter, ikke forekomster.** Se
   `docs/changelog/2026-08-08-ivrig-autohaking.md`. `checklist-autocheck.ts`,
   `sensor-progress-sync.ts` og `signal-service.ts` (`activity_run_pr_week`) leser alle

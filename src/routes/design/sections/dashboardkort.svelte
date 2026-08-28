@@ -464,7 +464,11 @@
 	</p>
 	<p class="section-desc">
 		Vektkortet har to moduser fordi de svarer på ulike spørsmål: <em>kilo</em> viser nivået,
-		<em>endring</em> nullstiller hvert år på sin egen første veiing og viser formen. Løpekortet er
+		<em>endring</em> nullstiller hvert år på sin egen første veiing og viser formen. Nullpunktet kan
+		flyttes med slideren — «hvordan har det gått siden 1. juni» er et annet spørsmål enn «hvordan
+		har året gått», og hvert år nullstilles da på <em>sin egen</em> 1. juni. Slideren stopper ved
+		siste måling i inneværende periode: et anker på en dag som ikke har vært, ville gjort
+		setningen under grafen usann. Løpekortet er
 		akkumulert, så sammenligningen måles mot hvor fjoråret sto <em>på denne datoen</em> — «380 km
 		bak» er sant hver vår og betyr ingenting.
 	</p>
