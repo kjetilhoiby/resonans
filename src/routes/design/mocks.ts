@@ -2198,3 +2198,48 @@ export const runningDaysMultiYear = mockRunningDays();
 export const weightSwingsMultiYear = findWeightSwings(
 	buildMetricSeries(weightDaysMultiYear, 'weight').points
 );
+
+/**
+ * To måltrajektorier: et volummål som ble nådd tidlig, og et tilstandsmål
+ * underveis.
+ *
+ * Begge tilfellene er formen på brukerens egne mål. Det første er der grafen
+ * var feil: kurven fortsatte forbi måltallet, men aksen var låst til det, så
+ * 103,7 km ble tegnet som 80.
+ */
+function mockReachedRunningGoal() {
+	const dailyKm = Array.from({ length: 28 }, (_, i) => ({
+		date: `2026-08-${String(i + 1).padStart(2, '0')}`,
+		// Litt ujevnt, med en tettere uke midt i måneden.
+		km: i % 4 === 3 ? 0 : 4.6 + (i > 12 && i < 20 ? 2.4 : 0) + Math.sin(i) * 0.8
+	}));
+	// currentKm UTLEDES av dagene. Første utgave hardkodet 103,7 mens dagene
+	// summerte til 73, og da ble målet aldri nådd i mocken — altså viste
+	// galleriet ikke det tilfellet seksjonen ble laget for.
+	const total = dailyKm.reduce((sum, day) => sum + day.km, 0);
+	return {
+		currentKm: Math.round(total * 10) / 10,
+		targetKm: 80,
+		startDate: '2026-08-01',
+		endDate: '2026-08-31',
+		dailyKm
+	};
+}
+
+export const goalRunningReached = mockReachedRunningGoal();
+
+export const goalWeightInProgress = {
+	startDate: '2026-04-14',
+	endDate: '2028-06-16',
+	currentWeight: 98.2,
+	startWeight: 104,
+	targetWeight: 85,
+	pct: 31,
+	points: Array.from({ length: 20 }, (_, i) => {
+		const day = new Date(Date.UTC(2026, 3, 14) + i * 7 * 86_400_000);
+		return {
+			date: day.toISOString().slice(0, 10),
+			weight: Math.round((104 - i * 0.31 + Math.sin(i * 1.3) * 0.4) * 10) / 10
+		};
+	})
+};

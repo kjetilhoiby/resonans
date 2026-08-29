@@ -20,6 +20,7 @@
 	import WeightMilestonesCard from '$lib/components/domain/weight/WeightMilestonesCard.svelte';
 	import WeightTrendChart from '$lib/components/domain/weight/WeightTrendChart.svelte';
 	import WeightPeriodsCard from '$lib/components/domain/weight/WeightPeriodsCard.svelte';
+	import GoalTrajectorySection from '$lib/components/domain/plan/GoalTrajectorySection.svelte';
 	import WeightYearsCard from '$lib/components/domain/weight/WeightYearsCard.svelte';
 	import RunningCumulativeCard from '$lib/components/domain/training/RunningCumulativeCard.svelte';
 	import {
@@ -54,6 +55,8 @@
 		runningDaysMultiYear,
 		weightSwingsRich,
 		weightSwingsMultiYear,
+		goalRunningReached,
+		goalWeightInProgress,
 		streakHistoryDays,
 		streakHistoryToday,
 		streakDayMetrics,
@@ -445,6 +448,33 @@
 	</div>
 	<div class="demo-card demo-card--wide">
 		<WeightTrendChart days={weightDaysSwinging} goalKg={75} initialRange="30d" />
+	</div>
+
+	<h3 class="subsection">GoalTrajectorySection — måloppnåelse i tid</h3>
+	<p class="section-desc">
+		Et mål har to spørsmål, og de er ikke det samme. Et <em>volummål</em> («løp 80 km i august»)
+		har vinduet som poeng: august slutter uansett, og det interessante er hvor mye det blir. Et
+		<em>tilstandsmål</em> («ned til 85 kg innen juni 2028») har tilstanden som gitt — det man
+		lurer på er NÅR man er der. Kortet svarer derfor med en sum for det første og en
+		<strong>dato</strong> for det andre.
+	</p>
+	<p class="section-desc">
+		Datoen er både mer nyttig og mer ærlig enn den gamle teksten. «Estimat ved dagens snitt: ~70,4
+		kg (14,6 kg under mål)» var en ekstrapolasjon tjue måneder fram som så presis ut; en dato som
+		ligger for langt fram avslører seg selv. Går utviklingen motsatt vei, eller er bevegelsen for
+		liten, sier kortet det framfor å regne ut en dato som ikke betyr noe.
+	</p>
+	<p class="section-desc">
+		Det øverste målet er nådd før fristen, og det er to ting som gjør det synlig: den loddrette
+		markøren på dagen summen passerte måltallet, og at kurven får fortsette forbi det. Aksen var
+		før låst til måltallet, så en overoppfylt måned ble tegnet som en kurve som flatet ut på 80 —
+		103,7 km så ut som akkurat i mål.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<GoalTrajectorySection sensorProgress={goalRunningReached} />
+	</div>
+	<div class="demo-card demo-card--wide">
+		<GoalTrajectorySection weightProgress={goalWeightInProgress} />
 	</div>
 
 	<h3 class="subsection">Sesongkurver — årene lagt oppå hverandre</h3>

@@ -947,6 +947,31 @@ Se `docs/changelog/2026-08-23-vektmal-uten-maaling.md`. Tolkningen bor rent i
   `goal_tracks`-raden må følge med. `PATCH /api/goals/[id]` tar `metric: {...}` og
   fletter rå `metadata` framfor å erstatte den.
 
+### Mål i tid: datoen framfor tilstanden
+
+Se `docs/changelog/2026-08-28-maloppnaaelse-i-tid.md`. Logikken i
+`$lib/domain/goals/goal-projection.ts`.
+
+- **Et «oppnå tilstand innen dato»-mål skal estimere DATOEN, ikke tilstanden.**
+  Kortet sa «Estimat ved dagens snitt: ~70,4 kg» om et mål på 85 kg innen juni
+  2028 — en ekstrapolasjon tjue måneder fram som svarer på feil spørsmål.
+  Datoen er også ærligere: et vekttall ser presist ut uansett, en dato i 2031
+  avslører seg selv.
+- **To målformer, og formen kan ikke utledes av tallene.** `volume` («løp 80 km
+  i august») har vinduet som poeng og estimerer summen ved fristen; `state`
+  («ned til 85 kg») estimerer datoen. Begge har startverdi, målverdi og to
+  datoer — kalleren vet hvilket spørsmål målet stiller og sier det.
+- **«Nådd» leses av SERIEN, ikke av dagens verdi.** Datoen ligger i historikken,
+  og et mål som ble nådd og siden mistet har fortsatt en dag det ble nådd.
+- **En manglende dato sies med ord.** Motsatt retning, ingen bevegelse, eller
+  forbi `MAX_PROJECTION_DAYS` → en setning som sier hvorfor. En tom linje ser
+  ut som en funksjon som ikke virker, og et tall fra en divisjon på nesten null
+  er ikke et estimat.
+- **`TrajectoryChart` klipper verdier mot domenet** (`clamp` i `yAt`), så et
+  `maxValue` låst til måltallet tegnet 103,7 km som 80 — en overoppfylt måned
+  så ut som en som akkurat kom i mål. Taket skal følge det høyeste av mål og
+  faktisk verdi.
+
 ### Skjermtid: oppmerksomhet er ikke at skjermen sto på
 
 Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i
