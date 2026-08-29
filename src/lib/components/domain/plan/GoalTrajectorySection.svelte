@@ -9,6 +9,11 @@
 <script lang="ts">
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
 	import { computePaceEstimate, formatMetricValue } from './helpers.js';
+	import {
+		describeGoalProjection,
+		projectGoal,
+		type GoalShape
+	} from '$lib/domain/goals/goal-projection';
 	import type { SensorProgress, WeightProgress, PaceEstimate } from './types.js';
 
 	interface Props {
@@ -17,6 +22,72 @@
 	}
 
 	let { sensorProgress = null, weightProgress = null }: Props = $props();
+
+	const today = new Date().toISOString().slice(0, 10);
+
+	/**
+	 * Projeksjonen: når nådde jeg målet, eller når når jeg det?
+	 *
+	 * Formen kan ikke utledes av tallene, så den settes her. Et løpemål er
+	 * VOLUM — august slutter uansett, og «hvor mye blir det» er spørsmålet.
+	 * Et vektmål er en TILSTAND med en frist rundt seg, og da er datoen
+	 * estimatet. Se `goal-projection.ts`.
+	 */
+	const shape: GoalShape = $derived(sensorProgress ? 'volume' : 'state');
+
+	const projection = $derived.by(() => {
+		if (sensorProgress) {
+			// Serien er kumulativ, som grafen tegner den — måloppnåelsen er
+			// dagen SUMMEN passerte målet, ikke dagen med den lengste turen.
+			let running = 0;
+			const series = sensorProgress.dailyKm.map((point) => {
+				running += point.km;
+				return { date: point.date, value: running };
+			});
+			return projectGoal({
+				startDate: sensorProgress.startDate,
+				endDate: sensorProgress.endDate,
+				startValue: 0,
+				currentValue: sensorProgress.currentKm,
+				targetValue: sensorProgress.targetKm,
+				today,
+				series
+			});
+		}
+		if (weightProgress) {
+			return projectGoal({
+				startDate: weightProgress.startDate,
+				endDate: weightProgress.endDate,
+				startValue: weightProgress.startWeight,
+				currentValue: weightProgress.currentWeight,
+				targetValue: weightProgress.targetWeight,
+				today,
+				series: weightProgress.points.map((p) => ({ date: p.date, value: p.weight }))
+			});
+		}
+		return null;
+	});
+
+	/**
+	 * Rutenettet for volumgrafen.
+	 *
+	 * Taket var før låst til målet (`maxValue={targetKm}`), og siden grafen
+	 * klipper verdier mot domenet, ble en overoppfylt måned tegnet som en kurve
+	 * som flatet ut på måltallet: 103,7 km så ut som 80. Nå følger taket det
+	 * høyeste av mål og faktisk, og måltallet beholder sin egen linje — det er
+	 * den man måler mot. Duplikater lukes bort, ellers tegnes samme etikett to
+	 * ganger når målet ikke er passert.
+	 */
+	const volumeGridValues = $derived.by(() => {
+		if (!sensorProgress) return [];
+		const top = Math.round(Math.max(sensorProgress.targetKm, sensorProgress.currentKm));
+		const target = Math.round(sensorProgress.targetKm);
+		return [...new Set([top, target, 0])];
+	});
+
+	const projectionText = $derived(
+		projection ? describeGoalProjection(projection, { today, shape }) : null
+	);
 
 	const paceEstimate: PaceEstimate | null = $derived.by(() => {
 		if (sensorProgress) {
@@ -58,8 +129,8 @@
 			showArea={true}
 			paddingMode="none"
 			minValue={0}
-			maxValue={sensorProgress.targetKm}
-			gridValues={[sensorProgress.targetKm, Math.round(sensorProgress.targetKm / 2), 0]}
+			reachedDate={projection?.reachedOn ?? null}
+			gridValues={volumeGridValues}
 			valueFormatter={formatMetricValue}
 			actualStroke="#f0954a"
 			actualFill="rgba(240, 149, 74, 0.15)"
@@ -81,6 +152,7 @@
 			seriesMode="absolute"
 			showArea={false}
 			paddingMode="auto"
+			reachedDate={projection?.reachedOn ?? null}
 			gridValues={[
 				Math.round(weightProgress.startWeight * 10) / 10,
 				Math.round(((weightProgress.startWeight + weightProgress.targetWeight) / 2) * 10) / 10,
@@ -96,10 +168,25 @@
 	</div>
 {/if}
 
-{#if paceEstimate}
+{#if paceEstimate || projectionText}
 	<div class="pace-row">
-		<span class={`pace-pill pace-${paceEstimate.diffTone}`}>{paceEstimate.diffLabel}</span>
-		<span class={`pace-pill pace-${paceEstimate.estimateTone}`}>{paceEstimate.estimateLabel}</span>
+		{#if paceEstimate}
+			<span class={`pace-pill pace-${paceEstimate.diffTone}`}>{paceEstimate.diffLabel}</span>
+		{/if}
+		<!--
+			Datoen framfor tilstanden for et TILSTANDSMÅL: «på dagens tempo er du der
+			rundt 12. juli 2027» svarer på det man lurer på, mens «~70,4 kg i juni
+			2028» er en ekstrapolasjon tjue måneder fram som ser presis ut.
+
+			For et VOLUMMÅL beholdes summen ved fristen — der er vinduet poenget —
+			men er målet nådd, vinner datoen: da er «estimat ~111 km» en påstand om
+			noe som alt er avgjort.
+		-->
+		{#if projectionText && (shape === 'state' || projection?.reachedOn)}
+			<span class={`pace-pill pace-${projectionText.tone}`}>{projectionText.label}</span>
+		{:else if paceEstimate}
+			<span class={`pace-pill pace-${paceEstimate.estimateTone}`}>{paceEstimate.estimateLabel}</span>
+		{/if}
 	</div>
 {/if}
 

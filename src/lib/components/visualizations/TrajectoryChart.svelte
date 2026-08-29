@@ -22,6 +22,11 @@
 		minValue?: number;
 		maxValue?: number;
 		gridValues?: number[];
+		/**
+		 * Dagen målet ble nådd, hvis det har skjedd. Tegnes som en loddrett
+		 * markør med etikett — «nådd» er en dato, og datoen er poenget.
+		 */
+		reachedDate?: string | null;
 		valueFormatter?: (value: number) => string;
 		actualStroke?: string;
 		actualFill?: string;
@@ -45,6 +50,7 @@
 		minValue,
 		maxValue,
 		gridValues = [],
+		reachedDate = null,
 		valueFormatter = (value: number) => `${Math.round(value * 10) / 10}`,
 		actualStroke = '#f0954a',
 		actualFill = 'rgba(240, 149, 74, 0.15)',
@@ -156,6 +162,15 @@
 
 		const todayX = today >= startDate && today <= endDate ? xForDate(today) : null;
 
+		/**
+		 * Måloppnåelsen. Ligger den utenfor vinduet, tegnes den ikke — en markør
+		 * klemt mot kanten ville pekt på en dato den ikke gjelder.
+		 */
+		const reachedX =
+			reachedDate && reachedDate >= startDate && reachedDate <= endDate
+				? xForDate(reachedDate)
+				: null;
+
 		// Stiplet horisontal forlengelse fra siste datapunkt til i dag.
 		// Synliggjør gap mot plan når det ikke har kommet inn nye verdier på en stund.
 		let gapPath = '';
@@ -185,6 +200,7 @@
 			gapPath,
 			currentMarker,
 			todayX,
+			reachedX,
 			gridLines: resolvedGridValues.map((value) => ({ value, y: yAt(value), label: valueFormatter(value) })),
 			yBottom: padT + ph
 		};
@@ -220,6 +236,30 @@
 			<line x1={chart.todayX} y1={padT} x2={chart.todayX} y2={chart.yBottom} stroke="#444" stroke-width="1" stroke-dasharray="2 2" />
 		{/if}
 
+		{#if chart.reachedX !== null}
+			<!-- Måloppnåelsen: heltrukken og i seriens egen farge, så den skiller
+			     seg fra i-dag-linja (stiplet, grå). Etiketten står til venstre for
+			     streken når den ligger nær høyre kant, ellers til høyre. -->
+			<line
+				x1={chart.reachedX}
+				y1={padT}
+				x2={chart.reachedX}
+				y2={chart.yBottom}
+				stroke={actualStroke}
+				stroke-width="1"
+				opacity="0.55"
+			/>
+			<text
+				x={chart.reachedX + (chart.reachedX > padL + chart.pw * 0.6 ? -5 : 5)}
+				y={padT + 9}
+				text-anchor={chart.reachedX > padL + chart.pw * 0.6 ? 'end' : 'start'}
+				class="reached-label"
+				fill={actualStroke}
+			>
+				Nådd {fmtDate(reachedDate!)}
+			</text>
+		{/if}
+
 		<text x={padL} y={chart.H - 3} text-anchor="start" class="axis-label">{fmtDate(startDate)}</text>
 		<text x={padL + chart.pw} y={chart.H - 3} text-anchor="end" class="axis-label">{fmtDate(endDate)}</text>
 	</svg>
@@ -231,6 +271,11 @@
 </div>
 
 <style>
+	.reached-label {
+		font-size: 9px;
+		font-weight: 600;
+	}
+
 	.trajectory-chart {
 		margin-top: 0.5rem;
 		margin-bottom: 0.25rem;

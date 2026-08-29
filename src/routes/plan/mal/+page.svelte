@@ -9,6 +9,11 @@
 		formatMetricValue
 	} from '$lib/components/domain/plan/helpers.js';
 	import { goalHorizon, type GoalHorizon } from '$lib/domain/goal-validation';
+	import {
+		describeGoalProjection,
+		projectGoal,
+		type GoalShape
+	} from '$lib/domain/goals/goal-projection';
 	import type { SleepGoalEval } from '$lib/domain/sleep-goals';
 	import type { MetricGoalEval } from '$lib/domain/metric-goal-eval';
 	import type { GoalItem, ScreenTimeGoalEval, SensorProgress, WeightProgress } from '$lib/components/domain/plan/types.js';
@@ -108,6 +113,41 @@
 		}
 	}
 
+	/**
+	 * Legger datoprojeksjonen på tempo-teksten vurderingen får.
+	 *
+	 * Uten den ser modellen bare «estimat ved dagens snitt: ~70,4 kg» og gjentar
+	 * ekstrapolasjonen. Skjermen og vurderingen skal si det samme — projeksjonen
+	 * kommer fra `goal-projection.ts`, som flaten også bruker.
+	 *
+	 * Serien for volummål må akkumuleres først: `dailyKm` er dagsverdier, og
+	 * måloppnåelsen er dagen SUMMEN passerte målet.
+	 */
+	function withProjection(
+		pace: string | undefined,
+		startDate: string,
+		endDate: string,
+		startValue: number,
+		currentValue: number,
+		targetValue: number,
+		rawSeries: Array<{ date: string; value: number }>,
+		shape: GoalShape
+	): string | undefined {
+		const today = new Date().toISOString().slice(0, 10);
+		let running = shape === 'volume' ? startValue : 0;
+		const series = rawSeries.map((point) => {
+			if (shape !== 'volume') return point;
+			running += point.value;
+			return { date: point.date, value: running };
+		});
+		const text = describeGoalProjection(
+			projectGoal({ startDate, endDate, startValue, currentValue, targetValue, today, series }),
+			{ today, shape }
+		);
+		if (!text) return pace;
+		return pace ? `${pace}; ${text.label}` : text.label;
+	}
+
 	function buildGoalAssessmentInput(goal: GoalItem) {
 		const sensor = data.sensorProgressMap[goal.id];
 		const weight = data.weightProgressMap[goal.id];
@@ -130,6 +170,7 @@
 				formatValue: formatMetricValue
 			});
 			if (estimate) pace = `${estimate.diffLabel}; ${estimate.estimateLabel}`;
+			pace = withProjection(pace, sensor.startDate, sensor.endDate, 0, sensor.currentKm, sensor.targetKm, sensor.dailyKm.map((p) => ({ date: p.date, value: p.km })), 'volume');
 		} else if (weight) {
 			progress = `${weight.currentWeight} kg mot mål ${weight.targetWeight} kg (${weight.pct}%)`;
 			const estimate = computePaceEstimate({
@@ -142,6 +183,7 @@
 				formatValue: formatMetricValue
 			});
 			if (estimate) pace = `${estimate.diffLabel}; ${estimate.estimateLabel}`;
+			pace = withProjection(pace, weight.startDate, weight.endDate, weight.startWeight, weight.currentWeight, weight.targetWeight, weight.points.map((p) => ({ date: p.date, value: p.weight })), 'state');
 		} else if (goal.tasks.length > 0) {
 			progress = `${calculateGoalProgress(goal)}% av oppgavene`;
 		} else if (goal.metadata?.intentEvaluation) {
