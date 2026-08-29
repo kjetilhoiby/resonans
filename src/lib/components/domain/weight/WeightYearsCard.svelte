@@ -225,8 +225,8 @@
 	<p class="note">
 		{#if mode === 'change' && anchorDay > 0}
 			Hvert år er nullstilt på sin egen {anchorLabel.toLowerCase()}, så kurvene er sammenlignbare
-			derfra. Punktene før den dagen viser hvor året kom fra.{#if unanchored.length > 0}
-				{unanchored.length} år hadde ingen veiing før den datoen og er ikke tegnet.{/if}
+			derfra. Punktene før den dagen viser hvor året kom fra.{#if unanchored.length > 0}{' '}{unanchored.length}
+				år hadde ingen veiing før den datoen og er ikke tegnet.{/if}
 		{:else if mode === 'change'}
 			Hvert år starter på null ved sin egen første veiing{#if lateStart && current?.startDate}
 				— i år var det i {monthName(current.startDate)}{/if}. Formen er sammenlignbar; nivået er
