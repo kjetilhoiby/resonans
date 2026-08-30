@@ -14,8 +14,7 @@
 
 <div class="flow-panel">
 	<div class="flow-header">
-		<button class="flow-back" onclick={ctx.closeVoiceFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-		<span class="flow-title">Lyd/video</span>
+		<button class="flow-title-btn flow-title" onclick={ctx.closeVoiceFlow} aria-label="Tilbake fra Lyd/video">Lyd/video</button>
 	</div>
 	<input
 		bind:this={ctx.voiceFileInput}
@@ -112,6 +111,24 @@
 {/if}
 
 <style>
+	/* Tittelen ER tilbakeknappen (docs/DESIGN.md). */
+	.flow-title-btn {
+		background: none;
+		border: none;
+		padding: 4px 6px;
+		margin: -4px -6px;
+		border-radius: 8px;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		text-align: left;
+	}
+	.flow-title-btn:focus-visible {
+		outline: 2px solid #3987e5;
+		outline-offset: 2px;
+	}
+	.flow-title-btn:active { opacity: 0.7; }
+
 	.flow-panel {
 		display: flex;
 		flex-direction: column;
@@ -128,16 +145,6 @@
 		flex-shrink: 0;
 	}
 
-	.flow-back {
-		background: none;
-		border: none;
-		color: #555;
-		font: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 4px 8px 4px 0;
-		transition: color 0.12s;
-	}
 	.flow-back:hover { color: #ccc; }
 
 	.flow-title {

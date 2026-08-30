@@ -8,7 +8,10 @@
 		StravaSourceCard,
 		TeslaSourceCard,
 		EmailRulesCard,
-		EffortReprojectCard
+		EffortReprojectCard,
+		EconomyDiagnosticsCard,
+		ReservationCleanupCard,
+		BookedDuplicateCleanupCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -108,6 +111,21 @@
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
 		<EffortReprojectCard />
+		<!--
+			Bankdiagnosen står rett under bank-kortet i ånden, men til sist blant kortene:
+			endepunktet er admin-gated, så for alle andre ville den bare vært en knapp som gir
+			403. Vi skjuler den framfor å vise en feil.
+		-->
+		{#if data.user?.isAdmin}
+			<EconomyDiagnosticsCard />
+			<!-- Ryddejobbene står ETTER diagnosen: man måler før man skriver. -->
+			<ReservationCleanupCard />
+			<!--
+				Reservasjonsryddingen først, denne etter: den andre motoren fjerner PENDING-rader,
+				og det som står igjen etterpå er nettopp det denne er til for.
+			-->
+			<BookedDuplicateCleanupCard />
+		{/if}
 	</div>
 	</PageSection>
 </AppPage>

@@ -86,8 +86,9 @@ Når brukeren vil prate om en film de har sett:
 
 <div class="fl-tchat">
 	<div class="fl-tchat-head">
-		<button class="fl-close" onclick={onBack} aria-label="Tilbake til biblioteket">←</button>
-		<h1 class="fl-tchat-title">💬 Prat om film</h1>
+		<button class="fl-title-btn" onclick={onBack} aria-label="Tilbake til biblioteket">
+			<h1 class="fl-tchat-title">💬 Prat om film</h1>
+		</button>
 	</div>
 
 	<ChatThread
@@ -128,6 +129,28 @@ Når brukeren vil prate om en film de har sett:
 </div>
 
 <style>
+	/* Tittelen ER tilbakeknappen (docs/DESIGN.md). Ingen knappedrakt, men et
+	   treffområde for en tommel og et synlig fokusmerke. */
+	.fl-title-btn {
+		display: block;
+		flex: 1 1 auto;
+		min-width: 0;
+		margin: -4px -6px;
+		padding: 4px 6px;
+		background: none;
+		border: none;
+		border-radius: 8px;
+		text-align: left;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+	.fl-title-btn:focus-visible {
+		outline: 2px solid var(--film-accent, #d64545);
+		outline-offset: 2px;
+	}
+	.fl-title-btn:active { opacity: 0.7; }
+
 	.fl-tchat {
 		display: flex;
 		flex-direction: column;
@@ -141,15 +164,6 @@ Når brukeren vil prate om en film de har sett:
 		padding: 12px 16px 8px;
 		flex-shrink: 0;
 		border-bottom: 1px solid var(--film-border-faint, #2a1a1a);
-	}
-	.fl-close {
-		background: none;
-		border: none;
-		color: var(--film-text-secondary, #999);
-		font-size: 1.4rem;
-		cursor: pointer;
-		padding: 0 4px;
-		line-height: 1;
 	}
 	.fl-tchat-title {
 		margin: 0;

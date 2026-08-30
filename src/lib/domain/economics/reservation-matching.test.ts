@@ -1,0 +1,354 @@
+import { describe, it, expect } from 'vitest';
+import {
+	DEFAULT_MAX_DELTA_DAYS,
+	doubleCountedTotals,
+	looksLikeTransferText,
+	matchReservationsToBooked,
+	type ReservationCandidate
+} from './reservation-matching';
+
+function res(
+	id: string,
+	date: string,
+	amount: number,
+	merchantKey = 'kiwi bolerl',
+	accountId = 'a1'
+): ReservationCandidate {
+	return { id, accountId, date, amount, merchantKey, status: 'pending' };
+}
+function booked(
+	id: string,
+	date: string,
+	amount: number,
+	merchantKey = 'kiwi bolerl',
+	accountId = 'a1'
+): ReservationCandidate {
+	return { id, accountId, date, amount, merchantKey, status: 'booked' };
+}
+
+describe('matchReservationsToBooked', () => {
+	it('parrer en reservasjon med den bokførte raden dagen etter', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-30', -113)
+		]);
+
+		expect(matches).toHaveLength(1);
+		expect(matches[0]).toMatchObject({
+			reservationId: 'r1',
+			bookedId: 'b1',
+			amount: 113,
+			deltaDays: 1,
+			merchantKeyChanged: false
+		});
+		expect(unmatched).toHaveLength(0);
+	});
+
+	// Selve poenget med modulen. Målingen viste 110 av 271 par med endret beskrivelse.
+	it('parrer på tvers av endret beskrivelse — valutaprefikset', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-27', -74, 'sek ica'),
+			booked('b1', '2026-07-27', -74, 'ica nara')
+		]);
+
+		expect(matches).toHaveLength(1);
+		expect(matches[0].merchantKeyChanged).toBe(true);
+	});
+
+	// Regresjonen. LATERAL-joinen ga hver reservasjon sin nærmeste bokførte rad uten å
+	// reservere den, så tre PENDING på samme beløp ga tre par mot ett bokført kjøp.
+	it('lar ikke tre reservasjoner peke på samme bokførte rad', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-28', -255),
+			res('r2', '2026-07-28', -255),
+			res('r3', '2026-07-28', -255),
+			booked('b1', '2026-07-29', -255)
+		]);
+
+		expect(matches).toHaveLength(1);
+		expect(unmatched).toHaveLength(2);
+		expect(doubleCountedTotals(matches).spend).toBe(255);
+	});
+
+	it('parrer tre mot tre når det finnes tre bokførte', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-28', -255),
+			res('r2', '2026-07-28', -255),
+			res('r3', '2026-07-28', -255),
+			booked('b1', '2026-07-29', -255),
+			booked('b2', '2026-07-29', -255),
+			booked('b3', '2026-07-30', -255)
+		]);
+
+		expect(matches).toHaveLength(3);
+		expect(unmatched).toHaveLength(0);
+		expect(new Set(matches.map((m) => m.bookedId)).size).toBe(3);
+	});
+
+	it('krever eksakt beløp — 33 av 35 par hadde 0 % avvik', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-30', -113.5)
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched.map((u) => u.id)).toEqual(['r1']);
+	});
+
+	it('krysser ikke kontogrenser', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113, 'kiwi', 'a1'),
+			booked('b1', '2026-07-30', -113, 'kiwi', 'a2')
+		]);
+
+		expect(matches).toHaveLength(0);
+	});
+
+	it('respekterer datovinduet', () => {
+		const inside = matchReservationsToBooked([
+			res('r1', '2026-07-20', -113),
+			booked('b1', '2026-07-23', -113)
+		]);
+		const outside = matchReservationsToBooked([
+			res('r1', '2026-07-20', -113),
+			booked('b1', '2026-07-25', -113)
+		]);
+
+		expect(DEFAULT_MAX_DELTA_DAYS).toBe(3);
+		expect(inside.matches).toHaveLength(1);
+		expect(outside.matches).toHaveLength(0);
+	});
+
+	it('tar med negativ datoforskjell — bokført FØR reservasjonen', () => {
+		// Målingen viste −1 og −2 dager i prod. Retningen er ikke garantert.
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-28', -113)
+		]);
+
+		expect(matches[0].deltaDays).toBe(-1);
+	});
+
+	it('foretrekker uendret beskrivelse når to bokførte er like nære', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113, 'kiwi bolerl'),
+			booked('b-annen', '2026-07-30', -113, 'rema boler'),
+			booked('b-samme', '2026-07-30', -113, 'kiwi bolerl')
+		]);
+
+		expect(matches[0].bookedId).toBe('b-samme');
+		expect(matches[0].merchantKeyChanged).toBe(false);
+	});
+
+	it('foretrekker nærmeste dato foran samme beskrivelse', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113, 'kiwi bolerl'),
+			booked('b-naer', '2026-07-29', -113, 'sek kiwi'),
+			booked('b-fjern', '2026-08-01', -113, 'kiwi bolerl')
+		]);
+
+		expect(matches[0].bookedId).toBe('b-naer');
+	});
+
+	it('parrer aldri to reservasjoner med hverandre', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			res('r2', '2026-07-30', -113)
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched).toHaveLength(2);
+	});
+
+	it('rører ikke bokførte rader uten reservasjon', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			booked('b1', '2026-07-29', -113),
+			booked('b2', '2026-07-30', -255)
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched).toHaveLength(0);
+	});
+
+	it('er deterministisk uansett inndatarekkefølge', () => {
+		const rows = [
+			res('r1', '2026-07-28', -255),
+			res('r2', '2026-07-29', -255),
+			booked('b1', '2026-07-29', -255),
+			booked('b2', '2026-07-30', -255)
+		];
+		const forward = matchReservationsToBooked(rows);
+		const reversed = matchReservationsToBooked([...rows].reverse());
+
+		expect(forward.matches).toEqual(reversed.matches);
+	});
+});
+
+describe('doubleCountedTotals', () => {
+	it('summerer forbruket som telles to ganger', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-30', -113),
+			res('r2', '2026-07-29', -255, 'coop mega'),
+			booked('b2', '2026-07-30', -255, 'coop mega')
+		]);
+
+		expect(doubleCountedTotals(matches)).toEqual({ spend: 368, income: 0 });
+	});
+
+	// Regresjonen. `amount` er absoluttverdi, så en fortegnsblind summering blandet et
+	// dobbelttalt lønnsinnskudd inn i «dobbelttalt forbruk». I prod gikk tallet fra
+	// 154 703 til 258 117 kr av nettopp den grunnen.
+	it('blander ikke inntekt inn i forbruket', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r-kjop', '2026-07-29', -113),
+			booked('b-kjop', '2026-07-30', -113),
+			res('r-lonn', '2026-07-15', 48_000, 'amedia'),
+			booked('b-lonn', '2026-07-15', 48_000, 'sek amedia')
+		]);
+
+		expect(matches).toHaveLength(2);
+		expect(doubleCountedTotals(matches)).toEqual({ spend: 113, income: 48_000 });
+	});
+
+	it('merker retningen på hvert par', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -113),
+			booked('b1', '2026-07-30', -113),
+			res('r2', '2026-07-15', 5000),
+			booked('b2', '2026-07-15', 5000)
+		]);
+
+		expect(matches.map((m) => m.direction).sort()).toEqual(['in', 'out']);
+	});
+
+	it('gir 0 uten par', () => {
+		expect(doubleCountedTotals([])).toEqual({ spend: 0, income: 0 });
+	});
+});
+
+
+describe('rader som ikke skal matches i det hele tatt', () => {
+	// Regresjonen som tørrkjøringen i prod avslørte. Første utgave utledet
+	// `booked = statusRank >= topRank`, og `bookingStatusRank` gir 0 for MANGLENDE status —
+	// så «vi vet ikke» ble «ubokført reservasjon», og jobben foreslo å deaktivere
+	// overføringer. Samme felle som `startWorkout.type`: en stille default som gjetter en
+	// konkret verdi er verre enn et avslag.
+	it('rører ikke rader med ukjent status', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			{
+				id: 'ukjent',
+				accountId: 'a1',
+				date: '2026-07-29',
+				amount: -2500,
+				merchantKey: 'overforsel',
+				status: 'unknown'
+			},
+			booked('b1', '2026-07-30', -2500, 'overforsel')
+		]);
+
+		expect(matches).toHaveLength(0);
+		// Ikke engang som restpost: den er ikke en reservasjon, den er uavklart.
+		expect(unmatched).toHaveLength(0);
+	});
+
+	it('bruker ikke en ukjent rad som motpart heller', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r1', '2026-07-29', -2500),
+			{
+				id: 'ukjent',
+				accountId: 'a1',
+				date: '2026-07-30',
+				amount: -2500,
+				merchantKey: 'kiwi bolerl',
+				status: 'unknown'
+			}
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched.map((u) => u.id)).toEqual(['r1']);
+	});
+
+	// Runde beløp som gjentas — 2 500, 4 000, 7 600 — er overføringer, og to separate
+	// overføringer innen tre dager ville blitt paret som reservasjon + bokført.
+	// Multiplisitetsmålingen som lisensierte beløpsmatching gjaldt gjentatte KJØP innenfor
+	// ett API-svar, altså en annen populasjon.
+	it('holder interne overføringer utenfor', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			{ ...res('r-overf', '2026-07-29', -2500), internalTransfer: true },
+			{ ...booked('b-overf', '2026-07-30', -2500), internalTransfer: true }
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched).toHaveLength(0);
+	});
+
+	it('lar en overføring aldri bli motpart for et ekte kjøp', () => {
+		const { matches, unmatched } = matchReservationsToBooked([
+			res('r-kjop', '2026-07-29', -2500, 'kiwi bolerl'),
+			{ ...booked('b-overf', '2026-07-30', -2500, 'overforsel'), internalTransfer: true }
+		]);
+
+		expect(matches).toHaveLength(0);
+		expect(unmatched.map((u) => u.id)).toEqual(['r-kjop']);
+	});
+
+	it('matcher fortsatt et ekte par når ingen av dem er overføring', () => {
+		const { matches } = matchReservationsToBooked([
+			{ ...res('r1', '2026-07-29', -113), internalTransfer: false },
+			{ ...booked('b1', '2026-07-30', -113), internalTransfer: false }
+		]);
+
+		expect(matches).toHaveLength(1);
+	});
+});
+
+describe('navn og datoer på paret', () => {
+	// Tørrkjøringen viste «23 000 kr inn, 0 dager, endret» ×2, og verken bruker eller agent
+	// kunne avgjøre om det var lønn i to versjoner eller to separate innskudd. Et par man
+	// ikke kan sette navn på, kan man ikke godkjenne.
+	it('bærer begge beskrivelsene og begge datoene', () => {
+		const { matches } = matchReservationsToBooked([
+			res('r1', '2026-07-27', -74, 'sek ica nara'),
+			booked('b1', '2026-07-28', -74, 'ica nara haga')
+		]);
+
+		expect(matches[0]).toMatchObject({
+			reservationDate: '2026-07-27',
+			bookedDate: '2026-07-28',
+			reservationMerchantKey: 'sek ica nara',
+			bookedMerchantKey: 'ica nara haga'
+		});
+	});
+});
+
+describe('looksLikeTransferText', () => {
+	// Finnes fordi findInternalTransfers krever begge bein i canonical. Brukeren overfører fra
+	// lønnskontoer som ikke synkes, så innskuddet er det eneste beinet vi ser — og runde
+	// summer som 23 000 gjentas.
+	it('kjenner igjen overføringsord i beskrivelsen', () => {
+		expect(looksLikeTransferText({ description: 'Overføring til felles' })).toBe(true);
+		expect(looksLikeTransferText({ description: 'OVERFØRSEL' })).toBe(true);
+		expect(looksLikeTransferText({ description: 'Overforing mellom egne kontoer' })).toBe(true);
+	});
+
+	it('leser typeText også — der SB1 legger kategorien', () => {
+		expect(looksLikeTransferText({ description: 'Til Kjetil', typeText: 'Overføring' })).toBe(
+			true
+		);
+	});
+
+	it('rører ikke et vanlig kjøp', () => {
+		expect(looksLikeTransferText({ description: 'KIWI BØLERL', typeText: 'Mat og drikke' })).toBe(
+			false
+		);
+		expect(looksLikeTransferText({ description: 'SEK ICA NARA HAGA' })).toBe(false);
+	});
+
+	it('gir false på tom tekst framfor true', () => {
+		// En rad uten beskrivelse er ukjent, ikke en overføring. Å gjette «overføring» ville
+		// utelatt ekte kjøp fra ryddingen.
+		expect(looksLikeTransferText({})).toBe(false);
+		expect(looksLikeTransferText({ description: '', typeText: null })).toBe(false);
+	});
+});

@@ -168,6 +168,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>Se og administrer aktive og feilede jobber</p>
 				<a href="/settings/jobs" class="overview-link">Åpne jobber</a>
 			</article>
+			<article class="overview-card" id="hidden-workouts-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Skjulte økter</h2>
+				</div>
+				<p>Treningsøkter du har skjult fra aktivitetslista — hent dem tilbake</p>
+				<a href="/settings/skjulte-okter" class="overview-link">Åpne skjulte økter</a>
+			</article>
 			<article class="overview-card" id="snoozes-overview">
 				<div class="overview-head">
 					<span class="status-dot ok"></span>

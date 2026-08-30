@@ -12,6 +12,7 @@ import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workou
 import { pushSession } from '$lib/server/services/strava-sync-service';
 import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { runInBackground } from '$lib/server/run-in-background';
+import { isWorkoutSuppressedForUser } from '$lib/server/workouts/workout-suppressions';
 import { parseWorkoutAnalysis } from '$lib/domain/health/workout-analysis';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
@@ -240,11 +241,25 @@ async function handleWorkoutUpload(
 		);
 	}
 
+	// Er økta svartelistet, er den lagret men skjult. Raden skrives fortsatt —
+	// skrivestien skal være additiv og idempotent, og et avvist opplastingssvar
+	// ville sett ut som en feil i Ekko — men alt som rekker UT av Resonans må
+	// stoppe her. `runAfterWorkoutWrite` over er trygt: varsling og autohaking
+	// går gjennom aktivitetslaget, som filtrerer svartelistede klynger.
+	const suppressed = await isWorkoutSuppressedForUser(
+		ctx.userId,
+		parsed.startTime,
+		parsed.sportType
+	).catch(() => false);
+
 	// Auto-push til Strava hvis brukeren er koblet til. pushSession er dedup-et
 	// (external_id = `<app>-<sessionId>`) og feiler aldri hardt — den bokfører
 	// utfallet på Strava-koblingen i stedet for å velte ekkos opplastingssvar.
 	// Krever sessionId (brukes til dedup) og at økten faktisk ble lagret.
-	if (ctx.sessionId && result.event?.id && !skipStrava) {
+	// `!suppressed`: en skjult økt skal ikke publiseres til Strava. Det er den ene
+	// bivirkningen brukeren ikke kan angre fra Resonans, og en økt hen har sagt at
+	// ikke skjedde, hører ikke på en offentlig treningsprofil.
+	if (ctx.sessionId && result.event?.id && !skipStrava && !suppressed) {
 		try {
 			await pushSession({
 				userId: ctx.userId,
@@ -268,6 +283,11 @@ async function handleWorkoutUpload(
 		trackPoints: parsed.trackPoints.length,
 		distance: Math.round(parsed.distance),
 		duration: Math.round(parsed.duration),
+		// Økta er lagret, men skjult fordi brukeren har svartelistet den. Uten
+		// dette feltet ser opplastingen helt vanlig ut for Ekko, og appen ville
+		// vist en økt som ikke finnes noe sted i Resonans. `hidden` betyr ikke at
+		// noe gikk galt — se docs/ekko-skjul-okt.md.
+		hidden: suppressed,
 		// null i det store flertallet av tilfellene. Er den satt, ser det ut som
 		// sporingen ble glemt, og Ekko kan tilby «snapp sluttpunktet hit».
 		forgottenTracking,

@@ -205,6 +205,14 @@ export async function buildSalaryProfile(userId: string): Promise<SalaryProfile 
 	const payday = await detectGlobalPayday(userId);
 	if (!payday || payday.paydayDates.length < 2 || !payday.sourceAccountId) return null;
 
+	// **Statistikken regnes på OBSERVERTE datoer.** Den utfylte serien har antatte datoer for
+	// måneder der lønnsraden mangler; de har ikke noe beløp, og de er plassert PÅ lønnsdagen, så
+	// å ta dem med i `typicalDow` ville latt en slutning bekrefte seg selv. Periodegrenser er
+	// den utfylte serien sin jobb, ikke denne. Se
+	// `docs/changelog/2026-08-18-manglende-lonnsdato.md`.
+	const observedPaydays = payday.observedPaydayDates;
+	if (observedPaydays.length < 2) return null;
+
 	// Pull the actual canonical transactions for the detected payday dates
 	// so we can compute amount stats and payer fingerprint.
 	const { canonicalBankTransactions } = await import('$lib/db/schema');
@@ -223,7 +231,7 @@ export async function buildSalaryProfile(userId: string): Promise<SalaryProfile 
 				dbEq(canonicalBankTransactions.isActive, true),
 				inArray(
 					canonicalBankTransactions.canonicalDate,
-					payday.paydayDates
+					observedPaydays
 				)
 			)
 		);
@@ -247,7 +255,7 @@ export async function buildSalaryProfile(userId: string): Promise<SalaryProfile 
 			: '';
 
 	// Typical weekday (from actual payday dates, business-day adjusted)
-	const dows = payday.paydayDates.map((d) => {
+	const dows = observedPaydays.map((d) => {
 		const dt = new Date(`${d}T12:00:00Z`);
 		const wd = prevWorkingDay(dt);
 		const dow = wd.getUTCDay();

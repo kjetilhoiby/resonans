@@ -195,7 +195,14 @@ Kategoritak måles altså mot et tall som er 6 % lavere enn flatens.
 ### Interne overføringer er den største enkeltfeilen
 
 **319 par, 1 084 033 kr — altså 68 % av canonicals «forbruk».** Reelt forbruk blir
-~500 000 kr på et år, ~42 000 kr/mnd for en husholdning. Det er et plausibelt tall. De
+~500 000 kr på et år, ~42 000 kr/mnd for en husholdning. Det er et plausibelt tall.
+
+> **RETTET 2026-08-16: tallet var feil.** Overføringssummen `1 084 033` kommer fra en
+> mange-til-mange SQL-join og er kraftig overtelt, så `42 000` er avledet av et galt grunnlag.
+> Korrekt én-til-én-matching gir **~188 000 kr/mnd**. At tallet var «plausibelt» er nettopp
+> derfor det overlevde. Se `docs/changelog/2026-08-12-livslop-forsvinning.md`.
+
+De
 1,58 mill. dashboardet ville summert er 132 000 kr/mnd, og de 6,0 mill. `/economics` ville
 vist er 500 000 kr/mnd. Ingen av dem er i nærheten, og det er nok alene til å forklare at
 brukeren la fra seg flaten.
@@ -481,7 +488,8 @@ Den største enkeltfeilen: 1 084 033 kr av 1 583 723, altså 68 %. Parvis matchi
 på konto A og positiv på konto B, samme dag, samme beløp → merkes intern, ekskluderes fra
 både forbruk og inntekt. Brukerens valg var utvetydig: sparing er **ikke** forbruk.
 
-Regnestykket som skal stemme etterpå: ~42 000 kr/mnd for husholdningen. Er tallet
+Regnestykket som skal stemme etterpå: ~42 000 kr/mnd for husholdningen. **(Avkreftet
+2026-08-16 — se rettelsen over. Målt: ~188 000 kr/mnd.)** Er tallet
 132 000, er overføringene fortsatt med.
 
 ### Fase 3: Statusovergang og multiplisitet
@@ -731,7 +739,27 @@ lese kode:
 GET /api/admin/debug-sparebank1/dedup?days=365
 ```
 
-Kun lesing: ingen SB1-kall, ingen skriving. Den svarer på alle fire designspørsmålene til
+Kun lesing: ingen SB1-kall, ingen skriving. Diagnosen har også en **knapp** i
+`/settings/sources` (`EconomyDiagnosticsCard`, ved siden av `EffortReprojectCard`), med
+vindu 90 dager / 365 dager / 2 år. Kortet er ikke en JSON-visning: det tolker svaret, fordi
+et tall herfra er verdiløst uten å vite hva et *friskt* svar ser ut som. Tre tolkninger bor
+i kortet framfor i hodet til den som leser:
+
+- **Lagrene.** `sensor_events` skal fortsatt være mangedoblet mot canonical — vi sletter
+  aldri en versjon der. Avviket er bare et problem hvis en *flate* leser der, og det er
+  ikke noe dette kallet kan se. Kortet sier det, så forholdstallet ikke leses som en
+  regresjon.
+- **Månedsforbruket, brutto ved siden av netto.** (Forventningen «rundt 42 000 kr» er
+  avkreftet — målt ~188 000 kr/mnd.)
+  Bruttotallet (~132 000) er det flaten viste før fase 2, og står med nettopp fordi det er
+  gjenkjennelig: ser du det på økonomi-flaten, er overføringene fortsatt med et sted.
+- **Multiplisitet på 1 er ikke et funn.** Rå-strømmen ble skrevet post batch-kollaps fram
+  til 11. august 2026, så tabellen kunne per konstruksjon aldri vise mer enn 1. Kortet
+  skiller «målt til 1» fra «ikke målbart» og peker på `Periode`-kolonnen for å avgjøre
+  hvilket det er. Uten det skillet ville fase 3 sett ferdig ut.
+
+Kortet er gated på `isAdmin`, siden endepunktet er det. En knapp som gir 403 ser ut som en
+feil i diagnosen framfor manglende tilgang. Den svarer på alle fire designspørsmålene til
 fase 2, pluss de to som tallfester tillitsbruddet:
 
 | Felt | Spørsmål det avgjør |

@@ -211,12 +211,22 @@ export function shapeNugget(current: NuggetWorkout, kind: WorkoutActivityKind): 
  */
 export function pickNugget(
 	current: NuggetWorkout,
-	history: NuggetWorkout[]
+	history: NuggetWorkout[],
+	/**
+	 * Ferdig PR-tekst fra `recordNuggetText`, når økta satte en distanserekord.
+	 *
+	 * Sendes inn framfor å regnes her: rekordene hviler på `bestEfforts` i
+	 * `canonical_workouts`, som denne rene modulen ikke skal kjenne til. Den står
+	 * ØVERST i prioriteringen — en distanserekord er det sjeldneste og mest
+	 * konkrete som kan skje på en økt.
+	 */
+	recordText: string | null = null
 ): string | null {
 	const kind = workoutActivityKind(current.sportType);
 	const sameKind = history.filter((w) => workoutActivityKind(w.sportType).key === kind.key);
 
 	const candidates = [
+		recordText,
 		distanceNugget(current, sameKind, kind),
 		paceNugget(current, sameKind, kind),
 		yearMilestoneNugget(current, sameKind, kind),

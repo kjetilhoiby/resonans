@@ -37,11 +37,9 @@
 
 	<main class="content">
 
-		<PageHeader title="Flater" titleHref="/design">
-			{#snippet actions()}
-				<a class="design-xlink" href="/design">← Komponenter</a>
-			{/snippet}
-		</PageHeader>
+		<!-- Ingen «← Komponenter»-lenke: `titleHref` på samme header går allerede dit,
+		     og tittelen ER tilbakeknappen. -->
+		<PageHeader title="Flater" titleHref="/design" />
 		<p class="page-sub">
 			Komposisjoner: hele app-skjermer bygget av domene-komponentene (<code>domain/</code>) med mock-data.
 			De rene byggeklossene bor under <a href="/design">Komponenter</a>.

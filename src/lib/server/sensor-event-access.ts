@@ -53,8 +53,23 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/withings-sync-notifications.ts',
 			'routes/settings/sources/+page.server.ts',
 			// Skrive-/vedlikeholdsstier som opererer på rå rader.
+			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
+			// oppslaget er én bestemt rad på id — ikke en telling over flere.
+			'lib/server/workouts/dismiss-workout.ts',
+			// «Hva har jeg skjult?» kan ikke besvares av det dedupliserte laget:
+			// det filtrerer nettopp bort disse radene. Leser per kilde, med vilje.
+			'lib/server/workouts/hidden-workouts.ts',
 			'routes/api/admin/cleanup-walking/+server.ts',
 			'routes/api/tema/[id=uuid]/trip/import-walk/+server.ts',
+			// Slettestien MÅ se hver enkelt kilderad, ikke klyngen: det er radene som
+			// skal bort, og en dedupliserende leser skjuler nettopp hvor mange det er.
+			// Den rydder canonical og aggregatene selv — se filhodet der.
+			'routes/api/helse/trening/slett-okt/+server.ts',
+			// Selve rydde-kjeden bak «rett og slett» i Ekko og slettestien over. Samme
+			// begrunnelse: den slår opp Ekkos EGNE rader på `data.sessionId` for å rette
+			// eller fjerne dem, og en dedupliserende leser gir klyngen — der Withings' og
+			// Dropbox' beskrivelse av samme tur ikke er våre å røre herfra.
+			'lib/server/workouts/workout-cleanup.ts',
 			// Dokumentert unntak: canonical_workouts stripper exercises[], så
 			// styrkeøkter må leses rått. Utholdenhet leses allerede fra canonical.
 			'lib/server/tracks/repository.ts',
@@ -158,6 +173,12 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/integrations/balance-reconstructor.ts',
 			// Leseren selv.
 			'lib/server/economics/transactions.ts',
+			// Avstemming mot saldo trenger en TIDSSERIE av ankere, ett per dag, mens
+			// `readLatestBalances` per definisjon gir bare det ferskeste per konto. Samme
+			// begrunnelse som `balance-reconstructor.ts` over: her er alle snapshotene over tid
+			// nettopp poenget. Endepunktet gjør sin egen DISTINCT ON per konto og dag, altså
+			// ikke feilen vakten finnes for (hente alt og plukke i JS).
+			'routes/api/admin/economics/avstemming/+server.ts',
 			// Skrive-/vedlikeholdsstier.
 			'routes/api/admin/db-stats/+server.ts',
 			'routes/api/admin/deduplicate-economics/+server.ts',

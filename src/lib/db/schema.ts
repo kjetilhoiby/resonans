@@ -1508,6 +1508,44 @@ export const workoutNotifications = pgTable('workout_notifications', {
 	idxUserNotified: index('workout_notifications_user_notified_idx').on(table.userId, table.notifiedAt)
 }));
 
+// Svarteliste for treningsøkter — «denne økta skjedde ikke, uansett kilde».
+//
+// Ligger UTENFOR sensor_events med vilje: et flagg i `metadata` bor på et sted
+// synken eier og skriver, og det holdt ikke. Se
+// scripts/db-migrations/0059_workout_suppressions.sql for de tre måtene det
+// sviktet på.
+export const workoutSuppressions = pgTable('workout_suppressions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	/** Starttidspunktet til den skjulte økta. Matching skjer innenfor et toleransevindu. */
+	startTime: timestamp('start_time').notNull(),
+	/** Normalisert sportsfamilie ('running', 'cycling', …). */
+	sportFamily: text('sport_family').notNull(),
+	/** Hvilken inngang som svartelistet ('web', 'ekko', …). Kun for diagnose. */
+	source: text('source'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserStart: index('workout_suppressions_user_start_idx').on(table.userId, table.startTime),
+	uniqueUserStartFamily: unique('workout_suppressions_user_start_family_idx').on(
+		table.userId,
+		table.startTime,
+		table.sportFamily
+	)
+}));
+
+// Bokføring av Gemini Live-tokenminting, for ratelimit per bruker — se
+// scripts/db-migrations/0058_gemini_token_mints.sql for hvorfor.
+export const geminiTokenMints = pgTable('gemini_token_mints', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	/** 'voice-test' | 'assistant' | 'coach' — kun for diagnose og evt. per-profil-grenser senere. */
+	profile: text('profile').notNull(),
+	mintedAt: timestamp('minted_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserMinted: index('gemini_token_mints_user_minted_idx').on(table.userId, table.mintedAt)
+}));
+
 // Definisjon av registrerbare typer (global katalog)
 export const recordTypeDefinitions = pgTable('record_type_definitions', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -2207,6 +2245,28 @@ export const canonicalBankTransactions = pgTable('canonical_bank_transactions', 
 
 // Salary profile derived from historical paycheck detection.
 // One active row per user; deactivated (active=false) when employer changes.
+/**
+ * Per-konto innstillinger for bankkontoer.
+ *
+ * `savingsRole` er tri-tilstand og ikke en boolean: `auto` lar heuristikken bestemme, så en
+ * NY konto virker uten at noen må huske å slå den på. Se
+ * `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+ */
+export const bankAccountSettings = pgTable('bank_account_settings', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	accountId: text('account_id').notNull(),
+	/** 'auto' | 'buffer' | 'ignore' — se `$lib/domain/economics/savings-buffer.ts`. */
+	savingsRole: text('savings_role').notNull().default('auto'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserAccount: uniqueIndex('bank_account_settings_user_account_idx').on(
+		table.userId,
+		table.accountId
+	)
+}));
+
 export const userSalaryProfiles = pgTable('user_salary_profiles', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),

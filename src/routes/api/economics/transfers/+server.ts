@@ -3,6 +3,9 @@ import { db } from '$lib/db';
 import { persons } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { readTransactions, readLatestBalances } from '$lib/server/economics/transactions';
+// Tokeniseringen er delt med kontovelgeren på sparekontoflaten. Se modulens toppkommentar
+// for hvorfor `MIN_NAME_TOKEN_LENGTH` ikke får finnes to steder.
+import { nameTokensFor } from '$lib/domain/economics/person-name-tokens';
 import type { RequestHandler } from './$types';
 
 /**
@@ -23,21 +26,6 @@ import type { RequestHandler } from './$types';
  */
 
 const MONTHS_BACK = 18;
-
-/** Ord som er for generiske å matche på. «Ole» treffer «Olerud», og et fornavn på tre
- *  bokstaver treffer halve kontoutskriften. */
-const MIN_NAME_TOKEN_LENGTH = 4;
-
-function nameTokensFor(person: { name: string; fullName: string | null; aliases: string[] }): string[] {
-	const raw = [person.name, ...(person.fullName?.split(/\s+/) ?? []), ...person.aliases];
-	return [
-		...new Set(
-			raw
-				.map((token) => token.trim().toLowerCase())
-				.filter((token) => token.length >= MIN_NAME_TOKEN_LENGTH)
-		)
-	];
-}
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;

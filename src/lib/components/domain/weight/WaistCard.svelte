@@ -15,6 +15,13 @@
   som en funksjon som ikke finnes. Uten målinger ber kortet om den første, og sier
   hvor mange som trengs før en trend kan regnes.
 
+  ## Grafen bor ikke her
+
+  Livvidde tegnes i «Utvikling» sammen med vekta, på samme tidsakse. Å ha en egen
+  sparkline her i tillegg ville gitt to grafer av samme tall med ulik bredde og ulikt
+  vindu — og den ene ville ikke kunne sammenlignes med vekta. Kortet eier tallene og
+  loggingen; seksjonen over eier visualiseringen.
+
   ## Forholdstallet er en referanse, ikke en vurdering
 
   `WHTR_REFERENCE` presenteres som den tommelfingerregelen den er. Appen måler
@@ -24,7 +31,6 @@
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import Input from '../../ui/Input.svelte';
 	import Button from '../../ui/Button.svelte';
-	import WaistSparkline from './WaistSparkline.svelte';
 	import {
 		parseWaistInput,
 		validateWaistCm,
@@ -155,10 +161,6 @@
 			skiller et vekttap som er fett fra et som ikke er det. Det trengs
 			{WAIST_MIN_TREND_SAMPLES} målinger før en trend kan regnes.
 		</p>
-	{/if}
-
-	{#if days.length > 0}
-		<WaistSparkline {days} />
 	{/if}
 
 	{#if waist.heightMissing}

@@ -231,11 +231,39 @@ Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
 `/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
-`/api/apps/assistant`, `/api/apps/day`, `/api/apps/strava/*`, `/api/apps/tesla/*` og
-`/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
+`/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
+skjuling), `/api/apps/strava/*`, `/api/apps/tesla/*` og `/api/apps/gemini/*`
+(kortlevde Gemini Live-tokens).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
+
+**Å fjerne en økt fra Ekko: to mekanismer, og hvilken som gjelder avgjøres av
+HVEM som skrev raden.** De er komplementære, ikke alternativer — og de tar ulike
+id-er på samme URL-posisjon, som er den fella å passe seg for.
+
+| | Rader Ekko selv skrev | Alle andre kilder |
+|---|---|---|
+| Handling | rett (`PATCH`) eller slett (`DELETE`) | skjul (`POST …/dismiss`) |
+| Endepunkt | `/api/apps/workouts/[sessionId]` | `/api/apps/workouts/[id]/dismiss` |
+| Id | Ekkos `data.sessionId` | `sensor_events.id` |
+| Doku | `docs/ekko-rett-og-slett.md` | `docs/ekko-skjul-okt.md` |
+
+- **`[sessionId]` og `[id]` er ULIKE id-typer** på samme segment. `/workouts/<X>`
+  tar Ekkos sessionId; `/workouts/<X>/dismiss` tar en `sensor_events.id` (fra
+  `GET /api/apps/workouts`). SvelteKit tillater det fordi dybden er ulik, men en
+  app-utvikler som antar én id-type får 404 uten forklaring.
+- **Sletting kan bare røre Ekkos egne rader.** Beskriver klokka eller Dropbox den
+  samme turen, står de igjen (`matched: 0`), og da er skjuling det som virker.
+  Retting er hovedveien for feilmerket idrett — turen skjedde.
+- **En Withings-økt kan IKKE slettes**, og det er ikke forsiktighet: synken henter
+  sju dagers overlapp hvert 5. minutt, så en slettet rad er tilbake før brukeren
+  rekker å se etter. `dismiss`-svaret sier derfor `hidden`/`reversible`, ikke
+  `deleted` — appen skal kunne bruke et ord som holder.
+- `GET /api/apps/workouts` lister dedupliserte økter fra ALLE kilder; en økt fra
+  klokka finnes bare i Resonans og er uten lista uåtkommelig fra appen.
+- Både denne og web-flatens knapp går gjennom `setWorkoutDismissed`
+  (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en andre skjulesti.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
@@ -351,6 +379,35 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
 - **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
   bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
   appen mistet resumption-handtaket.
+- **`newSessionExpireTime` (2 min) og `expireTime` (30 min) gjelder ulike ting, og
+  forvekslingen kostet døgnkvota.** Den første er vinduet for å STARTE en økt; den andre er
+  hvor lenge en økt som alt kjører kan sende. En **gjenopptakelse** starter ingen ny økt og
+  virker derfor til `expireTime` — også med `uses: 1`. Ekko mintet fram til 17. august 2026 et
+  nytt token ved hvert socket-brudd (hvert 3.–4. minutt i coach-modus), så en tur på 25
+  minutter kostet åtte mint og to turer tømte kvota. **Dagsgrensa er vår**
+  (`MINT_RATE_LIMIT_PER_DAY`), ikke Googles — den ble satt da vi antok 1–2 mint per økt, og
+  forutsetningen holder bare når klienten gjenbruker tokenet ved gjenopptakelse.
+- **Token-profiler** (`voice-test`/`assistant`/`coach`, se
+  `docs/changelog/2026-08-14-gemini-token-profiler.md`): verktøyskjemaene bor i det
+  constrainede setupet i `gemini-live-profiles.ts` — **aldri i appen**. Ukjent/manglende
+  profil → `voice-test`, som svarer byte-identisk med tida før profilene fantes; bare
+  `assistant`/`coach` får `profile`-ekko, `capabilities` og `persona` i svaret. Kill
+  switch per profil: `GEMINI_LIVE_DISABLED_PROFILES` → 403 `profile_disabled`. Ratelimit
+  20 mint per rullende TIME per bruker (`gemini_token_mints`-tabellen) → 429 med `retryAfter`.
+  **Vinduet er en time, ikke et døgn, og det er en rettelse fra 17. august 2026:** vakten skal
+  stoppe en klient i loop (18 mint i 20 minutter, målt), ikke budsjettere bruk — Google har ingen
+  dagsgrense på utstedte tokens, og kostnaden ligger i lydminutter. Et døgnvindu fanget loopen og
+  straffet deretter et helt døgn: kvota var tom kl. 20:46 på grunn av kveldens loop dagen før,
+  altså av en feil som alt var rettet. En time fanger loopen raskere og er usynlig for normal bruk.
+  Endrer du et verktøyskjema inkompatibelt, bump `TOOLSET_VERSION`.
+- **Verdilistene i et verktøyskjema er en kontrakt mot appens parser, og de må stemme.**
+  `startWorkout.type` listet `løp|sykkel|gåtur|ski|tredemølle|yoga` mens Ekko kjente
+  `elsykkel` — så modellen bekreftet «på elsykkel» høyt til brukeren, sendte en verdi appen
+  ikke kjente, og `default: return .running` gjorde det til en løpeøkt: løpecoaching på en
+  elsykkeltur og «rekord» på 5 km i 12:25. **En stille default som gjetter en KONKRET verdi
+  er verre enn et avslag** — avslaget kan modellen rette seg selv på, i samme tur. Skillet
+  som må holdes er «ikke oppgitt» (default er riktig) mot «oppgitt, men ukjent» (avslå).
+  Se `docs/changelog/2026-08-17-rett-og-slett.md`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
   Vercel-logg eller i et JSON-svar.
@@ -589,6 +646,24 @@ loggen i `$lib/server/health/waist-log.ts`, endepunktene under `/api/helse/livvi
   en **lengde**: `HKUnit.meter()` gir 0,94 og tommer gir 37. Vi forkaster og flagger,
   aldri konverterer. **Tommer over 40 kan ikke skilles fra centimeter**, så vakten er et
   sikkerhetsnett mot den åpenbare feilen, ikke en garanti.
+- **Vekt og livvidde deler x-akse, og det er derfor livvidde tegnes i
+  `WeightTrendChart`.** «Vekta står stille mens livvidda faller» er hele grunnen til at
+  livvidde måles, og setningen kan bare leses av en graf når samme dato ligger på samme
+  piksel. To selvstendige komponenter måtte *avtalt* det, og avtalen brytes første gang
+  noen endrer en padding. Vinduet er delt kode med tester
+  (`$lib/domain/health/body-chart-window.ts`): ankeret er den seneste målingen på tvers
+  av seriene, fordi `filterByRange` måler bakover fra hver series egen siste måling — og
+  «90 dager» ble da to ulike 90 dager, med paneler forskjøvet noen dager i forhold til
+  hverandre. Den feilen ser helt riktig ut. **Y-aksene er separate**; kg og cm har ingen
+  felles skala, samme lærdom som vekt mot energi.
+- **`measurementsUntilTrend` teller i trendVINDUET, ikke i historikken.** Første utgave
+  brukte `days.length` og sa «0 målinger til før trenden regnes» til en bruker med tolv
+  målinger og ingen trend — fordi de tre siste lå spredt over mer enn vinduet. Et tall
+  som ikke svarer på hvorfor trenden mangler, er en beskjed uten innhold.
+- **`WAIST_FRESH_DAYS` (60) styrer om livvidda får stå i sammendraget øverst.** Vekta
+  måles daglig og er alltid fersk; en livvidde fra i vår er ikke «nå». Tallene i
+  sammendraget er lenker til `#vekt-utvikling` — det man skanner er inngangen til det man
+  undersøker.
 - **`listWaistMeasurements` filtrerer på bruker + datatype, ikke på sensor.** Første
   utgave slo opp `body_log`-sensoren og returnerte tom liste hvis den manglet — en
   fungerende bug som ventet på HealthKit-importen, som skriver under `healthkit`-
@@ -757,6 +832,35 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   evidence-event — altså en ekte `sensor_events.id`. Rader skrevet før dedupliseringen
   (én per kilde) matcher derfor fortsatt, så en re-kjøring lager ikke nye duplikater av
   gammel historikk. Bytter du nøkkelform, skriver du hele historikken på nytt.
+- **«Skjul økt» er TO sperrer, og de er ikke alternativer.**
+  `metadata.dismissed` er rad-nivå; svartelista (`workout_suppressions`,
+  `$lib/domain/health/workout-suppression.ts`) er økt-nivå og matcher på
+  **tidspunkt + sportsfamilie**, ikke på rad-id. `setWorkoutDismissed` skriver
+  begge. Svartelista finnes fordi flagget kom tilbake på tre måter samme uke:
+  synken overskrev metadata, en sletting hos Withings propagerte aldri hit
+  (synken er additiv og fjerner ALDRI rader en kilde slutter å returnere), og en
+  rad med revidert starttidspunkt får ny id og arver ingenting. Se
+  `docs/changelog/2026-08-16-svarteliste-for-okter.md`.
+  **Begge sperrene vises og angres på `/settings/skjulte-okter`**, som leser
+  `listHiddenWorkouts` (`$lib/server/workouts/hidden-workouts.ts`). Lista MÅ dekke
+  begge: økter skjult før svartelista fantes har bare flagget, og en liste som
+  utelot dem kunne ikke gjenopprette dem i det hele tatt — en skjult økt finnes
+  ikke i noen annen liste å klikke på. Se
+  `docs/changelog/2026-08-19-skjulte-okter-gjenoppretting.md`.
+- **Bivirkninger UTENFOR aktivitetslaget må sjekke svartelista selv.** Filteret i
+  `buildUnifiedWorkoutActivities` dekker lister, canonical, CTL/TSB, autohaking og
+  varsling — men ikke det som rekker ut av Resonans. Strava-pushen i
+  `/api/apps/upload` og backfillen i `/api/apps/strava/sync` gjorde det ikke, og
+  den siste så heller ikke `metadata.dismissed`: en skjult økt kunne publiseres
+  til en offentlig treningsprofil av en knapp som het «synk». Nye utgående
+  bivirkninger skal gate på `isWorkoutSuppressedForUser`. Skrivingen selv skal
+  IKKE avvises — den er additiv og idempotent med vilje; skriv raden, filtrer på
+  lesing, og stopp det som forlater systemet.
+- **Matcher du noe mot en klynge, bruk `clusterSportFamily` fra
+  `activity-layer.ts`** — ikke `workoutSportFamily` fra `workout-sport.ts`. De
+  er ikke enige (`hill` og `løp` går hver sin vei), og en svartelisting skrevet
+  med den ene treffer aldri et filter som bruker den andre. Feilen gir ingen
+  feilmelding; økta bare kommer tilbake.
 - **Vi haker aldri AV automatisk.** To reelle økter innenfor klyngevinduet på to timer
   ville blitt slått sammen, og da fjernes noe brukeren faktisk har gjort. Å slutte å
   hake for mye er trygt; å fjerne opptjent framgang er det ikke.
@@ -796,6 +900,24 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
 - **`wasExisting` på `SensorEventService.write`/`writeMany` er ikke pynt.** Den
   inkrementelle Withings-synken skriver om 7 dagers overlapp hvert 5. minutt; uten
   det flagget ville hver kjøring re-aggregert en hel uke, døgnet rundt.
+- **En upsert overskriver `metadata` i sin helhet — brukerens valg må løftes
+  tilbake.** Nøklene står i `USER_OWNED_METADATA_KEYS`
+  (`$lib/domain/sensor-event-metadata.ts`): `dismissed`, `sourceRejected`,
+  `preferGps`, `preferHr`. Fram til august 2026 satte `set` bare
+  `metadata = excluded.metadata`, så en økt brukeren hadde skjult var tilbake ved
+  neste synk av den samme raden — og med 7 dagers overlapp hvert 5. minutt kunne
+  ferske økter i praksis ikke skjules i det hele tatt. Feilen er usynlig i basen:
+  raden ser riktig ut, og «skjulte aldri» og «skjulte, men vi kastet valget» er
+  ikke til å skille fra hverandre. Legger du til en ny brukerstyrt metadata-nøkkel,
+  hører den i den lista. Se `docs/changelog/2026-08-15-skjul-okt-overlever-synken.md`.
+- **Endrer du hva som TELLER som en økt, må dagsraden re-aggregeres — ikke bare
+  projeksjonen.** `WorkoutProjectionService.refreshForRange` skriver
+  `canonical_workouts` og `workout_daily_aggregates`, men CTL/ATL/TSB leser
+  dagsraden i `sensor_aggregates`, og den skrives bare av `aggregateDailyEffort`.
+  `/dismiss` og `/source-role` refreshet lenge bare projeksjonen: en skjult økt
+  forsvant fra lista med det samme og ble stående i formkurven til nattjobben kl.
+  03 UTC. Kall `aggregatePeriodsFrom` etterpå, slik `runAfterWorkoutWrite` alltid
+  har gjort på skrivesiden.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 
@@ -843,6 +965,27 @@ Se `docs/changelog/2026-08-11-pwa-varselnavigasjon.md`.
   kjører gammel kode.
 - `/_app/immutable/` caches bevisst ikke — kommentaren i service workeren sier
   hvorfor: blandede versjoner bryter hydrering.
+
+### Distanserekorder: «satte PR» flytter seg ikke
+
+Se `docs/changelog/2026-08-11-distanserekorder.md`. Logikken i
+`$lib/domain/health/distance-records.ts`.
+
+- **`bestEfforts` lå lagret på `canonical_workouts` hele tiden**, men ble bare
+  brukt til VDOT — ingen flate viste tallene. Rekordlista er «min over alle
+  økter» av data som alt fantes.
+- **«Satte PR» måles mot øktene FØR økta, aldri mot hele settet.** Et
+  holder-rekorden-flagg flytter seg når du slår den, og merket ville forsvunnet
+  fra en økt du husker som god. Samme prinsipp som at en median holder dagens
+  observasjon utenfor seg selv.
+- **Første gang en distanse løpes er ikke en PR** — uten et tall å slå ville hver
+  ny distanse gitt et flagg.
+- **100 m regnes IKKE, med vilje.** Sporet nedsamples til 2000 punkter og
+  GPS-feilen er 2–5 m; en 100-meter varer 24 sekunder. Resultatet blir en rekord
+  i GPS-støy. 400 m tåler det. Veien til 100 m går gjennom Ekkos banerunder.
+- **Nye distanser krever reanalyse.** `BEST_EFFORT_DISTANCES_M` gjelder bare
+  økter som analyseres etterpå — gamle rader beholder de gamle nøklene til
+  `POST /api/sensors/workouts/reanalyze` har kjørt.
 
 ### Fart per hjerteslag slår VO2max på formspørsmålet
 
@@ -1186,8 +1329,12 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   ulike steder» og sluttet å åpne flaten. `bank_transaction` og `bank_balance` er nå vaktet
   i `sensor-event-access.ts`.
 - **Interne overføringer MERKES, de fjernes ikke.** 68 % av «forbruket» var penger flyttet
-  mellom egne kontoer (1 084 033 av 1 583 723 kr) — reelt forbruk er ~42 000 kr/mnd, ikke
-  132 000. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
+  mellom egne kontoer. **NB: «1 084 033 av 1 583 723 kr» og «reelt forbruk ~42 000 kr/mnd» var
+  overtelt** — den første målingen brukte en mange-til-mange SQL-join, der tre uttak på 500 og
+  tre innskudd på 500 samme dag ga ni par. Med korrekt én-til-én-matching er nettoforbruket
+  målt til **~188 000 kr/mnd** (90 dager, august 2026), og av det er ~52 000 kr/mnd
+  dobbelttalte reservasjoner. Retningen står: overføringer skal ut av forbruket. Størrelsen
+  gjorde ikke. Se `docs/changelog/2026-08-12-livslop-forsvinning.md`. Men de er *riktige* som sparebevegelse: et uttak fra sparekontoen ER en intern
   overføring, og det er signalet en spareflate trenger. Samme rader, to spørsmål.
   `excludeInternalTransfers: true` er en **kallers** valg; leseren skjuler ingenting selv.
 - **Kategoriseringen skjer én gang, i leseren.** Fire prioritetsnivåer: manuelle overrides
@@ -1220,18 +1367,50 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   så toppene kan se uendret ut mens gulvet synker. Trenden regnes på laveste saldo per
   lønnsperiode, med minste kvadrater (ikke «siste minus første»: én avvikende måned ville
   avgjort svaret). Inneværende periode holdes utenfor; bunnen der kan fortsatt bli lavere.
-- **Enheten er måneders dekning**, og den forutsetter fase 2: med overføringene inne ville
-  forbruket vært 132 000 kr/mnd mot reelle ~42 000, altså en tredjedel av dekningen. Et tall
-  som er 3× feil i pessimistisk retning er verre enn ingen tall. `runwayMonths` returnerer
-  **null** uten forbrukstall.
+- **Enheten er måneders dekning**, og den forutsetter fase 2: interne overføringer må være ute,
+  ellers blåses forbruket opp og dekningen krymper tilsvarende. `runwayMonths` returnerer
+  **null** uten forbrukstall framfor å dele på et gjettet tall.
+  **Ikke skriv et forventet kronetall her.** Det sto «reelle ~42 000» en periode, arvet fra en
+  overtelt overføringssum, og ble brukt til å kalle flatens ~180 000 for en bug. Den var riktig.
+  Et avledet tall arver feilen i grunnlaget uten å se usikkert ut.
 - **Frekvens og posisjon i lønnsperioden skiller støtdemper fra kassekreditt**, og det er
   hele diagnosen. Ett uttak på 12 000 og tolv på 1 000 gir samme nedgang og krever motsatt
   handling. Et uttak tre dager etter lønn er planlagt; ett på dag 26 betyr at måneden ikke bar.
 - **Et uttak er ikke et varsel.** Bare erosjon får varselfarge — en buffer som brukes er ikke
   et problem, og varsling per uttak ville blitt støy.
-- **Kontovalget er en heuristikk på navn/type, og flaten sier det.** `accountType` er SB1s
-  fritekst-`description`. «felles» hører IKKE i eksklusjonslista: dette er husholdningens
-  økonomi, så en felles sparekonto er nettopp bufferen.
+- **Kontovalget er en heuristikk brukeren kan overstyre**, og beslutningen bor i
+  `resolveSavingsAccounts`. `accountType` er SB1s fritekst-`description`, så heuristikken kan
+  ta feil — «felles» hører IKKE i eksklusjonslista: dette er husholdningens økonomi, så en
+  felles sparekonto er nettopp bufferen. Se
+  `docs/changelog/2026-08-12-velge-bufferkontoer.md`.
+  **`savingsRole` er tri-tilstand** (`auto`/`buffer`/`ignore`) i `bank_account_settings`, og
+  `auto` sletter raden. En boolean, eller en ren inkluderings- eller ekskluderingsliste, feiler
+  stille: nye kontoer faller ut til noen slår dem på, eller en konto heuristikken ikke fanget
+  kan aldri legges til. `autoWouldInclude` på beslutningen finnes fordi en veksleknapp ellers
+  ikke kan gå TILBAKE til `auto` og da lagrer en usynlig lås.
+  **Barnas kontoer er ute som standard**, på navn fra `persons` (`kind='child'`) — og sjekken
+  må skje FØR navneheuristikken, siden kontoen heter «SPAREKONTO UNG» og treffer `spar`.
+  Navnetokens deles med overføringsflaten gjennom
+  `$lib/domain/economics/person-name-tokens.ts`: `MIN_NAME_TOKEN_LENGTH` er et
+  kalibreringstall og får ikke finnes to steder.
+  **Valget lagres på serveren, aldri i localStorage** — chatten leser samme loader, og et valg
+  bare klienten kjente ville gitt to ulike svar på samme spørsmål. Skriv gjennom
+  `setSavingsRole`, ikke mot tabellen.
+- **Lønnsperiodene kan ikke erstattes av kalendermåneder.** Lønn lander rundt dag 12–15, så
+  «sent i perioden» ville blitt rett etter neste lønn og kassekreditt lest som støtdemper. En
+  stum flate er bedre enn en invertert diagnose; derfor sier flaten i stedet hvor mange
+  lønnsdatoer som finnes og om lønna ble *kjent igjen* eller *gjettet*. Se
+  `docs/changelog/2026-08-12-lonnsperioder-og-uttaksvindu.md`.
+- **`describeWithdrawalPattern` teller bare uttak den kan PLASSERE i en periode.** Uttakslista
+  leses over et bredere spenn enn de komplette periodene dekker, så en rate over de to
+  vinduene ga «11 uttak over 1 lønnsperioder · 11,0 per måned» i prod. Resten telles i
+  `outsidePeriods` og sies med ord.
+- **`detectGlobalPayday`: nøkkelordene velger KONTOEN og FINGERAVTRYKKET, aldri
+  kandidatsettet.** Gjorde de det, slo to tilfeldige treff ut et helt år med regelmessige
+  innskudd. Feilen var inverse — fallbacken uten nøkkelordtreff fikk det rike kandidatsettet —
+  så et lønnsordtreff gjorde resultatet dårligere. Utvelgelsen bor rent i `selectPaydaySource`.
+  Og `typeText` **må** leses: det er SB1s `category` og ofte det eneste stedet ordet «lønn»
+  står.
 - Chatten svarer på det samme gjennom `query_economics` med `queryType: 'savings_buffer'` —
   **samme loader som flaten**, ikke en egen beregning. Ordene («spare», «buffer», «dekning»,
   «uttak») må stå i `detectPromptFocusModules`, ellers finnes ikke verktøyet for modellen.
@@ -1274,6 +1453,10 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 **Gemini realtime (Ekko):** `GEMINI_API_KEY` (påkrevd for `/api/apps/gemini/*`; uten den
 svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og appen skal
 ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
+`GEMINI_LIVE_COACH_MODEL` (valgfri) overstyrer modellen for coach-profilen.
+`GEMINI_LIVE_DISABLED_PROFILES` (valgfri, kommaseparert) er kill switch per token-profil.
+Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Modell); appen sender
+`model` i token-forespørselen, og serveren validerer navnet mot Googles katalog.
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 
