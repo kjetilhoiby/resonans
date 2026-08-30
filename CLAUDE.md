@@ -1927,6 +1927,31 @@ papiret. Se `docs/changelog/2026-08-24-plattformport.md`.
 - **Container** (`resonans.apps.hoi.by`, under flytting): `@sveltejs/adapter-node`,
   `Dockerfile` + `docker/entrypoint.sh`.
 
+**Imaget bygges på GitHub, ikke på VPS-en** (`.github/workflows/docker.yml`, push til
+`main` → `ghcr.io/kjetilhoiby/resonans:<sha>`).
+
+- **Coolify bygger på SAMME maskin som den kjører appene på.** Målt 30. august 2026
+  tok bygget der 16m 28s, og mens det pågikk svarte hverken Coolify, `hello` eller
+  `toduvel` — tre ting som ikke har med resonans å gjøre.
+- **Tregheten er ikke mangel på maskin.** CPU lå på ~30 % hele veien: rollup-stegene
+  er enkelttrådede, og elleve av de seksten minuttene gikk med til å transformere
+  1 444 moduler på én kjerne. En større VPS ville ikke hjulpet.
+- **Tagg med commit-SHA, aldri `latest`.** Coolify puller ikke på nytt når taggen er
+  uendret, så et deploy mot en flyttende tagg ser vellykket ut og kjører forrige
+  image. Feilen er stum. En SHA-tagg gjør dessuten rullback til å *velge* et image
+  som finnes, framfor å bygge forrige commit på nytt på maskinen som er nede.
+- **To variabler må finnes UNDER bygget, og ingen skal være den ekte.**
+  SvelteKits `analyse`-steg importerer server-chunkene for å lese `prerender`/`ssr`,
+  og da kjører modulnivået i alt som importeres. `$lib/db/index.ts` og
+  `$lib/server/openai.ts` kaster der uten `DATABASE_URL` og `OPENAI_API_KEY` — hele
+  settet av modulnivå-kast i `src/lib`. Dockerfilen setter derfor **åpenbart falske**
+  attrapper i byggesteget; begge klientene er late, så ingen forbindelse åpnes.
+  `ENV` slår en `ARG` med samme navn, så en byggeplattform som injiserer de ekte
+  verdiene ikke får dem inn. **Legger du et nytt modulnivå-kast på en env-variabel,
+  feiler bygget her** — med navnet i meldingen.
+- Kjent rest: Coolify deployer fortsatt **fra kilde**, ikke fra imaget. Å bytte
+  krever registry-legitimasjon på VPS-en og `buildPack: dockerimage` i manifestet.
+
 **Databasedriveren velges eksplisitt, ikke gjettes.** `DB_DRIVER`
 (`postgres`/`neon-http`) i `$lib/db/driver-choice.ts`; uten variabelen utledes den
 av verten, og bare en Neon-vert får HTTP-driveren. Valget logges ved oppstart.

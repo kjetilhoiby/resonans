@@ -1,0 +1,87 @@
+# Bygger container-imaget på GitHub, ikke på VPS-en.
+#
+# Hvorfor: Coolify bygger på SAMME maskin som den kjører appene på. Målt
+# 30. august 2026 tok resonans-bygget der 16 minutter og 28 sekunder, og mens
+# det pågikk svarte hverken Coolify, `hello` eller `toduvel` — tre apper som
+# ikke har noe med resonans å gjøre. En maskin som betjener produksjon bør ikke
+# også være byggeserver.
+#
+# Tregheten er dessuten ikke mangel på maskin: CPU-en lå på ~30 % gjennom hele
+# bygget, fordi rollup-stegene er enkelttrådede. Elleve av de seksten minuttene
+# gikk med til å transformere 1 444 moduler på én kjerne, og nesten tre til på å
+# regne gzip-størrelser. Å kjøpe en større VPS ville ikke hjulpet.
+#
+# Dette bygget trenger INGEN hemmeligheter. All env-lesing i appen er runtime
+# (`$env/dynamic/private`), så imaget er identisk uansett hvilke verdier som
+# settes senere. Det er også grunnen til at flyttingen hit er billig.
+name: Bygg container-image
+
+on:
+  push:
+    branches: [main]
+  # Manuell kjøring, så en feilet build kan prøves på nytt uten en tom commit.
+  workflow_dispatch:
+
+concurrency:
+  # Merges kommer i klynger. Uten dette bygger tre commits samtidig, og den
+  # eldste kan bli ferdig sist og overskrive `main`-taggen med gammel kode.
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bygg:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Uten denne kan GITHUB_TOKEN lese pakker, men ikke pushe dem.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Logg inn på GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Bygg og push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Taggen er commit-SHA-en, og det er ikke pynt.
+          #
+          # Coolify puller ikke på nytt når taggen er uendret, så et deploy mot
+          # «:latest» ser vellykket ut og kjører forrige image. Feilen er stum.
+          # En SHA-tagg gjør dessuten rullback til å velge et image som ALT
+          # finnes, framfor å bygge forrige commit på nytt — på den maskinen som
+          # er nede.
+          #
+          # `:main` følger med som en lesbar peker på hva som er nyest.
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:main
+          # amd64 alene. VPS-en er x86_64, og en multi-arch-build ville kjørt
+          # arm64-delen under emulering — flere ganger byggetiden for et image
+          # ingen bruker.
+          platforms: linux/amd64
+          # Actions-cachen gjør npm-stegene til treff når package-lock.json er
+          # uendret, altså på de aller fleste commits.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Ingen build-args, og det er et poeng: Dockerfilen setter selv
+          # `DEPLOY_TARGET` og attrapper for de to variablene bygget krever
+          # (`DATABASE_URL`, `OPENAI_API_KEY` — se kommentaren der).
+          # Bygget oppfører seg dermed likt her, lokalt og i Coolify, og ingen
+          # hemmelighet har en vei inn hit.
+
+      - name: Oppsummer
+        run: |
+          echo "### Image bygget" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "ghcr.io/${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
