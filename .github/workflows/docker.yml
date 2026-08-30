@@ -36,6 +36,15 @@ jobs:
       # Uten denne kan GITHUB_TOKEN lese pakker, men ikke pushe dem.
       packages: write
 
+    # Hemmelighetene løftes til job-nivå fordi `secrets` IKKE er tilgjengelig i
+    # en stegs `if`. Skriver man `if: secrets.X != ''`, er betingelsen alltid
+    # usann og steget kjører aldri — uten at noe klager. `env` er tilgjengelig,
+    # så deploy-steget under kan gate på seg selv.
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -85,3 +94,46 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "ghcr.io/${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Deployet skjer HER, etter at imaget er pushet — ikke av at Coolify ser en
+      # git-push. Rekkefølgen er hele poenget: en deploy som starter på pushen
+      # ville pekt på et image som ikke finnes ennå.
+      #
+      # Steget hopper over seg selv til hemmelighetene finnes, så workflowen kan
+      # merges før VPS-en er satt opp uten å feile på hver kjøring. Når
+      # COOLIFY_URL og COOLIFY_TOKEN er lagt inn under Settings → Secrets →
+      # Actions, begynner det å virke av seg selv.
+      #
+      # NB: Coolify må ha registry-legitimasjon for å pulle et PRIVAT
+      # ghcr.io-image, og appen må stå på build pack «dockerimage». Begge deler
+      # settes av `coolify-apply.mjs` i resonans-lab, med `--image-tag`.
+      - name: Deploy til Coolify
+        if: ${{ env.COOLIFY_URL != '' && env.COOLIFY_TOKEN != '' && env.COOLIFY_APP_UUID != '' }}
+        run: |
+          echo "Deployer ${{ github.sha }} til Coolify …"
+          svar=$(curl -sS -X POST \
+            -H "authorization: Bearer $COOLIFY_TOKEN" \
+            -H "accept: application/json" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_APP_UUID")
+          echo "$svar"
+          # Coolify svarer 200 med en feilmelding i kroppen på flere feil, så en
+          # exit-kode alene er ikke nok til å si at deployet startet.
+          echo "$svar" | grep -q deployment_uuid || {
+            echo "::error::Coolify startet ikke et deploy. Svar over."
+            exit 1
+          }
+
+      - name: Si fra at deployet ikke er koblet opp ennå
+        if: ${{ env.COOLIFY_URL == '' || env.COOLIFY_TOKEN == '' || env.COOLIFY_APP_UUID == '' }}
+        run: |
+          {
+            echo "### Deploy hoppet over"
+            echo
+            echo "Imaget er bygget og pushet, men ikke deployet: Coolify-koblingen"
+            echo "mangler. Legg inn under Settings →"
+            echo
+            echo "- **Secrets → Actions**: \`COOLIFY_URL\`, \`COOLIFY_TOKEN\` (write + deploy)"
+            echo "- **Variables → Actions**: \`COOLIFY_APP_UUID\`"
+            echo
+            echo "Og på VPS-en: registry-legitimasjon for ghcr.io, siden imaget er privat."
+          } >> "$GITHUB_STEP_SUMMARY"

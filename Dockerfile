@@ -1,4 +1,12 @@
 # syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
+#
+# Regelen advarer mot hemmeligheter i ARG/ENV, og den har rett i sin
+# alminnelighet. Her ser den bare NAVNET `OPENAI_API_KEY` i byggesteget; verdien
+# er en åpenbar attrapp som finnes fordi bygget krever at variabelen er satt (se
+# kommentaren ved den). Skrur vi den ikke av, står det en gul advarsel på hvert
+# eneste bygg — og en advarsel man alltid ignorerer, er en advarsel man også
+# ignorerer den dagen den er ekte.
 
 # ---- avhengigheter -------------------------------------------------------
 # node:22-slim, IKKE alpine. `@resvg/resvg-js` er en native binary som lastes
