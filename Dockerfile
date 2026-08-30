@@ -18,6 +18,29 @@ COPY . .
 # DEPLOY_TARGET velger adapter-node (se svelte.config.js). Uten den ville
 # `VERCEL` vært utsatt for hva byggemiljøet tilfeldigvis setter.
 ENV DEPLOY_TARGET=node
+# To variabler må FINNES under bygget, og ingen av dem skal være den ekte.
+#
+# SvelteKits `analyse`-steg importerer server-chunkene etter bygget for å lese
+# `prerender`/`ssr`-eksportene, og da kjører modulnivået i alt som importeres.
+# To moduler kaster der uten en env-variabel — `src/lib/db/index.ts` og
+# `src/lib/server/openai.ts`. Det er HELE settet (målt: `grep` etter
+# modulnivå-kast i `src/lib` gir nøyaktig disse to), men et tredje kast lagt til
+# senere vil feile bygget her med sitt eget navn i meldingen.
+#
+# Verdiene brukes aldri: begge klientene er late, så ingen forbindelse åpnes ved
+# import. De står her framfor å sendes inn utenfra av to grunner:
+#
+#   1. Bygget oppfører seg likt lokalt, på GitHub og i Coolify.
+#   2. ENV slår en ARG med samme navn, så en byggeplattform som injiserer de
+#      EKTE verdiene (Coolify gjorde nettopp det, og skrev alle 37 i klartekst i
+#      deployloggen) ikke lenger får dem inn i byggesteget.
+#
+# Verdiene er åpenbart falske med vilje. En plausibel attrapp ville sett ut som
+# en hemmelighet i en logg og invitert noen til å «rette» den til den ekte.
+#
+# Kjøretidssteget er en egen FROM og arver ingenting herfra.
+ENV DATABASE_URL=postgres://bygg:ikke-en-ekte-verdi@127.0.0.1:5432/bygg
+ENV OPENAI_API_KEY=ikke-en-ekte-noekkel-bare-for-bygget
 RUN npm run build
 
 # ---- avhengigheter uten dev ----------------------------------------------
