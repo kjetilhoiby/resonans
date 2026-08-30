@@ -48,6 +48,20 @@ describe('detectPromptFocusModules — sult og inntak', () => {
 	});
 });
 
+describe('detectPromptFocusModules — sparekonto som buffer', () => {
+	// Ordene brukeren faktisk skriver. Ingen av dem inneholder «saldo», «bank» eller
+	// «forbruk», så de traff ikke økonomimodulen i det hele tatt — og da vet ikke modellen
+	// at savings_buffer finnes. Samme stille feil som «belastning» og «pulsfall» hadde.
+	it('sender spørsmål om sparekontoen til økonomi', () => {
+		expect(detectPromptFocusModules('går sparekontoen ned?')).toContain('economics');
+		expect(detectPromptFocusModules('hvor lenge holder bufferen')).toContain('economics');
+		expect(detectPromptFocusModules('hvor mange måneders dekning har vi')).toContain('economics');
+		expect(detectPromptFocusModules('hvor ofte tar vi uttak fra sparepengene')).toContain(
+			'economics'
+		);
+	});
+});
+
 describe('detectPromptFocusModules — sletting av feilmåling', () => {
 	it('sender «slett målingen fra 10. august 2018» til helse', () => {
 		// Meldingen brukeren faktisk skriver. Den inneholder ikke ordet «vekt», så

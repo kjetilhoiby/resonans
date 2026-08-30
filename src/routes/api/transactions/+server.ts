@@ -1,24 +1,24 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
-import { canonicalBankTransactions } from '$lib/db/schema';
-import { eq, and, desc, asc, sql } from 'drizzle-orm';
-import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { readTransactions } from '$lib/server/economics/transactions';
 
 /**
- * Unified transaction API - reads from canonical_bank_transactions (properly deduplicated).
- * Categorisation is applied in-memory after fetching, same as economics-dashboard.ts.
+ * Unified transaction API — leser gjennom den delte leseren
+ * (`$lib/server/economics/transactions.ts`), samme kilde som flaten, chatten og målene.
+ *
+ * Leste canonical fra før, men gjorde sin egen kategorisering med `typeText` hardkodet til
+ * `null` — så SB1-fallbacken var død her, og resultatet kunne avvike fra flaten for samme
+ * transaksjon. Se `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
  *
  * Query params:
  *   from         YYYY-MM-DD  (required)
- *   to           YYYY-MM-DD  (required)
+ *   to           YYYY-MM-DD  (required, inklusiv)
  *   accountIds   comma-separated account IDs (optional, defaults to all)
- *   category     category filter (optional, applied in-memory)
- *   subcategory  subcategory filter (optional, applied in-memory)
- *   search       free-text search on description (optional, applied in-memory)
- *   spendingOnly boolean - only negative amounts (optional)
+ *   category     category filter (optional)
+ *   subcategory  subcategory filter (optional)
+ *   search       free-text search on description (optional)
+ *   spendingOnly boolean — only negative amounts (optional)
+ *   includeTransfers  boolean — ta med interne overføringer (default false)
  *   limit        max results (default 500, max 1000)
  *   sortBy       'date' or 'amount' (default 'date')
  *   sortOrder    'asc' or 'desc' (default 'desc')
@@ -26,14 +26,12 @@ import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
 
-	// Parse required date range
 	const fromParam = url.searchParams.get('from');
 	const toParam = url.searchParams.get('to');
 	if (!fromParam || !toParam) {
 		return json({ error: 'Missing from/to parameters' }, { status: 400 });
 	}
 
-	// Parse optional filters
 	const accountIdsParam = url.searchParams.get('accountIds');
 	const accountIds = accountIdsParam
 		? accountIdsParam.split(',').map((v) => v.trim()).filter(Boolean)
@@ -42,105 +40,58 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const subcategory = url.searchParams.get('subcategory')?.trim() || null;
 	const search = url.searchParams.get('search')?.trim()?.toLowerCase() || null;
 	const spendingOnly = url.searchParams.get('spendingOnly') === 'true';
-	const limit = Math.min(
-		parseInt(url.searchParams.get('limit') ?? '500', 10),
-		1000
-	);
+	// Interne overføringer er ute som standard: dette endepunktet brukes til forbrukslister,
+	// og en flytting til egen sparekonto er ikke et kjøp. `includeTransfers=true` for de
+	// flatene som skal se dem (sparebevegelser).
+	const includeTransfers = url.searchParams.get('includeTransfers') === 'true';
+	const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '500', 10), 1000);
 	const sortBy = url.searchParams.get('sortBy') === 'amount' ? 'amount' : 'date';
 	const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
 
-	// Load classification caches in parallel
-	const [merchantMappings, overrides, rules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
+	// `to` er inklusiv i dette API-et, leseren tar eksklusiv slutt.
+	const toExclusive = new Date(`${toParam}T00:00:00Z`);
+	toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
 
-	// Build SQL WHERE conditions
-	const conditions = [
-		eq(canonicalBankTransactions.userId, userId),
-		eq(canonicalBankTransactions.isActive, true),
-		sql`${canonicalBankTransactions.canonicalDate} >= ${fromParam}::date`,
-		sql`${canonicalBankTransactions.canonicalDate} <= ${toParam}::date`
-	];
-
-	if (accountIds.length > 0) {
-		conditions.push(
-			sql`${canonicalBankTransactions.accountId} IN (${sql.join(
-				accountIds.map((id) => sql`${id}`),
-				sql`, `
-			)})`
-		);
-	}
-
-	if (spendingOnly) {
-		conditions.push(sql`${canonicalBankTransactions.amount}::numeric < 0`);
-	}
-
-	const orderByClause =
-		sortBy === 'amount'
-			? sortOrder === 'asc'
-				? asc(canonicalBankTransactions.amount)
-				: desc(canonicalBankTransactions.amount)
-			: sortOrder === 'asc'
-				? asc(canonicalBankTransactions.canonicalDate)
-				: desc(canonicalBankTransactions.canonicalDate);
-
-	const rows = await db
-		.select({
-			id: canonicalBankTransactions.id,
-			date: canonicalBankTransactions.canonicalDate,
-			accountId: canonicalBankTransactions.accountId,
-			amount: canonicalBankTransactions.amount,
-			description: canonicalBankTransactions.descriptionDisplay,
-			merchantKey: canonicalBankTransactions.merchantKey,
-			latestBookingStatus: canonicalBankTransactions.latestBookingStatus
-		})
-		.from(canonicalBankTransactions)
-		.where(and(...conditions))
-		.orderBy(orderByClause)
-		.limit(spendingOnly || (!category && !subcategory && !search) ? limit : limit * 3);
-
-	// Apply categorisation and in-memory filters
-	let transactions = rows.map((r) => {
-		const description = (r.description ?? r.merchantKey ?? '').trim();
-		const amount = Number(r.amount) || 0;
-		const classified = categorizeTransaction(
-			description,
-			null,
-			amount,
-			merchantMappings,
-			overrides,
-			rules
-		);
-		return {
-			id: r.id,
-			date: r.date as string,
-			accountId: r.accountId,
-			amount,
-			description,
-			typeText: null as string | null,
-			category: classified.category,
-			subcategory: classified.subcategory ?? null,
-			label: classified.label,
-			emoji: classified.emoji,
-			isFixed: classified.isFixed
-		};
+	const { transactions: rows } = await readTransactions({
+		userId,
+		from: fromParam,
+		to: toExclusive,
+		excludeInternalTransfers: !includeTransfers
 	});
 
-	if (category) {
-		transactions = transactions.filter((t) => t.category === category);
-	}
-	if (subcategory) {
-		transactions = transactions.filter((t) => t.subcategory === subcategory);
-	}
-	if (search) {
-		transactions = transactions.filter(
-			(t) => t.description.toLowerCase().includes(search) || t.label.toLowerCase().includes(search)
-		);
-	}
+	let transactions = rows
+		.filter((t) => accountIds.length === 0 || accountIds.includes(t.accountId))
+		.filter((t) => !spendingOnly || t.amount < 0)
+		.filter((t) => !category || t.category === category)
+		.filter((t) => !subcategory || t.subcategory === subcategory)
+		.filter(
+			(t) =>
+				!search ||
+				t.description.toLowerCase().includes(search) ||
+				t.label.toLowerCase().includes(search)
+		)
+		.map((t) => ({
+			id: t.id,
+			date: t.date,
+			accountId: t.accountId,
+			amount: t.amount,
+			description: t.description,
+			typeText: t.typeText,
+			category: t.category,
+			subcategory: t.subcategory,
+			label: t.label,
+			emoji: t.emoji,
+			isFixed: t.isFixed,
+			isInternalTransfer: t.isInternalTransfer,
+			counterAccountId: t.counterAccountId
+		}));
 
-	// Apply final limit after in-memory filters
+	transactions.sort((a, b) => {
+		const dir = sortOrder === 'asc' ? 1 : -1;
+		if (sortBy === 'amount') return (a.amount - b.amount) * dir;
+		return a.date.localeCompare(b.date) * dir;
+	});
+
 	transactions = transactions.slice(0, limit);
 
 	const totalSpent = transactions
@@ -149,4 +100,3 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	return json({ transactions, totalSpent });
 };
-

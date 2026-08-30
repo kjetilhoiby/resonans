@@ -17,6 +17,11 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 		if (path.endsWith('.test.ts')) continue;
 		// Vaktens egen konfig nevner mønstrene den leter etter
 		if (path.endsWith('sensor-event-access.ts')) continue;
+		// Tabelldefinisjonen er DDL, ikke spørringer: de partielle unike indeksene på
+		// sensor_events nevner `data_type = 'bank_balance'` og
+		// `data_type NOT IN ('bank_balance', 'bank_transaction')`. Å kreve at schema.ts
+		// står på lista over rå lesere ville gjort lista misvisende.
+		if (path.endsWith('lib/db/schema.ts')) continue;
 		out.push(path);
 	}
 	return out;

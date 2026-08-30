@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('$lib/db', () => ({ db: {}, sql: () => {} }));
 
-import { categorizeTransaction, detectRecurring } from './transaction-categories';
+import { categorizeTransaction, detectRecurring, CATEGORIES } from './transaction-categories';
 import type { MerchantMappingCache } from './transaction-categories';
 import type {
 	ClassificationOverrideCache,
@@ -146,5 +146,54 @@ describe('detectRecurring', () => {
 		expect(result.size).toBe(1);
 		const key = [...result][0];
 		expect(key).toBe('spotify ab|-120');
+	});
+});
+
+describe('categorizeTransaction — ugyldig merchant-mapping', () => {
+	// Prod august 2026: «OpenAI» sto som en egen kategori på 15 153 kr over seks
+	// transaksjoner, der bare 61 kr faktisk var OpenAI. Årsaken var at
+	// merchant_mappings.category ble skrevet med LLM-ens rå output og lest med en cast, så
+	// et BUTIKKNAVN kunne stå som kategori — og siden mappings overstyrer keyword-reglene,
+	// dro den Nettgiro, eFaktura og en intern overføring med seg.
+	function mappingWith(category: string) {
+		return new Map([
+			[
+				'nettgiro',
+				{
+					category,
+					subcategory: null,
+					label: 'OpenAI',
+					emoji: '🤖',
+					isFixed: false
+				}
+			]
+		]);
+	}
+
+	it('bruker IKKE et butikknavn som kategori', () => {
+		const result = categorizeTransaction('Nettgiro', null, -2589, mappingWith('OpenAI') as MerchantMappingCache);
+
+		expect(result.category).not.toBe('OpenAI');
+		expect(CATEGORIES[result.category]).toBeDefined();
+	});
+
+	it('faller gjennom til reglene når mappingen er ugyldig', () => {
+		// Ingen regler gitt, så fallbacken er ukategorisert — men den er en EKTE kategori.
+		const result = categorizeTransaction('Nettgiro', null, -2589, mappingWith('tullball') as MerchantMappingCache);
+
+		expect(result.category).toBe('ukategorisert');
+	});
+
+	it('normaliserer et alias framfor å forkaste mappingen', () => {
+		const result = categorizeTransaction('Nettgiro', null, -2589, mappingWith('dagligvare') as MerchantMappingCache);
+
+		expect(result.category).toBe('dagligvarer');
+		expect(result.label).toBe('OpenAI'); // labelen er butikkens, og det er greit
+	});
+
+	it('beholder en gyldig mapping som før', () => {
+		const result = categorizeTransaction('Nettgiro', null, -2589, mappingWith('sparing') as MerchantMappingCache);
+
+		expect(result.category).toBe('sparing');
 	});
 });

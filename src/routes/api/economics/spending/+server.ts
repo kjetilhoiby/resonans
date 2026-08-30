@@ -1,194 +1,80 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, asc, sql } from 'drizzle-orm';
-import {
-	categorizeTransaction,
-	detectRecurring,
-	CATEGORIES,
-	type CategoryId
-} from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { CATEGORIES, detectRecurring } from '$lib/server/integrations/transaction-categories';
+import type { CategoryId } from '$lib/integrations/transaction-categories-client';
+import { readTransactions, summarizeSpending } from '$lib/server/economics/transactions';
+import { osloDayKey } from '$lib/domain/oslo-time';
 import type { RequestHandler } from './$types';
 
 /**
  * GET /api/economics/spending?accountId=xxx&months=12
  *
- * Returns monthly spending grouped by category, with fixed/variable split.
- * Response:
- * {
- *   months: [{
- *     month: "2025-01",
- *     categories: [{ category, label, emoji, amount, count, isFixed }],
- *     totalSpending: number,
- *     totalFixed: number,
- *     totalVariable: number,
- *     totalIncome: number,
- *   }],
- *   allCategories: [{ category, label, emoji }]
- * }
+ * Månedlig forbruk gruppert på kategori, med fast/variabelt-splitt.
+ *
+ * Leste rå `sensor_events` fram til august 2026 — altså den ~3,8× dupliserte strømmen —
+ * og kategoriserte selv. Nå gjennom den delte leseren, som er samme kilde flaten og chatten
+ * bruker. Se `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
  */
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
-	const accountId = url.searchParams.get('accountId'); // null = all accounts
+	const accountId = url.searchParams.get('accountId'); // null = alle kontoer
 	const monthsBack = Math.min(24, parseInt(url.searchParams.get('months') ?? '12'));
 
-	// Fetch raw transactions
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`
-			)
-		: and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_transaction'));
+	// Månedsgrensene regnes i Oslo-tid, ikke UTC.
+	const now = new Date();
+	const cutoff = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
 
-	const rows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			category: sql<string>`data->>'category'`,
-			accountId: sql<string>`data->>'accountId'`
-		})
-		.from(sensorEvents)
-		.where(where)
-		.orderBy(asc(sensorEvents.timestamp));
+	const { transactions } = await readTransactions({
+		userId,
+		from: cutoff,
+		accountId: accountId ?? undefined
+	});
 
-	if (rows.length === 0) {
+	if (transactions.length === 0) {
 		return json({ months: [], allCategories: Object.values(CATEGORIES) });
 	}
 
-	// Load per-user merchant mappings (LLM-generated) — checked first in categorizeTransaction
-	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
-
-	// Filter to monthsBack window
-	const cutoff = new Date();
-	cutoff.setMonth(cutoff.getMonth() - monthsBack);
-	cutoff.setDate(1);
-	cutoff.setHours(0, 0, 0, 0);
-
-	const txs = rows
-		.map((r) => ({
-			timestamp: r.timestamp,
-			month: r.timestamp.toISOString().slice(0, 7),
-			amount: Number(r.amount) || 0,
-			description: r.description,
-			typeText: r.category
-		}))
-		.filter((r) => r.timestamp >= cutoff);
-
-	// Detect recurring merchants (used to override isFixed)
+	// Gjentakelsesdeteksjon over hele vinduet — den trenger flere måneder å sammenligne.
+	// Interne overføringer holdes utenfor: en fast månedlig sparing er ikke en fast utgift.
 	const recurringKeys = detectRecurring(
-		txs.map((t) => ({ description: t.description, amount: t.amount, month: t.month }))
+		transactions
+			.filter((tx) => !tx.isInternalTransfer)
+			.map((tx) => ({
+				description: tx.description,
+				amount: tx.amount,
+				month: tx.date.slice(0, 7)
+			}))
 	);
 
-	function isRecurring(description: string | null, amount: number): boolean {
-		if (!description) return false;
-		const key = description.toLowerCase().trim();
-		const rounded = Math.round(amount / 10) * 10;
-		return recurringKeys.has(`${key}|${rounded}`);
-	}
-
-	// Group by month → category
-	type CategoryRow = {
-		category: CategoryId;
-		label: string;
-		emoji: string;
-		amount: number;
-		count: number;
-		isFixed: boolean;
-	};
-
-	const monthMap = new Map<
-		string,
-		{
-			categories: Map<CategoryId, CategoryRow>;
-			totalSpending: number;
-			totalFixed: number;
-			totalVariable: number;
-			totalIncome: number;
-		}
-	>();
-
-	// Sort months and ensure all months in range exist
+	// Alle måneder i vinduet skal finnes i svaret, også de tomme.
 	const allMonths: string[] = [];
-	const cur = new Date(cutoff);
-	const now = new Date();
-	while (cur <= now) {
-		allMonths.push(cur.toISOString().slice(0, 7));
-		cur.setMonth(cur.getMonth() + 1);
-	}
-	for (const m of allMonths) {
-		monthMap.set(m, {
-			categories: new Map(),
-			totalSpending: 0,
-			totalFixed: 0,
-			totalVariable: 0,
-			totalIncome: 0
-		});
+	const cursor = new Date(cutoff);
+	while (osloDayKey(cursor).slice(0, 7) <= osloDayKey(now).slice(0, 7)) {
+		allMonths.push(osloDayKey(cursor).slice(0, 7));
+		cursor.setMonth(cursor.getMonth() + 1);
 	}
 
-	for (const tx of txs) {
-		if (!monthMap.has(tx.month)) continue;
-		const monthData = monthMap.get(tx.month)!;
-
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-
-		// Recurrence check can promote to fixed
-		const isFixed =
-			classified.isFixed || isRecurring(tx.description, tx.amount);
-
-		const absAmount = Math.abs(tx.amount);
-		const isSpending = tx.amount < 0;
-		const isIncome = tx.amount > 0;
-
-		if (isIncome) {
-			monthData.totalIncome += absAmount;
-		}
-
-		// Only aggregate outgoing (spending) into categories
-		if (isSpending) {
-			monthData.totalSpending += absAmount;
-			if (isFixed) monthData.totalFixed += absAmount;
-			else monthData.totalVariable += absAmount;
-
-			const catId = classified.category;
-			const existing = monthData.categories.get(catId);
-			if (existing) {
-				existing.amount += absAmount;
-				existing.count += 1;
-			} else {
-				monthData.categories.set(catId, {
-					category: catId,
-					label: classified.label,
-					emoji: classified.emoji,
-					amount: absAmount,
-					count: 1,
-					isFixed
-				});
-			}
-		}
+	const byMonth = new Map<string, typeof transactions>();
+	for (const tx of transactions) {
+		const key = tx.date.slice(0, 7);
+		const bucket = byMonth.get(key);
+		if (bucket) bucket.push(tx);
+		else byMonth.set(key, [tx]);
 	}
 
 	const months = allMonths.map((month) => {
-		const d = monthMap.get(month)!;
-		const categories = Array.from(d.categories.values()).sort((a, b) => b.amount - a.amount);
+		const summary = summarizeSpending(byMonth.get(month) ?? [], { recurringKeys });
 		return {
 			month,
-			categories,
-			totalSpending: Math.round(d.totalSpending),
-			totalFixed: Math.round(d.totalFixed),
-			totalVariable: Math.round(d.totalVariable),
-			totalIncome: Math.round(d.totalIncome)
+			categories: summary.categories,
+			totalSpending: Math.round(summary.totalSpending),
+			totalFixed: Math.round(summary.totalFixed),
+			totalVariable: Math.round(summary.totalVariable),
+			totalIncome: Math.round(summary.totalIncome),
+			internalTransferTotal: Math.round(summary.internalTransferTotal)
 		};
 	});
 
-	// Which categories actually have data (for legend)
+	// Hvilke kategorier som faktisk har data (til tegnforklaringen).
 	const seenCategories = new Set<CategoryId>();
 	for (const m of months) for (const c of m.categories) seenCategories.add(c.category);
 	const allCategories = Object.values(CATEGORIES).filter((c) => seenCategories.has(c.id));

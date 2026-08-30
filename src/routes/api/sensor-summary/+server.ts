@@ -16,6 +16,7 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorAggregates, sensorEvents, users } from '$lib/db/schema';
 import { and, eq, desc, gte, inArray, sql } from 'drizzle-orm';
+import { readTransactions } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 async function measureStep<T>(label: string, userId: string, op: () => Promise<T>): Promise<T> {
@@ -78,23 +79,23 @@ export const GET: RequestHandler = async ({ locals }) => {
 				)
 				.orderBy(desc(sensorEvents.timestamp))
 		),
-		measureStep('transaction_events', userId, () =>
-			db
-				.select({
-					month: sql<string>`to_char(${sensorEvents.timestamp}, 'YYYY-MM')`,
-					totalSpend: sql<number>`SUM(ABS((data->>'amount')::numeric))`
-				})
-				.from(sensorEvents)
-				.where(
-					and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'bank_transaction'),
-						gte(sensorEvents.timestamp, sevenMonthsAgo),
-						sql`(data->>'amount')::numeric < 0`
-					)
-				)
-				.groupBy(sql`to_char(${sensorEvents.timestamp}, 'YYYY-MM')`)
-		),
+		// Månedsforbruk gjennom den delte leseren. Leste rå `sensor_events` fram til
+		// august 2026, altså den ~3,8x dupliserte strømmen, og tok med interne
+		// overføringer — så «totalSpend» var flere ganger for høy.
+		measureStep('transaction_events', userId, async () => {
+			const { transactions } = await readTransactions({
+				userId,
+				from: sevenMonthsAgo,
+				excludeInternalTransfers: true
+			});
+			const byMonth = new Map<string, number>();
+			for (const tx of transactions) {
+				if (tx.amount >= 0) continue;
+				const month = tx.date.slice(0, 7);
+				byMonth.set(month, (byMonth.get(month) ?? 0) + Math.abs(tx.amount));
+			}
+			return [...byMonth.entries()].map(([month, totalSpend]) => ({ month, totalSpend }));
+		}),
 		partnerUserId
 			? measureStep('relationship_events', userId, () =>
 				db

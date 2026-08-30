@@ -48,19 +48,6 @@ export async function ensureBodyLogSensor(userId: string): Promise<string> {
 	return created.id;
 }
 
-/** Sensor-id-ene loggen bruker. Tom liste når brukeren ikke har målt ennå. */
-async function bodyLogSensorIds(userId: string): Promise<string[]> {
-	const rows = await db.query.sensors.findMany({
-		columns: { id: true },
-		where: and(
-			eq(sensors.userId, userId),
-			eq(sensors.provider, BODY_LOG_PROVIDER),
-			eq(sensors.type, BODY_LOG_SENSOR_TYPE)
-		)
-	});
-	return rows.map((row) => row.id);
-}
-
 export interface LogWaistInput {
 	userId: string;
 	waistCm: number;
@@ -115,14 +102,20 @@ export async function logWaist(input: LogWaistInput): Promise<StoredWaistMeasure
  *
  * Datoen er Oslo-døgnet, ikke UTC: en måling kl. 00:30 norsk tid hører til den
  * dagen brukeren opplevde, og trenden grupperer på det samme.
+ *
+ * ## Leser på tvers av sensorer, med vilje
+ *
+ * Filteret er bruker + datatype, ikke sensor — samme konvensjon som alle
+ * vektleserne i repoet. Første utgave gjorde et oppslag på `body_log`-sensoren og
+ * returnerte tom liste hvis den ikke fantes. Det var en fungerende bug som ventet
+ * på HealthKit-importen: den skriver livvidde under `healthkit`-sensoren, så en
+ * bruker som aldri hadde logget manuelt ville fått en **usynlig** import — data i
+ * basen, tom flate, ingen feilmelding.
  */
 export async function listWaistMeasurements(
 	userId: string,
 	{ sinceDays }: { sinceDays?: number } = {}
 ): Promise<StoredWaistMeasurement[]> {
-	const sensorIds = await bodyLogSensorIds(userId);
-	if (sensorIds.length === 0) return [];
-
 	const filters = [
 		eq(sensorEvents.userId, userId),
 		eq(sensorEvents.dataType, WAIST_DATA_TYPE)

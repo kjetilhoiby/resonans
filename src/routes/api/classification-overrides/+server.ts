@@ -10,6 +10,7 @@ import {
 import { syncAllCategorizedEvents } from '$lib/server/integrations/categorized-events';
 import { runInBackground } from '$lib/server/run-in-background';
 import { and, desc, eq } from 'drizzle-orm';
+import { CATEGORIES, normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 import type { RequestHandler } from './$types';
 
 type OverrideRequest = {
@@ -61,9 +62,32 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'domain must be transaction or task' }, { status: 400 });
 	}
 
-	const correctedCategory = body.correctedCategory?.trim();
-	if (!correctedCategory) {
+	const rawCategory = body.correctedCategory?.trim();
+	if (!rawCategory) {
 		return json({ error: 'correctedCategory is required' }, { status: 400 });
+	}
+
+	// **Valideres for transaksjoner.** En manuell overstyring har HØYESTE prioritet i
+	// `categorizeTransaction` — høyere enn merchant-mappings og reglene — så en ugyldig verdi
+	// her er verre enn den samme feilen noe annet sted. Det var nettopp uvalidert skriving
+	// som gjorde at «OpenAI» sto som en kategori på 15 153 kr i prod. Se
+	// `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+	//
+	// Aliaser godtas og normaliseres; et ukjent navn avvises med en melding som SIER hva som
+	// er gyldig, framfor å bli lagret og dukke opp som en oppdiktet kategori på flaten.
+	let correctedCategory = rawCategory;
+	if (body.domain === 'transaction') {
+		const normalized = normalizeCategoryId(rawCategory);
+		const isKnown = rawCategory.toLowerCase() in CATEGORIES || normalized !== 'ukategorisert';
+		if (!isKnown && rawCategory.toLowerCase() !== 'ukategorisert') {
+			return json(
+				{
+					error: `Ukjent kategori «${rawCategory}». Gyldige: ${Object.keys(CATEGORIES).join(', ')}`
+				},
+				{ status: 400 }
+			);
+		}
+		correctedCategory = normalized;
 	}
 
 	const fingerprint = resolveFingerprint(body);

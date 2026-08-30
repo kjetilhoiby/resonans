@@ -4,14 +4,21 @@ import { db } from '$lib/db';
 import { canonicalBankTransactions, goals, sensorEvents } from '$lib/db/schema';
 import { getAllGoalTracksByUser } from '$lib/server/goal-tracks';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
+import { buildDailyAccountBalances } from '$lib/server/integrations/balance-reconstructor';
 import {
-	ensureCategorizedEventsForRange,
-	queryCategorizedEvents
-} from '$lib/server/integrations/categorized-events';
+	readLatestBalances,
+	readTransactions,
+	summarizeSpending
+} from '$lib/server/economics/transactions';
 import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack } from '$lib/domain/goal-tracks';
-import type { SalaryMonthReport, GoalProgressItem, SalaryInsight } from '$lib/types/salary-report';
+import type {
+	SalaryMonthReport,
+	GoalProgressItem,
+	SalaryInsight,
+	MonthReview
+} from '$lib/types/salary-report';
+import { buildMonthReview } from '$lib/server/economics/month-review';
 import type { RequestHandler } from './$types';
 
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
@@ -64,62 +71,40 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const prevFrom = prevSalaryDate ? new Date(`${prevSalaryDate}T00:00:00.000Z`) : currentFrom;
 	const today = new Date();
 
-	// 2. Ensure categorized events are up to date
-	await ensureCategorizedEventsForRange({ userId, from: prevFrom, to: today });
-
-	// 3. Fetch spending for current salary period
-	const currentTxRows = await queryCategorizedEvents({
+	// 2+3. Hele vinduet i ett kall, gjennom den delte leseren. Leste `categorized_events`
+	// fram til august 2026 — en projeksjon bygget fra den ~3,8x dupliserte rå-strømmen, og
+	// uten å skille interne overføringer fra forbruk. Se
+	// `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+	const { transactions: windowRows } = await readTransactions({
 		userId,
-		from: currentFrom,
+		from: prevFrom,
 		to: today,
-		spendingOnly: true
+		excludeInternalTransfers: true
 	});
 
-	// Aggregate by category
-	const categoryMap = new Map<string, { label: string; emoji: string; amount: number; count: number; isFixed: boolean }>();
-	let totalFixed = 0;
-	let totalVariable = 0;
+	const currentFromKey = currentFrom.toISOString().slice(0, 10);
+	const currentTxRows = windowRows.filter((tx) => tx.date >= currentFromKey);
 
-	for (const row of currentTxRows) {
-		const cat = row.resolvedCategory ?? 'ukategorisert';
-		const abs = Math.abs(row.amount);
-		const existing = categoryMap.get(cat);
-		if (existing) {
-			existing.amount += abs;
-			existing.count++;
-		} else {
-			categoryMap.set(cat, {
-				label: row.resolvedLabel ?? cat,
-				emoji: row.resolvedEmoji ?? '📦',
-				amount: abs,
-				count: 1,
-				isFixed: row.isFixed ?? false
-			});
-		}
-		if (row.isFixed) {
-			totalFixed += abs;
-		} else {
-			totalVariable += abs;
-		}
-	}
-
-	const categories = Array.from(categoryMap.entries())
-		.map(([category, data]) => ({ category, ...data }))
-		.sort((a, b) => b.amount - a.amount);
-
-	const totalSpending = totalFixed + totalVariable;
+	const summary = summarizeSpending(currentTxRows);
+	const categories = summary.categories.map((row) => ({
+		category: row.category,
+		label: row.label,
+		emoji: row.emoji,
+		amount: row.amount,
+		count: row.count,
+		isFixed: row.isFixed
+	}));
+	const totalFixed = summary.totalFixed;
+	const totalVariable = summary.totalVariable;
+	const totalSpending = summary.totalSpending;
 
 	// 4. Fetch previous period spending for trend (only if we have a prev date)
 	let previousMonthSpending = 0;
 	let spendingTrend = 0;
 	if (prevSalaryDate) {
-		const prevTxRows = await queryCategorizedEvents({
-			userId,
-			from: prevFrom,
-			to: currentFrom,
-			spendingOnly: true
-		});
-		previousMonthSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
+		previousMonthSpending = windowRows
+			.filter((tx) => tx.date < currentFromKey && tx.amount < 0)
+			.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 		if (previousMonthSpending > 0) {
 			spendingTrend = ((totalSpending - previousMonthSpending) / previousMonthSpending) * 100;
 		}
@@ -159,22 +144,12 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const savingsChanges: SalaryMonthReport['savingsChanges'] = [];
 	if (sourceAccountId) {
 		try {
-			const dailyBalances = await buildDailyBalances(userId, sourceAccountId);
+			const dailyBalances = await buildDailyAccountBalances(userId, sourceAccountId);
 
-			// Get account name from latest bank_balance event
-			const accountNameRow = await db
-				.select({ accountName: sql<string>`data->>'accountName'` })
-				.from(sensorEvents)
-				.where(
-					and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'bank_balance'),
-						sql`data->>'accountId' = ${sourceAccountId}`
-					)
-				)
-				.orderBy(desc(sensorEvents.timestamp))
-				.limit(1);
-			const accountName = accountNameRow[0]?.accountName ?? sourceAccountId;
+			// Kontonavn fra siste saldoobservasjon, gjennom den delte leseren.
+			const balances = await readLatestBalances(userId);
+			const accountName =
+				balances.find((row) => row.accountId === sourceAccountId)?.accountName ?? sourceAccountId;
 
 			// Find balance on or after payday
 			const startRow = dailyBalances.find((r) => r.date >= currentSalaryDate);
@@ -212,14 +187,9 @@ export const GET: RequestHandler = async ({ locals }) => {
 					let actualValue = 0;
 
 					if (metricId === 'grocery_spend') {
-						const groceryRows = await queryCategorizedEvents({
-							userId,
-							from: currentFrom,
-							to: today,
-							category: 'dagligvarer',
-							spendingOnly: true
-						});
-						actualValue = groceryRows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
+						actualValue = currentTxRows
+							.filter((tx) => tx.category === 'dagligvarer' && tx.amount < 0)
+							.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 					}
 
 					const direction = catalog.direction as GoalProgressItem['direction'];
@@ -272,7 +242,29 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// Non-fatal
 	}
 
-	// 9. Generate insights
+	// 9. Månedsgjennomgangen — de fire spørsmålene (fase 6). Ikke-fatal: en rapport uten
+	//     gjennomgang er dårligere, men en gjennomgang som velter rapporten er verre.
+	let review: MonthReview | undefined;
+	try {
+		review = await buildMonthReview({
+			userId,
+			// Alle lønnsdatoene, ikke bare de to siste: gjennomgangen trenger flere hele
+			// perioder for å vite hva som er «vanlig».
+			paydayDates: payDay?.paydayDates ?? [currentSalaryDate],
+			salaryAmount: salaryAmount > 0 ? salaryAmount : null,
+			brokenTargets: goalProgress
+				.filter((item) => item.type === 'track' && !item.achieved && item.targetValue > 0)
+				.map((item) => ({
+					label: item.label,
+					overBy: Math.max(0, item.actualValue - item.targetValue)
+				}))
+				.filter((item) => item.overBy > 0)
+		});
+	} catch (error) {
+		console.error('[salary-report] month review failed', error);
+	}
+
+	// 10. Generate insights
 	const insights = generateInsights({
 		currentSalaryDate,
 		prevSalaryDate,
@@ -288,6 +280,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 
 	const report: SalaryMonthReport = {
+		review,
 		currentSalaryDate,
 		prevSalaryDate,
 		salaryAmount,

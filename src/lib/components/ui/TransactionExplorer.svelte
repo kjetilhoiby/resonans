@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { saveCategoryOverride } from '$lib/client/transaction-category';
 	import { CATEGORIES, SUBCATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
 	import DateInput from './DateInput.svelte';
 
@@ -45,6 +46,8 @@
 
 	// ── Category re-classification ────────────────────────────────────────────
 	let editingTxId = $state<string | null>(null);
+	let overrideError = $state<string | null>(null);
+	let appliedNote = $state<string | null>(null);
 	let pendingCategoryId = $state<CategoryId | null>(null);
 	let savingOverride = $state(false);
 
@@ -179,33 +182,31 @@
 			return;
 		}
 		savingOverride = true;
+		overrideError = null;
 		try {
-			const res = await fetch('/api/classification-overrides', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					domain: 'transaction',
-					description: tx.description,
-					typeText: tx.typeText,
-					amount: tx.amount,
-					correctedCategory: newCategoryId,
-					correctedSubcategory: subcategoryKey ?? null
-				})
+			// Delt skrivevei — samme som TransactionList bruker. Lå duplisert fram til
+			// august 2026, og de to sendte ulike felt.
+			const saved = await saveCategoryOverride({
+				description: tx.description,
+				typeText: tx.typeText,
+				amount: tx.amount,
+				category: newCategoryId,
+				subcategory: subcategoryKey ?? null
 			});
-			if (!res.ok) throw new Error('Failed');
-			
-			// Update local transaction immediately
-			const newCat = CATEGORIES[newCategoryId];
-			tx.category = newCat.id;
-			tx.emoji = newCat.emoji;
-			tx.label = newCat.label;
-			tx.subcategory = subcategoryKey ?? null;
+
+			tx.category = saved.category;
+			tx.emoji = saved.emoji;
+			tx.label = saved.label;
+			tx.subcategory = saved.subcategory;
 			closePicker();
-			
-			// Reload after sync completes (increased from 500ms to 2000ms for reliability)
-			setTimeout(() => loadTransactions(), 2000);
-		} catch {
-			alert('Kunne ikke lagre kategori-endring. Prøv igjen.');
+			appliedNote = saved.appliesTo;
+
+			// **Ingen setTimeout-venting lenger.** Den forrige utgaven ventet 2 sekunder på at
+			// bakgrunnsreprojeksjonen skulle bli ferdig og lastet lista på nytt — et
+			// kappløp forkledd som en forsinkelse. Kategoriseringen skjer nå ved lesing, så
+			// den lokale oppdateringen over ER svaret.
+		} catch (err) {
+			overrideError = err instanceof Error ? err.message : 'Kunne ikke lagre kategori-endring';
 		} finally {
 			savingOverride = false;
 		}
@@ -319,6 +320,13 @@
 			</button>
 		{/each}
 	</div>
+
+	{#if overrideError}
+		<!-- Serverens melding, ikke «prøv igjen». Den vanligste feilen her er konkret. -->
+		<p class="te-banner te-banner-error" role="alert">{overrideError}</p>
+	{:else if appliedNote}
+		<p class="te-banner te-banner-ok" role="status">{appliedNote}</p>
+	{/if}
 
 	<!-- Expanded filters -->
 	{#if showFilters}
@@ -608,6 +616,22 @@
 		font-weight: 700;
 		color: #e8e8e8;
 		letter-spacing: -0.02em;
+	}
+
+	.te-banner {
+		margin: 0 1rem 0.5rem;
+		padding: 0.5rem 0.7rem;
+		border-radius: 8px;
+		font-size: 0.82rem;
+		line-height: 1.4;
+	}
+	.te-banner-error {
+		background: rgba(220, 38, 38, 0.14);
+		color: #fca5a5;
+	}
+	.te-banner-ok {
+		background: rgba(22, 163, 74, 0.14);
+		color: #86efac;
 	}
 
 	.te-subtitle {

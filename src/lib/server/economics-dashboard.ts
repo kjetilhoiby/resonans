@@ -1,14 +1,13 @@
-import { db } from '$lib/db';
-import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
-import { and, asc, eq, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from './integrations/payday-detector';
+import { osloDayKey } from '$lib/domain/oslo-time';
 import {
-	categorizeTransaction,
-	detectRecurring,
-	CATEGORIES
-} from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+	readLatestBalances,
+	readTransactions,
+	recurringKeyFor,
+	summarizeSpending,
+	type EconomicsTransaction
+} from '$lib/server/economics/transactions';
+import { detectRecurring } from '$lib/server/integrations/transaction-categories';
 
 async function measureStep<T>(label: string, userId: string, op: () => Promise<T>): Promise<T> {
 	const t0 = performance.now();
@@ -82,225 +81,117 @@ export type EconomicsDashboardData = {
 		totalFixed: number;
 		totalVariable: number;
 		totalIncome: number;
+		/** Flyttet mellom egne kontoer denne måneden. Ikke en del av totalSpending. */
+		internalTransferTotal: number;
 		categories: EconomicsCategoryRow[];
 	};
 	recentTransactions: EconomicsRecentTx[];
 	paydaySpend: PaydaySpend;
 };
 
-function canonicalDateToUtcDate(value: string | Date): Date {
-	if (value instanceof Date) {
-		return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 12, 0, 0, 0));
-	}
-	if (value.includes('T')) {
-		const parsed = new Date(value);
-		return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate(), 12, 0, 0, 0));
-	}
-	return new Date(`${value}T12:00:00Z`);
+const GROCERY_CATEGORY = 'dagligvarer';
+const HISTORY_DAYS = 220;
+const CURRENT_WINDOW_DAYS = 70;
+
+function toTxItem(tx: EconomicsTransaction): EconomicsTx {
+	return {
+		date: tx.timestamp.toISOString(),
+		description: tx.description,
+		amount: tx.amount,
+		category: tx.category,
+		emoji: tx.emoji,
+		label: tx.label
+	};
 }
 
 export async function loadEconomicsDashboardData(userId: string): Promise<EconomicsDashboardData> {
 	const tTotal = performance.now();
-	// ── 1. Accounts ─────────────────────────────────────────────────────────
-	const balanceRows = await measureStep('bank_balance_rows', userId, () =>
-		db
-			.select({
-				accountId: sql<string>`data->>'accountId'`,
-				accountName: sql<string>`data->>'accountName'`,
-				accountType: sql<string>`data->>'accountType'`,
-				balance: sql<number>`(data->>'balance')::numeric`,
-				currency: sql<string>`data->>'currency'`,
-				ts: sensorEvents.timestamp
-			})
-			.from(sensorEvents)
-			.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
-			.orderBy(desc(sensorEvents.timestamp))
-	);
+	const now = new Date();
 
-	const seenAccounts = new Set<string>();
-	const accounts: EconomicsAccount[] = balanceRows
-		.filter((r) => {
-			if (!r.accountId || seenAccounts.has(r.accountId)) return false;
-			seenAccounts.add(r.accountId);
-			return true;
-		})
-		.map((r) => ({
-			accountId: r.accountId,
-			accountName: r.accountName,
-			accountType: r.accountType,
-			balance: Number(r.balance) || 0,
-			currency: r.currency
-		}))
-		.sort((a, b) => b.balance - a.balance);
-
+	// ── 1. Kontoer ───────────────────────────────────────────────────────────
+	const balances = await measureStep('latest_balances', userId, () => readLatestBalances(userId));
+	const accounts: EconomicsAccount[] = balances.map((row) => ({
+		accountId: row.accountId,
+		accountName: row.accountName,
+		accountType: row.accountType,
+		balance: row.balance,
+		currency: row.currency
+	}));
 	const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
 
-	// ── 2. Transactions — enough history for current + four previous salary periods ──
-	const now = new Date();
-	const currentMonth = now.toISOString().slice(0, 7); // "2026-03"
-	const monthStart = new Date(`${currentMonth}-01T00:00:00Z`);
-	const queryFrom = new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000);
-	const [merchantMappings, overrides, rules] = await Promise.all([
-		measureStep('merchant_mappings', userId, () => loadMerchantMappings(userId)),
-		measureStep('classification_overrides', userId, () => loadClassificationOverrides(userId, 'transaction')),
-		measureStep('transaction_rules', userId, () => loadTransactionMatchingRules())
-	]);
+	// ── 2. Transaksjoner ─────────────────────────────────────────────────────
+	// Månedsgrensa regnes i Oslo-tid, ikke UTC. Med toISOString() havnet første og
+	// siste dag i måneden i feil måned for norske brukere.
+	const currentMonth = osloDayKey(now).slice(0, 7); // "2026-03"
+	const monthStartKey = `${currentMonth}-01`;
+	const historyFrom = new Date(now.getTime() - HISTORY_DAYS * 24 * 60 * 60 * 1000);
 
-	const txRows = await measureStep('canonical_transactions', userId, () =>
-		db
-			.select({
-				date: canonicalBankTransactions.canonicalDate,
-				amount: canonicalBankTransactions.amount,
-				description: canonicalBankTransactions.descriptionDisplay,
-				merchantKey: canonicalBankTransactions.merchantKey
-			})
-			.from(canonicalBankTransactions)
-			.where(
-				and(
-					eq(canonicalBankTransactions.userId, userId),
-					eq(canonicalBankTransactions.isActive, true),
-					sql`${canonicalBankTransactions.canonicalDate} >= ${queryFrom.toISOString().slice(0, 10)}::date`
-				)
-			)
-			.orderBy(desc(canonicalBankTransactions.canonicalDate))
+	// Ett kall dekker både månedsvinduet, lønnsperioden og sammenligningsperiodene.
+	// Interne overføringer blir MERKET, ikke fjernet — summeringen holder dem utenfor
+	// forbruket, mens lønnsperiodelistene trenger å kjenne dem igjen.
+	const { transactions: history } = await measureStep('canonical_transactions', userId, () =>
+		readTransactions({ userId, from: historyFrom })
 	);
 
-	const allTxs = txRows.map((r) => ({
-		timestamp: canonicalDateToUtcDate(r.date),
-		amount: Number(r.amount) || 0,
-		description: (r.description ?? r.merchantKey ?? '').trim(),
-		...categorizeTransaction(
-			r.description ?? r.merchantKey ?? '',
-			null,
-			Number(r.amount) || 0,
-			merchantMappings,
-			overrides,
-			rules
-		)
-	}));
+	const recentWindowStart = new Date(now.getTime() - CURRENT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+	const allTxs = history.filter((tx) => tx.timestamp >= recentWindowStart);
+	const monthTxs = allTxs.filter((tx) => tx.date >= monthStartKey);
 
-	// Current-month slice for monthly spending stats
-	const txs = allTxs.filter((t) => t.timestamp >= monthStart);
-
-	// ── 3. Categorise spending ───────────────────────────────────────────────
-
+	// ── 3. Forbruk per kategori ──────────────────────────────────────────────
+	// detectRecurring trenger FLERE måneder å sammenligne. Fram til august 2026 fikk den
+	// inneværende måned stemplet på hver rad, så `monthMap.size` var alltid 1, `< 2` slo
+	// inn, og funksjonen returnerte alltid en tom Set. Fast/variabelt-splitten hvilte
+	// dermed utelukkende på kategoriens defaultFixed uten at noe sa fra.
 	const recurringKeys = detectRecurring(
-		txs.map((t) => ({ description: t.description, amount: t.amount, month: currentMonth }))
+		history
+			.filter((tx) => !tx.isInternalTransfer)
+			.map((tx) => ({
+				description: tx.description,
+				amount: tx.amount,
+				month: tx.date.slice(0, 7)
+			}))
 	);
 
-	const categoryMap = new Map<string, EconomicsCategoryRow>();
-	let totalSpending = 0;
-	let totalFixed = 0;
-	let totalVariable = 0;
-	let totalIncome = 0;
+	const summary = summarizeSpending(monthTxs, { recurringKeys });
 
-	for (const tx of txs) {
-		const key = `${tx.description.toLowerCase().trim()}|${Math.round(tx.amount / 10) * 10}`;
-		const isFixed = tx.isFixed || recurringKeys.has(key);
-		const absAmount = Math.abs(tx.amount);
-
-		if (tx.amount > 0) {
-			totalIncome += absAmount;
-			continue;
-		}
-
-		totalSpending += absAmount;
-		if (isFixed) totalFixed += absAmount;
-		else totalVariable += absAmount;
-
-		const catId = tx.category || 'ukategorisert';
-		const catDef = CATEGORIES[catId as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
-
-		if (!categoryMap.has(catId)) {
-			categoryMap.set(catId, {
-				category: catId,
-				label: catDef.label,
-				emoji: catDef.emoji,
-				amount: 0,
-				count: 0,
-				isFixed
-			});
-		}
-		const row = categoryMap.get(catId)!;
-		row.amount += absAmount;
-		row.count += 1;
-	}
-
-	const categories: EconomicsCategoryRow[] = [...categoryMap.values()].sort(
-		(a, b) => b.amount - a.amount
-	);
-
-	// ── 4. Recent transactions (last 8, any direction) ──────────────────────
-	// Use allTxs (not txs) so we always show 8 entries even early in the month
-	const recentTransactions: EconomicsRecentTx[] = allTxs.slice(0, 8).map((tx) => {
-		const catDef = CATEGORIES[tx.category as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
-		return {
+	// ── 4. Siste transaksjoner ───────────────────────────────────────────────
+	const recentTransactions: EconomicsRecentTx[] = allTxs
+		.filter((tx) => !tx.isInternalTransfer)
+		.slice(0, 8)
+		.map((tx) => ({
 			date: tx.timestamp.toISOString(),
 			description: tx.description,
 			amount: tx.amount,
-			category: tx.category ?? 'ukategorisert',
-			emoji: tx.emoji ?? catDef.emoji,
-			label: tx.label ?? catDef.label
-		};
-	});
+			category: tx.category,
+			emoji: tx.emoji,
+			label: tx.label
+		}));
 
-	// ── 5. Payday spend — spending per day since last salary ─────────────────
-	const historyFrom = new Date(now.getTime() - 220 * 24 * 60 * 60 * 1000);
+	// ── 5. Forbruk siden lønn ────────────────────────────────────────────────
+	const globalPayday = await measureStep('detect_payday', userId, () => detectGlobalPayday(userId));
 
-	const [globalPayday, rawSpendRows] = await Promise.all([
-		measureStep('detect_payday', userId, () => detectGlobalPayday(userId)),
-		measureStep('spend_rows_for_payday', userId, () =>
-			db
-				.select({
-					timestamp: canonicalBankTransactions.canonicalDate,
-					amount: canonicalBankTransactions.amount,
-					description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-				})
-				.from(canonicalBankTransactions)
-				.where(and(
-					eq(canonicalBankTransactions.userId, userId),
-					eq(canonicalBankTransactions.isActive, true),
-					sql`${canonicalBankTransactions.amount} < 0`,
-					sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
-				))
-				.orderBy(asc(canonicalBankTransactions.canonicalDate))
-		)
-	]);
+	const todayKey = osloDayKey(now);
+	const paydayKeys: string[] = (globalPayday?.paydayDates ?? [])
+		.filter((d) => d <= todayKey)
+		.slice()
+		.sort((a, b) => b.localeCompare(a)); // nyeste først
 
-	const normalizedRawSpendRows = rawSpendRows.map((tx) => ({
-		timestamp: canonicalDateToUtcDate(tx.timestamp),
-		amount: Number(tx.amount) || 0,
-		description: tx.description ?? ''
-	}));
-
-	const GROCERY_KEYWORDS = ['KIWI', 'REMA', 'ODA ', 'MENY', 'SPAR', 'COOP', 'EXTRA', 'JOKER', 'BUNNPRIS', 'NÆRBUTIKK', 'BAMA'];
-	const isGroceryTx = (d: string) => { const u = d.toUpperCase(); return GROCERY_KEYWORDS.some((k) => u.includes(k)); };
-
-	// Use payday dates from detectGlobalPayday (most recent first, filtered to ≤ today)
-	const todayStr = now.toISOString().slice(0, 10);
-	const paydayCandidates: Array<{ timestamp: Date }> = (globalPayday?.paydayDates ?? [])
-		.filter((d) => d <= todayStr)
-		.reverse()
-		.map((d) => ({ timestamp: new Date(`${d}T12:00:00Z`) }));
-
-	const currentPayday = paydayCandidates[0] ?? null;
-	const prevPayday = paydayCandidates[1] ?? null;
-
-	const paydayDate = currentPayday ? currentPayday.timestamp.toISOString() : null;
-	const paydayStart = currentPayday
-		? new Date(new Date(currentPayday.timestamp).setHours(0, 0, 0, 0))
-		: monthStart;
+	const currentPaydayKey = paydayKeys[0] ?? monthStartKey;
+	const paydayDate = paydayKeys[0] ? `${paydayKeys[0]}T12:00:00.000Z` : null;
 
 	const msPerDay = 24 * 60 * 60 * 1000;
-	const daysSincePayday = Math.max(
-		1,
-		Math.round((now.getTime() - paydayStart.getTime()) / msPerDay)
-	);
+	const daysBetween = (fromKey: string, toKey: string) =>
+		Math.round(
+			(new Date(`${toKey}T12:00:00Z`).getTime() - new Date(`${fromKey}T12:00:00Z`).getTime()) /
+				msPerDay
+		);
+	const daysSincePayday = Math.max(1, daysBetween(currentPaydayKey, todayKey) + 1);
 
-	// Categorise all txs since payday (spending only)
-	const txsSincePayday = allTxs.filter(
-		(t) => t.timestamp >= paydayStart && t.amount < 0
-	);
+	// Bare forbruk: interne overføringer ut, ellers ville en sparing på 4 000 sett ut som
+	// en dag med stort forbruk.
+	const spendOnly = history.filter((tx) => tx.amount < 0 && !tx.isInternalTransfer);
+
+	const txsSincePayday = spendOnly.filter((tx) => tx.date >= currentPaydayKey);
 
 	let totalSpendSincePayday = 0;
 	let grocerySpendSincePayday = 0;
@@ -308,82 +199,74 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const groceryTxList: EconomicsTx[] = [];
 
 	for (const tx of txsSincePayday) {
-		const catDef = CATEGORIES[tx.category as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
 		const absAmt = Math.abs(tx.amount);
 		totalSpendSincePayday += absAmt;
+		const entry = toTxItem(tx);
+		paydayTxList.push(entry);
 
-		const txEntry: EconomicsTx = {
-			date: tx.timestamp.toISOString(),
-			description: tx.description,
-			amount: tx.amount,
-			category: tx.category,
-			emoji: tx.emoji ?? catDef.emoji,
-			label: tx.label ?? catDef.label
-		};
-		paydayTxList.push(txEntry);
-
-		if (tx.category === 'dagligvarer') {
+		if (tx.category === GROCERY_CATEGORY) {
 			grocerySpendSincePayday += absAmt;
-			groceryTxList.push(txEntry);
+			groceryTxList.push(entry);
 		}
 	}
 
 	const spendPerDay = totalSpendSincePayday / daysSincePayday;
 	const grocerySpendPerDay = grocerySpendSincePayday / daysSincePayday;
 
-	// Previous month same window
+	// Forrige periode, samme antall dager inn.
+	// NB: dagligvarer avgjøres av KATEGORIEN her, som i inneværende periode. Fram til
+	// august 2026 brukte sammenligningen en hardkodet liste på elleve butikknavn mens
+	// inneværende periode brukte kategorien — så «du ligger over snittet på dagligvarer»
+	// sammenlignet to ulike definisjoner av dagligvarer.
 	let prevSpendPerDay: number | null = null;
 	let prevGrocerySpendPerDay: number | null = null;
 
-	if (prevPayday) {
-		const prevStart = new Date(new Date(prevPayday.timestamp).setHours(0, 0, 0, 0));
-		const prevEnd = new Date(prevStart.getTime() + daysSincePayday * msPerDay);
+	if (paydayKeys[1]) {
+		const prevStartKey = paydayKeys[1];
+		const prevEnd = new Date(`${prevStartKey}T12:00:00Z`);
+		prevEnd.setUTCDate(prevEnd.getUTCDate() + daysSincePayday);
+		const prevEndKey = prevEnd.toISOString().slice(0, 10);
 
-		const prevTxs = normalizedRawSpendRows.filter(
-			(t) => t.timestamp >= prevStart && t.timestamp < prevEnd
-		);
+		const prevTxs = spendOnly.filter((tx) => tx.date >= prevStartKey && tx.date < prevEndKey);
 
 		let prevTotal = 0;
 		let prevGrocery = 0;
 		for (const tx of prevTxs) {
 			const absAmt = Math.abs(tx.amount);
 			prevTotal += absAmt;
-			if (isGroceryTx(tx.description ?? '')) prevGrocery += absAmt;
+			if (tx.category === GROCERY_CATEGORY) prevGrocery += absAmt;
 		}
 
-		const prevDays = Math.max(1, Math.round((prevEnd.getTime() - prevStart.getTime()) / msPerDay));
-		prevSpendPerDay = prevTotal / prevDays;
-		prevGrocerySpendPerDay = prevGrocery / prevDays;
+		prevSpendPerDay = prevTotal / daysSincePayday;
+		prevGrocerySpendPerDay = prevGrocery / daysSincePayday;
 	}
 
+	// Snittkurve over de fire foregående periodene, akkumulert per dag i perioden.
 	const averageComparisonPoints: Array<{ day: number; total: number; grocery: number }> = [];
-	const previousPeriods = paydayCandidates.slice(1, 5);
+	const previousPeriods = paydayKeys.slice(1, 5);
 
 	if (previousPeriods.length > 0) {
-		const perPeriodSeries = previousPeriods.flatMap((periodStartTx, index) => {
-			const newerBoundary = paydayCandidates[index];
-			if (!newerBoundary) return [];
+		const perPeriodSeries = previousPeriods.flatMap((periodStartKey, index) => {
+			const newerBoundaryKey = paydayKeys[index];
+			if (!newerBoundaryKey) return [];
 
-			const periodStart = new Date(new Date(periodStartTx.timestamp).setHours(0, 0, 0, 0));
-			const periodEnd = new Date(new Date(newerBoundary.timestamp).setHours(0, 0, 0, 0));
-			const periodLengthDays = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / msPerDay));
-			const maxDays = periodLengthDays;
+			const periodLengthDays = Math.max(1, daysBetween(periodStartKey, newerBoundaryKey));
 
 			const totalsByDay = new Map<number, { total: number; grocery: number }>();
-			for (const tx of normalizedRawSpendRows) {
-				if (tx.timestamp < periodStart || tx.timestamp >= periodEnd) continue;
-				const dayIndex = Math.floor((tx.timestamp.getTime() - periodStart.getTime()) / msPerDay) + 1;
-				if (dayIndex < 1 || dayIndex > maxDays) continue;
+			for (const tx of spendOnly) {
+				if (tx.date < periodStartKey || tx.date >= newerBoundaryKey) continue;
+				const dayIndex = daysBetween(periodStartKey, tx.date) + 1;
+				if (dayIndex < 1 || dayIndex > periodLengthDays) continue;
 				const prev = totalsByDay.get(dayIndex) ?? { total: 0, grocery: 0 };
 				prev.total += Math.abs(tx.amount);
-				if (isGroceryTx(tx.description ?? '')) prev.grocery += Math.abs(tx.amount);
+				if (tx.category === GROCERY_CATEGORY) prev.grocery += Math.abs(tx.amount);
 				totalsByDay.set(dayIndex, prev);
 			}
 
 			let cumulativeTotal = 0;
 			let cumulativeGrocery = 0;
 			const series: Array<{ day: number; total: number; grocery: number }> = [];
-			for (let day = 1; day <= maxDays; day += 1) {
+			for (let day = 1; day <= periodLengthDays; day += 1) {
 				const dayTotals = totalsByDay.get(day);
 				cumulativeTotal += dayTotals?.total ?? 0;
 				cumulativeGrocery += dayTotals?.grocery ?? 0;
@@ -392,7 +275,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			return [series];
 		});
 
-		const maxComparisonDays = perPeriodSeries.length > 0 ? Math.max(...perPeriodSeries.map((s) => s.length)) : 0;
+		const maxComparisonDays =
+			perPeriodSeries.length > 0 ? Math.max(...perPeriodSeries.map((s) => s.length)) : 0;
 		for (let day = 1; day <= maxComparisonDays; day += 1) {
 			const pointsForDay = perPeriodSeries
 				.map((series) => series.find((point) => point.day === day) ?? null)
@@ -430,11 +314,19 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		totalBalance,
 		currentMonth,
 		monthSpending: {
-			totalSpending,
-			totalFixed,
-			totalVariable,
-			totalIncome,
-			categories
+			totalSpending: summary.totalSpending,
+			totalFixed: summary.totalFixed,
+			totalVariable: summary.totalVariable,
+			totalIncome: summary.totalIncome,
+			internalTransferTotal: summary.internalTransferTotal,
+			categories: summary.categories.map((row) => ({
+				category: row.category,
+				label: row.label,
+				emoji: row.emoji,
+				amount: row.amount,
+				count: row.count,
+				isFixed: row.isFixed
+			}))
 		},
 		recentTransactions,
 		paydaySpend

@@ -26,6 +26,8 @@
 	import Button from '../../ui/Button.svelte';
 	import WaistSparkline from './WaistSparkline.svelte';
 	import {
+		parseWaistInput,
+		validateWaistCm,
 		WAIST_CADENCE_DAYS,
 		WAIST_MIN_TREND_SAMPLES,
 		WAIST_NOISE_CM,
@@ -44,15 +46,21 @@
 
 	let { days, waist, onLogged }: Props = $props();
 
-	let input = $state('');
+	/**
+	 * `string | number`, ikke `string`.
+	 *
+	 * `bind:value` mot en `<input type="number">` konverterer til tall, så feltet
+	 * starter som tom streng og er et number etter første tastetrykk. Å behandle den
+	 * som en streng hele veien kastet `input.replace is not a function` inne i en
+	 * `$derived` — den reaktive oppdateringen stoppet, og Lagre-knappen ble aldri
+	 * aktiv. Parsingen bor i `parseWaistInput`, med en test.
+	 */
+	let input = $state<string | number>('');
 	let saving = $state(false);
 	let errorMessage = $state<string | null>(null);
 	let justSaved = $state(false);
 
-	const parsed = $derived.by(() => {
-		const value = Number(input.replace(',', '.'));
-		return Number.isFinite(value) && value > 0 ? value : null;
-	});
+	const parsed = $derived(parseWaistInput(input));
 
 	function nb(value: number, decimals = 1): string {
 		return value.toFixed(decimals).replace('.', ',');
@@ -72,6 +80,15 @@
 
 	async function save() {
 		if (parsed === null || saving) return;
+
+		// Samme validator som endepunktet, så brukeren ikke får to ulike
+		// forklaringer på samme avvisning. Se body-profile-fields.ts.
+		const invalid = validateWaistCm(parsed);
+		if (invalid) {
+			errorMessage = invalid;
+			return;
+		}
+
 		saving = true;
 		errorMessage = null;
 		try {
@@ -157,7 +174,7 @@
 			<Input
 				type="number"
 				inputmode="decimal"
-				step="0.5"
+				step="0.1"
 				min="40"
 				max="200"
 				bind:value={input}

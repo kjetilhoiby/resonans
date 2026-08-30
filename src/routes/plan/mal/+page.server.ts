@@ -12,6 +12,9 @@ import {
 	type WeightProgress
 } from '$lib/server/goal-progress';
 import { buildMetricGoalEval, type MetricGoalEval } from '$lib/domain/metric-goal-eval';
+
+/** grocery_spend er category_spend bundet til denne kategorien. */
+const GROCERY_CATEGORY = 'dagligvarer';
 import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import {
 	evaluateScreenTimeGoal,
@@ -128,6 +131,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		'fat_mass',
 		'muscle_mass',
 		'category_spend',
+		// grocery_spend ER category_spend for dagligvarer. Metrikken sto i katalogen, i
+		// viz-spec og i create_goal-beskrivelsen uten noen leser, så et mål opprettet på den
+		// viste ingen nåverdi i det hele tatt. Se fase 7 i changeloggen.
+		'grocery_spend',
 		'parent_time'
 	]);
 	let metricEvalMap: Record<string, MetricGoalEval> = {};
@@ -158,6 +165,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 				.map((g) => (g.metadata as any).spendCategory)
 				.filter((c): c is string => typeof c === 'string' && c.length > 0)
 		);
+		// grocery_spend leses gjennom samme leser, med kategorien bundet.
+		if (metricGoals.some((g) => (g.metadata as any).metricId === 'grocery_spend')) {
+			spendCategories.add(GROCERY_CATEGORY);
+		}
 		const categorySpendMap = new Map(
 			await Promise.all(
 				[...spendCategories].map(
@@ -215,6 +226,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 					const spend = cat ? categorySpendMap.get(cat) : null;
 					current = spend?.currentMonth ?? null;
 					if (spend?.threeMonthAvg != null) contextLabel = `3-mnd snitt: ${spend.threeMonthAvg} kr/mnd`;
+					else contextLabel = 'hittil i måneden';
+					break;
+				}
+				case 'grocery_spend': {
+					const spend = categorySpendMap.get(GROCERY_CATEGORY);
+					current = spend?.currentMonth ?? null;
+					if (spend?.threeMonthAvg != null)
+						contextLabel = `3-mnd snitt: ${spend.threeMonthAvg} kr/mnd`;
 					else contextLabel = 'hittil i måneden';
 					break;
 				}

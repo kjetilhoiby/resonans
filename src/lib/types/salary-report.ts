@@ -28,6 +28,37 @@ export interface SalaryInsight {
 	isFreeReflection?: boolean;
 }
 
+/**
+ * Månedsgjennomgangen: de fire spørsmålene brukeren valgte, i den rekkefølgen han valgte dem.
+ * Se `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`, fase 6.
+ *
+ * Spørsmål 3 dekkes av `goalProgress`, som alt finnes.
+ */
+export interface MonthReview {
+	/** 1. Bærer måneden som kommer? `carries: null` = vet ikke, IKKE nei. */
+	monthAhead: {
+		carries: boolean | null;
+		margin: number | null;
+		reason: string;
+	};
+	/** 2. Hva var uvanlig? Bare avvikene, målt mot kategoriens EGEN normal. */
+	unusual: Array<{
+		category: string;
+		label: string;
+		emoji: string;
+		current: number;
+		normal: number;
+		delta: number;
+		direction: 'over' | 'under';
+		reason: string;
+	}>;
+	/** 4. Én ting å gjøre noe med. `action: null` er et gyldig svar. */
+	oneThing: {
+		action: { kind: string; amountKr: number; text: string } | null;
+		reason: string;
+	};
+}
+
 export interface SalaryMonthReport {
 	currentSalaryDate: string;
 	prevSalaryDate: string | null;
@@ -54,5 +85,7 @@ export interface SalaryMonthReport {
 	previousMonthSpending: number;
 	spendingTrend: number;
 	insights: SalaryInsight[];
+	/** Fase 6. Valgfri så en gammel klient ikke knekker på en ny nøkkel. */
+	review?: MonthReview;
 }
 

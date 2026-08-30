@@ -8,6 +8,7 @@ import {
 	summarizeWaist,
 	waistAxis,
 	validateWaistCm,
+	parseWaistInput,
 	WAIST_CADENCE_DAYS,
 	WAIST_MIN_TREND_SAMPLES,
 	MIN_WAIST_AXIS_SPAN_CM,
@@ -39,6 +40,41 @@ describe('validateWaistCm', () => {
 		expect(validateWaistCm('94')).not.toBeNull();
 		expect(validateWaistCm(null)).not.toBeNull();
 		expect(validateWaistCm(NaN)).not.toBeNull();
+	});
+});
+
+describe('parseWaistInput', () => {
+	it('tar imot et tall, slik bind:value faktisk leverer det', () => {
+		// Regresjonen: `bind:value` mot type="number" konverterer til tall, og
+		// kortet kalte `.replace()` på verdien. Den kastet inne i en $derived, den
+		// reaktive oppdateringen stoppet, og Lagre-knappen ble aldri aktiv.
+		expect(parseWaistInput(102.3)).toBe(102.3);
+	});
+
+	it('tar imot en streng med punktum og med komma', () => {
+		expect(parseWaistInput('102.3')).toBe(102.3);
+		expect(parseWaistInput('102,3')).toBe(102.3);
+	});
+
+	it('gir null for tomt felt', () => {
+		expect(parseWaistInput('')).toBeNull();
+		expect(parseWaistInput('   ')).toBeNull();
+	});
+
+	it('gir null for det som ikke er et tall', () => {
+		expect(parseWaistInput('nitti')).toBeNull();
+		expect(parseWaistInput(null)).toBeNull();
+		expect(parseWaistInput(undefined)).toBeNull();
+		expect(parseWaistInput(NaN)).toBeNull();
+		expect(parseWaistInput(0)).toBeNull();
+		expect(parseWaistInput(-94)).toBeNull();
+	});
+
+	it('slipper gjennom et tall utenfor spennet — validatoren eier den beskjeden', () => {
+		// Parsing og validering er to spørsmål. Ville parsingen også avvist 300,
+		// hadde brukeren fått en død knapp framfor «må være mellom 40 og 200».
+		expect(parseWaistInput(300)).toBe(300);
+		expect(validateWaistCm(parseWaistInput(300))).not.toBeNull();
 	});
 });
 

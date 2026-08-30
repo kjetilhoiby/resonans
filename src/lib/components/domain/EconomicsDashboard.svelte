@@ -7,8 +7,10 @@
 	import SpendingChart from '../charts/SpendingChart.svelte';
 	import CumulativeSpending from '../charts/CumulativeSpending.svelte';
 	import PaydaySpendSection from './economics/PaydaySpendSection.svelte';
+	import SavingsTab from './economics/SavingsTab.svelte';
 	import AccountSettingsSheet from './economics/AccountSettingsSheet.svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
 
 	interface EconomicsAccount {
@@ -29,7 +31,7 @@
 
 	interface Props {
 		accounts: EconomicsAccount[]; totalBalance: number; currentMonth: string;
-		monthSpending: { totalSpending: number; totalFixed: number; totalVariable: number; totalIncome: number; categories: CategoryRow[] };
+		monthSpending: { totalSpending: number; totalFixed: number; totalVariable: number; totalIncome: number; internalTransferTotal?: number; categories: CategoryRow[] };
 		recentTransactions: RecentTx[]; paydaySpend: PaydaySpend;
 		generatedAt?: string | null; embedded?: boolean;
 	}
@@ -37,7 +39,7 @@
 	let { accounts, totalBalance, currentMonth, monthSpending, recentTransactions, paydaySpend, generatedAt = null, embedded = false }: Props = $props();
 
 	// Subtab state
-	type SubTab = 'oversikt' | 'forbruk' | 'lonnsmaned';
+	type SubTab = 'oversikt' | 'forbruk' | 'sparing' | 'lonnsmaned';
 	let subTab = $state<SubTab>('oversikt');
 
 	// Forbruk tab
@@ -45,6 +47,21 @@
 	let spendingMonths = $state<SpendingMonthData[]>([]);
 	let loadingSpending = $state(false);
 	let spendingLoaded = $state(false);
+
+	// Sparing-fanen — hentes når fanen åpnes, siden den bygger en daglig saldoserie
+	// per konto over to år.
+	type SavingsData = {
+		accounts: any[];
+		totalBalance: number;
+		totalRunwayMonths: number | null;
+		monthlySpend: number | null;
+		noSavingsAccountFound: boolean;
+		unnamedAccountCount?: number;
+	};
+	let savings = $state<SavingsData | null>(null);
+	let loadingSavings = $state(false);
+	let savingsLoaded = $state(false);
+	let savingsError = $state<string | null>(null);
 
 	// Lønnsmåned tab
 	type CumDayPoint = { day: number; cumulative: number; dailySpent: number };
@@ -141,6 +158,7 @@
 	function switchSubTab(tab: SubTab) {
 		subTab = tab;
 		if (tab === 'forbruk' && !spendingLoaded) void loadSpending();
+		if (tab === 'sparing' && !savingsLoaded) void loadSavings();
 		if (tab === 'lonnsmaned') ensureCumulativeLoaded();
 	}
 
@@ -152,6 +170,21 @@
 		loadingSpending = true;
 		try { const res = await fetch('/api/economics/spending?months=12'); const data = await res.json(); spendingMonths = data.months ?? []; spendingLoaded = true; }
 		finally { loadingSpending = false; }
+	}
+
+	async function loadSavings() {
+		loadingSavings = true;
+		try {
+			const res = await fetch('/api/economics/sparing');
+			if (!res.ok) throw new Error(extractApiErrorMessage(res.status, await res.text()));
+			savings = await res.json();
+			savingsLoaded = true;
+		} catch (error) {
+			// Meldingen VISES — en generisk catch gjør en prod-feil uløselig.
+			savingsError = error instanceof Error ? error.message : 'Kunne ikke hente sparedata';
+		} finally {
+			loadingSavings = false;
+		}
 	}
 
 	async function loadCumulative(cat: CategoryId) {
@@ -178,6 +211,7 @@
 	<div class="ed-subtabs" role="tablist">
 		<button class="ed-subtab" class:active={subTab === 'oversikt'} onclick={() => switchSubTab('oversikt')} role="tab" aria-selected={subTab === 'oversikt'}>Oversikt</button>
 		<button class="ed-subtab" class:active={subTab === 'forbruk'} onclick={() => switchSubTab('forbruk')} role="tab" aria-selected={subTab === 'forbruk'}>Forbruk</button>
+		<button class="ed-subtab" class:active={subTab === 'sparing'} onclick={() => switchSubTab('sparing')} role="tab" aria-selected={subTab === 'sparing'}>Sparing</button>
 		<button class="ed-subtab" class:active={subTab === 'lonnsmaned'} onclick={() => switchSubTab('lonnsmaned')} role="tab" aria-selected={subTab === 'lonnsmaned'}>Lønnsmåned</button>
 	</div>
 
@@ -230,8 +264,37 @@
 			<SpendingChart data={spendingMonths} />
 		{/if}
 
+	{:else if subTab === 'sparing'}
+		{#if savingsError}
+			<!-- Meldingen VISES. En generisk tekst gjør en prod-feil uløselig. -->
+			<div class="ed-loading">{savingsError}</div>
+		{:else if savings}
+			<SavingsTab
+				accounts={savings.accounts}
+				totalBalance={savings.totalBalance}
+				totalRunwayMonths={savings.totalRunwayMonths}
+				monthlySpend={savings.monthlySpend}
+				noSavingsAccountFound={savings.noSavingsAccountFound}
+				unnamedAccountCount={savings.unnamedAccountCount ?? 0}
+				loading={loadingSavings}
+			/>
+		{:else}
+			<div class="ed-loading">Leser saldohistorikk…</div>
+		{/if}
+
 	{:else}
-		<!-- Lønnsmåned: cumulative spending per category within salary periods -->
+		<!-- Lønnsmåned: cumulative spending per category within salary periods.
+		     NB: dette er noe ANNET enn lønnsrapporten (månedsgjennomgangen), som bor på
+		     /economics/lonnsmaned. De to skal ikke slås sammen — se fase 6 i changeloggen. -->
+		<button class="ed-review-link" onclick={() => goto('/economics/lonnsmaned')}>
+			<span class="ed-review-icon">📋</span>
+			<span class="ed-review-copy">
+				<strong>Månedsgjennomgang</strong>
+				<span>Bærer måneden? Hva var uvanlig? Gikk vi over noe? Én ting å gjøre.</span>
+			</span>
+			<span class="ed-review-chevron">›</span>
+		</button>
+
 		<div class="ed-cat-chips">
 			{#each CUMULATIVE_CATS as cat}
 				{@const def = CATEGORIES[cat]}
@@ -278,6 +341,42 @@
 {/if}
 
 <style>
+	.ed-review-link {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		width: 100%;
+		text-align: left;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 12px;
+		padding: 0.75rem 0.85rem;
+		margin-bottom: 1rem;
+		color: inherit;
+		cursor: pointer;
+	}
+	.ed-review-icon {
+		font-size: 1.25rem;
+	}
+	.ed-review-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		flex: 1;
+	}
+	.ed-review-copy strong {
+		font-size: 0.92rem;
+	}
+	.ed-review-copy span {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		line-height: 1.35;
+	}
+	.ed-review-chevron {
+		color: var(--text-secondary);
+		font-size: 1.2rem;
+	}
+
 	.economics-dashboard { display: flex; flex-direction: column; gap: 18px; }
 	.ed-embedded { padding-top: 4px; }
 	.ed-header { display: flex; flex-direction: column; gap: 4px; }

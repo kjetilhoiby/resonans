@@ -163,7 +163,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		     AND f.mk = s.mk
 		     AND f.transaction_date BETWEEN s.transaction_date - $3::int
 		                                AND s.transaction_date + $3::int
-		   ORDER BY ABS(f.transaction_date - s.transaction_date),
+		   -- Eksakt beløp FØRST, dato etterpå. Motsatt rekkefølge (som var første
+		   -- utgave) mispairer systematisk: flere kjøp hos samme merchant samme dag
+		   -- er vanlig — Rema ×3, Tesla ×4, Circle K ×2 i ett enkelt uttrekk — og da
+		   -- får alle de nære datoene samme motpart, mens den ekte motparten med
+		   -- identisk beløp ligger en dag eller to unna og aldri velges. Histogrammet
+		   -- fyltes da med oppdiktede prosentavvik (+710 %, −94 %) som ser ut som
+		   -- beløpsdrift og ikke er det.
+		   ORDER BY (ABS(f.amount) = ABS(s.amount)) DESC,
+		            ABS(f.transaction_date - s.transaction_date),
 		            ABS(ABS(f.amount) - ABS(s.amount))
 		   LIMIT 1
 		 ) f ON TRUE
@@ -325,7 +333,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			'multiplicity er maks distinkte ID-er per (svar, status), ikke summen — begge statuser kan komme i samme batch.',
 			'statuses[].unmapped = true betyr status_rank 0: statusen deltar ikke i GREATEST-løftet, og batch-kollapsens === BOOKED treffer den ikke.',
 			'drift.samples er kandidatpar, ikke bekreftede sammenhenger. Tersklene skal leses av histogrammene, ikke velges.',
-			'Er drift.stalledWithCandidate 0 fordi alle bøtter har samme toppstatus, gjelder ikke driftshypotesen for lagrede data — det er også et svar.'
+			'Er drift.stalledWithCandidate 0 fordi alle bøtter har samme toppstatus, gjelder ikke driftshypotesen for lagrede data — det er også et svar.',
+			'drift-joinen prioriterer eksakt beløp foran nær dato. Første utgave gjorde det motsatt og mispairet flere kjøp hos samme merchant samme dag; les gamle uttrekk med det i mente.',
+			'multiplicity er meningsløs for data synket før 2026-08-11: rå-tabellen ble til da skrevet POST batch-kollaps, så den kunne per konstruksjon aldri vise mer enn 1. Måling krever data synket etter at rå-strømmen ble gjort rå.'
 		]
 	});
 };

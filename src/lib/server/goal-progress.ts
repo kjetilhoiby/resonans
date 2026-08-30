@@ -4,6 +4,8 @@ import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { normalizeBodyComposition } from '$lib/domain/health/body-composition';
+import { readTransactions } from '$lib/server/economics/transactions';
+import { osloDayKey } from '$lib/domain/oslo-time';
 
 /**
  * Delt progresjons-lesing for målbare mål. Brukes av både /plan/mal og
@@ -311,9 +313,14 @@ export type CategorySpend = {
 };
 
 /**
- * Månedlig forbruk i én kategori (categorized_events): forbruk hittil i
- * inneværende måned + snitt over de tre foregående hele månedene som kontekst.
- * For forbrukstak-mål (lavere er bedre). Returnerer null uten transaksjoner.
+ * Månedlig forbruk i én kategori: forbruk hittil i inneværende måned + snitt over de tre
+ * foregående hele månedene som kontekst. For forbrukstak-mål (lavere er bedre).
+ * Returnerer null uten transaksjoner.
+ *
+ * **Leser gjennom den delte leseren, ikke `categorized_events`.** Fram til august 2026 leste
+ * den projeksjonen, som manglet 202 rader og 102 000 kr mot canonical — så et kategoritak ble
+ * målt mot et tall 6 % lavere enn det flaten viste ved siden av. Interne overføringer holdes
+ * utenfor, ellers ville et tak på `sparing` målt flyttinger mellom egne kontoer.
  */
 export async function readCategorySpend(
 	userId: string,
@@ -322,32 +329,28 @@ export async function readCategorySpend(
 ): Promise<CategorySpend | null> {
 	// Vindu: fra og med tre måneder tilbake til nå (dekker snitt-basis + inneværende)
 	const windowStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+	const monthStartKey = osloDayKey(now).slice(0, 7);
 
-	const rows = await db
-		.select({ timestamp: categorizedEvents.timestamp, amount: categorizedEvents.amount })
-		.from(categorizedEvents)
-		.where(
-			and(
-				eq(categorizedEvents.userId, userId),
-				eq(categorizedEvents.resolvedCategory, category),
-				gte(categorizedEvents.timestamp, windowStart),
-				lte(categorizedEvents.timestamp, now)
-			)
-		);
+	const { transactions } = await readTransactions({
+		userId,
+		from: windowStart,
+		to: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+		excludeInternalTransfers: true
+	});
 
+	const rows = transactions.filter((tx) => tx.category === category && tx.amount < 0);
 	if (rows.length === 0) return null;
 
 	let currentMonth = 0;
 	const priorMonths = new Map<string, number>();
 	for (const row of rows) {
-		const amount = Math.abs(Number(row.amount));
+		const amount = Math.abs(row.amount);
 		if (!Number.isFinite(amount)) continue;
-		if (row.timestamp >= monthStart) {
+		const monthKey = row.date.slice(0, 7);
+		if (monthKey >= monthStartKey) {
 			currentMonth += amount;
 		} else {
-			const key = row.timestamp.toISOString().slice(0, 7);
-			priorMonths.set(key, (priorMonths.get(key) ?? 0) + amount);
+			priorMonths.set(monthKey, (priorMonths.get(monthKey) ?? 0) + amount);
 		}
 	}
 
@@ -360,35 +363,42 @@ export async function readCategorySpend(
 	return { currentMonth: Math.round(currentMonth), threeMonthAvg };
 }
 
-/** Månedlig sparebeløp: sum av 'sparing'-kategoriserte transaksjoner (absoluttverdi). */
+/**
+ * Månedlig sparebeløp: hvor mye som faktisk ble satt av.
+ *
+ * **Fortegnet betyr noe, og gjorde det ikke før.** Fram til august 2026 summerte denne
+ * `Math.abs()` av hver rad kategorisert `sparing`, så et **uttak** fra sparekontoen økte
+ * sparetallet — og begge sidene av en overføring telte, så én flytting ble regnet dobbelt.
+ * Nå brukes de interne overføringene direkte: netto inn til kontoer som mottar sparing.
+ */
 export async function readMonthlySavings(userId: string, now = new Date()): Promise<MonthlySavings | null> {
 	// Vindu: de tre siste hele kalendermånedene
 	const windowStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
 	const windowEnd = new Date(now.getFullYear(), now.getMonth(), 1);
 
-	const rows = await db
-		.select({ timestamp: categorizedEvents.timestamp, amount: categorizedEvents.amount })
-		.from(categorizedEvents)
-		.where(
-			and(
-				eq(categorizedEvents.userId, userId),
-				eq(categorizedEvents.resolvedCategory, 'sparing'),
-				gte(categorizedEvents.timestamp, windowStart),
-				lte(categorizedEvents.timestamp, windowEnd)
-			)
-		);
+	const { transactions } = await readTransactions({
+		userId,
+		from: windowStart,
+		to: windowEnd
+	});
 
-	if (rows.length === 0) return null;
+	// Innskudd på en konto, kategorisert som sparing, som har en motpost på en egen konto.
+	// Uttak trekkes fra i stedet for å legges til.
+	const savingRows = transactions.filter(
+		(tx) => tx.isInternalTransfer && tx.category === 'sparing'
+	);
+
+	if (savingRows.length === 0) return null;
 
 	const perMonth = new Map<string, number>();
-	for (const row of rows) {
-		const key = row.timestamp.toISOString().slice(0, 7);
-		const amount = Math.abs(Number(row.amount));
-		if (!Number.isFinite(amount)) continue;
-		perMonth.set(key, (perMonth.get(key) ?? 0) + amount);
+	for (const row of savingRows) {
+		// Positiv = inn på sparekontoen. Negativ = uttak, og det skal redusere måneden.
+		if (row.amount === 0 || !Number.isFinite(row.amount)) continue;
+		const key = row.date.slice(0, 7);
+		perMonth.set(key, (perMonth.get(key) ?? 0) + row.amount);
 	}
 
-	const lastMonthKey = new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString().slice(0, 7);
+	const lastMonthKey = osloDayKey(new Date(now.getFullYear(), now.getMonth() - 1, 15)).slice(0, 7);
 	const lastMonthAmount = Math.round(perMonth.get(lastMonthKey) ?? 0);
 	const monthTotals = [...perMonth.values()];
 	const threeMonthAvg = monthTotals.length > 0

@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
+import { readTransactions } from '$lib/server/economics/transactions';
 
 export type DailyBalance = {
 	date: string; // YYYY-MM-DD
@@ -10,16 +11,16 @@ export type DailyBalance = {
 };
 
 /**
- * Reconstructs a daily balance series using ALL stored bank_balance snapshots
- * as anchor points. Between two consecutive anchors, transactions are applied
- * forward from the earlier one. When the next anchor is reached, the running
- * balance is reset to that snapshot's value — correcting any accumulated drift
- * from missing or incorrect transactions.
+ * Bygger en daglig SALDOSERIE for én bankkonto, ankret på alle lagrede
+ * `bank_balance`-snapshots. Mellom to ankre anvendes transaksjonene forover; ved neste anker
+ * resettes den løpende saldoen til den målte verdien, så drift ikke akkumulerer.
  *
- * This is significantly more accurate than single-anchor reconstruction for
- * periods months in the past.
+ * NB: het `buildDailyBalances` fram til august 2026, i kollisjon med
+ * `$lib/domain/nutrition/daily-balances.ts`, som betyr noe helt annet (energibalanse per dag).
+ * To funksjoner med samme navn og ulik betydning er en feilkilde når begge importeres fra
+ * serverkode — «account» i navnet sier hvilken balanse det er snakk om.
  */
-export async function buildDailyBalances(
+export async function buildDailyAccountBalances(
 	userId: string,
 	accountId: string
 ): Promise<DailyBalance[]> {
@@ -50,23 +51,25 @@ export async function buildDailyBalances(
 	}
 
 	// ── Fetch all transactions ────────────────────────────────────────────────
-	// Exclude pdf_import transactions — their signs are heuristic-guessed and
-	// would corrupt the daily balance. Month-boundary anchors are sufficient.
-	const transactions = await db
-		.select({
-			amount:   sql<number>`(data->>'amount')::numeric`,
-			timestamp: sensorEvents.timestamp
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`(metadata->>'source') IS DISTINCT FROM 'pdf_import'`
-			)
-		)
-		.orderBy(asc(sensorEvents.timestamp));
+	// **Gjennom canonical, ikke rå `sensor_events`.** Den rå strømmen er ~3,8× duplisert, og
+	// her anvendes hver transaksjon på en løpende saldo: et duplikat trekkes fra på nytt, så
+	// linja drifter bort fra virkeligheten mellom to ankre og snapper tilbake ved neste. Med
+	// tette ankre (synk hvert 5. minutt) er feilen liten; på PDF-importert historikk med
+	// månedsankre var formen innad i måneden søppel. Og `uttak` per dag — som er tallet
+	// sparefunksjonen skal måle frekvens på — ble tilsvarende blåst opp.
+	//
+	// PDF-importerte transaksjoner faller ut av seg selv: de finnes bare i `sensor_events`,
+	// aldri i canonical. Det er ønsket her, av samme grunn som før — fortegnene deres er
+	// heuristisk gjettet. Deres `bank_balance`-ankre leses fortsatt, og de er poenget.
+	const { transactions: canonicalRows } = await readTransactions({
+		userId,
+		from: snapshots[0].timestamp,
+		accountId
+	});
+
+	const transactions = canonicalRows
+		.map((tx) => ({ amount: tx.amount, timestamp: tx.timestamp }))
+		.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
 	const txByDate = new Map<string, number>();
 	const innskuddByDate = new Map<string, number>();
@@ -83,19 +86,20 @@ export async function buildDailyBalances(
 		}
 	}
 
+	// Serien starter ved det FØRSTE ankeret, ikke ved første transaksjon.
+	//
+	// Den forrige utgaven kunne starte tidligere og regnet da åpningsbalansen som
+	// `førsteAnker − transaksjonssummenFørDet` — altså en ekstrapolering bakover gjennom den
+	// dupliserte strømmen, uten noe anker til å korrigere seg mot. Resultatet var at den
+	// ELDSTE delen av kurven var den minst pålitelige, stikk motsatt av hva spørsmålet «går
+	// sparekontoen ned over tid» trenger. Nå er startpunktet en målt saldo.
+	//
+	// Konsekvensen er at tiden før den første saldomålingen ikke tegnes. Det er riktig: der
+	// finnes ingen målt saldo, bare et regnestykke. PDF-importerte kontoutskrifter gir ankre
+	// år tilbake, så for sparekontoen er vinduet likevel langt.
 	const firstSnapshotDate = snapshots[0].timestamp.toISOString().split('T')[0];
-	const firstTxDate = transactions.length > 0
-		? transactions[0].timestamp.toISOString().split('T')[0]
-		: firstSnapshotDate;
-	const startDateStr = firstTxDate < firstSnapshotDate ? firstTxDate : firstSnapshotDate;
-
-	const firstSnapshotBalance = snapshotByDate.get(firstSnapshotDate) ?? 0;
-	let txSumBeforeFirstSnapshot = 0;
-	for (const tx of transactions) {
-		const d = tx.timestamp.toISOString().split('T')[0];
-		if (d < firstSnapshotDate) txSumBeforeFirstSnapshot += Number(tx.amount) || 0;
-	}
-	const openingBalance = firstSnapshotBalance - txSumBeforeFirstSnapshot;
+	const startDateStr = firstSnapshotDate;
+	const openingBalance = snapshotByDate.get(firstSnapshotDate) ?? 0;
 	const endDate = new Date().toISOString().split('T')[0];
 
 	return reconstructBalanceSeries(snapshotByDate, txByDate, innskuddByDate, uttakByDate, startDateStr, endDate, openingBalance);

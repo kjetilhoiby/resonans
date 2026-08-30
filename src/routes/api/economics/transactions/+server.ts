@@ -1,10 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, eq, asc, sql } from 'drizzle-orm';
-import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { readTransactions } from '$lib/server/economics/transactions';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,6 +7,13 @@ import type { RequestHandler } from './$types';
  * Supports two modes:
  *   ?accountId=xxx&month=2025-01&category=dagligvare   (spending drill-down)
  *   ?accountId=xxx&fromDate=2025-01-10&toDate=2025-01-25  (balance chart brush)
+ *
+ * Leste rå `sensor_events` fram til august 2026 og kategoriserte selv. Nå gjennom den delte
+ * leseren. Se `docs/changelog/2026-08-11-okonomi-tillitsgjennomgang.md`.
+ *
+ * **Interne overføringer er MED her, merket.** Dette er en drill-down: skjuler man dem, blir
+ * summen av lista ulik totalen brukeren klikket på, og en manglende rad er verre å forklare
+ * enn en merket rad. `isInternalTransfer` gjør at flaten kan vise dem for hva de er.
  */
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
@@ -46,58 +48,30 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		requestedAccountIds.push(accountId);
 	}
 
-	const where = and(
-		eq(sensorEvents.userId, userId),
-		eq(sensorEvents.dataType, 'bank_transaction'),
-		sql`timestamp >= ${from.toISOString()}`,
-		sql`timestamp < ${to.toISOString()}`,
-		...(requestedAccountIds.length > 0
-			? [
-				sql`data->>'accountId' IN (${sql.join(
-					requestedAccountIds.map((id) => sql`${id}`),
-					sql`, `
-				)})`
-			]
-			: [])
-	);
-
-	const [rows, merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		db
-			.select({
-				timestamp: sensorEvents.timestamp,
-				amount: sql<number>`(data->>'amount')::numeric`,
-				description: sql<string>`data->>'description'`,
-				typeText: sql<string>`data->>'category'`,
-				accountId: sql<string>`data->>'accountId'`,
-				transactionId: sql<string>`metadata->>'transactionId'`
-			})
-			.from(sensorEvents)
-			.where(where)
-			.orderBy(asc(sensorEvents.timestamp)),
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
+	// Leseren tar én konto; flere kontoer filtreres etterpå. Overføringsmatchingen må
+	// dessuten se ALLE kontoene for å finne motposter — et filter i spørringen ville
+	// gjort at den ene siden av en flytting så ut som et ekte kjøp.
+	const { transactions: rows } = await readTransactions({ userId, from, to });
 
 	const transactions = rows
-		.map((r) => {
-			const amount = Number(r.amount) || 0;
-			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-			return {
-				transactionId: r.transactionId,
-				accountId: r.accountId,
-				date: r.timestamp.toISOString().split('T')[0],
-				description: r.description ?? '',
-				amount,
-				category: cat.category,
-				subcategory: cat.subcategory ?? null,
-				label: cat.label,
-				emoji: cat.emoji,
-				isFixed: cat.isFixed
-			};
-		})
-		.filter((t) => (!categoryFilter || t.category === categoryFilter))
-		.filter((t) => (!subcategoryFilter || t.subcategory === subcategoryFilter))
+		.filter((t) => requestedAccountIds.length === 0 || requestedAccountIds.includes(t.accountId))
+		.filter((t) => !categoryFilter || t.category === categoryFilter)
+		.filter((t) => !subcategoryFilter || t.subcategory === subcategoryFilter)
+		.map((t) => ({
+			// canonical-id-en. SB1s egen transactionId er ny ved hver synk og var ustabil utad.
+			transactionId: t.id,
+			accountId: t.accountId,
+			date: t.date,
+			description: t.description,
+			amount: t.amount,
+			category: t.category,
+			subcategory: t.subcategory,
+			label: t.label,
+			emoji: t.emoji,
+			isFixed: t.isFixed,
+			isInternalTransfer: t.isInternalTransfer,
+			counterAccountId: t.counterAccountId
+		}))
 		.sort((a, b) => {
 			if (a.date > b.date) return -1;
 			if (a.date < b.date) return 1;
