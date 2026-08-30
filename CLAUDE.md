@@ -1961,6 +1961,13 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
 - **Healthcheck mot `127.0.0.1`, aldri `localhost`** — det siste kan resolve til
   `::1` mens adapter-node lytter på `0.0.0.0`. Symptomet er «unhealthy» ved siden
   av en logg som sier «Listening on 0.0.0.0:3000».
+- **`curl` MÅ ligge i runtime-imaget.** Coolify kjører sin egen healthcheck inne
+  i containeren med `curl` eller `wget` og **ignorerer** `HEALTHCHECK`-instruksjonen
+  i Dockerfilen. `node:22-slim` har ingen av dem, så containeren stemples
+  unhealthy og deployen rulles tilbake — med nøyaktig samme symptom som over, og
+  `curl: not found` i healthcheck-loggen. `app-template` slapp unna fordi alpine
+  har busybox-`wget`; den forskjellen forsvant da vi måtte over på slim for
+  `@resvg/resvg-js`. Målt på toduvel 30. august 2026.
 - **`pgvector` må være i Postgres-imaget** (`pgvector/pgvector:pg17`). Tre tabeller
   har `vector(1536)`.
 
@@ -1969,6 +1976,24 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
 ## Miljøvariabler
 
 **Påkrevd:** `DATABASE_URL`, `OPENAI_API_KEY`, `AUTH_SECRET`
+
+**`AUTH_SECRET` gjør TO jobber, og den andre er usynlig.** Den signerer
+øktene — og den er **krypteringsnøkkelen for lagrede tokens**, siden
+`getKey()` i `$lib/server/crypto.ts` leser `TOKEN_ENCRYPTION_KEY || AUTH_SECRET`
+og `TOKEN_ENCRYPTION_KEY` ikke er satt i noe miljø. Alle krypterte Strava- og
+Tesla-credentials ligger altså under `AUTH_SECRET`.
+
+- **Bytter du den, er de radene tapt.** Permanent, og uten feilmelding: appen
+  svarer som normalt, integrasjonene svarer bare ikke.
+- **Å SETTE `TOKEN_ENCRYPTION_KEY` er samme skade.** En tilfeldig verdi i et
+  tomt felt ser ut som å tette et hull; den bytter nøkkel på data som alt er
+  kryptert. Skal den innføres, må rotasjonen lese med gammel nøkkel og skrive
+  med ny — `v1:`-prefikset finnes for det, men jobben er ikke gjort.
+- **Samme felle for `EXTERNAL_API_SECRET_PEPPER`:** `hashApiSecret()` leser
+  `env.EXTERNAL_API_SECRET_PEPPER ?? ''`, så peppern i bruk er den **tomme
+  strengen**, og alle Ekko-tokens er hashet med den. Setter du en verdi, slutter
+  hvert token å validere — og her finnes ingen rotasjonsvei i det hele tatt,
+  siden en hash ikke kan leses tilbake.
 
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
