@@ -9,6 +9,8 @@
  * Modulen er server-only men har ingen db-avhengighet — gjør den lett å enhetsteste.
  */
 
+import { isUsableHrBaseline, zoneForHeartRate } from '$lib/domain/health/hr-zones';
+
 export interface TrackPoint {
 	lat?: number;
 	lon?: number;
@@ -217,20 +219,20 @@ export interface HrZoneInput {
 }
 
 /**
- * Beregn andel av total tid i hver av 5 HR-soner basert på HRR (Karvonen).
- *  z1: 50-60% HRR  (recovery)
- *  z2: 60-70% HRR  (aerobic base)
- *  z3: 70-80% HRR  (aerobic threshold)
- *  z4: 80-90% HRR  (lactate threshold)
- *  z5: 90-100% HRR (VO2max+)
+ * Andel av total tid i hver av de fem HR-sonene.
  *
- * Returnerer null hvis < 10 trackpoints har hr-data.
+ * Grensene bor i `$lib/domain/health/hr-zones` og deles med Ekko — skriv dem
+ * ALDRI av her. To kopier av en sonegrense blir to svar på «var dette rolig?»,
+ * og det var nettopp feilen denne modulen var halvparten av fram til august 2026.
+ *
+ * Klassifiseringen går mot avrundede bpm-bånd, ikke mot rå HRR-brøker; se
+ * modulen for hvorfor. Returnerer `undefined` hvis under ti trackpoints har puls.
  */
 export function computeHrZoneDistribution(
 	points: TrackPoint[],
 	input: HrZoneInput
 ): HrZoneDistribution | undefined {
-	if (input.maxHr <= input.restHr + 30) return undefined;
+	if (!isUsableHrBaseline(input)) return undefined;
 
 	const cum = buildCumulative(points);
 	if (cum.length < 2) return undefined;
@@ -245,9 +247,9 @@ export function computeHrZoneDistribution(
 		pointsWithHr += 1;
 		const dt = cum[i].tSec - cum[i - 1].tSec;
 		if (dt <= 0) continue;
-		const hrr = (hr - input.restHr) / (input.maxHr - input.restHr);
-		const zone = hrrToZone(hrr);
-		seconds[zone] += dt;
+		const zone = zoneForHeartRate(hr, input);
+		if (zone === null) continue;
+		seconds[zone - 1] += dt;
 		totalTime += dt;
 	}
 
@@ -263,15 +265,6 @@ export function computeHrZoneDistribution(
 		restHr: input.restHr,
 		maxHr: input.maxHr
 	};
-}
-
-function hrrToZone(hrr: number): 0 | 1 | 2 | 3 | 4 {
-	const clamped = Math.max(0, Math.min(1, hrr));
-	if (clamped < 0.6) return 0; // z1
-	if (clamped < 0.7) return 1; // z2
-	if (clamped < 0.8) return 2; // z3
-	if (clamped < 0.9) return 3; // z4
-	return 4; // z5
 }
 
 function round3(n: number): number {

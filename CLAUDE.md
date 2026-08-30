@@ -251,8 +251,8 @@ iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, 
 `/api/story/*`, `/api/quiz/*` og `/api/apps/live-session/*`. Konkret: `/api/apps/event` og
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
 `/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
-skjuling), `/api/apps/strava/*`, `/api/apps/tesla/*` og `/api/apps/gemini/*`
-(kortlevde Gemini Live-tokens).
+skjuling), `/api/apps/heart-rate-baseline` (pulssoner), `/api/apps/strava/*`,
+`/api/apps/tesla/*` og `/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
@@ -287,6 +287,33 @@ id-er på samme URL-posisjon, som er den fella å passe seg for.
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
 *innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.
+
+### Pulssoner: én modell, to repoer
+
+Se `docs/changelog/2026-08-30-pulssoner-en-modell.md` og `docs/ekko-pulssoner.md`.
+Grensene bor i `$lib/domain/health/hr-zones.ts`.
+
+- **Modellen er HRR (Karvonen), aldri %makspuls.** Fram til august 2026 fantes
+  begge: serveren regnet HRR i `computeHrZoneDistribution`, Ekkos
+  `HeartRateZones` regnet %makspuls. Med maks 180 og hvile 50 var puls 135 «Rolig»
+  på nettet og «Moderat» i appen — hele mellomområdet lå én sone for høyt i appen,
+  og det er nettopp der «rolig» bor. En sonecoach på den modellen ville bedt
+  brukeren gå ned i gange for å nå sone 2.
+- **Skriv aldri av en sonegrense.** Ekko får båndene ferdig utregnet i bpm fra
+  `GET /api/apps/heart-rate-baseline`; Swift-siden har ingen formel. To kopier i
+  to språk driver fra hverandre uten at noe sier fra.
+- **Båndene er HELTALL, og det er en beslutning.** Båndet blir sagt høyt («Sone 2
+  i dag. 128 til 140»), så klassifiseringen må gå mot de samme avrundede tallene
+  flaten viser. Klassifiserte coachen på `hrr >= 0.6` kunne puls 128 vært «under
+  sonen» i ett lag og «i sonen» i et annet. Prisen er at sonefordelinger kan
+  flytte seg inntil ett slag på grensene mot det som ble beregnet før.
+- **Soner er definert av makspulsen**, så baselinen er ikke en detalj: ti slag
+  feil flytter Z2-båndet ~7 slag, altså mer enn slingringsmonnet en coach har.
+  `resolveMaxHr` (manuell → Tanaka → trimmet observert topp) er derfor eneste
+  kilde, og `usable: false` skal skru AV sonecoaching framfor å gjette et bånd.
+- **Retningen i Karvonen er lett å gjette feil på:** en LAV hvilepuls gir en
+  STØRRE reserve, så samme bpm ligger da HØYERE i sonene. God form flytter ikke
+  alle båndene nedover — den flytter gulvet, og båndene strekker seg.
 
 ### Mortema (tema som eier tema)
 
