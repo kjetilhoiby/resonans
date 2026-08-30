@@ -41,6 +41,18 @@ ENV BODY_SIZE_LIMIT=25M
 ENV PROTOCOL_HEADER=x-forwarded-proto
 ENV HOST_HEADER=x-forwarded-host
 
+# curl, og det er ikke valgfritt: Coolify kjører SIN EGEN healthcheck inne i
+# containeren med `curl` eller `wget`, og ignorerer HEALTHCHECK-instruksjonen
+# under. `node:22-slim` har ingen av delene, så containeren stemples unhealthy
+# og deployen rulles tilbake — mens appens egen logg sier «Listening on
+# http://0.0.0.0:3000». Målt på toduvel 30. august 2026.
+#
+# app-template slapp unna fordi den kjører alpine, der busybox har `wget`. Den
+# forskjellen forsvant i det vi måtte over på slim for @resvg/resvg-js.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
+
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build     --chown=node:node /app/build        ./build
 COPY --chown=node:node package.json ./

@@ -1961,6 +1961,13 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
 - **Healthcheck mot `127.0.0.1`, aldri `localhost`** — det siste kan resolve til
   `::1` mens adapter-node lytter på `0.0.0.0`. Symptomet er «unhealthy» ved siden
   av en logg som sier «Listening on 0.0.0.0:3000».
+- **`curl` MÅ ligge i runtime-imaget.** Coolify kjører sin egen healthcheck inne
+  i containeren med `curl` eller `wget` og **ignorerer** `HEALTHCHECK`-instruksjonen
+  i Dockerfilen. `node:22-slim` har ingen av dem, så containeren stemples
+  unhealthy og deployen rulles tilbake — med nøyaktig samme symptom som over, og
+  `curl: not found` i healthcheck-loggen. `app-template` slapp unna fordi alpine
+  har busybox-`wget`; den forskjellen forsvant da vi måtte over på slim for
+  `@resvg/resvg-js`. Målt på toduvel 30. august 2026.
 - **`pgvector` må være i Postgres-imaget** (`pgvector/pgvector:pg17`). Tre tabeller
   har `vector(1536)`.
 
