@@ -13,7 +13,22 @@ jobs:
     steps:
       - name: Dispatch due cron jobs
         env:
-          APP_URL: ${{ secrets.APP_URL }}         # f.eks. https://resonans.vercel.app
+          # APP_URL er en VARIABEL, ikke en hemmelighet — et domenenavn er
+          # offentlig, og maskeringen kostet oss en morgen: da Vercel ble
+          # skrudd av 31. august 2026, sa loggen «Henter due-jobber fra
+          # ***/api/cron/jobs» ved siden av en 402. Nettopp hvilken URL den
+          # sto på var det ene man trengte å vite, og det var det ene som var
+          # sladdet. `CRON_SECRET` er fortsatt en hemmelighet; den skal det.
+          #
+          # `secrets.APP_URL` beholdes som fallback så workflowen ikke knekker
+          # i det sekundet denne merges. Legg verdien i Settings → Variables →
+          # Actions, og slett så hemmeligheten — først da blir loggen lesbar.
+          #
+          # Peker den på et dødt domene, feiler hver kjøring uten at noe annet
+          # klager: `cron_executions` får ingen rad, og monitoreringen melder
+          # «manglende kjøring» på den NYE stacken — altså et symptom som
+          # peker et helt annet sted enn årsaken.
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           node << 'EOF'
@@ -30,7 +45,21 @@ jobs:
             console.log(`Henter due-jobber fra ${APP_URL}/api/cron/jobs?due=1 …`);
             const listRes = await fetch(`${APP_URL}/api/cron/jobs?due=1`, { headers: HEADERS });
             if (!listRes.ok) {
-              console.error(`Feil ved henting av jobbregister: ${listRes.status} ${await listRes.text()}`);
+              const kropp = (await listRes.text()).slice(0, 300);
+              // ::error:: løfter linja opp på kjøringens forside. Uten den må
+              // man åpne loggen for å se hva som var galt, og med en jobb som
+              // kjører hvert 5. minutt gjør ingen det.
+              console.error(`::error::Fikk ${listRes.status} fra ${APP_URL}/api/cron/jobs?due=1`);
+              console.error(kropp);
+              if ([401, 402, 403, 404].includes(listRes.status)) {
+                console.error(
+                  '\nDette ser ut som feil MÅL, ikke en feil i appen:\n' +
+                  '  402/404 → APP_URL peker trolig på et deployment som ikke finnes lenger.\n' +
+                  '            Settes i Settings → Variables → Actions.\n' +
+                  '  401/403 → CRON_SECRET stemmer ikke med det appen forventer.\n' +
+                  '            Settes i Settings → Secrets → Actions.'
+                );
+              }
               process.exit(1);
             }
 

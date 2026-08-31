@@ -8,9 +8,15 @@
  *     Tesla henter den under registreringen — den MÅ være live i prod først.
  *
  * Kjør:  node scripts/tesla-register-partner.mjs
- * Valgfritt:  TESLA_DOMAIN=resonans.vercel.app TESLA_REGION=eu node scripts/...
+ * Valgfritt:  TESLA_DOMAIN=<domene> TESLA_REGION=eu node scripts/...
  *
  * Idempotent: kan kjøres på nytt; Tesla oppdaterer bare registreringen.
+ *
+ * NB: registreringen er knyttet til DOMENET, så en flytting krever en ny
+ * kjøring — public-nøkkelen hentes fra det domenet, og et domene som er borte
+ * kan ikke svare. Defaulten pekte på `resonans.vercel.app` til 31. august 2026,
+ * som er nøyaktig den verdien man IKKE vil treffe ved et uhell etter flyttingen:
+ * skriptet ville da re-registrert et dødt domene og sagt «✅ Ferdig».
  */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -41,7 +47,7 @@ if (envPath) {
 
 const CLIENT_ID = process.env.TESLA_CLIENT_ID;
 const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET;
-const DOMAIN = process.env.TESLA_DOMAIN ?? 'resonans.vercel.app';
+const DOMAIN = process.env.TESLA_DOMAIN ?? 'resonans.apps.hoi.by';
 const REGION = (process.env.TESLA_REGION ?? 'eu').toLowerCase();
 
 const FLEET_BASE =
