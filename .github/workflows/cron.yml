@@ -13,7 +13,12 @@ jobs:
     steps:
       - name: Dispatch due cron jobs
         env:
-          APP_URL: ${{ secrets.APP_URL }}         # f.eks. https://resonans.vercel.app
+          # APP_URL er en hemmelighet og ikke en variabel, så den byttes i
+          # Settings → Secrets → Actions — ikke her. Peker den på et dødt
+          # domene, feiler hver kjøring på 402/404 uten at noe annet klager:
+          # `cron_executions` får ingen rad, og monitoreringen rapporterer
+          # «manglende kjøring» på den nye stacken, som ser ut som en feil DER.
+          APP_URL: ${{ secrets.APP_URL }}         # f.eks. https://resonans.apps.hoi.by
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           node << 'EOF'
