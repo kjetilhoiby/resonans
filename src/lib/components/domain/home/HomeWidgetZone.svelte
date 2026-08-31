@@ -11,6 +11,7 @@
 	import PagerDots from '../../ui/PagerDots.svelte';
 	import StreakCard from '../../ui/StreakCard.svelte';
 	import StreakHistorySheet from '../streak/StreakHistorySheet.svelte';
+	import TrailingVolumeSheet from '../health/TrailingVolumeSheet.svelte';
 	import PartnerOnboardingCard from './PartnerOnboardingCard.svelte';
 	import { streakLabel, streakSublabel, type StreakState } from '$lib/domain/streaks';
 	import { HOME_CTX, type HomeContext, type HomeStreak } from './home-context';
@@ -28,6 +29,24 @@
 	/** Åpen streak-historikk. Panelet portaleres til body, så det kan bo utenfor pageren. */
 	let openStreak = $state<HomeStreak | null>(null);
 	let openStreakColor = $state('var(--warning-text)');
+
+	/**
+	 * Åpen volumdetalj. Samme begrunnelse som streak-historikken over: spørsmålet
+	 * man har foran «løpt siste 30 dager» er «hvordan ligger jeg an», og svaret er
+	 * kurven — ikke Helse-temaet, som er dit `navigateForWidget` sendte deg.
+	 */
+	let openVolumeWidget = $state<{ id: string; title: string } | null>(null);
+
+	/**
+	 * Widgets som har en egen detalj.
+	 *
+	 * Distanse i km er den ene så langt: den slepende kurven, båndet og
+	 * sonesammensetningen svarer på noe et temadashboard ikke gjør. Andre
+	 * metrikker beholder navigeringen framfor å få et halvtomt panel.
+	 */
+	function hasVolumeDetail(widget: { metricType: string; unit: string }): boolean {
+		return widget.metricType === 'distance' && widget.unit === 'km';
+	}
 
 	/** «6 dager på rad · gjenstår i dag» — begge delene er valgfrie. */
 	function streakMeta(state: StreakState): string | null {
@@ -90,7 +109,14 @@
 								unit={item.widget.unit}
 								color={item.widget.color}
 								pinned={item.widget.pinned}
-								onpress={() => ctx.navigateForWidget(item.widget!)}
+								onpress={() => {
+									const w = item.widget!;
+									if (hasVolumeDetail(w)) {
+										openVolumeWidget = { id: w.id, title: w.title };
+									} else {
+										ctx.navigateForWidget(w);
+									}
+								}}
 								onchat={(summary) => ctx.openChat(summary)}
 								onunpin={() => ctx.unpinWidget(item.widget!.id)}
 								onconfig={() => ctx.openWidgetConfigSheet(item.widget!)}
@@ -140,6 +166,14 @@
 	{/if}
 
 	</section>
+{/if}
+
+{#if openVolumeWidget}
+	<TrailingVolumeSheet
+		widgetId={openVolumeWidget.id}
+		title={openVolumeWidget.title}
+		onclose={() => (openVolumeWidget = null)}
+	/>
 {/if}
 
 {#if openStreak}

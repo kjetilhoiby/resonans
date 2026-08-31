@@ -116,6 +116,46 @@ export interface TrainingSummaryInput {
 		}> | null;
 	} | null;
 	milestones: Array<{ name: string; achievedAt: string | null }>;
+	/**
+	 * Slepende volum og sonesammensetning, fra `loadVolumeAndQuality`.
+	 *
+	 * `null` når lasteren feilet — flaten degraderer da også, og modellen skal si
+	 * hva som mangler framfor å påstå at den ikke har tilgang.
+	 */
+	volumeQuality?: {
+		today: string;
+		zoneCoverage: { sessions: number; withZones: number; share: number };
+		volume: Record<
+			number,
+			{
+				windowDays: number;
+				series: { current: number | null };
+				band: { lower: number; upper: number; median: number; samples: number } | null;
+				ramp: { previous: number; pctChange: number; steep: boolean } | null;
+				level: { standing: string; reference: string; deltaKm: number; pctOfGoal?: number } | null;
+				text: string;
+			}
+		>;
+		quality: Record<
+			number,
+			{
+				composition: {
+					windowDays: number;
+					buckets: Array<{
+						character: string;
+						sessions: number;
+						km: number;
+						sessionShare: number;
+						kmShare: number;
+					}>;
+					totalSessions: number;
+					classifiedSessions: number;
+					coverage: number;
+				};
+				text: string;
+			}
+		>;
+	} | null;
 }
 
 export type TrainingQueryType =
@@ -124,7 +164,9 @@ export type TrainingQueryType =
 	| 'capacity'
 	| 'sessions'
 	| 'plan'
-	| 'volume';
+	| 'volume'
+	| 'trailing'
+	| 'quality';
 
 /** Hvor mange dager tilbake CTL sammenlignes med for å si om formen stiger. */
 export const CTL_TREND_DAYS = 14;
@@ -206,6 +248,74 @@ export interface TrainingSummary {
 	sessions?: ReturnType<typeof summarizeSessions>;
 	plan?: ReturnType<typeof summarizePlan>;
 	volume?: ReturnType<typeof summarizeVolume>;
+	trailing?: ReturnType<typeof summarizeTrailing>;
+	quality?: ReturnType<typeof summarizeQuality>;
+}
+
+/**
+ * Slepende volum: summen av de siste 7/30/90 dagene, med bånd og rampe.
+ *
+ * **Et annet spørsmål enn `summarizeVolume`.** Den svarer på «hvor mye har jeg
+ * løpt i år» og nullstilles 1. januar; denne svarer på «hvor mye løper jeg NÅ», og
+ * kan leses av hver dag i året. Begge finnes fordi brukeren stiller begge.
+ */
+export function summarizeTrailing(input: TrainingSummaryInput) {
+	const vq = input.volumeQuality;
+	if (!vq) {
+		return { available: false as const, note: 'Slepende volum kunne ikke hentes.' };
+	}
+
+	const windows = Object.values(vq.volume).map((view) => ({
+		windowDays: view.windowDays,
+		km: view.series.current,
+		// Båndet er brukerens EGNE kvartiler for samme tid på året, av tidligere år.
+		band: view.band,
+		ramp: view.ramp,
+		level: view.level,
+		// Setningen bærer forbeholdene — hva sammenligningen ble gjort mot, og at
+		// en bratt rampe ikke er en dom om kroppen. Skal siteres, ikke omskrives.
+		sentence: view.text
+	}));
+
+	return {
+		available: true as const,
+		today: vq.today,
+		windows
+	};
+}
+
+/**
+ * Sammensetning: andel rolige, grå og harde ØKTER.
+ *
+ * **Økter, ikke minutter, og det er hele poenget.** Hver hard økt bærer
+ * oppvarming, pauser og nedjogg i de lave sonene, så minuttfordelingen viser
+ * «mest rolig» både for en polarisert og en helt grå måned. Se
+ * `session-character.ts`.
+ */
+export function summarizeQuality(input: TrainingSummaryInput) {
+	const vq = input.volumeQuality;
+	if (!vq) {
+		return { available: false as const, note: 'Sonesammensetning kunne ikke hentes.' };
+	}
+
+	const windows = Object.values(vq.quality).map((view) => ({
+		windowDays: view.composition.windowDays,
+		buckets: view.composition.buckets,
+		totalSessions: view.composition.totalSessions,
+		classifiedSessions: view.composition.classifiedSessions,
+		coverage: Math.round(view.composition.coverage * 100) / 100,
+		sentence: view.text
+	}));
+
+	return {
+		available: true as const,
+		today: vq.today,
+		// Dekningen på toppnivå fordi den avgjør om tallene i det hele tatt kan
+		// brukes. En fordeling bygget på fire av tolv økter ser like autoritativ ut
+		// som en bygget på alle tolv.
+		zoneCoverage: vq.zoneCoverage,
+		windows
+	};
 }
 
 /**
@@ -298,6 +408,14 @@ export function summarizeTrainingForChat(
 
 	if (queryType === 'volume') {
 		return { ...base, volume: summarizeVolume(input) };
+	}
+
+	if (queryType === 'trailing') {
+		return { ...base, trailing: summarizeTrailing(input) };
+	}
+
+	if (queryType === 'quality') {
+		return { ...base, quality: summarizeQuality(input) };
 	}
 
 	// 'load' — standardsvaret: uka mot båndet, og belastningen bak den.

@@ -284,7 +284,16 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // traff ellers ingen modul, fordi mønsteret krevde substantivet «søvn».
    // «belastning», «restitusjon», «pulsfall» og «effort» er trenings-undertemaets
    // egne ord, og traff ingen modul: «ser du belastningen min denne uka?» kom
-   // gjennom bare fordi den også sa «trening». Uten health-blokka vet ikke
+   // gjennom bare fordi den også sa «trening».
+   //
+   // Samme runde, august 2026: «polaris», «sonefordeling», «sonetrening», «rolig
+   // trening», «i rute» og «volum» for de slepende tallene og sammensetningen.
+   // «trener jeg for mye i midten?» inneholder ingen av de gamle ordene.
+   //
+   // To bevisste utelatelser: «midten» alene («møt meg på midten») og «grå»
+   // («en grå dag»). Karakteren heter «grå» i UI-et, men ordet er for vanlig
+   // til å bære et domenevalg — samme grunn som at «kilometer» ble prøvd og
+   // forkastet («vi kjørte 40 kilometer til hytta»). Uten health-blokka vet ikke
    // modellen at query_training finnes, og faller tilbake på råtallene.
    //
    // «måling», «veiing» og «veide» dekker sletting av en feilmåling: «slett
@@ -321,7 +330,7 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // scroller/scrolling/scrollet; «mobilbruk»/«telefonbruk» er ordene folk bruker når
    // de IKKE sier skjermtid.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk|polaris|sonefordeling|sonetrening|\brolig trening|\bi rute\b|volum/.test(
          text
       )
    )

@@ -7,6 +7,7 @@ import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { computeWorkoutNugget } from '$lib/server/workout-nuggets';
 import { getWorkoutAssessment } from '$lib/server/workouts/workout-assessment';
 import { findHealthThemeId, findThemeByName, getHealthThemeIds } from '$lib/server/themes';
+import { getEffortBaseline } from '$lib/server/services/effort-service';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const userId = locals.userId;
@@ -27,12 +28,17 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const eventData = (rawEvent?.data ?? null) as Record<string, unknown> | null;
 	const trackPoints = Array.isArray(eventData?.trackPoints) ? eventData.trackPoints : [];
 
-	const [healthThemeId, healthThemeIds, trainingTheme] = await Promise.all([
+	const [healthThemeId, healthThemeIds, trainingTheme, hrBaseline] = await Promise.all([
 		findHealthThemeId(userId),
 		getHealthThemeIds(userId),
 		// Aktivitetslista bor på Trening etter mortema-splitten — dit skal man
 		// tilbake når en økt skjules.
-		findThemeByName(userId, 'Trening')
+		findThemeByName(userId, 'Trening'),
+		// Pulsfordelingen tegnes mot brukerens EGNE sonebånd. Fram til august 2026
+		// brukte den hardkodede absolutte grenser (0–120, 120–140 …) med de samme
+		// norske ordene som sonemodellen, så puls 135 var «Lett» her og «Rolig» i
+		// sonekortet. Se `hrBandsFromBaseline`.
+		getEffortBaseline(userId).catch(() => null)
 	]);
 
 	// Nugget-en sammenligner mot 365 dagers historikk. Den har drevet
@@ -68,6 +74,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		// fra hverandre; det er den feilen dette repoet har betalt for flest ganger.
 		assessmentContext: context,
 		healthThemeId,
-		activityListThemeId: trainingTheme?.id ?? healthThemeId
+		activityListThemeId: trainingTheme?.id ?? healthThemeId,
+		// Bare de to tallene båndene regnes av — resten av baselinen hører ikke
+		// på en øktside.
+		hrBaseline: hrBaseline ? { restHr: hrBaseline.restHr, maxHr: hrBaseline.maxHr } : null
 	};
 };

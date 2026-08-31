@@ -34,6 +34,8 @@ queryType:
 - 'sessions': de siste utholdenhetsøktene med effort, km og minutter.
 - 'plan': aktivt treningsløp, dagens forslag, forventet tempo og milepæler.
 - 'volume': akkumulerte løpte kilometer hittil i år og hittil i måneden, mot de foregående årene og månedene PÅ SAMME DAG i perioden. Bruk denne på «hvor mye har jeg løpt i år», «ligger jeg foran i fjor», «er dette en god måned».
+- 'trailing': SLEPENDE volum — summen av siste 7, 30 og 90 dager, med brukerens eget kvartilbånd for samme tid på året, og rampen mot forrige like lange vindu. Bruk denne på «hvor mye løper jeg nå», «er jeg i rute», «bygger jeg opp», «har volumet falt». Dette er et ANNET spørsmål enn 'volume': den nullstilles 1. januar, denne gjør ikke det.
+- 'quality': SAMMENSETNING — andel rolige, grå og harde ØKTER siste 7/30/90 dager. Bruk denne på «trener jeg riktig», «er det for mye i midten», «er treningen polarisert», «nok rolig trening».
 
 Om tallene:
 - effort er TRIMP når puls finnes, MET-fallback ellers. El-sykkel teller mindre per minutt enn vanlig sykkel og telles som egen kategori.
@@ -43,12 +45,17 @@ Om tallene:
 - wellAnchored false på pulsfall betyr at fallet var i gang før målingen startet: tallet er et gulv. Si det.
 - 'volume' sammenligner på SAMME DAG i perioden, ikke mot fjorårets sluttall. Bruk sentence-feltet ordrett; den bærer regelen. «Du ligger 380 km bak i fjor» er sant hver vår og betyr ingenting.
 - completed er tidligere perioders SLUTTALL. Det er svaret på «hvor mye løp jeg i 2024», ikke på «ligger jeg foran».
+- 'trailing' og 'quality' har hver et sentence-felt per vindu. SITER det ordrett — det bærer forbeholdene: hva sammenligningen ble gjort mot, og at en bratt rampe IKKE er en dom om kroppen. Restitusjonsspørsmålet svares av 'load' (TSB), aldri av rampen.
+- En bratt rampe i 'trailing' betyr at volumet vokser fort, ikke at brukeren har overtrent. To ulike dommer om «for mye» blir aldri enige; si «rask oppbygging» og vis til formkurven.
+- 'quality' teller ØKTER, ikke minutter, og det er med vilje: hver hard økt bærer oppvarming, pauser og nedjogg i de lave sonene, så en minuttfordeling viser «mest rolig» både for en polarisert og en helt grå måned. Ikke regn om til minutter.
+- 'quality' krever pulskurve per økt. coverage under 0,5 eller classifiedSessions under 5 betyr at fordelingen IKKE skal brukes — sentence sier det da selv. Si hvor mange økter som mangler, framfor å presentere andeler som fakta.
+- Karakterene er en proxy: polarisert trening er definert av laktatterskler vi ikke måler. Si «grå er den største bøtta», ikke «du er 68/22/10».
 - Mangler et felt, si hva som mangler kort — ikke påstå at du ikke har tilgang.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
 		queryType: z
-			.enum(['load', 'balance', 'capacity', 'sessions', 'plan', 'volume'])
+			.enum(['load', 'balance', 'capacity', 'sessions', 'plan', 'volume', 'trailing', 'quality'])
 			.optional()
 			.describe('Hvilket utsnitt. Default load.')
 	}),
