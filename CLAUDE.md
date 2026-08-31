@@ -1949,8 +1949,25 @@ papiret. Se `docs/changelog/2026-08-24-plattformport.md`.
   `ENV` slår en `ARG` med samme navn, så en byggeplattform som injiserer de ekte
   verdiene ikke får dem inn. **Legger du et nytt modulnivå-kast på en env-variabel,
   feiler bygget her** — med navnet i meldingen.
-- Kjent rest: Coolify deployer fortsatt **fra kilde**, ikke fra imaget. Å bytte
-  krever registry-legitimasjon på VPS-en og `buildPack: dockerimage` i manifestet.
+- **Coolify deployer fra imaget, og det er målt.** Deployloggen 31. august 2026:
+  «Pulling latest images from the registry» → «New container is healthy» →
+  «Rolling update completed» på **tolv sekunder**, uten et fall i svartid.
+  Rullende oppdatering betyr dessuten ingen nedetid. Registry-legitimasjon
+  trengs ikke: ghcr.io-pakken arver synligheten til repoet, som er offentlig.
+- **`POST /api/v1/deploy` sier «kjør det du står på» — den velger ikke tag.**
+  Taggen bor i Coolify-appens konfigurasjon, satt av `coolify-apply.mjs
+  --image-tag`. Workflowen må derfor `PATCH /api/v1/applications/{uuid}` med
+  `docker_registry_image_tag` FØR den deployer. Uten det bygges et nytt image
+  som ingen kjører: 31. august pushet workflowen `:afac9be`, ba om deploy, fikk
+  en gyldig `deployment_uuid` og rapporterte grønt — mens Coolify startet
+  `:fa061fa`, imaget fra to merger tidligere. **Feilen er stum i alle ledd unntatt
+  Coolifys egen deploylogg**, som navngir taggen. Det er også grunnen til å
+  beholde SHA-tagger framfor `:main`: hadde appen pekt på en flyttende tag, ville
+  loggen sagt «deploying :main» og ikke avslørt noe.
+- Konsekvensen for tokenet: `COOLIFY_TOKEN` i GitHub trenger **`write` i tillegg
+  til `deploy`**. Minste privilegium tilsier deploy alene, men et token som ikke
+  kan flytte taggen kjøper en dårligere handel — et deploy som ser vellykket ut
+  og kjører gammel kode.
 
 **Databasedriveren velges eksplisitt, ikke gjettes.** `DB_DRIVER`
 (`postgres`/`neon-http`) i `$lib/db/driver-choice.ts`; uten variabelen utledes den

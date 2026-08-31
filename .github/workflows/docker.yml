@@ -110,7 +110,45 @@ jobs:
       - name: Deploy til Coolify
         if: ${{ env.COOLIFY_URL != '' && env.COOLIFY_TOKEN != '' && env.COOLIFY_APP_UUID != '' }}
         run: |
-          echo "Deployer ${{ github.sha }} til Coolify …"
+          SHA="${{ github.sha }}"
+
+          # ── Flytt taggen FØRST. Uten dette steget er hele deployet et ────────
+          # skuespill, og det er ikke en hypotese: 31. august 2026 bygget
+          # workflowen `:afac9be`, ba Coolify deploye, fikk en gyldig
+          # deployment_uuid tilbake og rapporterte grønt — mens Coolify-loggen
+          # sa «Starting deployment of …:fa061fa», altså imaget fra to merger
+          # tidligere. Appen sto pinnet til den taggen `coolify-apply.mjs` en
+          # gang satte, og INGENTING flyttet den.
+          #
+          # `POST /deploy` sier bare «kjør det du står på». Taggen bor i
+          # Coolify-appens konfigurasjon, så den må settes eksplisitt.
+          #
+          # Dette er grunnen til at tokenet trenger «write» i tillegg til
+          # «deploy». Minste privilegium tilsier ellers deploy alene — men et
+          # token som ikke kan flytte taggen gir et deploy som ser vellykket ut
+          # og kjører gammel kode, og det er en dårligere handel.
+          echo "Setter image-tag til $SHA …"
+          kode=$(curl -sS -o /tmp/patch.json -w '%{http_code}' -X PATCH \
+            -H "authorization: Bearer $COOLIFY_TOKEN" \
+            -H "content-type: application/json" \
+            -H "accept: application/json" \
+            -d "{\"docker_registry_image_tag\":\"$SHA\"}" \
+            "$COOLIFY_URL/api/v1/applications/$COOLIFY_APP_UUID")
+          cat /tmp/patch.json; echo
+          case "$kode" in
+            200|201|204) echo "Tag satt." ;;
+            403)
+              echo "::error::COOLIFY_TOKEN mangler «write» (HTTP 403)."
+              echo 'Tokenet må ha BÅDE «write» og «deploy». Med bare «deploy» kan'
+              echo 'workflowen starte et deploy, men ikke flytte taggen — og da'
+              echo 'kjører Coolify forrige image mens alt rapporterer grønt.'
+              exit 1 ;;
+            *)
+              echo "::error::Klarte ikke å sette image-tag (HTTP $kode). Svar over."
+              exit 1 ;;
+          esac
+
+          echo "Deployer $SHA til Coolify …"
           svar=$(curl -sS -X POST \
             -H "authorization: Bearer $COOLIFY_TOKEN" \
             -H "accept: application/json" \
