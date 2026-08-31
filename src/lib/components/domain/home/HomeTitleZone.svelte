@@ -17,7 +17,7 @@
 {#if !ctx.inputExpanded}
 	<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
 		<PageHeader
-			title="Resonans?"
+			title="Resonans"
 			morph={{ to: ctx.dateLabel }}
 			onTitleClick={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }}
 			titleLabel="Åpne ukeplan"
