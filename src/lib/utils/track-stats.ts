@@ -1,3 +1,9 @@
+import {
+	hrZoneBands,
+	HR_ZONE_LABELS,
+	type HrZoneNumber
+} from '$lib/domain/health/hr-zones';
+
 export interface TrackPoint {
 	lat: number;
 	lon: number;
@@ -29,13 +35,57 @@ export interface HrBand {
 	seconds: number;
 }
 
-export const DEFAULT_HR_BANDS: Omit<HrBand, 'seconds'>[] = [
-	{ label: 'Rolig', minBpm: 0, maxBpm: 120, color: '#60a5fa' },
-	{ label: 'Lett', minBpm: 120, maxBpm: 140, color: '#34d399' },
-	{ label: 'Moderat', minBpm: 140, maxBpm: 160, color: '#fbbf24' },
-	{ label: 'Hard', minBpm: 160, maxBpm: 180, color: '#fb923c' },
-	{ label: 'Maks', minBpm: 180, maxBpm: 999, color: '#ef4444' }
-];
+/**
+ * Sonefargene, indeksert på sonenummer (1–5). Kald→varm er innarbeidet
+ * sone-semantikk; samme skala som Ekkos `EkkoTheme.zone`.
+ */
+export const HR_ZONE_COLORS: Record<HrZoneNumber, string> = {
+	1: '#60a5fa',
+	2: '#34d399',
+	3: '#fbbf24',
+	4: '#fb923c',
+	5: '#ef4444'
+};
+
+/**
+ * Pulsbånd i bpm fra brukerens baseline — **eneste vei til et bånd her**.
+ *
+ * ## Hva som sto her før
+ *
+ * En hardkodet liste: `Rolig 0–120`, `Lett 120–140`, `Moderat 140–160`,
+ * `Hard 160–180`, `Maks 180+`. Like for alle, uavhengig av maks- og hvilepuls —
+ * altså en TREDJE sonemodell ved siden av serverens HRR og (fram til august
+ * 2026) Ekkos %makspuls. Verre: den brukte de samme norske ordene, så med maks
+ * 180 og hvile 50 var puls 135 «Lett» på øktdetaljen og «Rolig» (sone 2) i
+ * sonekortet ved siden av. Tre navn på ett hjerteslag.
+ *
+ * Den ble stående da de to andre ble konsolidert, fordi den ikke het noe med
+ * «zone» og ikke lå i helse-domenet. Et søk på `HeartRateZone` fant den ikke.
+ *
+ * Returnerer `null` uten brukbar baseline. Flaten skal da si at sonene mangler,
+ * ikke tegne et bånd av gjettede tall: et gjettet bånd ser like autoritativt ut
+ * som et ekte.
+ */
+export function hrBandsFromBaseline(
+	baseline: { restHr: number; maxHr: number } | null | undefined
+): Omit<HrBand, 'seconds'>[] | null {
+	if (!baseline) return null;
+	const bands = hrZoneBands(baseline);
+	if (!bands) return null;
+	return bands.map((band) => ({
+		label: `${HR_ZONE_LABELS[band.zone]} (Z${band.zone})`,
+		// **Z1 starter på 0, ikke på hvilepulsen.** `zoneForHeartRate` legger en
+		// puls under hvile i Z1; gjorde vi ikke det samme her, falt den ut av ALLE
+		// bånd (`computeHrDistribution` bryter på første treff og har ingen
+		// oppsamling), og stille ut av totalen. Det skjer hver gang man står i ro.
+		minBpm: band.zone === 1 ? 0 : band.lowerBpm,
+		// `computeHrDistribution` bruker `hr < maxBpm`, mens sonebåndene er
+		// inklusive i begge ender. +1 her framfor å endre sammenligningen: da
+		// hadde de to måttet holdes i sync, og det er dét som går galt.
+		maxBpm: band.zone === 5 ? 999 : band.upperBpm + 1,
+		color: HR_ZONE_COLORS[band.zone]
+	}));
+}
 
 export function haversineMeters(a: TrackPoint, b: TrackPoint): number {
 	const R = 6371000;
@@ -222,9 +272,13 @@ export function computeKmSplits(points: TrackPoint[]): KmSplit[] {
 	return splits;
 }
 
+/**
+ * Sekunder i hvert bånd. Båndene er PÅKREVD — det finnes ingen default lenger,
+ * og det er poenget: en default her var en sonemodell ingen visste at de brukte.
+ */
 export function computeHrDistribution(
 	points: TrackPoint[],
-	bands: Omit<HrBand, 'seconds'>[] = DEFAULT_HR_BANDS
+	bands: Omit<HrBand, 'seconds'>[]
 ): HrBand[] {
 	const result: HrBand[] = bands.map((b) => ({ ...b, seconds: 0 }));
 	if (points.length < 2) return result;

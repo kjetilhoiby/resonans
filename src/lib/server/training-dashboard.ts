@@ -30,6 +30,8 @@ import { canonicalWorkouts, sensorAggregates, sensorEvents, sensors } from '$lib
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { loadRunningHistory } from '$lib/server/training/running-history';
 import { osloDayKey } from '$lib/domain/oslo-time';
+import { loadVolumeAndQuality } from '$lib/server/training/volume-quality';
+import { getEffortBaseline } from '$lib/server/services/effort-service';
 
 /**
  * EF-historikk. Må dekke sammenligningsvinduet (8 uker tilbake pluss 28 dagers
@@ -326,7 +328,9 @@ export async function loadTrainingDashboardData(
 		hrRecovery,
 		aerobicEfficiency,
 		distanceRecordList,
-		runningHistory
+		runningHistory,
+		volumeQuality,
+		hrBaselineRaw
 	] = await Promise.all([
 		getActivePlan(userId),
 		loadDailyEffort(userId),
@@ -340,7 +344,12 @@ export async function loadTrainingDashboardData(
 			days: [],
 			firstDay: null,
 			today: osloDayKey(new Date())
-		}))
+		})),
+		// Slepende volum + sonesammensetning. Samme laster som widgetdetaljen og
+		// `query_training` bruker — tre flater, ett svar.
+		loadVolumeAndQuality(userId).catch(() => null),
+		// Pulsfordelingen i aktivitetslista tegnes mot brukerens egne sonebånd.
+		getEffortBaseline(userId).catch(() => null)
 	]);
 
 	if (!plan) {
@@ -357,6 +366,10 @@ export async function loadTrainingDashboardData(
 			aerobicEfficiency,
 			distanceRecords: distanceRecordList,
 			runningHistory,
+			volumeQuality,
+			hrBaseline: hrBaselineRaw
+				? { restHr: hrBaselineRaw.restHr, maxHr: hrBaselineRaw.maxHr }
+				: null,
 			activities: [] as ActivityDetail['activities'],
 			recentEvents: [] as ActivityDetail['recentEvents']
 		};
@@ -474,6 +487,10 @@ export async function loadTrainingDashboardData(
 		aerobicEfficiency,
 		distanceRecords: distanceRecordList,
 		runningHistory,
+		volumeQuality,
+		hrBaseline: hrBaselineRaw
+			? { restHr: hrBaselineRaw.restHr, maxHr: hrBaselineRaw.maxHr }
+			: null,
 		activities: activityDetail.activities,
 		recentEvents: activityDetail.recentEvents
 	};

@@ -329,7 +329,7 @@
 				{/if}
 				<KmSplitsTable points={trackPoints} sportType={workout.sportType} />
 				{#if hasHeartRate(trackPoints)}
-					<HrDistributionBar points={trackPoints} />
+					<HrDistributionBar points={trackPoints} baseline={data.hrBaseline} />
 				{/if}
 			{/if}
 		{/if}

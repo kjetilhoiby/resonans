@@ -1,19 +1,27 @@
 <script lang="ts">
 	import {
 		computeHrDistribution,
+		hrBandsFromBaseline,
 		hasHeartRate,
 		type TrackPoint
 	} from '$lib/utils/track-stats';
 
 	interface Props {
 		points: TrackPoint[];
+		/**
+		 * Brukerens hvile- og makspuls. Sonebåndene regnes av den — det finnes
+		 * ingen hardkodede bånd lenger. `null` når baselinen ikke er hentet: da
+		 * sier kortet at sonene mangler framfor å tegne gjettede grenser.
+		 */
+		baseline?: { restHr: number; maxHr: number } | null;
 		title?: string;
 	}
 
-	let { points, title = 'Pulsfordeling' }: Props = $props();
+	let { points, baseline = null, title = 'Pulsfordeling' }: Props = $props();
 
-	const bands = $derived(computeHrDistribution(points));
-	const hasData = $derived(hasHeartRate(points));
+	const zoneBands = $derived(hrBandsFromBaseline(baseline));
+	const bands = $derived(zoneBands ? computeHrDistribution(points, zoneBands) : []);
+	const hasData = $derived(hasHeartRate(points) && zoneBands !== null);
 	const totalSeconds = $derived(bands.reduce((sum, b) => sum + b.seconds, 0));
 
 	function formatDuration(sec: number): string {
@@ -24,10 +32,16 @@
 		return `${m}:${String(s).padStart(2, '0')}`;
 	}
 
+	/**
+	 * Båndet som tekst. `maxBpm` er EKSKLUSIV (se `hrBandsFromBaseline`), så det
+	 * som vises er `maxBpm - 1` — ellers sto sone 2 som «128–141» der båndet
+	 * coachen leser høyt er «128 til 140», og det er én slag fra hverandre på et
+	 * tall brukeren sammenligner med klokka si.
+	 */
 	function bandLabel(band: { minBpm: number; maxBpm: number }): string {
-		if (band.minBpm === 0) return `<${band.maxBpm}`;
 		if (band.maxBpm >= 999) return `${band.minBpm}+`;
-		return `${band.minBpm}–${band.maxBpm}`;
+		if (band.minBpm === 0) return `<${band.maxBpm}`;
+		return `${band.minBpm}–${band.maxBpm - 1}`;
 	}
 </script>
 

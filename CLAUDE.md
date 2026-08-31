@@ -811,6 +811,49 @@ ble flyttet ut da det ble et eget fokusområde.
   ut i en periode der vekta står stille.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
 
+### Slepende volum og sonesammensetning
+
+Se `docs/changelog/2026-08-31-slepende-volum-og-sammensetning.md`. Motorene i
+`$lib/domain/health/trailing-volume.ts` og `session-character.ts`, lasteren i
+`$lib/server/training/volume-quality.ts`.
+
+- **Tid-i-sone finner IKKE «dritten i midten».** `hrZoneDistribution` er andel av
+  tid innad i én økt, og hver hard økt bærer oppvarming, pauser og nedjogg i de
+  lave sonene: en intervalløkt er 75 % Z1–2, en grå moderat-økt 30 %. Summerer du
+  minuttene over en måned, kommer begge ut som «mest rolig». 80/20 telles på
+  ØKTER nettopp derfor. Klassifiser først, fordel etterpå.
+- **Hard-terskelen kan ikke deles med `MAX_HARD_SHARE`** (0,25 i
+  `aerobic-efficiency.ts`). Den holder økter UTE av EF-trenden, der en høy
+  terskel er konservativ og riktig. Som klassifiserer er den alt for høy — en
+  ekte intervalløkt ligger på 10–20 % i sone 4–5, så en økt med 4×4 minutter
+  hardt ble stemplet «rolig». `HARD_ZONE45_SHARE` er 0,08 pluss et absolutt krav
+  på fire minutter.
+- **Ufullstendige vinduer er `null`, aldri 0.** De første N−1 dagene i en slepende
+  serie har ikke et helt vindu; med 0 der klatrer kurven i en måned og viser en
+  oppbygging som aldri skjedde.
+- **Båndet er kvartiler av TIDLIGERE år**, ikke min/maks (som er skader og
+  formtopper) og ikke inkludert inneværende år (som ville hevet båndet og skjult
+  seg selv).
+- **Rampen er ikke et helsevarsel.** Volum og belastning er to ting; akutt/kronisk
+  i formkurven er den eneste dommen som får varselfarge. Bygg aldri en andre
+  «for mye»-dom — to modeller om samme sak blir aldri enige.
+- **Dekningen rapporteres.** Sonefordeling krever pulskurve per økt; under 50 %
+  dekning eller fem klassifiserte økter nekter `describeComposition` å oppgi
+  andeler. Andelene regnes av de KLASSIFISERTE øktene, ellers krymper alle tre
+  bøttene når dekningen faller, og det leses som en endring i treningen.
+- **`DEFAULT_HR_BANDS` er borte.** Den var en TREDJE sonemodell — hardkodede
+  absolutte slag (`Rolig 0–120`, `Lett 120–140`, …) med de samme norske ordene
+  som HRR-sonene, så puls 135 var «Lett» på øktdetaljen og «Rolig» i sonekortet.
+  Den overlevde konsolideringen 30. august fordi den ikke het noe med «zone» og
+  ikke lå i helse-domenet. Bruk `hrBandsFromBaseline`; `computeHrDistribution`
+  har ingen default lenger, med vilje.
+- **Z1 starter på 0 i et visningsbånd**, ikke på hvilepulsen:
+  `computeHrDistribution` bryter på første treff og har ingen oppsamling, så en
+  puls under hvile falt ut av alle bånd og stille ut av totalen.
+- Widgetklikk på en km-distanse-widget åpner `TrailingVolumeSheet`, ikke
+  Helse-temaet. `navigateForWidget` svarte på et annet spørsmål enn det man har
+  foran widgeten.
+
 ### Sesongkurver: samme periode lagt oppå hverandre
 
 Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i

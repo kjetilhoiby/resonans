@@ -119,4 +119,28 @@ describe('detectPromptFocusModules — perioder i vektkurven', () => {
 	it('ruter løpte kilometer TIL health', () => {
 		expect(detectPromptFocusModules('hvor mange kilometer løp jeg i juli')).toContain('health');
 	});
+
+	it('sender spørsmål om sammensetning og slepende volum til helse', () => {
+		// Ordene brukeren faktisk skriver om de nye tallene. Ingen av dem inneholder
+		// «belastning» eller «trening», så de traff ingen modul — og da finnes
+		// verken queryType 'trailing' eller 'quality' for modellen.
+		for (const text of [
+			'er treningen min polarisert nok',
+			'hvordan er sonefordelingen min siste måned',
+			'får jeg nok rolig trening',
+			'ligger jeg i rute nå',
+			'har volumet mitt falt i høst',
+			'driver jeg for mye sonetrening'
+		]) {
+			expect(detectPromptFocusModules(text), text).toContain('health');
+		}
+	});
+
+	it('lar «midten» og «grå» være i fred', () => {
+		// Karakteren heter «grå» i UI-et, men ordet er for vanlig til å bære et
+		// domenevalg — samme avveining som gjorde at «kilometer» ble forkastet.
+		// Prisen er at «trener jeg for mye i midten?» bare treffer via «trener».
+		expect(detectPromptFocusModules('kan vi møtes på midten')).not.toContain('health');
+		expect(detectPromptFocusModules('det var en grå dag i dag')).not.toContain('health');
+	});
 });

@@ -51,9 +51,16 @@
 
 	interface Props {
 		activities: WorkoutActivity[];
+		/**
+		 * Hvile- og makspuls. Pulsfordelingen per økt tegnes mot brukerens EGNE
+		 * sonebånd — fram til august 2026 brukte den hardkodede absolutte grenser
+		 * med de samme norske ordene som sonemodellen, så puls 135 var «Lett» her
+		 * og «Rolig» i sonekortet. Se `hrBandsFromBaseline`.
+		 */
+		hrBaseline?: { restHr: number; maxHr: number } | null;
 	}
 
-	let { activities }: Props = $props();
+	let { activities, hrBaseline = null }: Props = $props();
 
 	// Kilde-panel: trykk på en kilde-chip → bunnpanel med kildens data og hurtigvalg (vinner-rolle
 	// per metrikk, eller fjern). Rollene lagres på event-nivå og respekteres av aggregeringen.
@@ -418,7 +425,7 @@
 								{/if}
 								<KmSplitsTable points={mapPoints} sportType={act.sportType} />
 								{#if hasHeartRate(mapPoints)}
-									<HrDistributionBar points={mapPoints} />
+									<HrDistributionBar points={mapPoints} baseline={hrBaseline} />
 								{/if}
 							{/if}
 						{/if}

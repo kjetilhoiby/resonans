@@ -290,7 +290,7 @@
 		<!-- Øktene først. De er det man kommer hit for å se, og de sto tidligere
 		     under fire kort med avledede tall. -->
 		{#if (data.activities?.length ?? 0) > 0}
-			<HealthActivityList activities={data.activities} />
+			<HealthActivityList activities={data.activities} hrBaseline={data.hrBaseline} />
 		{/if}
 
 		<!-- Trening → effekt, samlet: fart per hjerteslag, oksygenopptak,
