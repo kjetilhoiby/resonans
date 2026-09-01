@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cronMatches, mostRecentMatch, isDue } from './cron-schedule';
+import { cronMatches, dueSlot, mostRecentMatch, isDue } from './cron-schedule';
 
 // Alle tider tolkes som UTC (vitest kjører med TZ=UTC).
 const at = (iso: string) => new Date(iso);
@@ -73,5 +73,24 @@ describe('isDue', () => {
 	it('er ikke due utenfor jobbens tidsvindu', () => {
 		// withings kjører kun 05–22 UTC; 03:00 har ingen matchende slot
 		expect(isDue('*/5 5-22 * * *', at('2026-06-24T03:00:00Z'), null)).toBe(false);
+	});
+});
+
+describe('dueSlot', () => {
+	it('returnerer selve slotet, ikke dispatch-tidspunktet', () => {
+		// Kravtabellen er unik på (path, slot) — to klokker som dispatcher 00:05-slotet
+		// hhv. 00:06 og 00:07 må få SAMME nøkkel, ellers er dedup-en verdiløs.
+		const slot = dueSlot('*/5 * * * *', at('2026-06-24T00:07:30Z'), null);
+		expect(slot?.toISOString()).toBe('2026-06-24T00:05:00.000Z');
+	});
+
+	it('returnerer null når slotet allerede er kjørt', () => {
+		expect(dueSlot('0 0 * * *', at('2026-06-24T00:20:00Z'), at('2026-06-24T00:00:45Z'))).toBeNull();
+	});
+
+	it('er nøyaktig isDue sin sannhet', () => {
+		const now = at('2026-06-24T00:30:00Z');
+		const lastRun = at('2026-06-23T00:00:30Z');
+		expect(dueSlot('0 0 * * *', now, lastRun) !== null).toBe(isDue('0 0 * * *', now, lastRun));
 	});
 });

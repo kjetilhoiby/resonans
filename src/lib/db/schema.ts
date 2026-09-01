@@ -4172,6 +4172,22 @@ export const cronExecutions = pgTable('cron_executions', {
 	idxCronExecJobPath: index('cron_exec_job_path_idx').on(table.jobPath, table.executedAt)
 }));
 
+// Dispatch-krav per (jobb, slot) — gjør at to klokker (GitHub Actions og
+// in-app-dispatcheren) kan gå samtidig uten å dobbeltkjøre et slot. Kravet
+// tas med INSERT … ON CONFLICT DO NOTHING før dispatch; `cron_executions`
+// skrives først NÅR jobben er ferdig, så uten kravet finnes et vindu der
+// begge klokkene ser jobben som due.
+export const cronDispatchClaims = pgTable('cron_dispatch_claims', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	jobPath: text('job_path').notNull(),
+	slotAt: timestamp('slot_at').notNull(),
+	claimedBy: text('claimed_by'),
+	claimedAt: timestamp('claimed_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueJobSlot: unique('cron_dispatch_claims_job_slot_uniq').on(table.jobPath, table.slotAt),
+	idxClaimedAt: index('cron_dispatch_claims_claimed_at_idx').on(table.claimedAt)
+}));
+
 // Brukslogging — sidevisninger og app-gjenopptakelser, grunnlag for brukeraudit
 export const usageEvents = pgTable('usage_events', {
 	id: uuid('id').primaryKey().defaultRandom(),

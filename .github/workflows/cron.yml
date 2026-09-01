@@ -1,8 +1,15 @@
 name: Cron dispatcher
 
+# NB: Ikke lenger alene om å være klokke. In-app-dispatcheren
+# (ENABLE_CRON_DISPATCHER, se src/lib/server/cron-dispatcher.ts) tikker hvert
+# minutt på VPS-en. Begge kan gå samtidig: /api/cron/jobs?due=1 tar dispatch-
+# krav per (jobb, slot) i cron_dispatch_claims, så et slot kjøres nøyaktig én
+# gang uansett hvem som spør først. Denne workflowen er nå sikkerhetsnettet —
+# slett den når dispatcheren har gått stabilt en periode (sjekk claimed_by i
+# cron_dispatch_claims: står det bare dispatcher-*, gjør denne ingenting).
 on:
   schedule:
-    - cron: '*/5 * * * *'   # GitHub Actions er master-klokka
+    - cron: '*/5 * * * *'
   workflow_dispatch:         # manuell kjøring fra Actions-fanen
 
 jobs:
