@@ -245,6 +245,34 @@ Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
   variabel blir et deploy som feiler framfor 24 stille 401-er — eller, for
   auth-delen, en app der `authorizationHandle` slipper ALT gjennom.
 
+**Cron-dispatcheren: to klokker, én kravtabell.** Se
+`docs/changelog/2026-09-01-intern-cron-dispatcher.md`. Registeret bor i
+`$lib/server/cron-jobs.ts` (legg nye jobber DER, ikke i endepunktet); due-beregningen
+med kravtaking i `$lib/server/cron-due.ts`; klokka i `$lib/server/cron-dispatcher.ts`
+(`ENABLE_CRON_DISPATCHER=true`, tick hvert minutt, self-fetch over loopback).
+
+- **`cron_executions` skrives først når jobben er FERDIG**, så dedup mot den alene
+  har et vindu der en jobb som fortsatt kjører ser due ut for en annen klokke.
+  Dispatch-kravet (`cron_dispatch_claims`, unik på path + slot, tatt med
+  `INSERT … ON CONFLICT DO NOTHING`) lukker vinduet — derfor kan GitHub Actions og
+  den interne dispatcheren gå samtidig i overgangsperioden uten dobbeltkjøring.
+  `?due=1` claimer også; begge klokkene går gjennom `claimDueCronJobs`.
+- **Lederlåsen er en advisory-lås på en RESERVERT tilkobling**, ikke en
+  miljøvariabel-konvensjon: Coolify gjør rullende oppdatering, så to containere
+  finnes alltid et øyeblikk. Én vinner, den andre står standby og tar over innen
+  ett minutt når lederen dør (Postgres slipper låsen med sesjonen).
+  `reserved.release()` LUKKER ikke sesjonen — slipp låsen eksplisitt først
+  (`pg_advisory_unlock_all`), ellers lever den videre på en pool-tilkobling ingen
+  eier, og ingen instans kan bli leder før prosessen dør.
+- **Et krav slippes bare når forespørselen aldri nådde serveren.** Ved timeout
+  kjører endepunktet videre etter at fetch ga opp — et sluppet krav ville
+  dispatchet jobben oppå seg selv. Skillet bor i
+  `shouldReleaseClaimOnDispatchError` (`cron-dispatch-logic.ts`).
+- **Self-fetch går mot `127.0.0.1`, aldri `localhost`** (kan resolve til `::1`)
+  og ikke `ORIGIN` (hairpin gjennom Traefik). `CRON_DISPATCH_BASE_URL` overstyrer.
+- Krever `DB_DRIVER=postgres` — neon-http har ingen sesjon å holde låsen på.
+  På Vercel er GitHub Actions fortsatt klokka.
+
 ### Ekstern API-flate (Ekko)
 
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss
@@ -2064,6 +2092,10 @@ hvorfor. For langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 
 **Scheduling:** `ENABLE_IN_APP_SCHEDULER=true` (nøyaktig ÉN instans — `isSchedulerRunning`
 er per prosess, så to containere sender hver sin nudge), `CRON_SECRET`, `ORIGIN`.
+`ENABLE_CRON_DISPATCHER=true` skrur på den interne cron-klokka (VPS/container, krever
+`DB_DRIVER=postgres`) — se «Cron-dispatcheren» under Autentisering-seksjonen; den er trygg
+på flere instanser (advisory-lås) og ved siden av GitHub Actions (dispatch-krav).
+`CRON_DISPATCH_BASE_URL` overstyrer loopback-adressen dispatcheren self-fetcher mot.
 
 **Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
 `DB_POOL_MAX` (default 10, ignoreres av neon-http).

@@ -23,6 +23,13 @@ console.log(describeDriverChoice(driverChoice));
 const useNeonHttp = driverChoice.driver === 'neon-http';
 
 /**
+ * Driveren i bruk, for kode som bare gir mening over en ekte TCP-økt —
+ * cron-dispatcherens advisory-lås trenger en sesjon å holde låsen på, og det
+ * har ikke neon-http (én HTTPS-request per spørring).
+ */
+export const dbDriver = driverChoice.driver;
+
+/**
  * Poolstørrelse. Neon HTTP har ingen pool (hver spørring er en HTTPS-request), og
  * `pgClient` er der bare et sidespor for rå SQL — derfor 1. En langtlevende
  * Node-prosess mot en vanlig Postgres skal derimot ha en ekte pool.

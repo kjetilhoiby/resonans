@@ -69,21 +69,36 @@ export function mostRecentMatch(
 }
 
 /**
- * Avgjør om en jobb skal kjøre nå.
+ * Slotet en jobb er due for, eller null.
  *
  * Due hvis det finnes et matchende slot i vinduet som jobben ikke allerede
  * har kjørt for. `lastRunAt` er siste faktiske kjøring (uavhengig av status),
  * slik at en allerede-kjørt eller nettopp-feilet jobb ikke trigges på nytt
  * før neste slot.
+ *
+ * Selve slotet (ikke bare boolean) trengs av dispatch-kravene: kravtabellen
+ * (`cron_dispatch_claims`) er unik på (path, slot), og det er den nøkkelen som
+ * gjør at to klokker — GitHub Actions og in-app-dispatcheren — kan gå samtidig
+ * uten å dobbeltkjøre et slot.
  */
+export function dueSlot(
+	expr: string,
+	now: Date,
+	lastRunAt: Date | null,
+	lookbackMs: number = DISPATCH_LOOKBACK_MS
+): Date | null {
+	const slot = mostRecentMatch(expr, now, lookbackMs);
+	if (!slot) return null;
+	if (lastRunAt && lastRunAt.getTime() >= slot.getTime()) return null;
+	return slot;
+}
+
+/** Avgjør om en jobb skal kjøre nå. Se `dueSlot`. */
 export function isDue(
 	expr: string,
 	now: Date,
 	lastRunAt: Date | null,
 	lookbackMs: number = DISPATCH_LOOKBACK_MS
 ): boolean {
-	const slot = mostRecentMatch(expr, now, lookbackMs);
-	if (!slot) return false;
-	if (lastRunAt && lastRunAt.getTime() >= slot.getTime()) return false;
-	return true;
+	return dueSlot(expr, now, lastRunAt, lookbackMs) !== null;
 }
