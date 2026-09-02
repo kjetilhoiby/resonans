@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { appOrigin } from '$lib/server/app-origin';
 import { dbDriver, pgClient } from '$lib/db';
 import { CRON_JOBS } from '$lib/server/cron-jobs';
 import { claimDueCronJobs, releaseCronDispatchClaim, type DueCronJob } from '$lib/server/cron-due';
@@ -70,6 +71,26 @@ export function startCronDispatcher() {
 	if (!dev && !env.CRON_SECRET) {
 		console.error('[cron-dispatch] startet ikke: CRON_SECRET mangler.');
 		return;
+	}
+
+	// ORIGIN er lastbærende for loopback-dispatch: nudge-endepunktene bygger
+	// lenker av `url.origin`, og adapter-node bruker ORIGIN som base når den er
+	// satt (handler.js: `base: origin || get_origin(req.headers)`). Uten den
+	// ville hver nudge fått lenker til http://127.0.0.1:3000 — helt stille.
+	// Da er det bedre å nekte å starte: GitHub Actions-fallbacken kaller den
+	// offentlige adressen og gir riktige lenker. Samme vakt som den gamle
+	// scheduleren hadde, av samme grunn.
+	if (!dev) {
+		try {
+			appOrigin();
+		} catch (err) {
+			console.error(
+				'[cron-dispatch] startet ikke: ORIGIN mangler — nudger dispatchet over loopback ' +
+					'ville fått lenker til 127.0.0.1.',
+				err instanceof Error ? err.message : err
+			);
+			return;
+		}
 	}
 
 	const baseUrl = resolveDispatchBaseUrl({

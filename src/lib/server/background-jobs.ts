@@ -1,6 +1,7 @@
 import { db, pgClient } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { notifyJobQueued } from '$lib/server/job-queue-signal';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
 import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
@@ -41,6 +42,7 @@ export async function enqueueBackgroundJob(input: EnqueueBackgroundJobInput) {
 			createdAt: backgroundJobs.createdAt
 		});
 
+	notifyJobQueued();
 	return job;
 }
 
@@ -69,6 +71,7 @@ export async function retryBackgroundJob(jobId: string) {
 		.set({ status: 'queued', attempts: 0, error: null, runAt: new Date(), updatedAt: new Date(), lockedAt: null, lockedBy: null })
 		.where(eq(backgroundJobs.id, jobId))
 		.returning({ id: backgroundJobs.id, status: backgroundJobs.status });
+	if (job) notifyJobQueued();
 	return job ?? null;
 }
 
