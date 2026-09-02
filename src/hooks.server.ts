@@ -7,6 +7,7 @@ import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { assertBootReady } from '$lib/server/boot-checks';
 import { startCronDispatcher } from '$lib/server/cron-dispatcher';
 import { startJobWorker } from '$lib/server/job-worker';
+import { installConsoleCapture } from '$lib/server/log-buffer';
 import { resolveRequestUserId } from '$lib/server/request-user';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
@@ -17,6 +18,13 @@ import {
 	unsecuredHeaderWarning
 } from '$lib/server/user-header-auth';
 import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
+
+// Logg-ringbufferet installeres først i hook-kroppen, så [cron-dispatch]- og
+// [job-worker]-oppstarten under fanges. Linjer logget under selve importen
+// (f.eks. [db] driver=…) er før dette og finnes bare i containerens stdout.
+if (!building) {
+	installConsoleCapture();
+}
 
 // Konfigurasjonsfeil som ellers ville vært usynlige i drift — se boot-checks.ts.
 // `building` holder bygget utenfor: da finnes ikke miljøvariablene ennå.
