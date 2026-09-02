@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
 	EASY_MAX_ABOVE_Z2_SHARE,
+	MAX_BASELINE_DRIFT_BPM,
+	isBaselineComparable,
 	GREY_CONCERN_SHARE,
 	GREY_MIN_Z3_SHARE,
 	HARD_ZONE45_SHARE,
@@ -141,6 +143,80 @@ describe('composeCharacters', () => {
 	});
 });
 
+describe('isBaselineComparable', () => {
+	const current = { basis: 'hrr', restHr: 50, maxHr: 180 };
+
+	it('godtar en baseline innenfor slingringsmonnet', () => {
+		expect(isBaselineComparable({ basis: 'hrr', restHr: 51, maxHr: 179 }, current)).toBe(true);
+	});
+
+	it('avviser en makspuls som flytter Z4-grensa merkbart', () => {
+		// Fem slag feil makspuls flytter Z4 fire slag — nok til å gjøre en rolig økt
+		// til en hard. Det var mistanken bak «72 % hard» 2. september 2026.
+		expect(isBaselineComparable({ basis: 'hrr', restHr: 50, maxHr: 170 }, current)).toBe(false);
+		expect(MAX_BASELINE_DRIFT_BPM).toBe(2);
+	});
+
+	it('avviser %makspuls-basis uansett tall', () => {
+		// En fordeling regnet på ren %makspuls hører til modellen vi forlot.
+		expect(isBaselineComparable({ basis: 'hrmax', restHr: 50, maxHr: 180 }, current)).toBe(false);
+	});
+
+	it('godtar rader uten lagret baseline framfor å tømme flaten', () => {
+		// Vi kan ikke vite. Å avvise all historikk fra før feltet fantes ville
+		// gjort kortet tomt; `describeComposition` sier hvor mange det gjelder.
+		expect(isBaselineComparable(null, current)).toBe(true);
+		expect(isBaselineComparable({ basis: 'hrr', restHr: 60, maxHr: 170 }, null)).toBe(true);
+	});
+});
+
+describe('composeCharacters med baseline', () => {
+	const current = { basis: 'hrr', restHr: 50, maxHr: 180 };
+
+	it('flytter økter med gammel baseline til ukjent framfor å telle dem', () => {
+		const sessions = [
+			{ ...session('2026-08-01', { z2: 0.9 }), zoneBaseline: current },
+			{
+				...session('2026-08-03', { z4: 0.9 }),
+				zoneBaseline: { basis: 'hrr', restHr: 60, maxHr: 168 }
+			}
+		];
+		const comp = composeCharacters(sessions, 30, current);
+		expect(comp.classifiedSessions).toBe(1);
+		expect(comp.staleBaselineSessions).toBe(1);
+		expect(comp.missingZonesSessions).toBe(0);
+		// Den harde økta skal IKKE ha havnet i hard-bøtta.
+		expect(bucketFor(comp, 'hard')!.sessions).toBe(0);
+	});
+
+	it('skiller manglende pulskurve fra gammel baseline', () => {
+		const sessions = [
+			{ ...session('2026-08-01', { z2: 0.9 }), zoneBaseline: current },
+			{ ...session('2026-08-02', null), zoneBaseline: null },
+			{
+				...session('2026-08-03', { z2: 0.9 }),
+				zoneBaseline: { basis: 'hrmax', restHr: 50, maxHr: 180 }
+			}
+		];
+		const comp = composeCharacters(sessions, 30, current);
+		expect(comp.missingZonesSessions).toBe(1);
+		expect(comp.staleBaselineSessions).toBe(1);
+		expect(comp.classifiedSessions).toBe(1);
+	});
+
+	it('teller ingen som gammel uten en dagens baseline å måle mot', () => {
+		const sessions = [
+			{
+				...session('2026-08-01', { z2: 0.9 }),
+				zoneBaseline: { basis: 'hrr', restHr: 60, maxHr: 170 }
+			}
+		];
+		const comp = composeCharacters(sessions, 30, null);
+		expect(comp.staleBaselineSessions).toBe(0);
+		expect(comp.classifiedSessions).toBe(1);
+	});
+});
+
 describe('isCompositionTrustworthy', () => {
 	it('avviser tynn dekning selv med nok økter', () => {
 		const sessions: SessionInput[] = [
@@ -180,7 +256,7 @@ describe('describeComposition', () => {
 
 	it('sier hvor mange økter fordelingen hviler på', () => {
 		const text = describeComposition(composeCharacters(greyHeavy(), 30));
-		expect(text).toContain('15 økter med pulskurve');
+		expect(text).toContain('av 15 økter');
 	});
 
 	it('navngir grå som det som gir minst igjen', () => {
@@ -218,6 +294,21 @@ describe('describeComposition', () => {
 		expect(text).not.toContain('%');
 	});
 
+	it('sier at en reanalyse er handlingen når baselinen er gammel', () => {
+		// Skilt fra manglende pulskurve fordi LØSNINGEN er en annen: dette rettes
+		// av en reanalyse, ikke av å bruke pulsbelte. Uten skillet ser et
+		// beregningsproblem ut som et sensorproblem.
+		const current = { basis: 'hrr', restHr: 50, maxHr: 180 };
+		const sessions = Array.from({ length: 8 }, (_, i) => ({
+			...session(`2026-08-${10 + i}`, { z2: 0.9 }),
+			zoneBaseline: { basis: 'hrr', restHr: 60, maxHr: 170 }
+		}));
+		const text = describeComposition(composeCharacters(sessions, 30, current));
+		expect(text).toContain('annen makspuls');
+		expect(text).toContain('reanalyse');
+		expect(text).not.toContain('%');
+	});
+
 	it('skiller «ingen økter» fra «ingen med pulskurve»', () => {
 		// Den ene betyr at du ikke har trent. Den andre at vi ikke kunne måle.
 		expect(describeComposition(composeCharacters([], 30))).toContain('Ingen økter');
@@ -234,6 +325,8 @@ describe('describeComposition', () => {
 			session('2026-08-02', null)
 		];
 		const text = describeComposition(composeCharacters(sessions, 30));
-		expect(text).toContain('1 økter mangler pulskurve');
+		// «1 økter» sto på flaten og var synlig for brukeren.
+		expect(text).toContain('1 økt mangler pulskurve');
+		expect(text).not.toContain('1 økter');
 	});
 });

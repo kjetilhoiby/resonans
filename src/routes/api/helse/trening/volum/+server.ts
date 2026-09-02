@@ -54,6 +54,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				{
 					windowDays: view.windowDays,
 					current: view.series.current,
+					// **Målet gjelder BARE vinduet det ble satt for.** Uten dette
+					// tegnet kortet en grønn mållinje på 90-dagersvinduet mens
+					// setningen under sammenlignet mot båndet — en strek ingen
+					// setning forklarte, i et kort som handler om formål.
+					goalKm: view.level?.reference === 'goal' ? goalKm : null,
 					// Bare dato + verdi til grafen: `TrailingSeries` bærer også
 					// metadata konsumenten ikke trenger, og payloaden er 730 punkter.
 					points: view.series.points,

@@ -906,6 +906,18 @@ Se `docs/changelog/2026-08-31-slepende-volum-og-sammensetning.md`. Motorene i
 - **Z1 starter på 0 i et visningsbånd**, ikke på hvilepulsen:
   `computeHrDistribution` bryter på første treff og har ingen oppsamling, så en
   puls under hvile falt ut av alle bånd og stille ut av totalen.
+- **`hrZoneDistribution` er LAGRET, og bærer sin egen baseline.** Hver rad har
+  `basis`, `restHr` og `maxHr` innbakt fra analysetidspunktet, så andelene er
+  bøttet av båndene som gjaldt DA. Rader fra før sonemodellen ble ryddet kan ikke
+  klassifiseres mot dagens bånd — 2. september 2026 ga det «72 % hard» over nitti
+  dager for en bruker hvis egne økter lå på puls 120–136. `isBaselineComparable`
+  avviser dem (toleranse 2 slag; fem slag feil makspuls flytter Z4-grensa fire),
+  og `staleBaselineSessions` rapporteres for seg — handlingen er
+  `POST /api/sensors/workouts/reanalyze`, ikke et pulsbelte. Diagnose:
+  `GET /api/helse/trening/sonebaseline`.
+- **Justér aldri en klassifiseringsterskel mot et tall før baselinene er
+  revidert.** Det er å kalibrere mot støy, og terskelen er alltid den åpenbare
+  mistenkte.
 - Widgetklikk på en km-distanse-widget åpner `TrailingVolumeSheet`, ikke
   Helse-temaet. `navigateForWidget` svarte på et annet spørsmål enn det man har
   foran widgeten.

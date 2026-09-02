@@ -43,12 +43,61 @@ export interface SessionZoneShares {
 	z5?: number | null;
 }
 
+/**
+ * Baselinen sonefordelingen på en økt BLE REGNET MOT.
+ *
+ * Ligger lagret på hver `canonical_workouts`-rad sammen med andelene, og det er
+ * ikke pynt: andelene er allerede bøttet, så en rad regnet mot en annen makspuls
+ * kan ikke klassifiseres på nytt uten å reanalysere sporet.
+ */
+export interface SessionZoneBaseline {
+	basis: string;
+	restHr: number;
+	maxHr: number;
+}
+
 export interface SessionInput {
 	date: string;
 	distanceKm: number | null;
 	durationSeconds: number | null;
 	/** `null` når økta ikke har brukbar puls — se `classifiedShare`. */
 	zones: SessionZoneShares | null;
+	/** Hva andelene ble regnet mot. `null` på eldre rader uten feltet. */
+	zoneBaseline?: SessionZoneBaseline | null;
+}
+
+/**
+ * Hvor mye hvile- eller makspulsen får avvike fra dagens baseline før en lagret
+ * sonefordeling regnes som ubrukelig.
+ *
+ * **To slag, og det er ikke strengt for strenghetens skyld.** Z4-grensa ligger på
+ * 80 % av reserven, så fem slag feil makspuls flytter den fire slag. Det er nok
+ * til å flytte en økt fra «rolig» til «hard», og det er nettopp den feilen som
+ * gjorde at 72 % av nitti dagers historikk kom ut som hard 2. september 2026 —
+ * et tall som ikke stemte med brukerens egne økter på puls 120–136.
+ */
+export const MAX_BASELINE_DRIFT_BPM = 2;
+
+/**
+ * Kan en lagret fordeling brukes mot dagens baseline?
+ *
+ * `basis` må være `hrr`: en fordeling regnet på ren %makspuls hører til
+ * sonemodellen vi forlot, og andelene er ikke sammenlignbare med HRR-bånd.
+ *
+ * Uten lagret baseline svarer vi `true` — vi kan ikke vite, og å avvise all
+ * historikk fra før feltet fantes ville tømt flaten. Det er en bevisst
+ * innrømmelse, og `describeComposition` sier hvor mange rader den gjelder.
+ */
+export function isBaselineComparable(
+	stored: SessionZoneBaseline | null | undefined,
+	current: SessionZoneBaseline | null | undefined
+): boolean {
+	if (!stored || !current) return true;
+	if (stored.basis !== 'hrr') return false;
+	return (
+		Math.abs(stored.restHr - current.restHr) <= MAX_BASELINE_DRIFT_BPM &&
+		Math.abs(stored.maxHr - current.maxHr) <= MAX_BASELINE_DRIFT_BPM
+	);
 }
 
 /**
@@ -171,6 +220,16 @@ export interface CharacterComposition {
 	totalSessions: number;
 	/** Antall som kunne klassifiseres. */
 	classifiedSessions: number;
+	/** Antall som mangler pulskurve i det hele tatt. */
+	missingZonesSessions: number;
+	/**
+	 * Antall som HAR pulskurve, men som ble analysert mot en annen baseline enn
+	 * dagens — og derfor ikke kan klassifiseres.
+	 *
+	 * Skilt fra `missingZonesSessions` fordi handlingen er en annen: dette rettes
+	 * av `POST /api/sensors/workouts/reanalyze`, ikke av å bruke pulsbelte.
+	 */
+	staleBaselineSessions: number;
 	/**
 	 * Andel av øktene vi kunne klassifisere (0–1).
 	 *
@@ -205,13 +264,25 @@ const ORDER: SessionCharacter[] = ['rolig', 'graa', 'hard'];
  */
 export function composeCharacters(
 	sessions: readonly SessionInput[],
-	windowDays: number
+	windowDays: number,
+	currentBaseline?: SessionZoneBaseline | null
 ): CharacterComposition {
 	const counts = new Map<SessionCharacter, { sessions: number; km: number }>();
 	for (const c of [...ORDER, 'ukjent' as const]) counts.set(c, { sessions: 0, km: 0 });
 
+	let missingZonesSessions = 0;
+	let staleBaselineSessions = 0;
+
 	for (const session of sessions) {
-		const character = characterOf(session.zones, session.durationSeconds);
+		const stale =
+			session.zones !== null && !isBaselineComparable(session.zoneBaseline, currentBaseline);
+		if (session.zones === null) missingZonesSessions += 1;
+		if (stale) staleBaselineSessions += 1;
+
+		// En rad regnet mot en annen makspuls er IKKE en rad vi kan klassifisere.
+		// Andelene er alt bøttet av de gamle båndene; å telle dem er å telle noe
+		// annet enn det etiketten sier.
+		const character = stale ? 'ukjent' : characterOf(session.zones, session.durationSeconds);
 		const bucket = counts.get(character)!;
 		bucket.sessions += 1;
 		bucket.km += session.distanceKm ?? 0;
@@ -236,6 +307,8 @@ export function composeCharacters(
 		buckets,
 		totalSessions: sessions.length,
 		classifiedSessions,
+		missingZonesSessions,
+		staleBaselineSessions,
 		coverage: sessions.length > 0 ? classifiedSessions / sessions.length : 0
 	};
 }
@@ -281,16 +354,32 @@ export const GREY_CONCERN_SHARE = 0.3;
  * «32 % grå» ble like gjerne «du trener feil» som «her er det noe å hente».
  */
 export function describeComposition(composition: CharacterComposition): string {
-	const { windowDays, classifiedSessions, totalSessions, coverage } = composition;
+	const {
+		windowDays,
+		classifiedSessions,
+		totalSessions,
+		coverage,
+		missingZonesSessions,
+		staleBaselineSessions
+	} = composition;
+
+	/** «1 økt» / «3 økter» — «1 økter» sto på flaten og var synlig for brukeren. */
+	const sessionWord = (n: number) => (n === 1 ? 'økt' : 'økter');
 
 	if (classifiedSessions === 0) {
-		return totalSessions === 0
-			? `Ingen økter siste ${windowDays} dager.`
-			: `${totalSessions} økter siste ${windowDays} dager, men ingen med pulskurve — sammensetningen kan ikke regnes.`;
+		if (totalSessions === 0) return `Ingen økter siste ${windowDays} dager.`;
+		if (staleBaselineSessions > 0) {
+			return `${totalSessions} ${sessionWord(totalSessions)} siste ${windowDays} dager, men alle er analysert mot en annen makspuls enn den vi bruker nå. Kjør en reanalyse før sammensetningen kan leses.`;
+		}
+		return `${totalSessions} ${sessionWord(totalSessions)} siste ${windowDays} dager, men ingen med pulskurve — sammensetningen kan ikke regnes.`;
 	}
 
 	if (!isCompositionTrustworthy(composition)) {
-		return `Bare ${classifiedSessions} av ${totalSessions} økter siste ${windowDays} dager har pulskurve. For tynt til å si noe om sammensetningen.`;
+		const why =
+			staleBaselineSessions > missingZonesSessions
+				? 'er analysert mot en annen makspuls'
+				: 'mangler pulskurve';
+		return `Bare ${classifiedSessions} av ${totalSessions} ${sessionWord(totalSessions)} siste ${windowDays} dager kan klassifiseres — resten ${why}. For tynt til å si noe om sammensetningen.`;
 	}
 
 	const easy = bucketFor(composition, 'rolig')!;
@@ -299,7 +388,7 @@ export function describeComposition(composition: CharacterComposition): string {
 
 	const pct = (v: number) => Math.round(v * 100);
 	const parts = [
-		`Siste ${windowDays} dager: ${pct(easy.sessionShare)} % rolig, ${pct(grey.sessionShare)} % grå, ${pct(hard.sessionShare)} % hard — av ${classifiedSessions} økter med pulskurve.`
+		`Siste ${windowDays} dager: ${pct(easy.sessionShare)} % rolig, ${pct(grey.sessionShare)} % grå, ${pct(hard.sessionShare)} % hard — av ${classifiedSessions} ${sessionWord(classifiedSessions)}.`
 	];
 
 	if (grey.sessionShare > GREY_CONCERN_SHARE) {
@@ -312,9 +401,19 @@ export function describeComposition(composition: CharacterComposition): string {
 		parts.push('Ingen harde økter i vinduet. Rolig grunnmur uten noe å strekke seg mot.');
 	}
 
-	if (coverage < 1) {
-		parts.push(`${totalSessions - classifiedSessions} økter mangler pulskurve og er ikke med.`);
+	// De to grunnene til å utelate en økt har ulike LØSNINGER, så de sies hver for
+	// seg: pulskurve krever pulsbelte, gammel baseline krever en reanalyse.
+	if (missingZonesSessions > 0) {
+		parts.push(
+			`${missingZonesSessions} ${sessionWord(missingZonesSessions)} mangler pulskurve og er ikke med.`
+		);
 	}
+	if (staleBaselineSessions > 0) {
+		parts.push(
+			`${staleBaselineSessions} ${sessionWord(staleBaselineSessions)} er analysert mot en annen makspuls og er ikke med — en reanalyse tar dem inn.`
+		);
+	}
+	void coverage;
 
 	return parts.join(' ');
 }
