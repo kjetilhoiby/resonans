@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildModularSystemPrompt } from '$lib/server/prompts';
+import { createChatPerf, formatChatPerfLine } from '$lib/server/chat-perf';
 import { openai } from '$lib/server/openai';
 import { getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
@@ -2274,7 +2275,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const latestUserInput = typeof message === 'string' && message.trim().length > 0
 			? message
 			: (attachment?.note || attachment?.contentText || '');
-		const routingDecision = await aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms });
+		// Fasemåling fram til første modellkall — én [chat-perf]-linje per melding.
+		const chatPerf = createChatPerf();
+		const routingDecision = await chatPerf.timed('ruting', () =>
+			aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms })
+		);
 
 		// Book routing: navigate without creating a conversation or saving a message
 		if (!isSpecializedContext && routingDecision.routedBook) {
@@ -2352,18 +2357,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		// Lagre brukerens melding med imageUrl hvis present
-		const savedUserMessage = await addMessage({
-			conversationId: conversation.id,
-			role: 'user',
-			content: message || getDefaultAttachmentLabel(attachment),
-			imageUrl: effectiveImageUrl,
-			metadata: attachment ? { attachment } : undefined
-		});
+		const savedUserMessage = await chatPerf.timed('lagre-melding', () =>
+			addMessage({
+				conversationId: conversation.id,
+				role: 'user',
+				content: message || getDefaultAttachmentLabel(attachment),
+				imageUrl: effectiveImageUrl,
+				metadata: attachment ? { attachment } : undefined
+			})
+		);
 
 		await emitProgress(onProgress, 'message_saved', 'Meldingen er lagret.');
 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
-		const history = await getConversationHistory(conversation.id, 5);
+		const history = await chatPerf.timed('historikk', () =>
+			getConversationHistory(conversation.id, 5)
+		);
 
 		// Fallback til siste opplastede bilde i samtalen. Gjør at bilde-baserte verktøy
 		// (f.eks. record_screen_time) virker selv om brukeren laster opp bildet i én melding
@@ -2376,30 +2385,222 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				.find((url): url is string => typeof url === 'string' && url.length > 0) ||
 			null;
 
-		// Bygg memory context (viktig informasjon om brukeren)
-                // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
-                const memoryContext = await ContextService.buildForChat({ userId, themeId: conversation.themeId ?? null });
+		// Dagens dato — hoistet foran parallellbatchen: ferieblokka trenger `today`.
+		const today = new Date();
+		const dateContext = `\n--- DAGENS DATO ---\nDagens dato er: ${today.toLocaleDateString('nb-NO', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric',
+			weekday: 'long'
+		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
 
-                // Hvis samtalen er scoped til en person, hent dedikert person-kontekst
-                let personContext = '';
-                if (conversation.personId) {
-                        try {
-                                personContext = await buildPersonContext(userId, conversation.personId);
-                        } catch (err) {
-                                console.warn('buildPersonContext failed:', err);
-                        }
-                } else {
-                        // Ikke person-scopet: injiser kompakt familieoversikt slik at modellen kjenner
-                        // personene (og «minstemann»/«mellomste») uten å narrere et oppslag.
-                        try {
-                                personContext = await buildFamilyOverview(userId);
-                        } catch (err) {
-                                console.warn('buildFamilyOverview failed:', err);
-                        }
-                }
-		// Hent brukerens aktive mål og oppgaver for kontekst
-		const activeGoals = await getUserActiveGoalsAndTasks(userId);
-		
+		/**
+		 * Kontekstblokkene er uavhengige av hverandre — alle avhenger bare av
+		 * userId/conversation/routing — og hentes PARALLELT. Fram til september
+		 * 2026 lå de som ti sekvensielle await på rad, et serverless-formet
+		 * mønster der batchen kostet SUMMEN av rundturene; nå koster den den
+		 * tyngste blokka. Se [chat-perf]-linja i loggen for hva hver fase koster.
+		 *
+		 * Feilhåndteringen per blokk er uendret: best-effort-blokkene fanger selv
+		 * og koster sin seksjon, aldri svaret; minne og mål var harde
+		 * avhengigheter før parallelliseringen og er det fortsatt.
+		 */
+		const [
+			memoryContext,
+			personContext,
+			activeGoals,
+			checklistContext,
+			contactsContext,
+			procedureContext,
+			dayContext,
+			ferieContext,
+			healthContext
+		] = await Promise.all([
+			// Memory context (viktig informasjon om brukeren) — med themeId slik at
+			// fil-innhold for aktivt tema vises i konteksten
+			chatPerf.timed('minne', () =>
+				ContextService.buildForChat({ userId, themeId: conversation.themeId ?? null })
+			),
+			chatPerf.timed('person', async () => {
+				// Person-scopet samtale får dedikert person-kontekst; ellers en kompakt
+				// familieoversikt slik at modellen kjenner personene (og «minstemann»/
+				// «mellomste») uten å narrere et oppslag.
+				if (conversation.personId) {
+					try {
+						return await buildPersonContext(userId, conversation.personId);
+					} catch (err) {
+						console.warn('buildPersonContext failed:', err);
+						return '';
+					}
+				}
+				try {
+					return await buildFamilyOverview(userId);
+				} catch (err) {
+					console.warn('buildFamilyOverview failed:', err);
+					return '';
+				}
+			}),
+			// Brukerens aktive mål og oppgaver (tekstblokka bygges synkront etter batchen)
+			chatPerf.timed('mål', () => getUserActiveGoalsAndTasks(userId)),
+			// Prosjektoppgaver-kontekst (hjem-prosjekt-undertema): gir AI-en lista MED id-er, så
+			// manage_project_tasks kan referere itemId/parentId/blockedBy presist.
+			chatPerf.timed('prosjektoppgaver', async () => {
+				let checklistContext = '';
+				if (!conversation.themeId) return checklistContext;
+				try {
+				const taskRows = await db
+					.select()
+					.from(checklistItems)
+					.where(eq(checklistItems.themeId, conversation.themeId));
+				if (taskRows.length > 0) {
+					taskRows.sort((a, b) => a.sortOrder - b.sortOrder);
+					const byParent = (pid: string | null) =>
+						taskRows.filter((t) => (t.parentId ?? null) === pid);
+					const fmt = (t: (typeof taskRows)[number], indent: string) => {
+						const m = (t.metadata ?? {}) as Record<string, unknown>;
+						const extra: string[] = [];
+						if (m.shopping) extra.push(`kjøp${m.store ? ` på ${m.store}` : ''}`);
+						if (t.dueDate) extra.push(`frist ${t.dueDate}`);
+						if (typeof t.estimateMinutes === 'number') extra.push(`estimat ${t.estimateMinutes}min`);
+						if (Array.isArray(m.blockedBy) && m.blockedBy.length)
+							extra.push(`avventer ${(m.blockedBy as string[]).join(',')}`);
+						let line = `${indent}[${t.checked ? 'x' : ' '}] "${t.text}" (id: ${t.id})`;
+						if (extra.length) line += ` — ${extra.join(', ')}`;
+						return line;
+					};
+					checklistContext = `\n\n--- PROSJEKTOPPGAVER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_tasks med denne themeId-en for å legge til / endre / krysse av / slette oppgaver. itemId, parentId og blockedBy refererer id-ene under.\n`;
+					for (const top of byParent(null)) {
+						checklistContext += fmt(top, '') + '\n';
+						for (const child of byParent(top.id)) checklistContext += fmt(child, '  ') + '\n';
+					}
+					checklistContext += '--- SLUTT PROSJEKTOPPGAVER ---\n';
+				}
+				} catch (err) {
+					console.warn('[chat] kunne ikke laste prosjektoppgaver:', err);
+				}
+				return checklistContext;
+			}),
+			// Prosjektkontakter-kontekst (kommunikasjons-/arrangement-prosjekt): gir AI-en kontaktlista
+			// MED id-er, så manage_project_contacts kan referere contactId presist og formulere oppfølging.
+			chatPerf.timed('kontakter', async () => {
+				let contactsContext = '';
+				if (!conversation.themeId) return contactsContext;
+				try {
+				const { projectContacts } = await import('$lib/db/schema');
+				const contactRows = await db
+					.select()
+					.from(projectContacts)
+					.where(eq(projectContacts.themeId, conversation.themeId));
+				if (contactRows.length > 0) {
+					contactRows.sort((a, b) => a.sortOrder - b.sortOrder);
+					contactsContext = `\n\n--- PROSJEKTKONTAKTER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_contacts med denne themeId-en for å legge til / endre / slette kontakter og sette oppfølgingsdato. contactId refererer id-ene under. status: todo|venter|ferdig.\n`;
+					for (const c of contactRows) {
+						const bits = [`"${c.name}"`];
+						if (c.role) bits.push(`(${c.role})`);
+						bits.push(`status ${c.status}`);
+						if (c.phone) bits.push(`tlf ${c.phone}`);
+						if (c.email) bits.push(`epost ${c.email}`);
+						if (c.followUpAt) bits.push(`oppfølging ${c.followUpAt}`);
+						contactsContext += `- ${bits.join(', ')} (id: ${c.id})\n`;
+					}
+					contactsContext += '--- SLUTT PROSJEKTKONTAKTER ---\n';
+				}
+				} catch (err) {
+					console.warn('[chat] kunne ikke laste prosjektkontakter:', err);
+				}
+				return contactsContext;
+			}),
+			// Koblet fremgangsmåte på samtalen
+			chatPerf.timed('fremgangsmåte', async () => {
+				let procedureContext = '';
+				try {
+			const { procedures, procedureSteps } = await import('$lib/db/schema');
+			const { isNull } = await import('drizzle-orm');
+			const linkedProcedure = await db.query.procedures.findFirst({
+				where: and(eq(procedures.conversationId, conversation.id), isNull(procedures.archivedAt)),
+				with: { steps: { orderBy: (s: any, { asc }: any) => [asc(s.sortOrder)] } }
+			});
+			if (linkedProcedure) {
+				procedureContext = `\n\n--- KOBLET FREMGANGSMÅTE ---\nDenne samtalen har en lagret fremgangsmåte: "${linkedProcedure.title}" (v${linkedProcedure.version})\n`;
+				if (linkedProcedure.summary) {
+					procedureContext += `Sammendrag: ${linkedProcedure.summary.slice(0, 500)}\n`;
+				}
+				if (linkedProcedure.steps.length > 0) {
+					procedureContext += `Trinn:\n${linkedProcedure.steps.map((s: any, i: number) => `  ${i + 1}. ${s.text}`).join('\n')}\n`;
+				}
+				procedureContext += `\nHvis samtalen avdekker forbedringer eller nye trinn, foreslå oppdatering med manage_procedure(action='update', id='${linkedProcedure.id}').\n--- SLUTT PÅ FREMGANGSMÅTE ---\n`;
+			}
+				} catch (err) {
+					console.warn('Failed to load procedure context:', err);
+				}
+				return procedureContext;
+			}),
+			// Dagens sted/reise (Fase B) — injiseres som stedstilpasset kontekst.
+			chatPerf.timed('dagskontekst', async () => {
+				try {
+					return await buildDayContextBlock(userId, userTimezone);
+				} catch (err) {
+					console.warn('buildDayContextBlock failed:', err);
+					return '';
+				}
+			}),
+			// Ferie-/reise-kontekst: pågående ferie + reiser (med deltakere, sted, datoer),
+			// slik at chatten vet hvor brukeren er og hvem som er med.
+			chatPerf.timed('ferie', async () => {
+				try {
+					const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: userTimezone }).format(today);
+					return await buildTripContext(userId, todayIso);
+				} catch (err) {
+					console.warn('buildTripContext failed:', err);
+					return '';
+				}
+			}),
+			/**
+			 * Helse-briefingen: hvor brukeren står, lagt i konteksten før de spør.
+			 *
+			 * Verktøyene løste «modellen har ikke tallene». De løste ikke «modellen vet
+			 * ikke at den burde hente dem»: en reflekterende melding ser ikke ut som et
+			 * oppslag, så ingen `query_*` blir valgt, og svaret blir generelle råd. Her
+			 * ligger nå-tilstanden i konteksten uansett — vektperioden med tempo, ukas
+			 * belastning mot båndet, sammensetningen av økter, streaks og mål.
+			 *
+			 * Gatet på `shouldBuildHealthContext`, altså helse-rutet melding ELLER en
+			 * samtale som ligger på et helse-tema. Den andre halvdelen er den viktige:
+			 * «hva tenker du om dette?» midt i en tråd på Trening er et helsespørsmål
+			 * ingen av ordene avslører.
+			 */
+			chatPerf.timed('helse', async () => {
+				try {
+					// Temalista slås bare opp når gaten KAN slå til. Uten denne sjekken koster
+					// hver melding i appen to spørringer for et svar som er nei — en samtale
+					// uten tema og uten helseord kan ikke passere uansett hva lista sier.
+					const mayApply =
+						routingDecision.domains.includes('health') || Boolean(conversation.themeId);
+					const healthThemeIds = mayApply ? await getHealthThemeIds(userId) : [];
+					if (
+						mayApply &&
+						shouldBuildHealthContext({
+							domains: routingDecision.domains,
+							conversationThemeId: conversation.themeId ?? null,
+							healthThemeIds
+						})
+					) {
+						return await buildHealthChatContext(userId, healthThemeIds);
+					}
+					return '';
+				} catch (err) {
+					// Best-effort som dayContext/ferieContext: en briefing som feiler skal ikke
+					// velte svaret. Da mangler tallene, og det er verre — men et 500 er verst.
+					console.warn('buildHealthChatContext failed:', err);
+					return '';
+				}
+			})
+		]);
+
+		// Målingen som avgjør neste ytelsesgrep: wall er tiden brukeren ventet på
+		// konteksten, sum er samlet DB-arbeid. Se chat-perf.ts for lesenøkkelen.
+		console.log(formatChatPerfLine({ wallMs: chatPerf.wallMs(), phases: chatPerf.phases }));
+
 		// Bygg kontekst-melding med aktive mål
 		let goalsContext = '\n\n--- BRUKERENS AKTIVE MÅL OG OPPGAVER ---\n';
 		if (activeGoals.length === 0) {
@@ -2430,95 +2631,6 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 		goalsContext += '--- SLUTT PÅ MÅL OG OPPGAVER ---\n\n';
 
-		// Prosjektoppgaver-kontekst (hjem-prosjekt-undertema): gir AI-en lista MED id-er, så
-		// manage_project_tasks kan referere itemId/parentId/blockedBy presist.
-		let checklistContext = '';
-		if (conversation.themeId) {
-			try {
-				const taskRows = await db
-					.select()
-					.from(checklistItems)
-					.where(eq(checklistItems.themeId, conversation.themeId));
-				if (taskRows.length > 0) {
-					taskRows.sort((a, b) => a.sortOrder - b.sortOrder);
-					const byParent = (pid: string | null) =>
-						taskRows.filter((t) => (t.parentId ?? null) === pid);
-					const fmt = (t: (typeof taskRows)[number], indent: string) => {
-						const m = (t.metadata ?? {}) as Record<string, unknown>;
-						const extra: string[] = [];
-						if (m.shopping) extra.push(`kjøp${m.store ? ` på ${m.store}` : ''}`);
-						if (t.dueDate) extra.push(`frist ${t.dueDate}`);
-						if (typeof t.estimateMinutes === 'number') extra.push(`estimat ${t.estimateMinutes}min`);
-						if (Array.isArray(m.blockedBy) && m.blockedBy.length)
-							extra.push(`avventer ${(m.blockedBy as string[]).join(',')}`);
-						let line = `${indent}[${t.checked ? 'x' : ' '}] "${t.text}" (id: ${t.id})`;
-						if (extra.length) line += ` — ${extra.join(', ')}`;
-						return line;
-					};
-					checklistContext = `\n\n--- PROSJEKTOPPGAVER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_tasks med denne themeId-en for å legge til / endre / krysse av / slette oppgaver. itemId, parentId og blockedBy refererer id-ene under.\n`;
-					for (const top of byParent(null)) {
-						checklistContext += fmt(top, '') + '\n';
-						for (const child of byParent(top.id)) checklistContext += fmt(child, '  ') + '\n';
-					}
-					checklistContext += '--- SLUTT PROSJEKTOPPGAVER ---\n';
-				}
-			} catch (err) {
-				console.warn('[chat] kunne ikke laste prosjektoppgaver:', err);
-			}
-		}
-
-		// Prosjektkontakter-kontekst (kommunikasjons-/arrangement-prosjekt): gir AI-en kontaktlista
-		// MED id-er, så manage_project_contacts kan referere contactId presist og formulere oppfølging.
-		let contactsContext = '';
-		if (conversation.themeId) {
-			try {
-				const { projectContacts } = await import('$lib/db/schema');
-				const contactRows = await db
-					.select()
-					.from(projectContacts)
-					.where(eq(projectContacts.themeId, conversation.themeId));
-				if (contactRows.length > 0) {
-					contactRows.sort((a, b) => a.sortOrder - b.sortOrder);
-					contactsContext = `\n\n--- PROSJEKTKONTAKTER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_contacts med denne themeId-en for å legge til / endre / slette kontakter og sette oppfølgingsdato. contactId refererer id-ene under. status: todo|venter|ferdig.\n`;
-					for (const c of contactRows) {
-						const bits = [`"${c.name}"`];
-						if (c.role) bits.push(`(${c.role})`);
-						bits.push(`status ${c.status}`);
-						if (c.phone) bits.push(`tlf ${c.phone}`);
-						if (c.email) bits.push(`epost ${c.email}`);
-						if (c.followUpAt) bits.push(`oppfølging ${c.followUpAt}`);
-						contactsContext += `- ${bits.join(', ')} (id: ${c.id})\n`;
-					}
-					contactsContext += '--- SLUTT PROSJEKTKONTAKTER ---\n';
-				}
-			} catch (err) {
-				console.warn('[chat] kunne ikke laste prosjektkontakter:', err);
-			}
-		}
-
-		// Sjekk om samtalen har en koblet fremgangsmåte
-		let procedureContext = '';
-		try {
-			const { procedures, procedureSteps } = await import('$lib/db/schema');
-			const { isNull } = await import('drizzle-orm');
-			const linkedProcedure = await db.query.procedures.findFirst({
-				where: and(eq(procedures.conversationId, conversation.id), isNull(procedures.archivedAt)),
-				with: { steps: { orderBy: (s: any, { asc }: any) => [asc(s.sortOrder)] } }
-			});
-			if (linkedProcedure) {
-				procedureContext = `\n\n--- KOBLET FREMGANGSMÅTE ---\nDenne samtalen har en lagret fremgangsmåte: "${linkedProcedure.title}" (v${linkedProcedure.version})\n`;
-				if (linkedProcedure.summary) {
-					procedureContext += `Sammendrag: ${linkedProcedure.summary.slice(0, 500)}\n`;
-				}
-				if (linkedProcedure.steps.length > 0) {
-					procedureContext += `Trinn:\n${linkedProcedure.steps.map((s: any, i: number) => `  ${i + 1}. ${s.text}`).join('\n')}\n`;
-				}
-				procedureContext += `\nHvis samtalen avdekker forbedringer eller nye trinn, foreslå oppdatering med manage_procedure(action='update', id='${linkedProcedure.id}').\n--- SLUTT PÅ FREMGANGSMÅTE ---\n`;
-			}
-		} catch (err) {
-			console.warn('Failed to load procedure context:', err);
-		}
-
 		// Bygg source context fra samtale-metadata (kilde-oppgave/sjekkliste)
 		let sourceContextPrompt = '';
 		const convMeta = (conversation as any).metadata as { sourceTaskId?: string; sourceChecklistId?: string; sourceItemId?: string; sourceItemText?: string } | null;
@@ -2542,70 +2654,6 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			sourceContextPrompt += '--- SLUTT PÅ KILDE-OPPGAVE ---\n';
 		}
 
-		// Add current date context
-		const today = new Date();
-		const dateContext = `\n--- DAGENS DATO ---\nDagens dato er: ${today.toLocaleDateString('nb-NO', { 
-			year: 'numeric', 
-			month: 'long', 
-			day: 'numeric',
-			weekday: 'long'
-		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
-
-		// Dagens sted/reise (Fase B) — injiseres som stedstilpasset kontekst.
-		let dayContext = '';
-		try {
-			dayContext = await buildDayContextBlock(userId, userTimezone);
-		} catch (err) {
-			console.warn('buildDayContextBlock failed:', err);
-		}
-
-		// Ferie-/reise-kontekst: pågående ferie + reiser (med deltakere, sted, datoer),
-		// slik at chatten vet hvor brukeren er og hvem som er med.
-		let ferieContext = '';
-		try {
-			const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: userTimezone }).format(today);
-			ferieContext = await buildTripContext(userId, todayIso);
-		} catch (err) {
-			console.warn('buildTripContext failed:', err);
-		}
-
-		/**
-		 * Helse-briefingen: hvor brukeren står, lagt i konteksten før de spør.
-		 *
-		 * Verktøyene løste «modellen har ikke tallene». De løste ikke «modellen vet
-		 * ikke at den burde hente dem»: en reflekterende melding ser ikke ut som et
-		 * oppslag, så ingen `query_*` blir valgt, og svaret blir generelle råd. Her
-		 * ligger nå-tilstanden i konteksten uansett — vektperioden med tempo, ukas
-		 * belastning mot båndet, sammensetningen av økter, streaks og mål.
-		 *
-		 * Gatet på `shouldBuildHealthContext`, altså helse-rutet melding ELLER en
-		 * samtale som ligger på et helse-tema. Den andre halvdelen er den viktige:
-		 * «hva tenker du om dette?» midt i en tråd på Trening er et helsespørsmål
-		 * ingen av ordene avslører.
-		 */
-		let healthContext = '';
-		try {
-			// Temalista slås bare opp når gaten KAN slå til. Uten denne sjekken koster
-			// hver melding i appen to spørringer for et svar som er nei — en samtale
-			// uten tema og uten helseord kan ikke passere uansett hva lista sier.
-			const mayApply =
-				routingDecision.domains.includes('health') || Boolean(conversation.themeId);
-			const healthThemeIds = mayApply ? await getHealthThemeIds(userId) : [];
-			if (
-				mayApply &&
-				shouldBuildHealthContext({
-					domains: routingDecision.domains,
-					conversationThemeId: conversation.themeId ?? null,
-					healthThemeIds
-				})
-			) {
-				healthContext = await buildHealthChatContext(userId, healthThemeIds);
-			}
-		} catch (err) {
-			// Best-effort som dayContext/ferieContext: en briefing som feiler skal ikke
-			// velte svaret. Da mangler tallene, og det er verre — men et 500 er verst.
-			console.warn('buildHealthChatContext failed:', err);
-		}
 
 		// Bygg meldingshistorikk for OpenAI
 		const systemPrompt = buildModularSystemPrompt(routingDecision);

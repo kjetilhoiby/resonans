@@ -181,6 +181,11 @@ Alle uhåndterte feil i `load`/`+server.ts` logges som én søkbar linje —
 Samme `errorId` returneres til klienten, så en skjermdump kan kobles til loggraden.
 Søk etter `[500]` i Vercel-loggen.
 
+**Chat-ytelse:** hver melding logger én `[chat-perf]`-linje (kontekstbyggingen
+fram til første modellkall, tyngste fase først). Kontekstblokkene hentes
+parallelt — se `docs/changelog/2026-09-02-chat-kontekst-parallelt.md` for
+lesenøkkelen (`wall` mot `sum`) før du optimaliserer noe.
+
 - Fanger ikke `error(...)`-kast fra vår egen kode (forventede feil) og ikke 404.
 - Nye `fetch`-kallsteder mot egne API-ruter: bruk `extractApiErrorMessage` fra
   `$lib/client/api-error` og **vis** meldingen. `catch {}` med en generisk tekst
