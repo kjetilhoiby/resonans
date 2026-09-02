@@ -186,6 +186,14 @@ fram til første modellkall, tyngste fase først). Kontekstblokkene hentes
 parallelt — se `docs/changelog/2026-09-02-chat-kontekst-parallelt.md` for
 lesenøkkelen (`wall` mot `sum`) før du optimaliserer noe.
 
+**Loggene kan leses over API** (`GET /api/admin/logs?grep=chat-perf&limit=100`,
+admin-gatet): prosessen holder en ringbuffer over egne logglinjer
+(`$lib/server/log-buffer.ts`, siste 2000), så `[chat-perf]`/`[cron-dispatch]`/
+`[job-worker]`/`[500]` kan sjekkes uten Coolify-tilgang — f.eks. av en
+Claude-økt med API-secret (`Authorization: Bearer rsn_…` fra
+`/settings/external-apps`). Per instans og flyktig (tømmes ved restart) —
+et vindu, ikke et arkiv.
+
 - Fanger ikke `error(...)`-kast fra vår egen kode (forventede feil) og ikke 404.
 - Nye `fetch`-kallsteder mot egne API-ruter: bruk `extractApiErrorMessage` fra
   `$lib/client/api-error` og **vis** meldingen. `catch {}` med en generisk tekst
