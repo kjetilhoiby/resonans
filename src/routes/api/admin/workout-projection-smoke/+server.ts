@@ -7,8 +7,6 @@ import { WorkoutProjectionService } from '$lib/server/services/workout-projectio
 import { and, eq, gte } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
-export const config = { maxDuration: 60 };
-
 async function findOrCreateSmokeSensor(userId: string) {
 	const existing = await db.query.sensors.findFirst({
 		where: and(eq(sensors.userId, userId), eq(sensors.provider, 'smoke_test'), eq(sensors.type, 'workout'))

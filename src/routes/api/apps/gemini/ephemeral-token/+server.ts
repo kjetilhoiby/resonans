@@ -77,7 +77,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	// Modellvalg fra appen (Live-debug). Formålet er A/B mellom Live-modeller uten at noen må
-	// inn i Vercel og sette en env — men valget VALIDERES mot Googles egen katalog før det får
+	// inn i deploy-oppsettet og sette en env — men valget VALIDERES mot Googles katalog før det får
 	// låses inn i et token. Et fritt modellnavn her ville gjort tokenet til en nøkkel mot en
 	// vilkårlig modell på vår kvote, og det er nettopp det `bidiGenerateContentSetup` låser.
 	// Uten override rører vi ikke katalogen: den koster et kall til Google.

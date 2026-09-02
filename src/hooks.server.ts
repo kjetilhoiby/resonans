@@ -131,7 +131,7 @@ export const handle: Handle = sequence(authenticationHandle, authorizationHandle
  * Uventede serverfeil: logg rute + stack, og gi klienten noe å vise.
  *
  * Uten denne hooken svarer SvelteKit `{"message":"Internal Error"}` — ingen
- * rute, ingen stack, ingenting å søke etter i Vercel-loggen. Det gjorde
+ * rute, ingen stack, ingenting å søke etter i serverloggen. Det gjorde
  * feilsøkingen av mor-dashboardet i august til ren gjetting, og det er grunnen
  * til at hooken finnes.
  *

@@ -26,9 +26,6 @@ type WithingsSyncFailureResult = {
 
 type WithingsSyncResult = WithingsSyncSuccessResult | WithingsSyncFailureResult;
 
-// Allow up to 120 seconds — syncs multiple users sequentially
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/withings-sync
  * Syncs Withings data for every user with an active Withings sensor.

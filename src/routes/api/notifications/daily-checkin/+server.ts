@@ -8,7 +8,7 @@ import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestrat
 /**
  * Send daglig check-in til Google Chat
  * 
- * Denne endepunktet kan kalles manuelt eller av en scheduled job (Vercel Cron)
+ * Denne endepunktet kan kalles manuelt eller av cron-dispatcheren
  */
 export const POST: RequestHandler = async ({ url, locals }) => {
 	try {

@@ -2,9 +2,6 @@ import { json } from '@sveltejs/kit';
 import { analyzeSpending, generateSpendingInsights } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
 
-// Allow up to 120 seconds on Vercel (Pro plan supports up to 300s)
-export const config = { maxDuration: 120 };
-
 /**
  * POST /api/economics/analyze-spending
  *

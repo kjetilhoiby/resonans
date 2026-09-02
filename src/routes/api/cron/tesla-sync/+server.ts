@@ -11,8 +11,6 @@ type TeslaSyncRow =
 	| { userId: string; success: true; asleep: boolean; eventsWritten: number }
 	| { userId: string; success: false; error: string };
 
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/tesla-sync
  * Poller vehicle_data for hver bruker med aktiv Tesla-sensor. Vekker ikke bilen;

@@ -7,9 +7,6 @@ import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync'
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-// Allow up to 120 seconds — syncs multiple users sequentially
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/sparebank1-sync
  * Synkroniserer SpareBank 1-data for alle brukere med en aktiv SpareBank 1-sensor.

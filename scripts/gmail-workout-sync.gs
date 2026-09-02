@@ -7,7 +7,7 @@
 //   5. Autoriser tilgang til Gmail når du blir bedt om det
 
 var WEBHOOK_URL = 'https://DITT-DOMENE.no/api/workouts/email-inbound';
-var WEBHOOK_SECRET = 'DIN_EMAIL_WEBHOOK_SECRET'; // samme verdi som i Vercel env
+var WEBHOOK_SECRET = 'DIN_EMAIL_WEBHOOK_SECRET'; // samme verdi som i server-miljøet
 var GMAIL_LABEL = 'workout-import'; // label som Gmail-filteret setter
 var SENDER_EMAIL = Session.getActiveUser().getEmail();
 
@@ -141,7 +141,7 @@ function testWebhook() {
     });
     Logger.log('HTTP ' + res.getResponseCode() + ': ' + res.getContentText());
     if (res.getResponseCode() === 401) {
-      Logger.log('FEIL: WEBHOOK_SECRET stemmer ikke med Vercel-miljøet');
+      Logger.log('FEIL: WEBHOOK_SECRET stemmer ikke med server-miljøet');
     } else if (res.getResponseCode() === 200) {
       Logger.log('OK: Webhook svarer. (Ingen vedlegg = skipped, det er normalt)');
     }

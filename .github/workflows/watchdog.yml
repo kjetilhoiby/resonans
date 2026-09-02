@@ -9,10 +9,6 @@ name: Klokke-vakthund
 # `clock`-pulsen fra den uautentiserte delen av /api/health og blir rød (→
 # GitHub-varsel på e-post) hvis appen er nede eller siste cron-kjøring er
 # eldre enn 20 minutter. Den dispatcher ingenting og har ingen hemmelighet.
-#
-# Ved fallback til Vercel: gjenopprett cron.yml (git revert) — Vercel har
-# ingen intern dispatcher, og denne vakthunden vil da korrekt være rød til
-# klokka er tilbake.
 
 on:
   schedule:
@@ -28,8 +24,9 @@ jobs:
       - name: Sjekk at cron-klokka lever
         env:
           # Variabel, ikke hemmelighet — se historikken i gamle cron.yml:
-          # maskering av domenet gjorde feilsøkingen blind da Vercel ble
-          # skrudd av. secrets.APP_URL beholdes som fallback.
+          # maskering av domenet gjorde feilsøkingen blind under flyttingen,
+          # da det var domenet som var spørsmålet. secrets.APP_URL beholdes
+          # som fallback.
           APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
         run: |
           node << 'EOF'

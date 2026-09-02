@@ -23,9 +23,6 @@ FROM node:22-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# DEPLOY_TARGET velger adapter-node (se svelte.config.js). Uten den ville
-# `VERCEL` vært utsatt for hva byggemiljøet tilfeldigvis setter.
-ENV DEPLOY_TARGET=node
 # To variabler må FINNES under bygget, og ingen av dem skal være den ekte.
 #
 # SvelteKits `analyse`-steg importerer server-chunkene etter bygget for å lese

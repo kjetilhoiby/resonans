@@ -7,8 +7,6 @@ import { RESCUETIME_PROVIDER, syncRescueTime } from '$lib/server/integrations/re
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 60 };
-
 /**
  * GET /api/cron/rescuetime-sync
  * Synker RescueTime-data for alle brukere med aktiv RescueTime-sensor.

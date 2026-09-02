@@ -3,6 +3,10 @@
 Dato: 2026-08-24
 Status: ferdig
 
+> Oppdatering 2026-09-02: Vercel-fallbacken beskrevet her er fjernet, se
+> `2026-09-02-vercel-ryddet-ut.md`. Dokumentet står som historikk over hvordan
+> porten ble gjort.
+
 ## Kontekst
 
 Fase 1 av flyttingen fra Vercel til egen plattform. Fase 0

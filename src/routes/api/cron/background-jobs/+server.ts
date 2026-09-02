@@ -9,8 +9,6 @@ import {
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 300 };
-
 /**
  * GET /api/cron/background-jobs
  * Processes due queued jobs (short worker burst).

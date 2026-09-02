@@ -86,7 +86,7 @@ export type DeleteWeightResult =
  * med i snitt, milepæler og energibalanse er en verre tilstand enn den vi startet i.
  *
  * Hele raden logges før den forsvinner, så en feilsletting kan finnes igjen i
- * Vercel-loggen og legges inn på nytt.
+ * serverloggen og legges inn på nytt.
  */
 export async function deleteWeightMeasurement(
 	userId: string,

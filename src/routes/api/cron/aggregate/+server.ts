@@ -5,9 +5,6 @@ import { aggregateAllPeriods, aggregateSpendingMetrics } from '$lib/server/integ
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-// Aggregation can take a while for many users — allow up to 300 seconds
-export const config = { maxDuration: 300 };
-
 /**
  * GET /api/cron/aggregate
  * Runs nightly aggregation (weekly/monthly/yearly rollups) for every user.

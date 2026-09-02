@@ -4,8 +4,6 @@ import { SignalService } from '$lib/server/services/signal-service';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 120 };
-
 // Daily/periodic cron endpoint for refreshing cross-domain derived signals.
 export const GET: RequestHandler = async ({ request }) => {
 	const denied = denyUnauthorizedCron(request);

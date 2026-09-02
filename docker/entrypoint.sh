@@ -1,9 +1,10 @@
 #!/bin/sh
 # Containerens oppstart: migrer, så start serveren.
 #
-# `set -e` er hele poenget med at dette er et eget skript. På Vercel lå
-# migreringen i `buildCommand`, altså i BYGGET — mot den databasen byggemiljøet
-# tilfeldigvis pekte på, og med et resultat som ikke kunne stoppe deployet.
+# `set -e` er hele poenget med at dette er et eget skript. Før flyttingen lå
+# migreringen i byggeplattformens `buildCommand`, altså i BYGGET — mot den
+# databasen byggemiljøet tilfeldigvis pekte på, og med et resultat som ikke
+# kunne stoppe deployet.
 # Her kjører den i containeren, mot databasen appen faktisk skal snakke med, og
 # en feilet migrering betyr at prosessen dør: healthchecken svarer aldri,
 # deployet feiler, og forrige container står. Alternativet — å starte mot et
