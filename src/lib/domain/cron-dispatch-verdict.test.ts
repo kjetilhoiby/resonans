@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { describeDispatchStatus, summarizeClaimants } from './cron-dispatch-verdict';
+import {
+	classifyClockPulse,
+	describeDispatchStatus,
+	summarizeClaimants
+} from './cron-dispatch-verdict';
 
 describe('summarizeClaimants', () => {
 	it('skiller dispatcher, GitHub Actions og resten', () => {
@@ -62,5 +66,30 @@ describe('describeDispatchStatus', () => {
 		});
 		expect(v.tone).toBe('ok');
 		expect(v.text).toContain('240');
+	});
+});
+
+describe('classifyClockPulse', () => {
+	const now = new Date('2026-09-02T12:00:00Z');
+
+	it('lever når siste kjøring er fersk', () => {
+		const pulse = classifyClockPulse(new Date('2026-09-02T11:56:00Z'), now);
+		expect(pulse).toEqual({
+			alive: true,
+			lastCronExecutionAt: '2026-09-02T11:56:00.000Z',
+			minutesAgo: 4
+		});
+	});
+
+	it('er død etter tre bomma 5-minutters-slots (20 min)', () => {
+		expect(classifyClockPulse(new Date('2026-09-02T11:40:00Z'), now).alive).toBe(false);
+		// 19 minutter er fortsatt innenfor — jitter, ikke død.
+		expect(classifyClockPulse(new Date('2026-09-02T11:41:00Z'), now).alive).toBe(true);
+	});
+
+	it('en tom base er død, ikke ukjent — vakthunden skal si fra', () => {
+		const pulse = classifyClockPulse(null, now);
+		expect(pulse.alive).toBe(false);
+		expect(pulse.lastCronExecutionAt).toBeNull();
 	});
 });

@@ -160,6 +160,11 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   3. Cron-eksekvering (manglende kjøringer)
 - Google Chat-varsel med kopierbar feilbeskrivelse for Claude-debugging
 - `/api/health?debug=true` gir full systemstatus
+- `.github/workflows/watchdog.yml` er det UAVHENGIGE øyet: monitoreringen
+  dispatches av cron-klokka den overvåker, så en død dispatcher kan ikke varsle
+  om seg selv. Vakthunden leser `clock`-pulsen fra uautentisert `/api/health`
+  hvert 30. minutt og blir rød (GitHub-epost) når siste cron-kjøring er >20 min
+  gammel.
 
 **Regler:**
 - Nye cron-endepunkter: åpne med `denyUnauthorizedCron(request)` fra
@@ -270,8 +275,18 @@ med kravtaking i `$lib/server/cron-due.ts`; klokka i `$lib/server/cron-dispatche
   `shouldReleaseClaimOnDispatchError` (`cron-dispatch-logic.ts`).
 - **Self-fetch går mot `127.0.0.1`, aldri `localhost`** (kan resolve til `::1`)
   og ikke `ORIGIN` (hairpin gjennom Traefik). `CRON_DISPATCH_BASE_URL` overstyrer.
+  Men `ORIGIN` MÅ være satt: nudge-endepunktene bygger lenker av `url.origin`,
+  og uten ORIGIN blir det loopback-adressen — dispatcheren nekter derfor å
+  starte uten den (utenfor dev).
 - Krever `DB_DRIVER=postgres` — neon-http har ingen sesjon å holde låsen på.
-  På Vercel er GitHub Actions fortsatt klokka.
+- **`cron.yml` (GitHub Actions-dispatcheren) er SLETTET** (2026-09-02, etter et
+  døgn der den interne klokka tok alle 630 slots). Erstatningen er
+  `watchdog.yml`: hvert 30. minutt leses `clock`-pulsen fra den uautentiserte
+  delen av `/api/health`, og workflowen blir rød hvis siste cron-kjøring er
+  >20 min gammel. Vakthunden finnes fordi monitoreringen selv dispatches av
+  klokka den overvåker — dør dispatcheren, dør også Google Chat-varselet.
+  **Ved fallback til Vercel må `cron.yml` gjenopprettes** (git revert) —
+  Vercel har ingen intern dispatcher.
 
 ### Ekstern API-flate (Ekko)
 
@@ -1992,11 +2007,13 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 pågår — kan ikke samme commit bygges begge steder, finnes rullbacken bare på
 papiret. Se `docs/changelog/2026-08-24-plattformport.md`.
 
-- **Vercel** (i drift): `@sveltejs/adapter-vercel`, Node.js 22.x. `buildCommand` i
-  `vercel.json` kjører `sync-db-schema.mjs && npm run build`. GitHub Actions
-  dispatcher kjører cron-jobber hvert 5. minutt.
-- **Container** (`resonans.apps.hoi.by`, under flytting): `@sveltejs/adapter-node`,
-  `Dockerfile` + `docker/entrypoint.sh`.
+- **Vercel** (fallback): `@sveltejs/adapter-vercel`, Node.js 22.x. `buildCommand` i
+  `vercel.json` kjører `sync-db-schema.mjs && npm run build`. NB: cron-klokka der
+  var GitHub Actions (`cron.yml`), som er slettet — ved fallback må den
+  gjenopprettes med git revert.
+- **Container** (`resonans.apps.hoi.by`, i drift): `@sveltejs/adapter-node`,
+  `Dockerfile` + `docker/entrypoint.sh`. Cron-klokka er den interne dispatcheren
+  (`ENABLE_CRON_DISPATCHER`), overvåket utenfra av `watchdog.yml`.
 
 **Imaget bygges på GitHub, ikke på VPS-en** (`.github/workflows/docker.yml`, push til
 `main` → `ghcr.io/kjetilhoiby/resonans:<sha>`).

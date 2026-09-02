@@ -1,0 +1,73 @@
+name: Klokke-vakthund
+
+# Det uavhengige øyet på cron-klokka — erstatningen for cron.yml (slettet
+# 2026-09-02, da den interne dispatcheren hadde tatt alle slots i et døgn).
+#
+# Hvorfor den finnes: monitoreringen (/api/cron/monitoring → Google Chat)
+# dispatches av den samme klokka den overvåker. Dør dispatcheren, dør også
+# varselet om at den døde. Denne workflowen står UTENFOR: den leser
+# `clock`-pulsen fra den uautentiserte delen av /api/health og blir rød (→
+# GitHub-varsel på e-post) hvis appen er nede eller siste cron-kjøring er
+# eldre enn 20 minutter. Den dispatcher ingenting og har ingen hemmelighet.
+#
+# Ved fallback til Vercel: gjenopprett cron.yml (git revert) — Vercel har
+# ingen intern dispatcher, og denne vakthunden vil da korrekt være rød til
+# klokka er tilbake.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Sjekk at cron-klokka lever
+        env:
+          # Variabel, ikke hemmelighet — se historikken i gamle cron.yml:
+          # maskering av domenet gjorde feilsøkingen blind da Vercel ble
+          # skrudd av. secrets.APP_URL beholdes som fallback.
+          APP_URL: ${{ vars.APP_URL || secrets.APP_URL }}
+        run: |
+          node << 'EOF'
+          const APP_URL = process.env.APP_URL.replace(/\/$/, '');
+
+          async function main() {
+            let res;
+            try {
+              res = await fetch(`${APP_URL}/api/health`, {
+                signal: AbortSignal.timeout(30_000)
+              });
+            } catch (err) {
+              console.error(`::error::Nådde ikke ${APP_URL}/api/health: ${err.message}`);
+              process.exit(1);
+            }
+
+            if (!res.ok) {
+              console.error(`::error::${APP_URL}/api/health svarte ${res.status}`);
+              process.exit(1);
+            }
+
+            const body = await res.json();
+            console.log(JSON.stringify(body));
+
+            if (!body.clock?.alive) {
+              const sist = body.clock?.lastCronExecutionAt ?? 'aldri';
+              const min = body.clock?.minutesAgo ?? '?';
+              console.error(
+                `::error::Cron-klokka står: siste kjøring ${sist} (${min} min siden). ` +
+                'Sjekk [cron-dispatch] i containerloggen, og at ENABLE_CRON_DISPATCHER=true.'
+              );
+              process.exit(1);
+            }
+
+            console.log(
+              `Klokka lever — siste cron-kjøring for ${body.clock.minutesAgo} min siden (status: ${body.status}).`
+            );
+          }
+
+          main();
+          EOF
