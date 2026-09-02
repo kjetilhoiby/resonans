@@ -16,7 +16,8 @@ import { JOB_QUEUE_CHANNEL } from '$lib/server/job-queue-signal';
  * INGEN lederlås, med vilje: `claimNextDueJob` bruker
  * `FOR UPDATE SKIP LOCKED`, så to instanser deler køen trygt — i motsetning
  * til cron-dispatcheren, der selve klokka må være én. Cron-bursten i
- * registeret beholdes som fallback (og er fortsatt veien på Vercel).
+ * registeret (`/api/cron/background-jobs`) beholdes som fallback, og er den
+ * eneste veien når driveren ikke er `postgres`.
  */
 
 const POLL_INTERVAL_MS = 30_000;
@@ -37,7 +38,7 @@ export function startJobWorker() {
 	if (dbDriver !== 'postgres') {
 		console.error(
 			`[job-worker] startet ikke: krever DB-driveren 'postgres' (er '${dbDriver}'). ` +
-				'På Vercel/neon-http tømmes køen av /api/cron/background-jobs.'
+				'Med neon-http tømmes køen av /api/cron/background-jobs i stedet.'
 		);
 		return;
 	}

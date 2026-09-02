@@ -5,9 +5,10 @@
  * lastes IKKE inn i JS-minnet), søker til noen jevnt fordelte tidspunkt, tegner
  * hvert til et canvas nedskalert til `maxDimension`, og eksporterer JPEG.
  *
- * Poenget: en 160 MB video treffer Vercels ~4,5 MB body-grense hvis den lastes
- * opp rått. Vi trenger bare 6 frames — dem trekker vi ut her og laster opp bare
- * de små JPEG-ene. Lokal fil via object-URL er same-origin, så canvas blir ikke
+ * Poenget: en 160 MB video treffer serverens body-grense (`BODY_SIZE_LIMIT`, i
+ * dag 25 MB) hvis den lastes opp rått — og et tak som rommet den ville uansett
+ * vært å sende 160 MB gjennom appen for å bruke seks bilder. Vi trenger bare 6
+ * frames — dem trekker vi ut her og laster opp bare de små JPEG-ene. Lokal fil via object-URL er same-origin, så canvas blir ikke
  * «tainted» og `toBlob` virker.
  *
  * Kan ikke enhetstestes i Node (krever <video>/<canvas>); tidsvalg-logikken

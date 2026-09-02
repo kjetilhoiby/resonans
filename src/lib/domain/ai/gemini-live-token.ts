@@ -274,7 +274,7 @@ export function liveWebSocketUrl(token: string): string {
  * returneres.
  *
  * Googles 400-svar gjentar av og til forespørselen, og en feilmelding som havner i
- * en Vercel-logg eller i en JSON-respons til appen er et sted en nøkkel ikke skal
+ * en serverlogg eller i en JSON-respons til appen er et sted en nøkkel ikke skal
  * kunne dukke opp. `AIza…` er Googles nøkkelformat.
  */
 export function redactApiKeys(message: string, key?: string | null): string {

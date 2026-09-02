@@ -28,8 +28,6 @@ interface PostmarkInboundPayload {
 	Attachments?: PostmarkAttachment[];
 }
 
-export const config = { maxDuration: 30 };
-
 export const POST: RequestHandler = async ({ request, url }) => {
 	const token = url.searchParams.get('token');
 	if (!verifyEmailWebhookToken(token)) {

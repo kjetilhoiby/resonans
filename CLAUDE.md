@@ -179,7 +179,8 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
 Alle uhåndterte feil i `load`/`+server.ts` logges som én søkbar linje —
 `[500] id=<errorId> status=… METHOD /path route=… Navn: melding` — med stacken under.
 Samme `errorId` returneres til klienten, så en skjermdump kan kobles til loggraden.
-Søk etter `[500]` i Vercel-loggen.
+Søk etter `[500]` i containerloggen — eller over
+`GET /api/admin/logs?grep=[500]`.
 
 **Chat-ytelse:** hver melding logger én `[chat-perf]`-linje (kontekstbyggingen
 fram til første modellkall, tyngste fase først). Kontekstblokkene hentes
@@ -298,8 +299,7 @@ med kravtaking i `$lib/server/cron-due.ts`; klokka i `$lib/server/cron-dispatche
   delen av `/api/health`, og workflowen blir rød hvis siste cron-kjøring er
   >20 min gammel. Vakthunden finnes fordi monitoreringen selv dispatches av
   klokka den overvåker — dør dispatcheren, dør også Google Chat-varselet.
-  **Ved fallback til Vercel må `cron.yml` gjenopprettes** (git revert) —
-  Vercel har ingen intern dispatcher.
+  Den interne dispatcheren er nå eneste klokke: uten den kjører ingen cron.
 
 ### Ekstern API-flate (Ekko)
 
@@ -646,7 +646,7 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   Se `docs/changelog/2026-08-19-live-i-drift.md`.
 - Feilmeldinger fra Google videreformidles ordrett (den vanligste er et modellnavn som
   ikke finnes lenger), men gjennom `redactApiKeys` — en nøkkel skal ikke kunne havne i en
-  Vercel-logg eller i et JSON-svar.
+  serverlogg eller i et JSON-svar.
 
 ### Ernæringslogg
 
@@ -2207,19 +2207,23 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 
 ## Deployment
 
-**To mål, samme `main`.** `svelte.config.js` velger adapter av miljøet:
-`DEPLOY_TARGET` når den er satt, ellers `vercel` hvis `VERCEL` finnes, ellers
-`node`. Begge adaptere beholdes med vilje mens flyttingen til egen plattform
-pågår — kan ikke samme commit bygges begge steder, finnes rullbacken bare på
-papiret. Se `docs/changelog/2026-08-24-plattformport.md`.
+**Ett mål: containeren.** `resonans.apps.hoi.by`, `@sveltejs/adapter-node`,
+`Dockerfile` + `docker/entrypoint.sh`. Cron-klokka er den interne dispatcheren
+(`ENABLE_CRON_DISPATCHER`), overvåket utenfra av `watchdog.yml`.
 
-- **Vercel** (fallback): `@sveltejs/adapter-vercel`, Node.js 22.x. `buildCommand` i
-  `vercel.json` kjører `sync-db-schema.mjs && npm run build`. NB: cron-klokka der
-  var GitHub Actions (`cron.yml`), som er slettet — ved fallback må den
-  gjenopprettes med git revert.
-- **Container** (`resonans.apps.hoi.by`, i drift): `@sveltejs/adapter-node`,
-  `Dockerfile` + `docker/entrypoint.sh`. Cron-klokka er den interne dispatcheren
-  (`ENABLE_CRON_DISPATCHER`), overvåket utenfra av `watchdog.yml`.
+**Vercel-oppsettet er slettet** (2026-09-02, se
+`docs/changelog/2026-09-02-vercel-ryddet-ut.md`). Fram til da sto det som
+fallback, og `svelte.config.js` valgte adapter av miljøet — begrunnelsen var at
+en rullback som ikke kan bygges ikke finnes. Den er innfridd: containeren har
+stått alene siden slutten av august, og en fallback som ikke lenger er testet er
+ikke en fallback, bare to kodeveier å holde i live. Historikken bor i
+`docs/changelog/2026-08-24-plattformport.md`; veien tilbake er `git revert` av
+utryddingen, ikke et flagg.
+
+**NB: sjekken «Vercel — Account is blocked» på pull requests kommer IKKE fra
+repoet.** Den postes av Vercels GitHub-app, som er installert på repoet i
+GitHub/Vercel-innstillingene. Ingen fil her kan skru den av — koblingen må
+fjernes der.
 
 **Imaget bygges på GitHub, ikke på VPS-en** (`.github/workflows/docker.yml`, push til
 `main` → `ghcr.io/kjetilhoiby/resonans:<sha>`).
@@ -2282,16 +2286,17 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
   Den krever TTY — uten en gir den «Interactive prompts require a TTY terminal»,
   med en henger den på et rename-spørsmål — og den er en devDependency som ikke
   finnes i runtime-imaget. Konsekvensen: **en `schema.ts`-endring uten SQL-migrasjon
-  når ikke basen.** Det er alt regelen over, men på Vercel fanget nettet en glemt
-  migrasjon. `npm run db:push` fra en utviklermaskin er den bevisste veien.
+  når ikke basen.** Det er alt regelen over, men da bygget kjørte på en
+  byggeplattform med TTY fanget nettet en glemt migrasjon. `npm run db:push` fra
+  en utviklermaskin er den bevisste veien.
 - **SQL-migrasjonene kan ikke bygge et skjema fra bunnen.** Mot en tom base feiler
   `0004_create_program_tables.sql` med `relation "users" does not exist`. Et tomt
   miljø må bootstrappes med `db:push`; containeren forutsetter en base som alt
   finnes (fra `pg_restore`, som bærer `_sql_migrations` med seg).
 - **`ORIGIN` er påkrevd.** `appOrigin()` (`$lib/server/app-origin.ts`) kaster uten
   den, scheduleren nekter å starte, og mailer sender ikke. Fram til august 2026 sto
-  det `env.ORIGIN || 'https://resonans.vercel.app'` fire steder — en fallback som
-  etter en flytting ville sendt nudger med lenker til gammel adresse, helt stille.
+  det `env.ORIGIN || '<hardkodet adresse>'` fire steder — en fallback som etter
+  en flytting ville sendt nudger med lenker til gammel adresse, helt stille.
 - **`BODY_SIZE_LIMIT=25M`**: adapter-node defaulter til 512 kB, og
   `/api/apps/upload` tar imot 20 MB.
 - **Healthcheck mot `127.0.0.1`, aldri `localhost`** — det siste kan resolve til
@@ -2372,7 +2377,7 @@ fire jobber bor nå i cron-registeret (`$lib/server/cron-jobs.ts`) og spores av
 
 **Container:** `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER` og
 `SKIP_DRIZZLE_PUSH` settes i `Dockerfile`/entrypointet, ikke per miljø.
-`DEPLOY_TARGET=node|vercel` overstyrer adaptervalget.
+(`DEPLOY_TARGET` er borte — det finnes bare én adapter nå.)
 
 ---
 

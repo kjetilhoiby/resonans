@@ -16,7 +16,7 @@ import { dbDriver, pgClient } from '$lib/db';
 export const JOB_QUEUE_CHANNEL = 'background_jobs_queued';
 
 export function notifyJobQueued(): void {
-	// neon-http har ingen worker som lytter (Vercel dekkes av cron-bursten),
+	// neon-http har ingen worker som lytter (der dekkes køen av cron-bursten),
 	// og fire-and-forget: en feilet notify skal aldri velte selve skrivingen.
 	if (dbDriver !== 'postgres') return;
 	void pgClient

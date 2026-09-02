@@ -7,8 +7,6 @@ import { verifyEmailWebhookToken } from '$lib/server/email/auth';
 import { routeEmail } from '$lib/server/email/router';
 import type { EmailEnvelope } from '$lib/server/email/types';
 
-export const config = { maxDuration: 30 };
-
 interface InboundPayload {
 	gmailMessageId?: string;
 	gmailThreadId?: string;

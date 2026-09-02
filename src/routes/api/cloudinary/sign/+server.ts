@@ -5,7 +5,7 @@ import { env } from '$env/dynamic/private';
 
 /**
  * Signerer en direkte klient-opplasting til Cloudinary. Store videoer lastes opp
- * rett til Cloudinary (utenom Vercel-funksjonen → ingen ~4,5 MB body-grense);
+ * rett til Cloudinary (utenom appserveren → ingen `BODY_SIZE_LIMIT` å treffe);
  * bare signaturen genereres her. api_secret forlater aldri serveren — api_key er
  * ikke hemmelig og sendes med til klienten.
  */

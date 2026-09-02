@@ -15,8 +15,8 @@
 //   - Fra: *@spond.com Emne: "Ukeplan" → Label: resonans/ukeplan
 //   - Har vedlegg: .gpx OR .tcx → Label: resonans/trening
 
-var WEBHOOK_URL = 'https://resonans.vercel.app/api/email/inbound';
-var WEBHOOK_SECRET = ''; // samme verdi som EMAIL_WEBHOOK_SECRET i Vercel env
+var WEBHOOK_URL = 'https://resonans.apps.hoi.by/api/email/inbound';
+var WEBHOOK_SECRET = ''; // samme verdi som EMAIL_WEBHOOK_SECRET i server-miljøet
 var SENDER_EMAIL = Session.getActiveUser().getEmail();
 
 // Alle labels som skal sjekkes. Gmail-filter ruter e-poster hit.

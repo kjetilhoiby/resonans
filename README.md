@@ -1,6 +1,6 @@
 # Resonans
 
-Personlig AI-coach som kobler helsedata, økonomi og hverdagsplanlegging gjennom en norskspråklig chat-flate. SvelteKit 2 + TypeScript, OpenAI GPT-4o, Neon PostgreSQL, deployet på Vercel.
+Personlig AI-coach som kobler helsedata, økonomi og hverdagsplanlegging gjennom en norskspråklig chat-flate. SvelteKit 2 + TypeScript, OpenAI GPT-4o, PostgreSQL, deployet som Docker-container.
 
 ## Oppsett
 
@@ -41,7 +41,13 @@ Se [CLAUDE.md](CLAUDE.md) for detaljert arkitekturdokumentasjon, konvensjoner og
 
 ## Deploy
 
-Vercel med automatisk schema-sync ved deploy. `vercel.json` sin `buildCommand` kjører SQL-migrasjoner → drizzle push → build.
+Docker-container via `adapter-node`. Imaget bygges på GitHub
+(`.github/workflows/docker.yml` → `ghcr.io/kjetilhoiby/resonans:<sha>`) og
+deployes av Coolify. `docker/entrypoint.sh` kjører SQL-migrasjonene mot
+databasen appen faktisk skal snakke med, før serveren starter.
+
+Cron-klokka er appens egen dispatcher (`ENABLE_CRON_DISPATCHER=true`),
+overvåket utenfra av `.github/workflows/watchdog.yml`.
 
 ## Lisens
 

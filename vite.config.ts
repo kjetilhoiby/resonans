@@ -8,7 +8,6 @@ export default defineConfig({
 		strictPort: true,
 		watch: {
 			ignored: [
-				'**/.vercel/**',
 				'**/.svelte-kit/**',
 				'**/build/**',
 				'**/.output/**'

@@ -5,10 +5,10 @@
  *
  * Kjøres ved deploy slik at endringer i schema.ts blir applisert automatisk —
  * uten å måtte kjøre `npm run db:push` eller standalone migration-scripts
- * manuelt. På Vercel er det en del av `buildCommand`; i containeren kjører
- * `docker/entrypoint.sh` den før serveren startes. Forskjellen er ikke
- * kosmetisk: i containeren skjer migreringen mot databasen deployet FAKTISK
- * skal snakke med, ikke mot den byggemiljøet tilfeldigvis har.
+ * manuelt. `docker/entrypoint.sh` kjører den før serveren startes, altså mot
+ * databasen deployet FAKTISK skal snakke med — ikke mot den et byggemiljø
+ * tilfeldigvis har. Det er ikke en kosmetisk forskjell: da vi kjørte den som
+ * en del av et `buildCommand` var de to ikke nødvendigvis samme base.
  *
  * Deploy-flow:
  *   1. apply-sql-migrations.mjs — eksplisitte SQL-migrasjoner
@@ -19,12 +19,11 @@
  *   3. Idempotente data-migreringer (UPDATE/INSERT) som må følge kode.
  *
  * Sikkerhetsnett:
- *   - På Vercel: hopper over alt utenom VERCEL_ENV=production (preview-deploys
- *     får ikke trash prod-DB-en). Utenfor Vercel er den betingelsen alltid
- *     falsk og altså ikke noe vern i det hele tatt — derfor skriver skriptet i
- *     stedet ut HVILKEN database det er i ferd med å endre, før det gjør noe.
- *     En vakt som ikke kan skille prod fra lokalt er teater; et utskrevet mål
- *     kan etterprøves.
+ *   - Skriptet skriver ut HVILKEN database det er i ferd med å endre, før det
+ *     gjør noe. Det fantes en gang en miljøvakt her som kjente igjen ÉN
+ *     byggeplattforms «dette er production»-variabel. Den er teater utenfor
+ *     nettopp den plattformen — der var betingelsen alltid falsk og altså ikke
+ *     noe vern i det hele tatt. Et utskrevet mål kan etterprøves overalt.
  *   - SKIP_DB_SYNC=1 lar deg deakt­ivere uten å fjerne hooken.
  *   - SKIP_SQL_MIGRATIONS=1 hopper kun over SQL-runner-steget.
  *   - Krever DATABASE_URL.
@@ -38,16 +37,8 @@ import postgres from 'postgres';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const vercelEnv = process.env.VERCEL_ENV;
-const isVercel = Boolean(process.env.VERCEL);
-
 if (process.env.SKIP_DB_SYNC === '1') {
 	console.log('[db:sync] SKIP_DB_SYNC=1 — hopper over.');
-	process.exit(0);
-}
-
-if (isVercel && vercelEnv !== 'production') {
-	console.log(`[db:sync] VERCEL_ENV=${vercelEnv ?? '<unset>'} — hopper over (kun production).`);
 	process.exit(0);
 }
 
@@ -92,9 +83,9 @@ if (migrationsResult.status !== 0) {
 // Konsekvensen skal sies høyt: en endring i `schema.ts` UTEN en tilhørende
 // SQL-migrasjon når ikke basen i containeren. Det er allerede regelen i
 // CLAUDE.md («alle schema-endringer skal ha en eksplisitt SQL-migrasjon — også
-// additive; drizzle-kit push er bare et sikkerhetsnett»), men på Vercel fanget
-// nettet en glemt migrasjon. Her gjør det ikke det. `npm run db:push` fra en
-// utviklermaskin er den bevisste veien.
+// additive; drizzle-kit push er bare et sikkerhetsnett»), men da bygget kjørte
+// på en byggeplattform med TTY fanget nettet en glemt migrasjon. Her gjør det
+// ikke det. `npm run db:push` fra en utviklermaskin er den bevisste veien.
 // ────────────────────────────────────────────────────────────────────────
 if (process.env.SKIP_DRIZZLE_PUSH === '1') {
 	console.log(

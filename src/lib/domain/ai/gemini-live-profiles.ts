@@ -312,7 +312,7 @@ const TONE_VOICES: Record<CoachTone, ToneVoice> = {
 };
 
 /**
- * Persona-preamblene bor på serveren så stemmen kan itereres på Vercel uten et
+ * Persona-preamblene bor på serveren så stemmen kan itereres på serveren uten et
  * TestFlight-bygg. Klienten appender sin egen økt-/situasjonsspesifikke blokk.
  *
  * «Unngå ordet ekko» er ikke stil: «ekko» er vekkeordet for barge-inn, og en

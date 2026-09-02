@@ -4,8 +4,6 @@ import { sendSalaryNudgesForAllUsers } from '$lib/server/salary-nudge';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/salary-nudge
  * Sender lønn-mottatt-nudge til brukere med ny lønnsinngang siste 3 dager.

@@ -11,8 +11,6 @@ import {
 	type RemovalCandidate
 } from '$lib/domain/health/workout-removal';
 
-export const config = { maxDuration: 60 };
-
 /**
  * Sletter en økt OG rydder etter seg.
  *

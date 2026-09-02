@@ -5,8 +5,6 @@ import { sendFuelNudgesForAllUsers } from '$lib/server/fuel-nudge';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/fuel-nudge
  *

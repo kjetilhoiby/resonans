@@ -453,7 +453,7 @@ export interface VideoFrameInput {
 
 /**
  * Video-som-frames-varianten: klienten har trukket ut keyframes on-device (for
- * å komme under Vercels body-grense på store videoer) og sender bare de små
+ * å komme under serverens body-grense på store videoer) og sender bare de små
  * JPEG-ene hit. Vi kjører vision på dem direkte (data-URI, ingen Cloudinary-
  * video), laster opp første frame som miniatyr, og returnerer samme form som
  * `uploadAndExtractAttachment` slik at både chat- og triage-flyten er uendret.
@@ -569,8 +569,8 @@ export async function parseVideoFramesForm(
 
 // ── Video-remote: direkte-til-Cloudinary + server-transkripsjon ──────────
 //
-// For store videoer (> Vercels ~4,5 MB body-grense) laster klienten videoen rett
-// til Cloudinary og sender bare publicId hit. Serveren transkriberer fra en
+// For store videoer (> serverens body-grense, `BODY_SIZE_LIMIT`, i dag 25 MB)
+// laster klienten videoen rett til Cloudinary og sender bare publicId hit. Serveren transkriberer fra en
 // komprimert lyd-versjon Cloudinary genererer (16 kHz / 32 kbps → langt under
 // Whisper-grensen på 25 MB), og henter keyframes fra samme video.
 

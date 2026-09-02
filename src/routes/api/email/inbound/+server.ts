@@ -13,8 +13,6 @@ import { processOdaReceiptEmail } from '$lib/server/email-processors/oda-receipt
 import { processFindTriageEmail } from '$lib/server/email-processors/find-triage';
 import { findOrCreateEmailSensor, type InboundEmailPayload } from '$lib/server/email-processors/shared';
 
-export const config = { maxDuration: 60 };
-
 function timingSafeEqual(a: string, b: string): boolean {
 	if (a.length !== b.length) return false;
 	let mismatch = 0;

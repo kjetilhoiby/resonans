@@ -1,6 +1,7 @@
 /**
- * Direkte klient-opplasting av video til Cloudinary, utenom Vercel-funksjonen
- * (som har ~4,5 MB body-grense). Signaturen hentes fra `/api/cloudinary/sign`;
+ * Direkte klient-opplasting av video til Cloudinary, utenom appserveren (som
+ * har en body-grense, `BODY_SIZE_LIMIT`). Signaturen hentes fra
+ * `/api/cloudinary/sign`;
  * selve fila POSTes rett til Cloudinary. Returnerer publicId + varighet som
  * serveren så bruker til transkripsjon + keyframes.
  *
