@@ -33,6 +33,19 @@ import { MET_CALIBRATION, MET_FACTOR_BY_FAMILY } from '$lib/domain/health/effort
  * Snittet over fire uker demper begge ender. Det er samme vindu som den kroniske
  * siden av akutt/kronisk-ratioen bruker, og det er med vilje: to mål på «hva er
  * normalt for deg» som svarer ulikt er verre enn ett.
+ *
+ * ## Sykeuker
+ *
+ * En hvileuke midt i ankervinduet teller som 0 — den ER informasjon om normalen
+ * din. En SYKEUKE er det motsatte: en avbrytelse du ikke valgte, og et anker som
+ * tar den med krever et lavere volum av deg i ukene etterpå enn formen din
+ * tilsier. Uker med sykdom holdes derfor helt utenfor snittet, på samme måte som
+ * uker fra før historikken begynte.
+ *
+ * Er du syk NÅ, senkes båndet på samme måte som i vedlikeholdsmodus. Men det er
+ * fortsatt bare et budsjett: `describeBudgetStanding` sier «under ukas plan», ikke
+ * at noe er galt. Belastningen (akutt/kronisk) er den eneste dommen som får
+ * varselfarge, og sykdom endrer ikke på det — vi måler ikke kroppen din.
  */
 
 const DEFAULT_GROWTH_FACTOR = 1.2;
@@ -45,6 +58,14 @@ const DEFAULT_ANCHOR_WEEKS = 4;
 // framfor progressiv overload — en lett uke på reise skal ikke leses som svikt.
 const MAINTENANCE_MIN_FACTOR = 0.5;
 const MAINTENANCE_MAX_FACTOR = 0.8;
+/**
+ * Sykeuke: gulvet på null og et lavt tak.
+ *
+ * Lavere enn vedlikehold, fordi «hold litt ved like» ikke er riktig råd med
+ * feber — men ikke null i taket, siden en rolig tur ofte er det man tåler og
+ * ingen skal måtte bryte budsjettet for å ta den.
+ */
+const SICK_MAX_FACTOR = 0.35;
 const MIN_HISTORY_DAYS_FOR_RATIO = 14;
 const CYCLING_MET = MET_FACTOR_BY_FAMILY.cycling;
 
@@ -68,7 +89,9 @@ export function computeEffortBudget(
 	config: EnduranceConfig,
 	planStartDate: string,
 	today: string,
-	maintenanceMode = false
+	maintenanceMode = false,
+	/** Sykedager ('YYYY-MM-DD'). Se `$lib/domain/health/sick-periods.ts`. */
+	sickDays: readonly string[] = []
 ): EffortBudget {
 	const counted = workouts.filter((w) => countsTowardEndurance(w.family));
 	const growthFactor = config.effortVekstFaktor ?? DEFAULT_GROWTH_FACTOR;
@@ -88,11 +111,20 @@ export function computeEffortBudget(
 	);
 	const historyStartMonday = firstCountedDate ? mondayOfDate(firstCountedDate) : null;
 
+	const sick = new Set(sickDays);
+	const sickThisWeek = [...sick].some((d) => d >= thisMonday && d <= today);
+
 	const weekTotals: number[] = [];
+	let sickWeeksSkipped = 0;
 	for (let i = 1; i <= anchorWeeks; i++) {
 		const weekStart = addDays(thisMonday, -7 * i);
 		if (historyStartMonday === null || weekStart < historyStartMonday) continue;
 		const weekEnd = addDays(weekStart, 7);
+		// Ei uke med sykdom sier ingenting om hva som er normalt for deg.
+		if ([...sick].some((d) => d >= weekStart && d < weekEnd)) {
+			sickWeeksSkipped++;
+			continue;
+		}
 		weekTotals.push(sumEffort(counted.filter((w) => w.date >= weekStart && w.date < weekEnd)));
 	}
 
@@ -112,13 +144,17 @@ export function computeEffortBudget(
 	const deload = config.deloadHverNteUke > 0 && weekNumber % config.deloadHverNteUke === 0;
 	const deloadFactor = deload ? DELOAD_FACTOR : 1;
 
-	// Vedlikeholdsmodus overstyrer vekst/deload: hold-ved-like-bånd rundt ankeret.
-	const bandMin = maintenanceMode
-		? Math.round(anchorEffort * MAINTENANCE_MIN_FACTOR)
-		: Math.round(anchorEffort * deloadFactor);
-	const bandMax = maintenanceMode
-		? Math.round(anchorEffort * MAINTENANCE_MAX_FACTOR)
-		: Math.round(anchorEffort * growthFactor * deloadFactor);
+	// Sykdom overstyrer vedlikehold, som overstyrer vekst/deload.
+	const bandMin = sickThisWeek
+		? 0
+		: maintenanceMode
+			? Math.round(anchorEffort * MAINTENANCE_MIN_FACTOR)
+			: Math.round(anchorEffort * deloadFactor);
+	const bandMax = sickThisWeek
+		? Math.round(anchorEffort * SICK_MAX_FACTOR)
+		: maintenanceMode
+			? Math.round(anchorEffort * MAINTENANCE_MAX_FACTOR)
+			: Math.round(anchorEffort * growthFactor * deloadFactor);
 
 	// Forbrukt denne uken
 	const thisWeek = counted.filter((w) => w.date >= thisMonday && w.date <= today);
@@ -155,7 +191,9 @@ export function computeEffortBudget(
 		deload,
 		anchor,
 		anchorWeeks: anchorWeeksUsed,
-		maintenance: maintenanceMode
+		maintenance: maintenanceMode,
+		sick: sickThisWeek,
+		sickWeeksSkipped
 	};
 }
 

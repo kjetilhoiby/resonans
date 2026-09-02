@@ -16,6 +16,12 @@
 
   ## Hva cellene sier
 
+  Sykedager (`excusedDays`) tegnes som en skravert mark uten fyll — samme visuelle
+  språk som skjermtidas filtrerte timer, og av samme grunn: dagen skal SES. Et
+  hull i kalenderen leses som en dag man sviktet, og det er nettopp forskjellen
+  det å melde seg syk finnes for. En dag med hendelse er fylt uansett — også når
+  man var syk. Unnskyldningen fjerner kravet, ikke kreditten.
+
   Fylt = hendelse den dagen. Tallet i marken er datoen, ikke antallet: antallet står
   som en ekstra ring når det er mer enn én (to løpeturer samme dag), og i lesningen
   under kalenderen. I dag har ramme. Framtidige dager er tomme uten å være «glemt» —
@@ -68,6 +74,8 @@
 		scale?: DayScale | null;
 		/** Idretten, så lesningen sier «tempo» eller «fart». */
 		sportFamily?: string | null;
+		/** Sykedager — hverken holdt eller brutt. Tegnes skravert. */
+		excusedDays?: readonly string[];
 	}
 
 	let {
@@ -78,6 +86,7 @@
 		config,
 		color = 'var(--warning-text)',
 		earliestMonth = null,
+		excusedDays = [],
 		dayMetrics = null,
 		scale = null,
 		sportFamily = null
@@ -109,7 +118,9 @@
 		return dayVisual(metricsByDate.get(date) ?? { date, count, distanceKm: null, paceSecPerKm: null }, scale);
 	}
 
-	const calendar = $derived(buildStreakCalendar({ month, days, todayKey, rule, config }));
+	const calendar = $derived(
+		buildStreakCalendar({ month, days, todayKey, rule, config, excusedDays })
+	);
 	const thisMonth = $derived(todayKey.slice(0, 7));
 	const canGoBack = $derived(!earliestMonth || month > earliestMonth);
 	const canGoForward = $derived(month < thisMonth);
@@ -165,6 +176,7 @@
 							class:is-multi={cell.count > 1}
 							class:is-today={cell.isToday}
 							class:is-future={cell.isFuture}
+							class:is-excused={cell.isExcused}
 							class:is-selected={selected === cell.date}
 							class:is-plain={cell.count > 0 && !visual}
 							role={cell.count > 0 ? 'button' : undefined}
@@ -192,9 +204,12 @@
 						<span
 							class="sc-week"
 							class:is-met={row.window.met}
-							title={`${row.window.count} av ${row.window.target} denne perioden`}
+							class:is-excused={row.window.excused}
+							title={row.window.excused
+								? 'Sykeperiode — ingenting krevdes denne perioden'
+								: `${row.window.count} av ${row.window.target} denne perioden`}
 						>
-							{row.window.met ? '✓' : `${row.window.count}/${row.window.target}`}
+							{row.window.excused ? '🤒' : row.window.met ? '✓' : `${row.window.count}/${row.window.target}`}
 						</span>
 					{/if}
 				</span>
@@ -214,6 +229,11 @@
 		{calendar.daysElapsed === 1 ? 'dag' : 'dager'} i {calendar.title.split(' ')[0].toLowerCase()}
 		{#if calendar.events > calendar.daysWithEvent}
 			· {calendar.events} ganger totalt
+		{/if}
+		<!-- Nevneren er dager som KREVDE noe. Uten denne setningen ser «18 av 28»
+		     ut som at kalenderen mistet to dager. -->
+		{#if calendar.daysExcused > 0}
+			· {calendar.daysExcused} {calendar.daysExcused === 1 ? 'sykedag' : 'sykedager'} holdt utenfor
 		{/if}
 	</p>
 
@@ -444,5 +464,20 @@
 		font-size: 0.66rem;
 		line-height: 1.45;
 		color: var(--text-muted, #777);
+	}
+	/* Skravert mark: dagen finnes og krevde ingenting. Skiller seg fra en tom
+	   celle (glemt) og fra en fylt (holdt). */
+	.sc-day.is-excused .sc-mark {
+		background: repeating-linear-gradient(
+			-45deg,
+			color-mix(in srgb, var(--text-muted) 55%, transparent) 0 1.5px,
+			transparent 1.5px 4px
+		);
+		color: var(--text-muted);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-muted) 45%, transparent);
+	}
+	.sc-week.is-excused {
+		color: var(--text-muted);
+		font-size: 11px;
 	}
 </style>

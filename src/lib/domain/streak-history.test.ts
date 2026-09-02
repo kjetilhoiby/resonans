@@ -90,11 +90,11 @@ describe('buildStreakCalendar', () => {
 
 		// Uka 3.–9. august har fire hendelser: terskelen er nådd.
 		const week = month.rows.find((r) => r.cells.some((c) => c?.date === '2026-08-03'))!;
-		expect(week.window).toEqual({ count: 4, target: 2, met: true });
+		expect(week.window).toEqual({ count: 4, target: 2, met: true, excused: false });
 
 		// Uka 10.–16. har én: ikke nådd.
 		const next = month.rows.find((r) => r.cells.some((c) => c?.date === '2026-08-10'))!;
-		expect(next.window).toEqual({ count: 1, target: 2, met: false });
+		expect(next.window).toEqual({ count: 1, target: 2, met: false, excused: false });
 	});
 
 	it('regner periodens fasit på hele historikken, ikke bare på synlige dager', () => {
@@ -118,7 +118,7 @@ describe('buildStreakCalendar', () => {
 
 		const augustWeek = august.rows.find((r) => r.cells.some((c) => c?.date === '2026-08-01'))!;
 		const julyWeek = july.rows.find((r) => r.cells.some((c) => c?.date === '2026-07-28'))!;
-		expect(augustWeek.window).toEqual({ count: 3, target: 2, met: true });
+		expect(augustWeek.window).toEqual({ count: 3, target: 2, met: true, excused: false });
 		expect(julyWeek.window).toEqual(augustWeek.window);
 	});
 
@@ -170,5 +170,56 @@ describe('firstMonthWithEvents', () => {
 
 	it('gir null uten hendelser', () => {
 		expect(firstMonthWithEvents([])).toBeNull();
+	});
+});
+
+describe('buildStreakCalendar — sykedager', () => {
+	it('merker sykedager som unnskyldt og holder dem ute av dekningen', () => {
+		const cal = buildStreakCalendar({
+			month: '2026-09',
+			days: [{ date: '2026-09-01', count: 1 }],
+			todayKey: '2026-09-05',
+			rule: 'consecutive_days',
+			config: {},
+			excusedDays: ['2026-09-02', '2026-09-03']
+		});
+		const cells = cal.rows.flatMap((r) => r.cells).filter((c) => c !== null);
+		expect(cells.find((c) => c!.date === '2026-09-02')!.isExcused).toBe(true);
+		expect(cells.find((c) => c!.date === '2026-09-01')!.isExcused).toBe(false);
+		expect(cal.daysExcused).toBe(2);
+		// 1.–5. september er gått; to av dem var syke.
+		expect(cal.daysElapsed).toBe(3);
+	});
+
+	it('en økt på en sykedag er holdt, ikke unnskyldt', () => {
+		const cal = buildStreakCalendar({
+			month: '2026-09',
+			days: [{ date: '2026-09-02', count: 1 }],
+			todayKey: '2026-09-05',
+			rule: 'consecutive_days',
+			config: {},
+			excusedDays: ['2026-09-02']
+		});
+		const cell = cal.rows.flatMap((r) => r.cells).find((c) => c?.date === '2026-09-02');
+		expect(cell!.isExcused).toBe(false);
+		expect(cal.daysWithEvent).toBe(1);
+	});
+
+	it('radens fasit bruker den reduserte terskelen', () => {
+		// Uke 37 (7.–13. sep) er syk hele veien: kravet faller til null, og uka er
+		// unnskyldt framfor å stå som «0 av 2 ✗».
+		const cal = buildStreakCalendar({
+			month: '2026-09',
+			days: [],
+			todayKey: '2026-09-20',
+			rule: 'count_per_window',
+			config: { windowDays: 7, threshold: 2 },
+			excusedDays: [
+				'2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10',
+				'2026-09-11', '2026-09-12', '2026-09-13'
+			]
+		});
+		const sickRow = cal.rows.find((r) => r.cells.some((c) => c?.date === '2026-09-09'));
+		expect(sickRow!.window).toEqual({ count: 0, target: 0, met: false, excused: true });
 	});
 });

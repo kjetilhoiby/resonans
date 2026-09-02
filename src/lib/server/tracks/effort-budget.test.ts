@@ -337,3 +337,51 @@ describe('pickBoostSuggestion', () => {
 		expect(pickBoostSuggestion(-50, EXAMPLES)).toBeNull();
 	});
 });
+
+describe('computeEffortBudget — sykeuker', () => {
+	const sickWeek = (monday: string) =>
+		Array.from({ length: 7 }, (_, i) => {
+			const d = new Date(`${monday}T00:00:00Z`);
+			d.setUTCDate(d.getUTCDate() + i);
+			return d.toISOString().slice(0, 10);
+		});
+
+	it('senker båndet i uka man er syk, med null som gulv', () => {
+		const workouts = [okt('2026-07-08', 200)];
+		const frisk = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15');
+		const syk = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', false, [
+			'2026-07-14'
+		]);
+		expect(syk.sick).toBe(true);
+		expect(syk.bandMin).toBe(0);
+		expect(syk.bandMax).toBeLessThan(frisk.bandMax);
+	});
+
+	it('holder sykeuker utenfor ankeret — de sier ingenting om normalen', () => {
+		// Fire uker: tre normale på 300, én sykeuke på 20.
+		const workouts = [
+			okt('2026-06-17', 300),
+			okt('2026-06-24', 300),
+			okt('2026-07-01', 20),
+			okt('2026-07-08', 300)
+		];
+		const uten = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15');
+		const med = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', false,
+			sickWeek('2026-06-29'));
+
+		expect(med.sickWeeksSkipped).toBe(1);
+		expect(med.anchorWeeks).toBe(3);
+		// Ankeret uten sykeuka er 300; med den er det 230.
+		expect(med.bandMax).toBeGreaterThan(uten.bandMax);
+	});
+
+	it('sykdom overstyrer vedlikeholdsmodus', () => {
+		const workouts = [okt('2026-07-08', 200)];
+		const ferie = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', true);
+		const begge = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', true, [
+			'2026-07-15'
+		]);
+		expect(begge.bandMin).toBe(0);
+		expect(begge.bandMax).toBeLessThan(ferie.bandMax);
+	});
+});

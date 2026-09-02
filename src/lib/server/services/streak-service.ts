@@ -9,6 +9,15 @@
  * Regel-semantikken bor i $lib/domain/streaks.ts (ren, testet). Denne filen
  * gjør bare tre ting: hent riktige hendelser, oversett til Oslo-lokale
  * dagsnøkler, og delegér til computeStreak.
+ *
+ * ## Sykedager
+ *
+ * Hver inngang henter sykedagene ÉN gang og gir dem til alle definisjonene
+ * (`loadSickDayKeys`, se `$lib/server/health/sick-log.ts`). De er ikke
+ * definisjons-spesifikke, så en spørring per streak ville vært samme svar hentet
+ * n ganger. Og siden de sendes inn i den rene motoren framfor å lagres, gjelder
+ * en sykeperiode registrert i etterkant også bakover i historikken — samme
+ * prinsipp som at streaks aldri lagres som en teller.
  */
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorEvents, sensors, streakDefinitions } from '$lib/db/schema';
@@ -28,6 +37,7 @@ import {
 	type DayScale,
 	type WorkoutDayMetrics
 } from '$lib/domain/health/workout-day-scale';
+import { loadSickDayKeys } from '$lib/server/health/sick-log';
 import {
 	isStreakInHealthFamily,
 	isStreakRelevantForTheme,
@@ -313,6 +323,7 @@ export async function loadStreaks(
 	const now = opts.now ?? new Date();
 	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 	const todayKey = osloDayKey(now);
+	const excused = await loadSickDayKeys(userId, osloDayKey(since), todayKey, now);
 
 	return Promise.all(
 		definitions.map(async (definition) => ({
@@ -320,7 +331,8 @@ export async function loadStreaks(
 			state: computeStreak(
 				definition,
 				await readEventDayKeys(userId, definition, since),
-				todayKey
+				todayKey,
+				excused
 			)
 		}))
 	);
@@ -346,11 +358,17 @@ export async function loadRelevantStreaks(
 	const now = opts.now ?? new Date();
 	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 	const todayKey = osloDayKey(now);
+	const excused = await loadSickDayKeys(userId, osloDayKey(since), todayKey, now);
 
 	return Promise.all(
 		definitions.map(async (definition) => ({
 			definition,
-			state: computeStreak(definition, await readEventDayKeys(userId, definition, since), todayKey)
+			state: computeStreak(
+				definition,
+				await readEventDayKeys(userId, definition, since),
+				todayKey,
+				excused
+			)
 		}))
 	);
 }
@@ -376,11 +394,17 @@ export async function loadHealthFamilyStreaks(
 	const now = opts.now ?? new Date();
 	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 	const todayKey = osloDayKey(now);
+	const excused = await loadSickDayKeys(userId, osloDayKey(since), todayKey, now);
 
 	return Promise.all(
 		definitions.map(async (definition) => ({
 			definition,
-			state: computeStreak(definition, await readEventDayKeys(userId, definition, since), todayKey)
+			state: computeStreak(
+				definition,
+				await readEventDayKeys(userId, definition, since),
+				todayKey,
+				excused
+			)
 		}))
 	);
 }
@@ -456,6 +480,12 @@ export interface StreakHistory {
 	state: StreakState;
 	/** Dager med hendelse, stigende. Antall per dag, siden duplikater teller. */
 	days: StreakHistoryDay[];
+	/**
+	 * Sykedager i vinduet — hverken holdt eller brutt. Kalenderen tegner dem
+	 * dempet, av samme grunn som skjermtidas passive timer beholder søylehøyden:
+	 * en dag som forsvinner er ikke til å etterprøve.
+	 */
+	excusedDays: string[];
 	/** Hvor langt tilbake historikken er lest. Flaten skal kunne si det. */
 	lookbackDays: number;
 	/** Dagens Oslo-dato, så kalenderen ikke regner den ut på nytt. */
@@ -495,6 +525,7 @@ export async function loadStreakHistory(
 	const now = opts.now ?? new Date();
 	const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 	const todayKey = osloDayKey(now);
+	const excused = await loadSickDayKeys(userId, osloDayKey(since), todayKey, now);
 
 	/**
 	 * Trenings-streaks leses gjennom metrikk-spørringen, ikke gjennom
@@ -507,8 +538,9 @@ export async function loadStreakHistory(
 		const dayKeys = metrics.flatMap((m) => Array<string>(m.count).fill(m.date));
 		return {
 			definition,
-			state: computeStreak(definition, dayKeys, todayKey),
+			state: computeStreak(definition, dayKeys, todayKey, excused),
 			days: metrics.map(({ date, count }) => ({ date, count })),
+			excusedDays: excused,
 			lookbackDays: LOOKBACK_DAYS,
 			today: todayKey,
 			dayMetrics: metrics,
@@ -521,8 +553,9 @@ export async function loadStreakHistory(
 
 	return {
 		definition,
-		state: computeStreak(definition, dayKeys, todayKey),
+		state: computeStreak(definition, dayKeys, todayKey, excused),
 		days: countByDay(dayKeys),
+		excusedDays: excused,
 		lookbackDays: LOOKBACK_DAYS,
 		today: todayKey,
 		dayMetrics: null,

@@ -30,6 +30,8 @@ function budget(overrides: Partial<EffortBudget> = {}): EffortBudget {
 		anchor: 'snitt_uker',
 		anchorWeeks: 4,
 		maintenance: false,
+		sick: false,
+		sickWeeksSkipped: 0,
 		...overrides
 	};
 }

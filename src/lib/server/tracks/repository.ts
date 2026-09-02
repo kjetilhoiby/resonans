@@ -44,6 +44,7 @@ import {
 	nextEnduranceSession
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
+import { loadSickDayKeys } from '$lib/server/health/sick-log';
 import { computeBalanceState, type BalanceState } from './balance';
 import { getRecentRouteLabels } from './routes-repository';
 import { fetchActiveTrip } from '$lib/server/programs/readiness';
@@ -56,6 +57,13 @@ export type TrackMilestoneRow = typeof trackMilestones.$inferSelect;
 export type TrackSessionRow = typeof trackSessions.$inferSelect;
 
 const LOOKBACK_DAYS = 42; // 6 uker inn i motorene
+
+/** Dagsnøkkel `days` dager fra en annen. Ren strengregning — ingen tidssonedrift. */
+function addDaysIso(iso: string, days: number): string {
+	const d = new Date(`${iso}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() + days);
+	return d.toISOString().slice(0, 10);
+}
 
 function todayIso(): string {
 	return new Date().toISOString().slice(0, 10);
@@ -419,15 +427,20 @@ export async function computeTrackStates(
 	const enduranceSuggestion = enduranceState ? nextEnduranceSession(enduranceState, weekdayNumber) : null;
 
 	// Vedlikeholdsmodus ved aktiv reise/ferie: senk effort-båndet så en lett uke
-	// på reise ikke leses som svikt.
-	const activeTrip = await fetchActiveTrip(userId, today).catch(() => null);
+	// på reise ikke leses som svikt. Sykedagene gjør to ting til: de holder
+	// sykeuker utenfor ankeret, og senker båndet i uka du er syk.
+	const [activeTrip, sickDays] = await Promise.all([
+		fetchActiveTrip(userId, today).catch(() => null),
+		loadSickDayKeys(userId, addDaysIso(today, -LOOKBACK_DAYS), today).catch(() => [])
+	]);
 	const budget = utholdenhetTrack
 		? computeEffortBudget(
 				enduranceWorkouts,
 				enduranceConfigOf(utholdenhetTrack),
 				plan.startDate,
 				today,
-				!!activeTrip
+				!!activeTrip,
+				sickDays
 			)
 		: null;
 	const effortComposition =

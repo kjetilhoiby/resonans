@@ -17,6 +17,8 @@
 		anchor: 'snitt_uker' | 'gulv';
 		anchorWeeks?: number;
 		maintenance?: boolean;
+		/** Sykdom i uka: gulvet er null og taket lavt. Kan mangle i cachet payload. */
+		sick?: boolean;
 	}
 
 	interface SessionSlice {
@@ -105,12 +107,15 @@
 	// det eneste restitusjonssignalet, og det eneste som får varselfarge. Ordene
 	// deles med chatten — se $lib/domain/health/effort-standing.
 	const plan = $derived(
-		describeBudgetStanding(budget.spentThisWeek, budget.bandMin, budget.bandMax)
+		describeBudgetStanding(budget.spentThisWeek, budget.bandMin, budget.bandMax, budget.sick ?? false)
 	);
 	const load = $derived(describeAcuteChronic(budget.acuteChronicRatio, budget.restRecommended));
 
 	// «Fortsett å fylle uka» hjelper ingen når vi kan foreslå noe konkret.
-	const planText = $derived(plan.standing === 'under' ? (composition ?? plan.text) : plan.text);
+	// Et øktforslag i en sykeuke er feil råd, uansett hvor mye som «gjenstår».
+	const planText = $derived(
+		plan.standing === 'under' && !budget.sick ? (composition ?? plan.text) : plan.text
+	);
 
 	const anchorText = $derived(describeAnchor(budget.anchor, budget.anchorWeeks ?? 0));
 

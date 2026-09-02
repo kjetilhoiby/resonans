@@ -83,6 +83,8 @@ export interface TrainingSummaryInput {
 			deload: boolean;
 			anchor: string;
 			maintenance: boolean;
+			/** Sykdom i uka. Valgfri, siden eldre kallsteder ikke setter den. */
+			sick?: boolean;
 		} | null;
 		balance?: {
 			disciplines: Array<{ family: string; effort: number; sessions: number; pct: number }>;
@@ -218,6 +220,8 @@ export interface WeekSummary {
 	restRecommended: boolean;
 	deload: boolean;
 	maintenance: boolean;
+	/** Uka er en sykeuke: rammen er senket, og «under planen» gjelder ikke. */
+	sick: boolean;
 	anchor: string;
 	weightThresholdEffort: number | null;
 	runKm: number | null;
@@ -470,14 +474,21 @@ function summarizeWeek(input: TrainingSummaryInput): WeekSummary | null {
 	const projection = input.states?.projection ?? null;
 	const endurance = input.states?.endurance ?? null;
 
+	// I en sykeuke er gulvet null, så «under planen» finnes ikke — samme
+	// avgjørelse som `describeBudgetStanding` tar, og de to må være enige.
 	const standing: WeekSummary['standing'] =
-		budget.spentThisWeek < budget.bandMin
+		!budget.sick && budget.spentThisWeek < budget.bandMin
 			? 'under'
 			: budget.spentThisWeek > budget.bandMax
 				? 'over'
 				: 'i_band';
 
-	const plan = describeBudgetStanding(budget.spentThisWeek, budget.bandMin, budget.bandMax);
+	const plan = describeBudgetStanding(
+		budget.spentThisWeek,
+		budget.bandMin,
+		budget.bandMax,
+		budget.sick ?? false
+	);
 	const load = describeAcuteChronic(budget.acuteChronicRatio, budget.restRecommended);
 
 	return {
@@ -488,6 +499,7 @@ function summarizeWeek(input: TrainingSummaryInput): WeekSummary | null {
 		planText: plan.text,
 		loadText: load?.text ?? null,
 		loadLevel: load?.level ?? null,
+		sick: budget.sick ?? false,
 		remainingMin: budget.remainingMin,
 		remainingMax: budget.remainingMax,
 		projectedTotal: projection?.projectedTotal ?? null,
