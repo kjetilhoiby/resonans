@@ -31,12 +31,22 @@ import {
  * kravtabellen gjør at de to klokkene aldri dobbeltkjører et slot.
  */
 
-const LEADER_LOCK_NAME = 'resonans-cron-dispatcher';
+export const LEADER_LOCK_NAME = 'resonans-cron-dispatcher';
 
 let isDispatcherRunning = false;
 let isLeader = false;
 let reserved: Awaited<ReturnType<typeof pgClient.reserve>> | null = null;
 const inFlight = new Set<string>();
+
+/**
+ * Denne PROSESSENS dispatchertilstand, for statuskortet på /settings/jobs.
+ * NB: web-forespørselen kan treffe standby-instansen under en rullende
+ * oppdatering — om noen i det hele tatt er leder, svarer pg_locks på
+ * (se cron-dispatch-status.ts), ikke dette.
+ */
+export function cronDispatcherLocalState(): { running: boolean; leader: boolean } {
+	return { running: isDispatcherRunning, leader: isLeader };
+}
 
 export function startCronDispatcher() {
 	if (isDispatcherRunning) {
