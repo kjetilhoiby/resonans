@@ -6,6 +6,7 @@
 	import HealthProgramCard from './health/HealthProgramCard.svelte';
 	import HealthSubthemeStrip from './health/HealthSubthemeStrip.svelte';
 	import HealthSignalSection from './health/HealthSignalSection.svelte';
+	import SickStatusCard from './health/SickStatusCard.svelte';
 	import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
 	import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
 	import {
@@ -169,6 +170,12 @@
 	{/if}
 
 	<HealthSignalSection {signals} {themeIdsByName} parentThemeId={themeId ?? null} />
+
+	<!-- Sykestatus står over programkortet, ikke under: er du syk, er det den
+	     opplysningen som forklarer alt annet på flaten. Kortet henter sitt eget
+	     data — én ekstra spørring bare når mortemaet er åpent, framfor å legge
+	     den i sidelasteren for alle helseflatene. -->
+	<SickStatusCard />
 
 	<HealthProgramCard {activeProgram} {todaySession} loading={programWidgetLoading} />
 

@@ -68,3 +68,25 @@ describe('describeAnchor', () => {
 		expect(describeAnchor('gulv', 0)).toBe('forsiktig oppstartsnivå');
 	});
 });
+
+describe('describeBudgetStanding — sykeuke', () => {
+	it('sier at rammen er senket, og krever ingenting', () => {
+		const v = describeBudgetStanding(0, 0, 84, true);
+		expect(v.standing).toBe('i_band');
+		expect(v.label).toBe('Sykeuke');
+		expect(v.text).toContain('Ingenting kreves');
+	});
+
+	it('finnes ingen «under planen» når gulvet er null', () => {
+		// Uten sykeflagget ville 0 av 235–282 vært «under ukas plan — det er rom
+		// igjen», altså en oppfordring til å trene med feber.
+		expect(describeBudgetStanding(0, 235, 282).standing).toBe('under');
+		expect(describeBudgetStanding(0, 0, 84, true).standing).toBe('i_band');
+	});
+
+	it('over den senkede rammen sies fortsatt som et budsjett, ikke et varsel', () => {
+		const v = describeBudgetStanding(200, 0, 84, true);
+		expect(v.standing).toBe('over');
+		expect(v.text).toContain('ikke en grense');
+	});
+});

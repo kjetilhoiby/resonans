@@ -11,6 +11,7 @@ import { materializeRoutinesForDates } from '$lib/server/services/routine-servic
 import { listDueMaintenance } from '$lib/server/services/streak-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
+import { loadSickDayKeys } from '$lib/server/health/sick-log';
 import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 
@@ -374,6 +375,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// Pågående ferie denne uka → ikon i toppen + dag-merking (som reiser).
 	const activeFerie = activeFerieThemes(ferieThemes, weekStartStr, weekEndStr);
 
+	/**
+	 * Sykedager i uka. Merker dagene som UNNSKYLDT framfor uteblitt — en
+	 * uhaket rutine på en sykedag er ikke det samme som en man droppet, og
+	 * ukeplanen er stedet forskjellen leses.
+	 *
+	 * Bare dagene, ikke periodens tekst: banneret trenger å vite hvilke av ukas
+	 * sju dager som var syke, og en periode som strekker seg utenfor uka svarer
+	 * ikke på det.
+	 */
+	const sickDays = await loadSickDayKeys(userId, weekStartStr, weekEndStr).catch(() => []);
+
 	// Group Spond events by ISO date, including RSVP status for the account holder's family
 	const myMemberIds: string[] = (spondSensor?.config as any)?.myMemberIds ?? [];
 	const myMemberSet = new Set(myMemberIds);
@@ -682,6 +694,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		livskompassGoals,
 		activeTrips,
 		activeFerie,
+		sickDays,
 		spondEventsByDay,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,

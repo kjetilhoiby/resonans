@@ -44,6 +44,8 @@
 		definition: { title: string; emoji: string; rule: StreakRule; config: StreakConfig };
 		state: StreakState;
 		days: StreakHistoryDay[];
+		/** Sykedager. Valgfri: en cachet payload fra før september 2026 mangler den. */
+		excusedDays?: string[];
 		lookbackDays: number;
 		today: string;
 		dayMetrics: WorkoutDayMetrics[] | null;
@@ -126,6 +128,7 @@
 				dayMetrics={history.dayMetrics}
 				scale={history.scale}
 				sportFamily={history.sportFamily}
+				excusedDays={history.excusedDays ?? []}
 			/>
 
 			<div class="sh-facts">

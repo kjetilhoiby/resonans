@@ -95,6 +95,14 @@ export interface EffortBudget {
 	anchorWeeks: number;
 	/** Vedlikeholdsmodus (aktiv reise/ferie): båndet senkes så en lett uke ikke straffes. */
 	maintenance: boolean;
+	/** Sykdom i inneværende uke: gulvet er null og taket lavt. */
+	sick: boolean;
+	/**
+	 * Uker holdt utenfor ankeret fordi de hadde sykdom. Flaten skal kunne si at
+	 * snittet er bygget på færre uker enn vanlig — ellers ser et lavere bånd ut
+	 * som en beregning som svikter.
+	 */
+	sickWeeksSkipped: number;
 }
 
 export interface EnduranceWeekState {

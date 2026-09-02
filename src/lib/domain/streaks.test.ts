@@ -406,3 +406,144 @@ describe('dueLabel', () => {
 		expect(dueLabel({ daysUntilDue: null })).toBeNull();
 	});
 });
+
+/* ── Unnskyldte dager (sykdom) ───────────────────────────────────────────── */
+
+describe('computeStreak — unnskyldte dager', () => {
+	const daily = { rule: 'consecutive_days' as const, config: {} };
+
+	it('sykedager bryter ikke rekka, og telleren står stille', () => {
+		// Løp 1.–3. sep, syk 4.–6., løp igjen 7. Uten unnskyldning er dette
+		// «1 dag på rad»; med unnskyldning er det fortsatt de fire dagene man løp.
+		const events = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-07'];
+		const sick = ['2026-09-04', '2026-09-05', '2026-09-06'];
+
+		expect(computeStreak(daily, events, '2026-09-07').count).toBe(1);
+
+		const state = computeStreak(daily, events, '2026-09-07', sick);
+		expect(state.count).toBe(4);
+		expect(state.excusedUnits).toBe(3);
+	});
+
+	it('sykedager bruker ikke av maxGapDays-toleransen', () => {
+		// Toleransen skal fortsatt være der til en glemt dag SENERE.
+		const def = { rule: 'consecutive_days' as const, config: { maxGapDays: 1, maxGaps: 1 } };
+		const events = ['2026-09-01', '2026-09-02', '2026-09-06', '2026-09-07'];
+		const sick = ['2026-09-03', '2026-09-04'];
+		// 5. sep er en glemt dag, ikke en sykedag — den skal koste pausen.
+		const state = computeStreak(def, events, '2026-09-07', sick);
+		expect(state.count).toBe(4);
+		expect(state.gapCount).toBe(1);
+		expect(state.gapUnits).toBe(1);
+		expect(state.excusedUnits).toBe(2);
+	});
+
+	it('en økt tatt mens man var syk teller som holdt, ikke som unnskyldt', () => {
+		// Unnskyldningen fjerner kravet, ikke kreditten.
+		const events = ['2026-09-01', '2026-09-02', '2026-09-03'];
+		const state = computeStreak(daily, events, '2026-09-03', ['2026-09-02']);
+		expect(state.count).toBe(3);
+		expect(state.excusedUnits).toBe(0);
+		expect(state.excusedDots[6]).toBe(false);
+	});
+
+	it('syk i dag krever ingenting — status er ok, ikke «gjenstår i dag»', () => {
+		const events = ['2026-09-01', '2026-09-02'];
+		expect(computeStreak(daily, events, '2026-09-03').status).toBe('due_soon');
+		expect(computeStreak(daily, events, '2026-09-03', ['2026-09-03']).status).toBe('ok');
+	});
+
+	it('sykdom helt fram til i dag holder rekka i live', () => {
+		const events = ['2026-09-01', '2026-09-02'];
+		const sick = ['2026-09-03', '2026-09-04', '2026-09-05'];
+		const state = computeStreak(daily, events, '2026-09-05', sick);
+		expect(state.count).toBe(2);
+		expect(state.status).toBe('ok');
+	});
+
+	it('bestCount senkes ikke av en sykeperiode', () => {
+		const events = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-07'];
+		const sick = ['2026-09-04', '2026-09-05', '2026-09-06'];
+		expect(computeStreak(daily, events, '2026-09-20', sick).bestCount).toBe(4);
+	});
+
+	it('streakLabel sier hvor mange dager som var syke', () => {
+		const events = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-07'];
+		const sick = ['2026-09-04', '2026-09-05', '2026-09-06'];
+		expect(streakLabel(computeStreak(daily, events, '2026-09-07', sick))).toBe(
+			'4 dager på rad (3 dager syk)'
+		);
+	});
+});
+
+describe('computeStreak — sykedager i ukesregler', () => {
+	// «Minst 2 løpeturer i uka», mandagsankrede uker.
+	const weekly = { rule: 'count_per_window' as const, config: { windowDays: 7, threshold: 2 } };
+
+	it('én sykedag senker ikke kravet', () => {
+		const state = computeStreak(weekly, [], '2026-09-02', ['2026-09-01']);
+		expect(state.windowTarget).toBe(2);
+	});
+
+	it('to sykedager halverer kravet', () => {
+		const state = computeStreak(weekly, [], '2026-09-02', ['2026-09-01', '2026-09-02']);
+		expect(state.windowTarget).toBe(1);
+	});
+
+	it('ei uke i senga er gjennomsiktig — verken holdt eller brutt', () => {
+		// Uke 36 (31. aug–6. sep) holdt med to turer, uke 37 var syk hele veien,
+		// uke 38 holdt igjen. Rekka skal være tre uker, ikke én.
+		const events = [
+			'2026-08-31', '2026-09-01', // uke 36
+			'2026-09-14', '2026-09-15'  // uke 38
+		];
+		const sickWeek = [
+			'2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10',
+			'2026-09-11', '2026-09-12', '2026-09-13'
+		];
+		expect(computeStreak(weekly, events, '2026-09-15').count).toBe(1);
+		const state = computeStreak(weekly, events, '2026-09-15', sickWeek);
+		expect(state.count).toBe(2);
+		expect(state.excusedUnits).toBe(1);
+	});
+
+	it('nådde du kravet i en unnskyldt uke, teller den som holdt', () => {
+		const events = ['2026-09-07', '2026-09-08'];
+		const sickWeek = [
+			'2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10',
+			'2026-09-11', '2026-09-12', '2026-09-13'
+		];
+		const state = computeStreak(weekly, events, '2026-09-13', sickWeek);
+		expect(state.windowCount).toBe(2);
+		expect(state.count).toBe(1);
+	});
+});
+
+describe('computeStreak — sykedager i max_interval', () => {
+	// Badevask hver 14. dag.
+	const upkeep = { rule: 'max_interval' as const, config: { intervalDays: 14 } };
+
+	it('sykedagene skyver fristen', () => {
+		const state = computeStreak(upkeep, ['2026-09-01'], '2026-09-10', [
+			'2026-09-05', '2026-09-06', '2026-09-07'
+		]);
+		expect(state.nextDueDay).toBe('2026-09-18');
+		expect(state.daysUntilDue).toBe(8);
+		expect(state.excusedUnits).toBe(3);
+	});
+
+	it('en runde som forfalt under sykdom bryter ikke rekka', () => {
+		// 15. aug → 31. aug er 16 dager, altså to over intervallet. Tre sykedager
+		// i det gapet gjør det tillatt.
+		const rounds = ['2026-08-01', '2026-08-15', '2026-08-31'];
+		expect(computeStreak(upkeep, rounds, '2026-08-31').count).toBe(1);
+		const sick = ['2026-08-29', '2026-08-30', '2026-08-31'];
+		expect(computeStreak(upkeep, rounds, '2026-08-31', sick).count).toBe(3);
+	});
+
+	it('sublabel forklarer hvorfor fristen flyttet seg', () => {
+		const state = computeStreak(upkeep, ['2026-09-01'], '2026-09-10', ['2026-09-05']);
+		// 1. sep + 14 dager = 15. sep, pluss én sykedag = 16. sep.
+		expect(streakSublabel(state)).toBe('forfaller om 6 dager (1 sykedag lagt til)');
+	});
+});

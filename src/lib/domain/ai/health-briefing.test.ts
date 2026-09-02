@@ -247,7 +247,7 @@ describe('buildHealthBriefing', () => {
 			weight,
 			training,
 			streaks: [streak()],
-			goals: [goal()]
+			goals: [goal()], sick: null
 		});
 		expect(text).toContain('--- HELSE: HVOR BRUKEREN STÅR NÅ ---');
 		expect(text).toContain('VEKT:');
@@ -259,12 +259,12 @@ describe('buildHealthBriefing', () => {
 
 	it('sier at briefingen er et utsnitt', () => {
 		// Uten denne setningen slutter modellen å hente historikk den trenger.
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [] });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null });
 		expect(text).toContain('UTSNITT');
 	});
 
 	it('dropper seksjoner uten innhold framfor tomme overskrifter', () => {
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [] });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null });
 		expect(text).toContain('VEKT:');
 		expect(text).not.toContain('TRENING:');
 		expect(text).not.toContain('STREAKS:');
@@ -273,7 +273,7 @@ describe('buildHealthBriefing', () => {
 
 	it('gir tom streng når det ikke er noe å si', () => {
 		// En overskrift uten innhold ser ut som at data mangler.
-		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [] })).toBe('');
+		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [], sick: null })).toBe('');
 	});
 
 	it('tar med målene med progresjon og pause', () => {
@@ -281,10 +281,49 @@ describe('buildHealthBriefing', () => {
 			weight: null,
 			training: null,
 			streaks: [],
-			goals: [goal(), goal({ title: 'Løpe 5 km under 25 min', progressText: null, paused: true })]
+			goals: [goal(), goal({ title: 'Løpe 5 km under 25 min', progressText: null, paused: true })],
+			sick: null
 		});
 		expect(text).toContain('4,4 kg igjen');
 		expect(text).toContain('83 dager igjen');
 		expect(text).toContain('PÅ PAUSE');
+	});
+});
+
+describe('buildHealthBriefing — sykdom', () => {
+	it('står øverst, før vekt og trening', () => {
+		const text = buildHealthBriefing({
+			weight: null,
+			training: null,
+			streaks: [],
+			goals: [],
+			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)'
+		});
+		expect(text).toContain('SYKDOM:');
+		expect(text).toContain('Syk siden 1. sep');
+	});
+
+	it('sier at streaks er pauset, så modellen ikke lover det på egen hånd', () => {
+		const text = buildHealthBriefing({
+			weight: null,
+			training: null,
+			streaks: [],
+			goals: [],
+			sick: 'Syk 1.–3. sep (3 dager)'
+		});
+		expect(text).toContain('Streaks er pauset');
+		expect(text).toContain('ikke som sviktende rytme');
+		expect(text).toContain('Ikke gi medisinske råd');
+	});
+
+	it('ingen seksjon uten en aktiv periode', () => {
+		const text = buildHealthBriefing({
+			weight: null,
+			training: null,
+			streaks: [],
+			goals: [goal()],
+			sick: null
+		});
+		expect(text).not.toContain('SYKDOM');
 	});
 });

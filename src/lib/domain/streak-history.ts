@@ -25,6 +25,7 @@
 import {
 	dayKeyFromNumber,
 	dayNumber,
+	effectiveWindowThreshold,
 	windowIndex,
 	windowStartDay,
 	type StreakConfig,
@@ -44,12 +45,20 @@ export interface StreakCalendarCell {
 	isToday: boolean;
 	/** Dager etter i dag: ingenting har skjedd der ennå, og ingenting er glemt. */
 	isFuture: boolean;
+	/**
+	 * Sykedag — hverken holdt eller brutt.
+	 *
+	 * Dagen skal SES, ikke bare mangle: et hull i kalenderen ser ut som en dag man
+	 * sviktet, og forskjellen er hele poenget med å kunne melde seg syk. Samme
+	 * visuelle språk som skjermtidas filtrerte timer — dempet, ikke borte.
+	 */
+	isExcused: boolean;
 }
 
 export interface StreakCalendarRow {
 	cells: (StreakCalendarCell | null)[];
 	/** Periodens fasit for `count_per_window` med ukesvindu, ellers null. */
-	window: { count: number; target: number; met: boolean } | null;
+	window: { count: number; target: number; met: boolean; excused: boolean } | null;
 }
 
 export interface StreakCalendarMonth {
@@ -58,7 +67,16 @@ export interface StreakCalendarMonth {
 	rows: StreakCalendarRow[];
 	/** Dager med hendelse i måneden, og hvor mange dager som er gått av den. */
 	daysWithEvent: number;
+	/**
+	 * Dager som er gått av måneden, UTEN sykedagene.
+	 *
+	 * Dekningen («18 av 30») er et krav-regnskap, og en dag som ikke krevde noe
+	 * hører ikke i nevneren. Uten fradraget ser en måned med influensa ut som en
+	 * måned man slurvet gjennom.
+	 */
 	daysElapsed: number;
+	/** Sykedager som er gått av måneden — trukket fra `daysElapsed`. */
+	daysExcused: number;
 	/** Sum hendelser i måneden — høyere enn `daysWithEvent` når en dag har flere. */
 	events: number;
 }
@@ -80,9 +98,12 @@ export function buildStreakCalendar(input: {
 	todayKey: string;
 	rule: StreakRule;
 	config: StreakConfig;
+	/** Sykedager, hele historikken. Tomt er det vanlige. */
+	excusedDays?: readonly string[];
 }): StreakCalendarMonth {
 	const { month, days, todayKey, rule, config } = input;
 	const byDate = new Map(days.map((d) => [d.date, d.count]));
+	const excused = new Set(input.excusedDays ?? []);
 	const today = dayNumber(todayKey);
 
 	const windowDays = Math.max(1, config.windowDays ?? 7);
@@ -91,15 +112,23 @@ export function buildStreakCalendar(input: {
 	const showWindows = rule === 'count_per_window' && windowDays === 7;
 
 	const perWindow = new Map<number, number>();
+	const sickPerWindow = new Map<number, number>();
 	if (showWindows) {
 		for (const day of days) {
 			const idx = windowIndex(dayNumber(day.date), windowDays);
 			perWindow.set(idx, (perWindow.get(idx) ?? 0) + day.count);
 		}
+		// Radens fasit må bruke SAMME reduserte terskel som telleren på kortet,
+		// ellers viser kalenderen «0 av 2 ✗» for en uke streaken godskrev.
+		for (const date of excused) {
+			const idx = windowIndex(dayNumber(date), windowDays);
+			sickPerWindow.set(idx, (sickPerWindow.get(idx) ?? 0) + 1);
+		}
 	}
 
 	let daysWithEvent = 0;
 	let daysElapsed = 0;
+	let daysExcused = 0;
 	let events = 0;
 
 	const rows: StreakCalendarRow[] = monthGrid(month).map((week) => {
@@ -107,8 +136,12 @@ export function buildStreakCalendar(input: {
 			if (!date) return null;
 			const dayNum = dayNumber(date);
 			const count = byDate.get(date) ?? 0;
+			// En dag med hendelse teller som holdt selv om den var syk —
+			// unnskyldningen fjerner kravet, ikke kreditten.
+			const isExcused = excused.has(date) && count === 0;
 			if (dayNum <= today) {
-				daysElapsed++;
+				if (isExcused) daysExcused++;
+				else daysElapsed++;
 				if (count > 0) daysWithEvent++;
 				events += count;
 			}
@@ -116,7 +149,8 @@ export function buildStreakCalendar(input: {
 				date,
 				count,
 				isToday: dayNum === today,
-				isFuture: dayNum > today
+				isFuture: dayNum > today,
+				isExcused
 			};
 		});
 
@@ -127,9 +161,23 @@ export function buildStreakCalendar(input: {
 			if (anchor) {
 				const idx = windowIndex(dayNumber(anchor.date), windowDays);
 				const count = perWindow.get(idx) ?? 0;
+				const windowTarget = effectiveWindowThreshold(
+					target,
+					windowDays,
+					sickPerWindow.get(idx) ?? 0
+				);
 				// Perioder som ikke har begynt ennå får ingen fasit.
 				const started = windowStartDay(idx, windowDays) <= today;
-				if (started) window = { count, target, met: count >= target };
+				if (started) {
+					window = {
+						count,
+						target: windowTarget,
+						// Falt kravet til null, er perioden unnskyldt — den er «holdt» bare
+						// hvis noe faktisk skjedde. Samme skille som i motoren.
+						met: windowTarget === 0 ? count > 0 : count >= windowTarget,
+						excused: windowTarget === 0 && count === 0
+					};
+				}
 			}
 		}
 
@@ -142,6 +190,7 @@ export function buildStreakCalendar(input: {
 		rows,
 		daysWithEvent,
 		daysElapsed,
+		daysExcused,
 		events
 	};
 }

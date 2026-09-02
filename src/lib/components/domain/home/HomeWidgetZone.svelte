@@ -134,6 +134,7 @@
 									emoji={streak.definition.emoji}
 									meta={streakMeta(streak.state)}
 									dots={streak.state.dots}
+									excusedDots={streak.state.excusedDots}
 									color={STREAK_PALETTE[itemIndex % STREAK_PALETTE.length]}
 									dataTrack="hjem-streaks:apne-historikk"
 									onpress={() => {

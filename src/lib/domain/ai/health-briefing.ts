@@ -128,6 +128,15 @@ export interface HealthBriefingInput {
 	streaks: BriefingStreak[];
 	/** Målene i helse-familien, rammet inn av `frameGoals`. */
 	goals: FramedGoal[];
+	/**
+	 * Setningen om en aktiv sykeperiode (`describeSickPeriod`), eller null.
+	 *
+	 * Ferdig formulert, som alt annet her: modellen skal ikke lese `sick: true` og
+	 * finne sine egne ord for hva det betyr. Og den står ØVERST, ikke i en
+	 * seksjon — er brukeren syk, forklarer det tallene under, og en modell som
+	 * leser vekt og belastning først har alt begynt å tolke dem.
+	 */
+	sick: string | null;
 }
 
 /**
@@ -309,6 +318,27 @@ export function describeStreaks(streaks: BriefingStreak[]): string[] {
 	});
 }
 
+/**
+ * Sykeperioden, med konsekvensene sagt rett ut.
+ *
+ * Uten den siste linja tolker modellen tallene som atferd: en uke uten økter blir
+ * «du har mistet rytmen» framfor «du var syk», og et råd om å komme i gang blir
+ * gitt til noen som ligger med feber. Konsekvensene står med fordi de er
+ * MEKANIKK — sier ikke prompten at streaks alt er pauset, gjentar modellen
+ * beroligelsen som om den var noe den fant på, og det er en beroligelse den ikke
+ * kan innfri neste gang.
+ *
+ * Vi diagnostiserer ingenting og gir ingen medisinske råd: dette er brukerens
+ * egen registrering av at hen er syk, ikke en måling.
+ */
+export function describeSick(sentence: string): string[] {
+	return [
+		sentence,
+		'Streaks er pauset for sykedagene (hverken holdt eller brutt), og ukas effort-ramme er senket.',
+		'Tolk lavt volum og uteblitte økter i perioden som sykdom, ikke som sviktende rytme. Ikke gi medisinske råd.'
+	];
+}
+
 /* ── Blokka ──────────────────────────────────────────────────────────────── */
 
 export const BRIEFING_HEADER = '--- HELSE: HVOR BRUKEREN STÅR NÅ ---';
@@ -324,6 +354,7 @@ export const BRIEFING_FOOTER = '--- SLUTT PÅ HELSE ---';
  */
 export function buildHealthBriefing(input: HealthBriefingInput): string {
 	const blocks = [
+		input.sick ? section('SYKDOM', describeSick(input.sick)) : null,
 		input.weight ? section('VEKT', describeWeight(input.weight)) : null,
 		input.training ? section('TRENING', describeTraining(input.training)) : null,
 		section('STREAKS', describeStreaks(input.streaks)),

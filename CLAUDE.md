@@ -919,6 +919,63 @@ Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i
   av en test: «vi kjørte 40 kilometer til hytta» ble da et helsespørsmål. En
   distanseenhet sier ikke hvem som beveget seg.
 
+### Sykdom er en periode, aldri et nå-flagg
+
+Se `docs/changelog/2026-09-02-sykeperioder.md`. Reglene rent i
+`$lib/domain/health/sick-periods.ts`, skrive- og leseveien i
+`$lib/server/health/sick-log.ts`.
+
+- **`sickUntil` svarer på «er jeg syk nå», og det er ALT det kan svare på.** Rigga
+  fram til september 2026 lagret et nå-flagg på en `tilstand_flag`-hendelse, og
+  `getActiveEgenfrekvensFlags` leste bare den nyeste raden. Readiness trengte ikke
+  mer. Streaks stiller et annet spørsmål — *hvilke dager* var syke — og
+  rekonstruksjon fra eventloggen er tvetydig: klarerte du flagget kl. 22 på en dag
+  du lå i senga, var den dagen syk? Et svar som avhenger av klokkeslettet du
+  trykket på en knapp er ikke data. Derfor er en periode en RAD med
+  `startDate`/`endDate` som kan rettes og slettes, som dupp-loggen.
+- **Én skrivevei: `saveSickPeriod`.** Både `/api/helse/syk`, kortet på Helse og
+  `/api/tilstand/flag` (bryteren i `ReadinessStrip`) går gjennom den. En `sickUntil`
+  skrevet som flagg ved siden av ville gitt readiness ett svar og streaks/effort/chat
+  et annet — nettopp splitten som gjorde det gamle flagget ubrukelig.
+- **Én lesevei: `getSickState`.** Den faller selv tilbake på det gamle nå-flagget,
+  men lager INGEN periode av det — og unnskylder derfor ingen streak-dager. Flaten
+  sier det i klartekst framfor å la brukeren tro at streaks er pauset.
+- **Unnskyldt, ikke «teller som holdt».** En syk dag er gjennomsiktig: rekka lever,
+  telleren står stille. Alternativet ga «11 dager på rad» etter fem dager i senga,
+  altså en streak som påstår noe brukeren ikke gjorde.
+- **Sykedager koster IKKE av `maxGapDays`.** Toleransen er per rekke og brukes opp,
+  så en influensauke ville revet en rekke som skulle overlevd en glemt dag senere.
+  Slingringsmonnet skal stå igjen til den glemte dagen.
+- **En økt tatt mens man var syk teller som HOLDT.** Unnskyldningen fjerner kravet,
+  ikke kreditten. Gjelder alle tre streak-reglene og kalendercellene; uten skillet
+  ville ei uke man trosset feberen i telt som en uke man ikke trente.
+- **`count_per_window` PRORATERER terskelen** (`effectiveWindowThreshold`), den
+  unnskylder ikke hele uka på første sykedag. Med terskel 2 over sju dager: én
+  sykedag krever fortsatt 2, to krever 1, seks krever 0. Avrundingen er `round` —
+  `floor` ville halvert kravet på den første sykedagen.
+- **En åpen periode (`endDate: null`) slutter å unnskylde etter
+  `MAX_OPEN_SICK_DAYS` (14).** «Inntil videre» er den ærlige defaulten, men en
+  glemt bryter ville unnskyldt alt for alltid. Vi lukker den ikke selv — det ville
+  vært en påstand; `staleOpen` sier fra, og flaten ber om et sluttpunkt.
+- **En sluttdato fram i tid unnskylder ikke framtida.** En dag som ikke har vært
+  kan ikke være brutt, altså ikke unnskyldt heller. Samme regel som `isFuture`.
+- **Friskmelding setter sluttdato til GÅRSDAGEN.** «Jeg er frisk» sies om dagen man
+  våkner uten feber; satte vi i dag, ble en dag brukeren kunne holdt unnskyldt.
+- **Sykeuker holdes UTENFOR effort-ankeret** — motsatt av hvileuker, som teller som
+  0 fordi de ER informasjon om normalen din. Og i uka du er syk er budsjettgulvet 0,
+  så «under ukas plan» finnes ikke: den setningen ville lest som en oppfordring til
+  å trene med feber. `describeBudgetStanding` og `training-summary.ts` må være enige
+  om det.
+- **Over den senkede rammen er fortsatt ikke et helsevarsel.** Akutt/kronisk er
+  eneste restitusjonssignal, og sykdom endrer ikke det — vi måler ikke kroppen.
+- **Briefingen sier at mekanismen ALT virker** (streaks pauset, ramme senket).
+  Uten det gjentar modellen beroligelsen som noe den fant på, og det er en
+  beroligelse den ikke kan innfri neste gang. Prompten sier også at det ikke finnes
+  et verktøy for å sette sykdom — vis til knappen på Helse.
+- Kjent rest: ingen chat-inngang (`saveSickPeriod` er klar for et verktøy), nudges
+  maser videre, målprogresjon vet ingenting, og `crunch` er fortsatt bare et
+  nå-flagg på programsida.
+
 ### Streaks: én motor, tre flater
 
 Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
@@ -926,7 +983,8 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
 `streak-relevance.ts`.
 
 - **Streaks lagres aldri som en teller.** De regnes on-demand fra hendelser, så en
-  økt som kommer inn i etterkant reparerer rekka selv. Historikken i bunnpanelet er
+  økt som kommer inn i etterkant reparerer rekka selv — og en sykeperiode registrert
+  i etterkant unnskylder dagene bakover, av samme grunn. Historikken i bunnpanelet er
   samme lesing med dagene beholdt — ikke en ny spørring med et eget vindu, for da
   ville kalenderen ikke summert til tallet på kortet den ble åpnet fra.
 - **Kalenderradene ER periodene.** For ukesregler grupperer streaken på

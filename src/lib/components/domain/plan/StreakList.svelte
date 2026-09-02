@@ -67,6 +67,7 @@
 				emoji={definition.emoji}
 				meta={metaLine(state)}
 				dots={state.dots}
+				excusedDots={state.excusedDots}
 				color={PALETTE[i % PALETTE.length]}
 				dataTrack="rutiner-streaks:apne-historikk"
 				onpress={() => (openIndex = i)}

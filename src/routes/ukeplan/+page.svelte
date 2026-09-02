@@ -62,6 +62,8 @@
 			livskompassGoals: LivskompassGoal[];
 			activeTrips: ActiveTrip[];
 			activeFerie: { id: string; name: string; emoji: string; startDate: string; endDate: string }[];
+			/** Sykedager i uka. Uhakede rutiner på disse dagene er unnskyldt, ikke uteblitt. */
+			sickDays?: string[];
 			spondEventsByDay: Record<string, SpondEvent[]>;
 			previousWeekSummary: {
 				weekKey: string; note: string; reflection: string;
@@ -231,8 +233,16 @@
 				}
 			}
 		}
+		// Sykedager OVERSKRIVER reise og ferie. Var du syk på ferie, er det
+		// sykdommen som forklarer dagen — og det er den som gjør uhakede rutiner
+		// unnskyldt framfor uteblitt.
+		for (const day of data.sickDays ?? []) map[day] = '🤒';
 		return map;
 	});
+
+	const sickDaysThisWeek = $derived(
+		(data.sickDays ?? []).filter((d) => data.week.days.some((day) => day.isoDate === d))
+	);
 
 	onMount(async () => {
 		finishNavMetric('ukeplan');
@@ -590,6 +600,16 @@
 	</ChipStrip>
 	{/if}
 
+	{#if sickDaysThisWeek.length > 0}
+		<!-- Sier hva merkingen BETYR. Et 🤒 på dagstripa er et ikon; setningen er
+		     grunnen til at man ikke skal lese de uhakede radene som svikt. -->
+		<p class="wp-sick-banner">
+			🤒 {sickDaysThisWeek.length} {sickDaysThisWeek.length === 1 ? 'sykedag' : 'sykedager'} denne uka.
+			Uhakede rutiner de dagene er unnskyldt — streaks er pauset, og ukas effort-ramme er senket.
+			<a href="/tema/helse" data-track="ukeplan:apne-syk">Endre →</a>
+		</p>
+	{/if}
+
 	<WeekNote weekNote={weekNoteValue} saveState={saveStates.weekNote} onSaveStateChange={(state) => setSaveState('weekNote', state)} onSave={saveWeekNote} />
 
 	<LivskompassGoalStrip goals={data.livskompassGoals ?? []} weekChecklist={weekChecklistState} />
@@ -731,4 +751,16 @@
 	.wp-action-pill--day:hover:not(:disabled) { border-color: rgba(52, 211, 153, 0.65); background: rgba(52, 211, 153, 0.06); box-shadow: 0 0 14px rgba(52, 211, 153, 0.10); }
 	.wp-action-pill--util { border-color: rgba(251, 191, 36, 0.28); }
 	.wp-action-pill--util:hover:not(:disabled) { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.06); box-shadow: 0 0 14px rgba(251, 191, 36, 0.10); }
+
+	.wp-sick-banner {
+		margin: 0;
+		padding: 9px 12px;
+		border: 1px solid var(--accent-warning, #b8863b);
+		border-radius: 10px;
+		background: rgba(184, 134, 59, 0.08);
+		font-size: 12.5px;
+		line-height: 1.45;
+		color: var(--text-secondary);
+	}
+	.wp-sick-banner a { color: var(--text-primary); white-space: nowrap; }
 </style>

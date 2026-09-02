@@ -34,6 +34,8 @@ import { getHealthThemeIds } from '$lib/server/themes';
 import { summarizeTrainingForChat } from '$lib/domain/ai/training-summary';
 import { summarizeWeightForChat } from '$lib/domain/ai/weight-summary';
 import { frameGoals } from '$lib/domain/health/goal-horizon';
+import { getSickState } from '$lib/server/health/sick-log';
+import { describeSickPeriod } from '$lib/domain/health/sick-periods';
 import {
 	buildHealthBriefing,
 	type BriefingStreak,
@@ -170,12 +172,13 @@ export async function buildHealthChatContext(
 	userId: string,
 	healthThemeIds: readonly string[]
 ): Promise<string> {
-	const [training, weight, streaks, goalRows] = await Promise.all([
+	const [training, weight, streaks, goalRows, sick] = await Promise.all([
 		// evaluateMilestones utelates: en kontekstbygger skal ikke skrive til basen.
 		loadTrainingDashboardData(userId).catch(() => null),
 		loadWeightDashboardData(userId).catch(() => null),
 		loadHealthFamilyStreaks(userId, healthThemeIds).catch(() => []),
-		readGoalsWithProgress(userId, [...healthThemeIds]).catch(() => [])
+		readGoalsWithProgress(userId, [...healthThemeIds]).catch(() => []),
+		getSickState(userId).catch(() => null)
 	]);
 
 	const briefingStreaks: BriefingStreak[] = streaks.map(({ definition, state }) => ({
@@ -200,7 +203,11 @@ export async function buildHealthChatContext(
 		streaks: briefingStreaks,
 		// short først: `frameGoals` rangerer innad i hver bøtte, og de med frist er
 		// de coachen skal se på før de løpende.
-		goals: [...framed.short, ...framed.long]
+		goals: [...framed.short, ...framed.long],
+		// Bare en ekte periode gir en setning. Det gamle nå-flagget (uten periode)
+		// utelates: det pauser readiness, men ingen streak-dager, og en briefing som
+		// lovet noe annet ville vært usann.
+		sick: sick?.period ? describeSickPeriod(sick.period) : null
 	});
 
 	return briefing ? `\n\n${briefing}\n` : '';

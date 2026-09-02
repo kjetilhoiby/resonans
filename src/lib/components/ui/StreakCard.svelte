@@ -14,6 +14,10 @@
     emoji    vises foran tittelen
     meta     sekundærlinje, f.eks. «6 dager på rad · gjenstår i dag»
     dots     historikk, eldste først: true = runde holdt
+    excusedDots  parallell til `dots`: true = runden var syk (unnskyldt).
+                 Tegnes som en ring uten fyll — hverken holdt eller brutt. En
+                 sykedag som bare mangler ser ut som en dag man sviktet, og
+                 forskjellen er hele grunnen til å kunne melde seg syk.
     color    aksentfarge
     muted    tegn dempet
     action   valgfri handling til høyre (f.eks. «Logg runde»)
@@ -35,6 +39,7 @@
 		emoji?: string;
 		meta?: string | null;
 		dots?: boolean[];
+		excusedDots?: boolean[];
 		color?: string;
 		muted?: boolean;
 		action?: Snippet;
@@ -50,6 +55,7 @@
 		emoji,
 		meta = null,
 		dots = [],
+		excusedDots = [],
 		color = 'var(--warning-text)',
 		muted = false,
 		action,
@@ -76,7 +82,13 @@
 			{#if dots.length > 0}
 				<div class="dots" role="list" aria-label="Historikk">
 					{#each dots as done, i}
-						<div class="dot" class:done class:latest={done && i === latestIdx} role="listitem"></div>
+						<div
+							class="dot"
+							class:done
+							class:latest={done && i === latestIdx}
+							class:excused={!done && excusedDots[i]}
+							role="listitem"
+						></div>
 					{/each}
 				</div>
 			{/if}
@@ -243,5 +255,12 @@
 
 	.action {
 		flex: 0 0 auto;
+	}
+	/* Unnskyldt: en synlig ring uten fyll. Skiller «krevde ingenting» fra
+	   «manglet» uten å påstå at runden ble holdt. */
+	.dot.excused {
+		background: transparent;
+		box-shadow: inset 0 0 0 1.5px var(--c);
+		opacity: 0.55;
 	}
 </style>

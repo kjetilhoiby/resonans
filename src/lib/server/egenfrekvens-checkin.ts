@@ -1,4 +1,5 @@
 import { db } from '$lib/db';
+import { getSickState } from '$lib/server/health/sick-log';
 import { sensorEvents, sensors, users } from '$lib/db/schema';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
@@ -400,10 +401,17 @@ export interface EgenfrekvensStateFlags {
 }
 
 /**
- * Henter aktive tilstand-flagg basert på siste egenfrekvens-checkin.
- * Sick/crunch er aktive så lenge dagens ISO-dato ≤ sickUntil/crunchUntil.
- * Hvis siste checkin har sickUntil=null betyr det at bruker eksplisitt klarerte
- * status — flagget er av selv om det var satt før.
+ * Henter aktive tilstand-flagg.
+ *
+ * **`sick` kommer fra `getSickState`**, ikke fra flagg-loggen her — sykdom er en
+ * PERIODE siden september 2026 (se `$lib/server/health/sick-log.ts`), og readiness
+ * må se det samme som streaks og helsechatten. To lesninger av «er jeg syk» som
+ * kan svare ulikt er verre enn én; det var nettopp derfor rigga ble samlet.
+ * `getSickState` faller selv tilbake på det gamle nå-flagget, så en `sickUntil`
+ * satt før flyttingen slår fortsatt ut.
+ *
+ * `crunch` er fortsatt et nå-flagg og leses som før: det finnes ingen konsument
+ * som spør hvilke DAGER som var travle.
  */
 export async function getActiveEgenfrekvensFlags(
 	userId: string,
@@ -435,11 +443,7 @@ export async function getActiveEgenfrekvensFlags(
 		result.balance = balance;
 		result.loggedAt = row.timestamp.toISOString();
 
-		const sickUntil = typeof data.sickUntil === 'string' ? data.sickUntil : null;
 		const crunchUntil = typeof data.crunchUntil === 'string' ? data.crunchUntil : null;
-		if (sickUntil && sickUntil >= today) {
-			result.sick = { active: true, until: sickUntil };
-		}
 		if (crunchUntil && crunchUntil >= today) {
 			result.crunch = { active: true, until: crunchUntil };
 		}
@@ -459,16 +463,16 @@ export async function getActiveEgenfrekvensFlags(
 		// Bare overstyr hvis tilstand_flag er nyere enn nyeste egenfrekvens-checkin
 		if (!result.loggedAt || flagTs > result.loggedAt) {
 			const data = (row.data ?? {}) as Record<string, unknown>;
-			const sickUntil = typeof data.sickUntil === 'string' ? data.sickUntil : null;
 			const crunchUntil = typeof data.crunchUntil === 'string' ? data.crunchUntil : null;
-			result.sick = sickUntil && sickUntil >= today
-				? { active: true, until: sickUntil }
-				: { active: false, until: null };
 			result.crunch = crunchUntil && crunchUntil >= today
 				? { active: true, until: crunchUntil }
 				: { active: false, until: null };
 		}
 	}
+
+	// Sykdom har én kilde, og den er periodene.
+	const sick = await getSickState(userId, new Date(`${today}T12:00:00Z`));
+	result.sick = { active: sick.active, until: sick.until };
 
 	return result;
 }

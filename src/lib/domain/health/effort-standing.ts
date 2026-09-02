@@ -35,8 +35,27 @@ export interface BudgetVerdict {
 export function describeBudgetStanding(
 	spentThisWeek: number,
 	bandMin: number,
-	bandMax: number
+	bandMax: number,
+	/** Sykdom i uka: båndet er senket, og setningen må si hvorfor. */
+	sick = false
 ): BudgetVerdict {
+	if (sick) {
+		// Ingen «under planen» i en sykeuke. Gulvet er null, så det finnes ikke noe
+		// å ligge under — og en setning om at det er «rom igjen» ville lest som en
+		// oppfordring til å trene med feber.
+		if (spentThisWeek > bandMax) {
+			return {
+				standing: 'over',
+				label: 'Over sykeukas ramme',
+				text: `Du er meldt syk, og uka er over den senkede rammen (0–${bandMax}). Rammen er et budsjett, ikke en grense — men den er satt lavt med vilje.`
+			};
+		}
+		return {
+			standing: 'i_band',
+			label: 'Sykeuke',
+			text: `Du er meldt syk, så ukas ramme er senket til 0–${bandMax}. Ingenting kreves.`
+		};
+	}
 	if (spentThisWeek < bandMin) {
 		return {
 			standing: 'under',
