@@ -1012,9 +1012,130 @@ Se `docs/changelog/2026-09-02-sykeperioder.md`. Reglene rent i
   Uten det gjentar modellen beroligelsen som noe den fant på, og det er en
   beroligelse den ikke kan innfri neste gang. Prompten sier også at det ikke finnes
   et verktøy for å sette sykdom — vis til knappen på Helse.
-- Kjent rest: ingen chat-inngang (`saveSickPeriod` er klar for et verktøy), nudges
-  maser videre, målprogresjon vet ingenting, og `crunch` er fortsatt bare et
-  nå-flagg på programsida.
+- Kjent rest: ingen chat-inngang (`saveSickPeriod` er klar for et verktøy), de
+  øvrige nudgene maser videre, målprogresjon vet ingenting, og `crunch` er
+  fortsatt bare et nå-flagg på programsida.
+
+### Symptomer: egne liv, og ett av dem er grunnen
+
+Se `docs/changelog/2026-09-02-symptomer-temperatur-og-oppfolging.md`. Reglene i
+`$lib/domain/health/symptoms.ts`, loggen i `$lib/server/health/symptom-log.ts`.
+
+- **«Syk» er en proxy for UTE AV STAND TIL Å TRENE, ikke en diagnose.** Samme
+  periode dekker en luftveisinfeksjon og et vondt ankel. Symptomene sier hva som
+  faktisk er galt.
+- **Symptomer er IKKE felter på sykeperioden**, og tre egenskaper gjør det
+  umulig: flere samtidig, bare én holder deg i senga, og de overlever perioden
+  (et ømt kne finnes når du ellers er frisk — det er nettopp da det betyr noe for
+  hva du kan trene). Derfor egen logg med egne datoer.
+- **`limiting` er feltet som gjør perioden presis.** Det sier HVORFOR du er ute.
+  Uten det kan ingen si i ettertid om det var halsen eller kneet.
+- **Koblingen periode↔symptom er datooverlapp** (`symptomsDuringPeriod`), ikke en
+  lagret fremmednøkkel: kneet som startet under infeksjonen og varer to måneder
+  etter «tilhører» ikke perioden i noen meningsfull forstand.
+- **Alvorlighet er TRE nivåer, ikke ti.** Sultskalaen virker fordi den er daglig
+  — `predictHunger` får sine fem observasjoner på ei uke. Symptomer gir fire
+  målinger per forløp og to-tre forløp i året, så en 1–10-skala ville aldri blitt
+  kalibrert: en 7 i mars og en 7 i november er ikke samme tall. «litt/merkbart/
+  mye» bærer betydningen i ordene.
+- **Et symptom markeres over med sluttdato I DAG; en sykeperiode friskmeldes med
+  GÅRSDAGEN.** Skillet er hva de gjør: perioden UNNSKYLDER dager, så én for mye
+  koster en streak-dag brukeren kunne holdt. Et symptom beskriver bare.
+- **Symptomer og temperatur går i briefingen med et eksplisitt
+  tolkningsforbud.** En klinisk form drar modellen mot triage. Loggen er
+  brukerens journal — noe å sammenligne forløp med og vise en lege — ikke et
+  grunnlag for en vurdering vi har dekning for. Ingen diagnose, ingen «normalt
+  varer», ingen råd om lege.
+- Kjent rest: muskel/skjelett-skillet lagres men brukes ikke (et vondt ankel
+  betyr «kan sykle», altså en substitusjon — `generateSessionAlternative` er den
+  naturlige koblingen), og `MAX_OPEN_SICK_DAYS` (14) er kort for en skade.
+
+### To temperatursignaler, aldri ett
+
+Se samme changelog. Reglene i `$lib/domain/health/temperature.ts`, synken i
+`syncTemperatureData`, leseren i `$lib/server/health/temperature-log.ts`.
+
+- **Termometeret (Thermo, wifi) er KJERNEtemperatur; klokka er HUDtemperatur.**
+  Håndleddet ligger flere grader under kjernen — 33–35 er normalt. Slås de
+  sammen, får du en serie der 34,2 og 38,9 står side om side, og hver terskel
+  eller trend over den er tull. Samme felle som `hr_min`/`hr_average` og meastype
+  6/8, og begge de kostet en gal visning i prod. **Kilden er derfor en del av
+  datatypen** (`body_temperature` / `skin_temperature`), ikke et metadatafelt.
+- **Hudtemperatur vises ALDRI som et absolutt tall.** Det finnes ingen normtabell
+  for håndleddstemperatur, og tallet ser autoritativt ut uten å være det. Bare
+  avviket fra egen baseline — retningen er som HRV og sovepuls (siste måling),
+  ikke som VO2max (beste).
+- **Kartet meastype → størrelse er en HYPOTESE.** 12 «Temperature», 71 «Body
+  Temperature», 73 «Skin Temperature» er Withings' navn; hvilken ENHET som poster
+  hvilken vet vi ikke. Synken logger antall per type (`[temperatur] Målinger per
+  meastype`) og forkaster verdier utenfor spennet med rå-verdien i loggen. Bekreft
+  mot Health Mate før noe tolkes hardere, slik meastype 123 ble bekreftet.
+- **Temperatur måtte ha sitt EGET kall.** `parseWeightData` filtrerer gruppene på
+  `MEASTYPE.weight`, så en temperaturmåling uten vekt i gruppa ville blitt kastet
+  stille. Samme grunn som VO2max.
+- **Vi sier ikke «feber».** Ingen terskler, ingen klassifisering — det øyeblikket
+  kode kaller 38,5 for feber, har vi diagnostisert.
+- Hudtemperatur nøkles på **natta man våkner** og holder nattens LAVESTE måling,
+  av samme grunn som `hr_min` framfor `hr_average`: håndleddet varmes av dyna og
+  av rommet.
+
+### Hvilepuls har ÉN lesning nå
+
+Se samme changelog, fase 1. `$lib/server/health/nightly-physiology.ts`.
+
+- **`resting_hr_elevated_7d` leste `hr_average` fram til september 2026** — altså
+  snittpulsen, som `sleep-heart-rate.ts` sier eksplisitt ikke er hvilepulsen (den
+  ligger 5–10 slag høyere fordi den blander inn REM og oppvåkninger). Signalet
+  tok i tillegg med dupper som netter og snittet segmenter framfor å ta minimum.
+  Søvn-flaten og signalet svarte ulikt på samme spørsmål, og begge sto synlig på
+  helseflatene.
+- **Alt som spør «ligger hvilepulsen høyere enn vanlig?» går gjennom
+  `loadSleepHeartRate`.** Skriv aldri en fjerde lesning — det var tre av dem som
+  gjorde signalet galt i et halvt år.
+- Lagrede `value_number` fra før rettelsen er på en annen skala (snittpuls).
+  Retningen er sammenlignbar, nivået ikke.
+
+### «Er du syk?» — spurt av tallene, aldri registrert av dem
+
+Se samme changelog, fase 4. `$lib/domain/health/illness-hint.ts`.
+
+- **Et forslag, aldri en registrering.** Sovepuls og hudtemperatur beveger seg
+  før brukeren bestemmer seg, men ingen av dem skiller sykdom fra en hard økt
+  eller et varmt soverom. En automatisk registrering ville unnskyldt streak-dager
+  på en gjetning, og en unnskyldning brukeren ikke ba om gjør telleren like
+  utroverdig som en som teller feil. Samme form som `suggestForgottenTracking`.
+- **Terskelen er høyere enn flatens.** `NOTABLE_DEVIATION_BPM` (5) er «verdt å se
+  på» på et kort du alt har åpnet; et forslag dytter seg på deg, så det må klare
+  en høyere lut (7 slag) eller bli bakgrunnsstøy. Kravet om to netter på rad er
+  støyfilteret — én natt er en sen kveld.
+- **`since` er halve verdien.** Forslaget peker på FØRSTE natta avviket startet,
+  så et ja backdaterer perioden dit og reparerer streaks bakover. Uten det måtte
+  brukeren huske når det begynte, og det er nettopp det man ikke gjør når man er
+  syk.
+- **Teksten nevner hard trening som den andre forklaringen.** Vi kan ikke skille
+  de to; later vi som, blir et forslag brukeren avviser til en påstand hen må
+  korrigere — og neste gang tror hen ikke på det.
+
+### «Hvordan går det?» — den ene nudgen som hører i en sykeperiode
+
+Se samme changelog, fase 5. `$lib/domain/health/sick-checkin.ts`, cron
+`/api/cron/sick-checkin` (hver time).
+
+- **De andre nudgene maser om å GJØRE noe, og det er feil når man ligger nede.**
+  Denne spør hvordan du har det, og blir mer relevant av tilstanden.
+- **Den spør KONKRET.** «Hvordan går det?» er et spørsmål man ikke svarer på;
+  «Sist meldte du vondt i halsen og slimhoste. Bedre, uendret eller verre?» er
+  det. Symptomloggen gjør forskjellen mulig. Uten symptomer å nevne spør den om
+  det ene som alltid er konkret — om du er frisk.
+- **Kadensen FALLER AV** (daglig → hver 2. → hver 4. → ukentlig,
+  `CHECKIN_CADENCE`). Et spørsmål hver dag i tre uker er mas, og mas blir slått
+  av. En influensa får fire-fem spørsmål; en skade som varer i to måneder får
+  ikke seksti.
+- **Ingen oppfølging på dag 1.** Du registrerte deg som syk i dag; du vet hvordan
+  det går. Et spørsmål samme dag leser som at appen ikke fikk det med seg.
+- **Bokføringen skjer før utsending** (som `workout_notifications`), så to
+  samtidige kjøringer ikke sender hver sin. Et tapt spørsmål prøves ikke på nytt.
+- Ingen medisinske råd: den spør og registrerer.
 
 ### Streaks: én motor, tre flater
 
@@ -1316,6 +1437,8 @@ Se `docs/changelog/2026-08-03-hrr-baseline.md`. Utvelgelsen bor i
 `$lib/domain/health/heart-rate-baseline.ts`, `getEffortBaseline` gjør bare
 datainnhentingen.
 
+- **Hvilepuls leses gjennom `loadSleepHeartRate`** (`nightly-physiology.ts`) —
+  se «Hvilepuls har ÉN lesning nå» over.
 - **`hr_min` betyr ulike ting per kilde.** Fra en `workout` er det lavest puls UNDER
   trening (90–120), ikke hvilepuls. Hvilepuls **prioriteres**, aldri pooles:
   `sleep_min` → `scale_spot` (punktpuls fra vekta) → `daily_min` → `sleep_avg`.

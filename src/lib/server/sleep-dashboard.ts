@@ -14,6 +14,7 @@ import {
 	compositeSleepLag
 } from '$lib/domain/health/sleep-overview';
 import { listDisturbances } from '$lib/server/sleep/disturbance-log';
+import { readNightlyPhysiology } from '$lib/server/health/nightly-physiology';
 import {
 	groupDisturbancesByNight,
 	mergeDisturbances,
@@ -169,94 +170,5 @@ async function readMeasuredNights(userId: string, sinceDays: number): Promise<Me
 	});
 }
 
-/**
- * HRV per natt, og siste nattens pust/snorking, fra søvnhendelsene.
- *
- * Nattnøkkelen er **datoen du våkner** (`nightKeyForTime`), samme konvensjon som
- * `buildSleepNightSeries` og forstyrrelsesloggen. Uten det ville HRV-nettene ligget
- * en dag forskjøvet fra nattlengdene de skal sammenlignes med.
- */
-async function readNightlyPhysiology(
-	userId: string,
-	sinceDays: number
-): Promise<{
-	hrvNights: HrvNight[];
-	/** Netter med søvnmåling i det hele tatt — grunnlaget for å forklare hull. */
-	sleepNights: number;
-	heartRateRows: SleepHeartRateRow[];
-	breathing: {
-		date: string;
-		apneaHypopneaIndex: number | null;
-		snoringMinutes: number | null;
-		snoringEpisodes: number | null;
-	} | null;
-}> {
-	const since = new Date(Date.now() - sinceDays * 86_400_000);
-	const rows = await db.query.sensorEvents.findMany({
-		columns: { timestamp: true, data: true },
-		where: and(
-			eq(sensorEvents.userId, userId),
-			eq(sensorEvents.dataType, 'sleep'),
-			gte(sensorEvents.timestamp, since)
-		),
-		orderBy: [desc(sensorEvents.timestamp)]
-	});
-
-	const hrvNights: HrvNight[] = [];
-	const heartRateRows: SleepHeartRateRow[] = [];
-	const nightKeys = new Set<string>();
-	let breathing: Awaited<ReturnType<typeof readNightlyPhysiology>>['breathing'] = null;
-
-	for (const row of rows) {
-		const data = (row.data ?? {}) as Record<string, unknown>;
-		const date = nightKeyForTime(row.timestamp);
-		if (!date) continue;
-
-		/**
-		 * Dagsøvner hører ikke i nattfysiologien.
-		 *
-		 * `nightKeyForTime` legger en dupp kl. 14 i samme bøtte som natta som endte den
-		 * morgenen (kveldsgrensa er 18:00). En dupps hvilepuls er ikke nattas hvilepuls
-		 * — man er nettopp våknet, ligger på sofaen, og pulsen er høyere. Og HRV målt i
-		 * en dupp er ikke sammenlignbar med nattas.
-		 *
-		 * Naps telles for seg, i `naps`-lista.
-		 */
-		if (data.isNap === true) continue;
-
-		nightKeys.add(date);
-
-		const hrv = data.hrv as { sdnnMs?: unknown; samples?: unknown } | null | undefined;
-		if (hrv && typeof hrv.sdnnMs === 'number') {
-			hrvNights.push({
-				date,
-				sdnnMs: hrv.sdnnMs,
-				samples: typeof hrv.samples === 'number' ? hrv.samples : 0
-			});
-		}
-
-		// Ett innslag per segment: sammenslåingen per natt skjer i domenelaget.
-		heartRateRows.push({
-			date,
-			minBpm: typeof data.hr_min === 'number' ? data.hr_min : null,
-			averageBpm: typeof data.hr_average === 'number' ? data.hr_average : null
-		});
-
-		// Radene er nyeste først, så den første med tall er siste natt som har dem.
-		const ahi = typeof data.apneaHypopneaIndex === 'number' ? data.apneaHypopneaIndex : null;
-		const snoringSeconds = typeof data.snoringSeconds === 'number' ? data.snoringSeconds : null;
-		const episodes = typeof data.snoringEpisodes === 'number' ? data.snoringEpisodes : null;
-		if (!breathing && (ahi !== null || snoringSeconds !== null)) {
-			breathing = {
-				date,
-				apneaHypopneaIndex: ahi,
-				snoringMinutes: snoringSeconds === null ? null : Math.round(snoringSeconds / 60),
-				snoringEpisodes: episodes
-			};
-		}
-	}
-
-	return { hrvNights, sleepNights: nightKeys.size, heartRateRows, breathing };
-}
 
 export type SleepDashboardPayload = Awaited<ReturnType<typeof loadSleepDashboardData>>;

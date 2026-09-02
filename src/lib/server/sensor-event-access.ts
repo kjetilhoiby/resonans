@@ -133,7 +133,11 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'lib/server/integrations/withings-sleep-hrv.ts',
 			'lib/server/integrations/withings-sync.ts',
 			'lib/server/programs/readiness.ts',
-			'lib/server/services/signal-service.ts',
+			// Nattfysiologien (HRV, hvilepuls, pust) — den delte leseren alt annet
+			// enn forstyrrelses-feltene går gjennom.
+			'lib/server/health/nightly-physiology.ts',
+			// Leser `sleepLatency`/`waso` for forstyrrelses-utledningen, altså andre
+			// felter enn nattfysiologien. Se `readMeasuredNights`.
 			'lib/server/sleep-dashboard.ts',
 			'routes/api/admin/debug-sleep/+server.ts',
 			'routes/api/tema/[id=uuid]/health-stats/+server.ts'

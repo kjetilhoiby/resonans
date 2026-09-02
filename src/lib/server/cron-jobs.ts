@@ -112,6 +112,16 @@ export const CRON_JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/sick-checkin',
+		// Hver time; nudgen gater selv på 11–21 Oslo og på en kadens som faller av
+		// med varigheten. Timesplan framfor et fast UTC-slot fordi Oslo-vinduet
+		// flytter seg med sommertid — samme grunn som skrivenudgen.
+		schedule: '0 * * * *',
+		description:
+			'«Hvordan går det?» mens en sykeperiode står (11–21 Oslo, kadens faller av med varigheten)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/notifications/egenfrekvens-checkin',
 		schedule: '*/5 * * * *',
 		description: 'Egenfrekvens daglig sjekkin-nudge (lokal tid per bruker, 5-min vindu)',

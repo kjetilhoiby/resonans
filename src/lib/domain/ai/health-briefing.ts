@@ -137,6 +137,19 @@ export interface HealthBriefingInput {
 	 * leser vekt og belastning først har alt begynt å tolke dem.
 	 */
 	sick: string | null;
+	/**
+	 * Symptomene som pågår (`summarizeSymptoms`), eller null.
+	 *
+	 * **Beskrivelse, ikke grunnlag for råd.** Se `describeSick` for hvorfor
+	 * prompten eksplisitt forbyr tolkning av dem.
+	 */
+	symptoms: string | null;
+	/**
+	 * Temperatursetningene, hver fra sin kilde. Termometeret er absolutt;
+	 * klokka er et avvik fra brukerens eget snitt — de er ALDRI samme tall, og
+	 * de sendes derfor hver for seg med kilden navngitt.
+	 */
+	temperature: { core: string | null; skin: string | null } | null;
 }
 
 /**
@@ -331,12 +344,44 @@ export function describeStreaks(streaks: BriefingStreak[]): string[] {
  * Vi diagnostiserer ingenting og gir ingen medisinske råd: dette er brukerens
  * egen registrering av at hen er syk, ikke en måling.
  */
-export function describeSick(sentence: string): string[] {
-	return [
-		sentence,
-		'Streaks er pauset for sykedagene (hverken holdt eller brutt), og ukas effort-ramme er senket.',
-		'Tolk lavt volum og uteblitte økter i perioden som sykdom, ikke som sviktende rytme. Ikke gi medisinske råd.'
-	];
+export function describeSick(
+	sentence: string,
+	symptoms: string | null,
+	temperature: { core: string | null; skin: string | null } | null
+): string[] {
+	const lines = [sentence];
+
+	if (symptoms) {
+		lines.push(`Symptomer brukeren selv har meldt: ${symptoms}`);
+	}
+	if (temperature?.core) {
+		// Kilden navngis, som med målvekta: to temperaturtall uten kilde ville
+		// blitt sammenlignet, og de er ikke sammenlignbare.
+		lines.push(`Termometer (kjernetemperatur): ${temperature.core}`);
+	}
+	if (temperature?.skin) {
+		lines.push(`Klokka (hudtemperatur, avvik fra eget snitt): ${temperature.skin}`);
+	}
+
+	lines.push(
+		'Streaks er pauset for sykedagene (hverken holdt eller brutt), og ukas effort-ramme er senket.'
+	);
+	lines.push(
+		'Tolk lavt volum og uteblitte økter i perioden som sykdom, ikke som sviktende rytme.'
+	);
+	/**
+	 * Den siste linja er den viktigste, og den er en GRENSE, ikke et forbehold.
+	 *
+	 * Symptomer og temperatur er en klinisk form, og en språkmodell som ser
+	 * «38,9, slimhoste, vondt i halsen» dras hardt mot triage. Loggen er
+	 * brukerens journal — noe hen kan sammenligne forløp med og vise en lege —
+	 * ikke et grunnlag for en vurdering vi ikke har dekning for. Vi måler
+	 * ingenting her; brukeren har skrevet det selv.
+	 */
+	lines.push(
+		'Symptomene og temperaturen er brukerens EGEN logg. Gjenta dem hvis det er relevant, men ikke tolk dem, ikke antyd en diagnose eller et forløp, og ikke gi medisinske råd — heller ikke om å oppsøke lege.'
+	);
+	return lines;
 }
 
 /* ── Blokka ──────────────────────────────────────────────────────────────── */
@@ -354,7 +399,7 @@ export const BRIEFING_FOOTER = '--- SLUTT PÅ HELSE ---';
  */
 export function buildHealthBriefing(input: HealthBriefingInput): string {
 	const blocks = [
-		input.sick ? section('SYKDOM', describeSick(input.sick)) : null,
+		input.sick ? section('SYKDOM', describeSick(input.sick, input.symptoms, input.temperature)) : null,
 		input.weight ? section('VEKT', describeWeight(input.weight)) : null,
 		input.training ? section('TRENING', describeTraining(input.training)) : null,
 		section('STREAKS', describeStreaks(input.streaks)),
