@@ -2133,12 +2133,16 @@ hvorfor. For langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 
-**Scheduling:** `ENABLE_IN_APP_SCHEDULER=true` (nøyaktig ÉN instans — `isSchedulerRunning`
-er per prosess, så to containere sender hver sin nudge), `CRON_SECRET`, `ORIGIN`.
-`ENABLE_CRON_DISPATCHER=true` skrur på den interne cron-klokka (VPS/container, krever
-`DB_DRIVER=postgres`) — se «Cron-dispatcheren» under Autentisering-seksjonen; den er trygg
-på flere instanser (advisory-lås) og ved siden av GitHub Actions (dispatch-krav).
+**Scheduling:** `CRON_SECRET`, `ORIGIN`. `ENABLE_CRON_DISPATCHER=true` skrur på den
+interne cron-klokka (VPS/container, krever `DB_DRIVER=postgres`) — se
+«Cron-dispatcheren» under Autentisering-seksjonen; den er trygg på flere instanser
+(advisory-lås) og ved siden av GitHub Actions (dispatch-krav).
 `CRON_DISPATCH_BASE_URL` overstyrer loopback-adressen dispatcheren self-fetcher mot.
+`ENABLE_JOB_WORKER=true` skrur på jobbkø-workeren (LISTEN/NOTIFY + 30 s-poll over
+`background_jobs`; trygg på flere instanser uten lås — `FOR UPDATE SKIP LOCKED`).
+`ENABLE_IN_APP_SCHEDULER` er fjernet (september 2026): den gamle in-app-schedulerens
+fire jobber bor nå i cron-registeret (`$lib/server/cron-jobs.ts`) og spores av
+`withCronTracking` som alt annet.
 
 **Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
 `DB_POOL_MAX` (default 10, ignoreres av neon-http).

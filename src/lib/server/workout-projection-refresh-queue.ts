@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
+import { notifyJobQueued } from '$lib/server/job-queue-signal';
 
 export const WORKOUT_PROJECTION_JOB_TYPE = 'workout_projection_refresh';
 export const PROJECTION_CLUSTER_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -84,5 +85,8 @@ export async function enqueueWorkoutProjectionRefresh(
 		})
 		.returning({ id: backgroundJobs.id });
 
+	// Direkte insert (utenom enqueueBackgroundJob, pga. debounce/merge over), så
+	// workeren må vekkes herfra også — ellers venter en fersk økt på 30 s-pollen.
+	notifyJobQueued();
 	return { enqueued: true, merged: false, jobId: created?.id ?? null };
 }

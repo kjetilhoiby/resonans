@@ -5,8 +5,8 @@ import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { assertBootReady } from '$lib/server/boot-checks';
-import { startScheduler } from '$lib/server/scheduler';
 import { startCronDispatcher } from '$lib/server/cron-dispatcher';
+import { startJobWorker } from '$lib/server/job-worker';
 import { resolveRequestUserId } from '$lib/server/request-user';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { markNudgeOpened } from '$lib/server/nudge-events';
@@ -28,15 +28,18 @@ if (!building) {
 	});
 }
 
-// Start scheduler when server starts
-if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
-	startScheduler();
-}
-
 // In-app cron-dispatcher (erstatter GitHub Actions som klokke på VPS-en).
 // Trygg å ha på flere instanser: en Postgres advisory-lås velger leder.
+// Den gamle in-app-scheduleren (ENABLE_IN_APP_SCHEDULER) er fjernet — alle
+// jobbene dens bor nå i registeret i cron-jobs.ts og spores av withCronTracking.
 if (!building && env.ENABLE_CRON_DISPATCHER === 'true') {
 	startCronDispatcher();
+}
+
+// Jobbkø-worker: LISTEN/NOTIFY + polling over background_jobs. Trygg på flere
+// instanser uten lederlås — claimNextDueJob bruker FOR UPDATE SKIP LOCKED.
+if (!building && env.ENABLE_JOB_WORKER === 'true') {
+	startJobWorker();
 }
 
 /** Miljøet vakta trenger. Lest her, siden modulen selv holdes testbar. */

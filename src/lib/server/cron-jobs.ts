@@ -118,6 +118,15 @@ export const CRON_JOBS: CronJob[] = [
 		maxDurationSeconds: 60
 	},
 	{
+		// Endepunktet fantes, men sto ikke i registeret — jobben levde bare i den
+		// gamle in-app-scheduleren (scheduler.ts, fjernet 2026-09-02). Uten denne
+		// raden ville program-readiness-nudgene stilnet idet scheduleren forsvant.
+		path: '/api/cron/program-readiness',
+		schedule: '*/5 * * * *',
+		description: 'Program-readiness-nudge for adaptive treningsprogrammer (lokal tid per bruker, 5-min vindu)',
+		maxDurationSeconds: 60
+	},
+	{
 		path: '/api/notifications/livskompasset-weekend',
 		schedule: '*/15 * * * 6', // lørdag UTC, hvert 15. min — per-bruker lørdag-i-tz + 15-min vindu
 		description: 'Livskompasset ukentlig helge-nudge (lørdag morgen, lokal tid per bruker)',
