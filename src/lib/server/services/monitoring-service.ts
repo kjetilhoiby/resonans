@@ -3,6 +3,7 @@ import { sensors, backgroundJobs, cronExecutions, monitoringAlerts } from '$lib/
 import { and, eq, gte, lt, sql, desc } from 'drizzle-orm';
 import { sendGoogleChatMessage, type GoogleChatMessage } from '$lib/server/google-chat';
 import { env } from '$env/dynamic/private';
+import { classifyClockPulse, type ClockPulse } from '$lib/domain/cron-dispatch-verdict';
 
 const FRESHNESS_THRESHOLDS: Record<string, { maxStalenessMs: number; label: string }> = {
 	withings: { maxStalenessMs: 6 * 3600_000, label: 'Withings' },
@@ -41,14 +42,17 @@ export interface HealthCheckResult {
 	staleSensors: StaleSensor[];
 	failingJobs: FailingJobType[];
 	cronMisses: CronMiss[];
+	/** Lever cron-klokka? Eksponeres UAUTENTISERT i /api/health for watchdog.yml. */
+	clock: ClockPulse;
 	timestamp: string;
 }
 
 export async function runHealthCheck(): Promise<HealthCheckResult> {
-	const [staleSensors, failingJobs, cronMisses] = await Promise.all([
+	const [staleSensors, failingJobs, cronMisses, clock] = await Promise.all([
 		checkSensorFreshness(),
 		checkBackgroundJobHealth(),
 		checkCronExecutionHealth(),
+		checkClockPulse(),
 	]);
 
 	const hasProblems = staleSensors.length > 0 || failingJobs.length > 0 || cronMisses.length > 0;
@@ -61,8 +65,23 @@ export async function runHealthCheck(): Promise<HealthCheckResult> {
 		staleSensors,
 		failingJobs,
 		cronMisses,
+		clock,
 		timestamp: new Date().toISOString(),
 	};
+}
+
+/**
+ * Pulsen watchdog.yml leser: siste rad i cron_executions, uansett jobb og
+ * status. Monitoreringen selv dispatches av klokka den overvåker — dør
+ * dispatcheren, dør også Google Chat-varselet — så denne må kunne leses av en
+ * kaller UTENFOR systemet (den uautentiserte delen av /api/health).
+ */
+async function checkClockPulse(): Promise<ClockPulse> {
+	const [row] = await db
+		.select({ last: sql<string | null>`max(${cronExecutions.executedAt})` })
+		.from(cronExecutions);
+	const last = row?.last ? new Date(row.last) : null;
+	return classifyClockPulse(last, new Date());
 }
 
 async function checkSensorFreshness(): Promise<StaleSensor[]> {

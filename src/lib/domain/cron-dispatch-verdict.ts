@@ -35,6 +35,40 @@ export type DispatchVerdict = {
 };
 
 /**
+ * Klokkepulsen: lever cron-klokka, målt på siste rad i `cron_executions`?
+ *
+ * Finnes fordi monitoreringen selv dispatches av klokka den overvåker — dør
+ * dispatcheren, dør også varselet om at den døde. Pulsen eksponeres derfor i
+ * det UAUTENTISERTE `/api/health`-svaret, og en GitHub Actions-vakthund
+ * (`watchdog.yml`) leser den utenfra hvert 30. minutt.
+ *
+ * Terskelen er 20 minutter: fire jobber går hvert 5. minutt døgnet rundt
+ * (dropbox, background-jobs, daily-checkin, egenfrekvens), så tre bomma slots
+ * på rad er en død klokke, ikke jitter.
+ */
+export const CLOCK_PULSE_STALE_MINUTES = 20;
+
+export type ClockPulse = {
+	alive: boolean;
+	lastCronExecutionAt: string | null;
+	minutesAgo: number | null;
+};
+
+export function classifyClockPulse(lastExecutedAt: Date | null, now: Date): ClockPulse {
+	if (!lastExecutedAt) {
+		// Ingen kjøringer i det hele tatt — en fersk/tom base. Død, ikke ukjent:
+		// vakthunden skal si fra, ikke vente på den første kjøringen som aldri kommer.
+		return { alive: false, lastCronExecutionAt: null, minutesAgo: null };
+	}
+	const minutesAgo = Math.max(0, Math.round((now.getTime() - lastExecutedAt.getTime()) / 60_000));
+	return {
+		alive: minutesAgo < CLOCK_PULSE_STALE_MINUTES,
+		lastCronExecutionAt: lastExecutedAt.toISOString(),
+		minutesAgo
+	};
+}
+
+/**
  * `enabled` er denne instansens miljøflagg, `lockHeld` er om NOEN sesjon i
  * basen holder lederlåsen (pg_locks) — de kan peke hver sin vei under en
  * rullende oppdatering, og det er derfor begge er med.

@@ -11,7 +11,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	try {
 		const result = await runHealthCheck();
 		if (isAuthed || debug) return json(result);
-		return json({ status: result.status, timestamp: result.timestamp });
+		// `clock` er med i det uautentiserte svaret MED VILJE: vakthunden
+		// (.github/workflows/watchdog.yml) har ingen hemmelighet, og pulsen
+		// («en cron-kjøring skjedde nylig») lekker ingenting. Monitoreringen
+		// selv dispatches av klokka den overvåker, så dette er det ene signalet
+		// som må kunne leses utenfra.
+		return json({ status: result.status, clock: result.clock, timestamp: result.timestamp });
 	} catch {
 		return json({ status: 'error', timestamp: new Date().toISOString() }, { status: 500 });
 	}
