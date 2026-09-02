@@ -29,9 +29,12 @@ import {
 import {
 	composeCharacters,
 	describeComposition,
+	isBaselineComparable,
 	type CharacterComposition,
-	type SessionInput
+	type SessionInput,
+	type SessionZoneBaseline
 } from '$lib/domain/health/session-character';
+import { getEffortBaseline } from '$lib/server/services/effort-service';
 import type { DayValue } from '$lib/domain/health/cycle-series';
 
 /**
@@ -84,6 +87,18 @@ export interface VolumeQualityResult {
 		sessions: number;
 		withZones: number;
 		share: number;
+		/**
+		 * Økter som HAR pulskurve, men er analysert mot en annen baseline enn
+		 * dagens — og derfor ikke kan klassifiseres.
+		 *
+		 * Eget tall fordi handlingen er en annen: dette rettes av en reanalyse
+		 * (`POST /api/sensors/workouts/reanalyze`), ikke av å bruke pulsbelte. Uten
+		 * skillet ser «lav dekning» ut som et sensorproblem når det er et
+		 * beregningsproblem.
+		 */
+		staleBaseline: number;
+		/** Dagens baseline, så flaten kan si hva den sammenlignet mot. */
+		baseline: SessionZoneBaseline | null;
 	};
 }
 
@@ -107,6 +122,13 @@ export async function loadVolumeAndQuality(
 	// punktene ufullstendige uten grunn.
 	const lookbackDays = TRAILING_CHART_DAYS + Math.max(...TRAILING_WINDOWS);
 	const since = new Date(now.getTime() - lookbackDays * 86_400_000);
+
+	const baselineRaw = await getEffortBaseline(userId).catch(() => null);
+	// Dagens bånd. Lagrede sonefordelinger som ble regnet mot noe annet kan ikke
+	// klassifiseres — se `isBaselineComparable`.
+	const currentBaseline: SessionZoneBaseline | null = baselineRaw
+		? { basis: 'hrr', restHr: baselineRaw.restHr, maxHr: baselineRaw.maxHr }
+		: null;
 
 	const rows = await db
 		.select({
@@ -137,11 +159,17 @@ export async function loadVolumeAndQuality(
 		const meters = canonicalDistanceMeters(row.distanceMeters);
 		const km = meters != null ? meters / 1000 : null;
 		if (km != null && km > 0) days.push({ date, value: km });
+		const dist = row.hrZoneDistribution as
+			| (NonNullable<SessionInput['zones']> & SessionZoneBaseline)
+			| null;
 		sessions.push({
 			date,
 			distanceKm: km,
 			durationSeconds: row.durationSeconds != null ? Number(row.durationSeconds) : null,
-			zones: (row.hrZoneDistribution as SessionInput['zones']) ?? null
+			zones: dist ?? null,
+			zoneBaseline: dist
+				? { basis: dist.basis, restHr: dist.restHr, maxHr: dist.maxHr }
+				: null
 		});
 	}
 
@@ -173,13 +201,16 @@ export async function loadVolumeAndQuality(
 	for (const windowDays of COMPOSITION_WINDOWS) {
 		const from = dayKeyDaysAgo(today, windowDays - 1);
 		const inWindow = sessions.filter((s) => s.date >= from && s.date <= today);
-		const composition = composeCharacters(inWindow, windowDays);
+		const composition = composeCharacters(inWindow, windowDays, currentBaseline);
 		quality[windowDays] = { composition, text: describeComposition(composition) };
 	}
 
 	const coverageFrom = dayKeyDaysAgo(today, 89);
 	const coverageSessions = sessions.filter((s) => s.date >= coverageFrom && s.date <= today);
 	const withZones = coverageSessions.filter((s) => s.zones !== null).length;
+	const staleBaseline = coverageSessions.filter(
+		(s) => s.zones !== null && !isBaselineComparable(s.zoneBaseline, currentBaseline)
+	).length;
 
 	return {
 		today,
@@ -189,7 +220,9 @@ export async function loadVolumeAndQuality(
 		zoneCoverage: {
 			sessions: coverageSessions.length,
 			withZones,
-			share: coverageSessions.length > 0 ? withZones / coverageSessions.length : 0
+			share: coverageSessions.length > 0 ? withZones / coverageSessions.length : 0,
+			staleBaseline,
+			baseline: currentBaseline
 		}
 	};
 }

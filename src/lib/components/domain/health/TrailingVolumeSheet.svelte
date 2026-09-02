@@ -42,6 +42,8 @@
 	interface VolumeView {
 		windowDays: number;
 		current: number | null;
+		/** Målet, men BARE når det gjelder dette vinduet. Se endepunktet. */
+		goalKm: number | null;
 		points: Point[];
 		band: Band | null;
 		ramp: { previous: number; pctChange: number; steep: boolean } | null;
@@ -61,6 +63,8 @@
 			buckets: Bucket[];
 			totalSessions: number;
 			classifiedSessions: number;
+			missingZonesSessions: number;
+			staleBaselineSessions: number;
 			coverage: number;
 		};
 		text: string;
@@ -68,7 +72,13 @@
 	interface Payload {
 		today: string;
 		goalKm: number | null;
-		zoneCoverage: { sessions: number; withZones: number; share: number };
+		zoneCoverage: {
+			sessions: number;
+			withZones: number;
+			share: number;
+			staleBaseline: number;
+			baseline: { basis: string; restHr: number; maxHr: number } | null;
+		};
 		volume: Record<string, VolumeView>;
 		quality: Record<string, QualityView>;
 	}
@@ -122,7 +132,7 @@
 	const yMax = $derived.by(() => {
 		const values = drawn.map((p) => p.value);
 		if (view?.band) values.push(view.band.upper);
-		if (data?.goalKm) values.push(data.goalKm);
+		if (view?.goalKm) values.push(view.goalKm);
 		const top = values.length > 0 ? Math.max(...values) : 1;
 		return top * 1.1 || 1;
 	});
@@ -142,14 +152,18 @@
 			.join(' ');
 	});
 
-	const readout = $derived.by(() => {
-		if (!view) return null;
-		if (readoutDate) {
-			const hit = drawn.find((p) => p.date === readoutDate);
-			if (hit) return hit;
-		}
-		if (view.current === null) return null;
-		return { date: data?.today ?? '', value: view.current };
+	/**
+	 * Punktet man peker på. `null` når man ikke skrubber.
+	 *
+	 * **Overskriften er ALLTID i dag.** Første utgave lot skrubbing overskrive det
+	 * store tallet, og da sto «148,9 km» over en setning som sa «207,6 km siste 90
+	 * dager» — to tall i samme kort uten noe som forklarte forskjellen. Setningen
+	 * beskriver nå-tilstanden (bånd, rampe, nivå) og kan ikke følge en markør, så
+	 * det er markøren som må være den lille.
+	 */
+	const scrubbed = $derived.by(() => {
+		if (!readoutDate) return null;
+		return drawn.find((p) => p.date === readoutDate) ?? null;
 	});
 
 	function pickNearest(event: MouseEvent | TouchEvent) {
@@ -167,9 +181,16 @@
 		return r === Math.round(r) ? `${Math.round(r)}` : String(r).replace('.', ',');
 	}
 
-	function formatDate(date: string): string {
-		const [, m, d] = date.split('-');
-		return `${Number(d)}.${Number(m)}.`;
+	/**
+	 * Datoen som tekst. `withYear` når kurven kan strekke seg over årsskiftet —
+	 * og det gjør den alltid her (to år).
+	 *
+	 * Uten årstallet sto «90 dager fram til 8.12.» på en graf merket «3.9.» til
+	 * «2.9.», og 8. desember leses da som en dato i framtiden. Den var i fjor.
+	 */
+	function formatDate(date: string, withYear = false): string {
+		const [y, m, d] = date.split('-');
+		return withYear ? `${Number(d)}.${Number(m)}.${y.slice(2)}` : `${Number(d)}.${Number(m)}.`;
 	}
 
 	const CHARACTER_COLORS: Record<SessionCharacter, string> = {
@@ -182,7 +203,13 @@
 
 <BottomSheet {onclose} ariaLabel={title}>
 	<header class="tv-header">
-		<h2>{title}</h2>
+		<!-- Widgetens navn er KONTEKST; vinduet er det man leser. Sto det bare
+		     «Løpedistanse siste 30 dager» mens 90 var valgt, motsa tittelen
+		     innholdet. -->
+		<div class="tv-heading">
+			<h2>Løpt siste {windowDays} dager</h2>
+			<p class="tv-subtitle">{title}</p>
+		</div>
 		<button class="tv-close" onclick={onclose} aria-label="Lukk">✕</button>
 	</header>
 
@@ -207,20 +234,25 @@
 
 			<!-- 1. Hvor mye -->
 			<div class="tv-lead">
-				{#if readout}
-					<span class="tv-value">{formatKm(readout.value)}</span>
+				{#if view.current !== null}
+					<span class="tv-value">{formatKm(view.current)}</span>
 					<span class="tv-unit">km</span>
-					<span class="tv-when">
-						{readoutDate && readoutDate !== data?.today
-							? `${windowDays} dager fram til ${formatDate(readout.date)}`
-							: `siste ${windowDays} dager`}
-					</span>
+					<span class="tv-when">siste {windowDays} dager</span>
 				{:else}
 					<span class="tv-dim">Ikke nok historikk for et helt vindu ennå.</span>
 				{/if}
 			</div>
 
 			{#if drawn.length > 1}
+				<!-- Y-akse. Uten den betyr høyden ingenting før man trykker, og et
+				     kort man MÅ interagere med for å lese er ikke et kort man
+				     skotter på. -->
+				<div class="tv-plot">
+					<div class="tv-yaxis" aria-hidden="true">
+						<span>{formatKm(yMax)}</span>
+						<span>{formatKm(yMax / 2)}</span>
+						<span>0</span>
+					</div>
 				<svg
 					class="tv-chart"
 					viewBox="0 0 {CHART_W} {CHART_H}"
@@ -231,6 +263,14 @@
 					ontouchstart={pickNearest}
 					ontouchmove={pickNearest}
 				>
+					<!-- Hjelpelinjer på samme brøk som y-aksens tall. -->
+					{#each [0.5] as at}
+						<line
+							x1="0" x2={CHART_W}
+							y1={CHART_H * at} y2={CHART_H * at}
+							stroke="#2a2a2a" stroke-width="1"
+						/>
+					{/each}
 					{#if view.band}
 						<!-- Båndet: dine egne kvartiler for samme tid på året. Tegnes som
 						     et vannrett felt fordi det gjelder DAGENS dato — en kurve ville
@@ -243,24 +283,54 @@
 							fill="rgba(124, 142, 245, 0.13)"
 						/>
 					{/if}
-					{#if data?.goalKm}
+					{#if view.goalKm}
 						<line
 							x1="0" x2={CHART_W}
-							y1={y(data.goalKm)} y2={y(data.goalKm)}
+							y1={y(view.goalKm)} y2={y(view.goalKm)}
 							stroke="#4ade80" stroke-width="1.5" stroke-dasharray="5 4"
 						/>
 					{/if}
 					<path d={linePath} fill="none" stroke="#7c8ef5" stroke-width="2" />
-					{#if readout}
-						{@const i = drawn.findIndex((p) => p.date === readout.date)}
+					{#if scrubbed}
+						{@const i = drawn.findIndex((p) => p.date === scrubbed.date)}
 						{#if i >= 0}
-							<circle cx={x(i, drawn.length)} cy={y(readout.value)} r="3.5" fill="#eee" />
+							<line
+								x1={x(i, drawn.length)} x2={x(i, drawn.length)}
+								y1="0" y2={CHART_H}
+								stroke="#555" stroke-width="1"
+							/>
+							<circle cx={x(i, drawn.length)} cy={y(scrubbed.value)} r="3.5" fill="#eee" />
 						{/if}
 					{/if}
 				</svg>
+				</div>
 				<div class="tv-axis">
-					<span>{formatDate(drawn[0].date)}</span>
-					<span>{formatDate(drawn[drawn.length - 1].date)}</span>
+					<span>{formatDate(drawn[0].date, true)}</span>
+					{#if scrubbed}
+						<span class="tv-readout">
+							{formatKm(scrubbed.value)} km · {windowDays} dager fram til
+							{formatDate(scrubbed.date, true)}
+						</span>
+					{/if}
+					<span>{formatDate(drawn[drawn.length - 1].date, true)}</span>
+				</div>
+
+				<!-- Forklaringen. Uten den er det skraverte feltet og den grønne
+				     streken to former uten mening — og tallene i prosaen under er
+				     ikke knyttet til noe man kan se. -->
+				<div class="tv-key">
+					{#if view.band}
+						<span class="tv-key-item">
+							<span class="tv-swatch tv-swatch-band"></span>
+							Vanlig for deg her: {formatKm(view.band.lower)}–{formatKm(view.band.upper)} km
+						</span>
+					{/if}
+					{#if view.goalKm}
+						<span class="tv-key-item">
+							<span class="tv-swatch tv-swatch-goal"></span>
+							Mål: {formatKm(view.goalKm)} km
+						</span>
+					{/if}
 				</div>
 			{:else}
 				<p class="tv-dim">For lite historikk til å tegne kurven.</p>
@@ -309,7 +379,20 @@
 				</section>
 			{/if}
 
-			{#if data && data.zoneCoverage.sessions > 0 && data.zoneCoverage.share < 1}
+			{#if data && data.zoneCoverage.staleBaseline > 0}
+				<!-- Egen melding, ikke en dekningslinje: handlingen er en reanalyse,
+				     ikke et pulsbelte. Uten skillet ser et beregningsproblem ut som
+				     et sensorproblem. -->
+				<p class="tv-warn tv-small">
+					{data.zoneCoverage.staleBaseline} av {data.zoneCoverage.sessions} økter siste 90
+					dager er analysert mot en annen makspuls enn dagens
+					{#if data.zoneCoverage.baseline}
+						(hvile {data.zoneCoverage.baseline.restHr}, maks
+						{data.zoneCoverage.baseline.maxHr})
+					{/if}
+					og er ikke med i sammensetningen. En reanalyse tar dem inn.
+				</p>
+			{:else if data && data.zoneCoverage.sessions > 0 && data.zoneCoverage.share < 1}
 				<p class="tv-dim tv-small">
 					Sonefordeling krever pulskurve. {data.zoneCoverage.withZones} av
 					{data.zoneCoverage.sessions} økter siste 90 dager har den.
@@ -342,6 +425,15 @@
 		font-size: 1rem;
 		cursor: pointer;
 		padding: 4px 8px;
+	}
+	.tv-body,
+	.tv-header {
+		/* Tallet kan ikke markeres. De blå håndtakene over «148» i felttesten var
+		   iOS-tekstmarkering utløst av skrubbingen — en graf man drar fingeren
+		   over må ikke også være tekst man kan velge. */
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.tv-body {
 		padding: 14px 20px 24px;
@@ -388,11 +480,68 @@
 		color: var(--text-tertiary, #777);
 		margin-left: auto;
 	}
+	.tv-plot {
+		display: flex;
+		gap: 6px;
+		align-items: stretch;
+	}
+	.tv-yaxis {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		font-size: 0.65rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted, #555);
+		text-align: right;
+		min-width: 26px;
+	}
 	.tv-chart {
-		width: 100%;
+		flex: 1;
 		height: 140px;
 		display: block;
 		touch-action: pan-y;
+	}
+	.tv-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		font-size: 0.72rem;
+		color: var(--text-tertiary, #777);
+	}
+	.tv-key-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.tv-swatch {
+		width: 14px;
+		height: 8px;
+		border-radius: 2px;
+		flex: none;
+	}
+	.tv-swatch-band {
+		background: rgba(124, 142, 245, 0.35);
+	}
+	.tv-swatch-goal {
+		height: 0;
+		border-top: 2px dashed #4ade80;
+		border-radius: 0;
+	}
+	.tv-readout {
+		color: var(--text-secondary, #aaa);
+		font-variant-numeric: tabular-nums;
+	}
+	.tv-warn {
+		color: var(--warning-text, #fbbf24);
+		margin: 0;
+	}
+	.tv-heading h2 {
+		margin: 0;
+	}
+	.tv-subtitle {
+		margin: 2px 0 0;
+		font-size: 0.75rem;
+		color: var(--text-tertiary, #777);
 	}
 	.tv-axis {
 		display: flex;
