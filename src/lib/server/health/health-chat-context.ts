@@ -34,7 +34,14 @@ import { getHealthThemeIds } from '$lib/server/themes';
 import { summarizeTrainingForChat } from '$lib/domain/ai/training-summary';
 import { summarizeWeightForChat } from '$lib/domain/ai/weight-summary';
 import { frameGoals } from '$lib/domain/health/goal-horizon';
-import { getSickState } from '$lib/server/health/sick-log';
+import { getSickState, todayOsloKey } from '$lib/server/health/sick-log';
+import { listSymptoms } from '$lib/server/health/symptom-log';
+import { loadTemperature } from '$lib/server/health/temperature-log';
+import { summarizeSymptoms } from '$lib/domain/health/symptoms';
+import {
+	describeCoreTemperature,
+	describeSkinTemperature
+} from '$lib/domain/health/temperature';
 import { describeSickPeriod } from '$lib/domain/health/sick-periods';
 import {
 	buildHealthBriefing,
@@ -172,13 +179,15 @@ export async function buildHealthChatContext(
 	userId: string,
 	healthThemeIds: readonly string[]
 ): Promise<string> {
-	const [training, weight, streaks, goalRows, sick] = await Promise.all([
+	const [training, weight, streaks, goalRows, sick, symptoms, temperature] = await Promise.all([
 		// evaluateMilestones utelates: en kontekstbygger skal ikke skrive til basen.
 		loadTrainingDashboardData(userId).catch(() => null),
 		loadWeightDashboardData(userId).catch(() => null),
 		loadHealthFamilyStreaks(userId, healthThemeIds).catch(() => []),
 		readGoalsWithProgress(userId, [...healthThemeIds]).catch(() => []),
-		getSickState(userId).catch(() => null)
+		getSickState(userId).catch(() => null),
+		listSymptoms(userId).catch(() => []),
+		loadTemperature(userId).catch(() => null)
 	]);
 
 	const briefingStreaks: BriefingStreak[] = streaks.map(({ definition, state }) => ({
@@ -207,7 +216,18 @@ export async function buildHealthChatContext(
 		// Bare en ekte periode gir en setning. Det gamle nå-flagget (uten periode)
 		// utelates: det pauser readiness, men ingen streak-dager, og en briefing som
 		// lovet noe annet ville vært usann.
-		sick: sick?.period ? describeSickPeriod(sick.period) : null
+		sick: sick?.period ? describeSickPeriod(sick.period) : null,
+		// Symptomer og temperatur følger sykeperioden: uten en aktiv periode
+		// finnes ingen SYKDOM-seksjon å legge dem i, og et løsrevet symptom er
+		// ikke det coachen skal åpne med.
+		symptoms: sick?.period ? summarizeSymptoms(symptoms, todayOsloKey()) : null,
+		temperature:
+			sick?.period && temperature
+				? {
+						core: describeCoreTemperature(temperature.core),
+						skin: describeSkinTemperature(temperature.skin)
+					}
+				: null
 	});
 
 	return briefing ? `\n\n${briefing}\n` : '';

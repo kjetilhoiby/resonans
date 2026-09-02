@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { saveSickPeriod, todayOsloKey } from '$lib/server/health/sick-log';
+import { saveSymptom } from '$lib/server/health/symptom-log';
 import { buildSickPayload } from '$lib/server/health/sick-payload';
-import { dismissIllnessHint } from '$lib/server/health/illness-hint';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
@@ -15,19 +14,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
 
 	const body = await request.json().catch(() => ({}));
-
-	// «Nei, ikke syk» på forslaget: registrer avvisningen og hold kjeft en uke.
-	if (body?.action === 'dismissHint') {
-		await dismissIllnessHint(userId);
-		return json(await buildSickPayload(userId));
-	}
-
-	const result = await saveSickPeriod(userId, {
-		startDate: typeof body?.startDate === 'string' ? body.startDate : todayOsloKey(),
+	const result = await saveSymptom(userId, {
+		label: typeof body?.label === 'string' ? body.label : '',
+		kind: body?.kind,
+		severity: body?.severity,
+		startDate: body?.startDate,
 		endDate: body?.endDate,
+		limiting: body?.limiting,
 		note: body?.note
 	});
-	// Valideringsfeilene er skrevet for å leses av brukeren, så de sendes ordrett.
 	if (!result.ok) return json({ error: result.error }, { status: 400 });
 	return json(await buildSickPayload(userId));
 };

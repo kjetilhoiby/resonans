@@ -8,6 +8,11 @@ import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 import { isPlausibleVo2max, VO2MAX_MAX, VO2MAX_MIN } from '$lib/domain/health/vo2max';
+import {
+	WITHINGS_TEMPERATURE_MEASTYPES,
+	isPlausibleTemperature,
+	kindForMeastype
+} from '$lib/domain/health/temperature';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
@@ -499,6 +504,12 @@ export async function syncWeightData(
 const WITHINGS_MEASTYPE_VO2MAX = 123;
 
 /**
+ * Alle tre temperaturtypene i ett kall. `meastypes` (flertall) er kommaseparert —
+ * samme felle som batch-prefetchen gikk i da den ba om `meastype: 1` alene.
+ */
+const WITHINGS_TEMPERATURE_MEASTYPE_LIST = Object.values(WITHINGS_TEMPERATURE_MEASTYPES).join(',');
+
+/**
  * Henter VO2max fra Withings, hvis enheten produserer det.
  *
  * Eget kall framfor å utvide vekt-kallet med `meastypes`: vektsynken er den
@@ -574,6 +585,125 @@ export async function syncVo2maxData(
 			data: event.data,
 			metadata: event.metadata,
 			source: 'withings_sync_vo2max'
+		})),
+		{ conflictMode: 'ignore' }
+	);
+
+	return parsed.length;
+}
+
+/**
+ * Temperatur, i et EGET kall — og med de to størrelsene holdt fra hverandre.
+ *
+ * ## Hvorfor det ikke kan ligge i vekt-kallet
+ *
+ * `parseWeightData` filtrerer gruppene på `MEASTYPE.weight`
+ * (`.filter((grp) => grp.measures?.some((m) => m.type === MEASTYPE.weight))`).
+ * En temperaturmåling har ingen vekt i gruppa, så den ville blitt kastet i sin
+ * helhet — stille. Samme grunn som VO2max har sitt eget kall.
+ *
+ * ## Hvorfor to datatyper og ikke én
+ *
+ * Termometeret (Thermo, wifi) leser kjernetemperatur; klokka leser
+ * HUDtemperatur på håndleddet, som ligger flere grader lavere. Lagret som én
+ * «temperature» ville serien hatt 34,2 og 38,9 side om side, og hver trend over
+ * den vært tull. Se `$lib/domain/health/temperature.ts` for hele begrunnelsen —
+ * det er samme felle som `hr_min`/`hr_average` og meastype 6/8, og begge de
+ * kostet en gal visning i prod.
+ *
+ * ## Kartet meastype → størrelse er en hypotese
+ *
+ * Vi vet hva Withings KALLER typene, ikke hvilken enhet som poster hvilken.
+ * Derfor logges antallet per type ved hver kjøring, `metadata.meastype` følger
+ * hver rad, og en verdi utenfor plausibilitetsspennet for sin størrelse
+ * forkastes med rå-verdien i loggen. Bekreft mot appen før noe tolkes hardere —
+ * slik meastype 123 ble bekreftet.
+ *
+ * Har brukeren hverken Thermo eller en klokke som måler hud, returnerer dette 0
+ * for alltid. Det er et gyldig svar, ikke en feil.
+ */
+export async function syncTemperatureData(
+	userId: string,
+	accessToken: string,
+	sensorId: string,
+	lastSync?: Date | null,
+	fullSync = false,
+	toDate?: Date | null,
+	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
+	floor?: string | null
+): Promise<number> {
+	const startdate = fullSync
+		? fullSyncFloorSeconds(floor)
+		: lastSync
+			? Math.floor(lastSync.getTime() / 1000)
+			: undefined;
+	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
+
+	const data = await fetchAllWithingsData(accessToken, {
+		action: 'getmeas',
+		meastypes: WITHINGS_TEMPERATURE_MEASTYPE_LIST,
+		category: 1,
+		startdate,
+		enddate
+	});
+
+	if (data.length === 0) {
+		console.log(
+			`   [temperatur] Ingen målinger fra meastypes ${WITHINGS_TEMPERATURE_MEASTYPE_LIST} i vinduet.`
+		);
+		return 0;
+	}
+
+	// Antall per måletype, så vi kan se hvilke enheten faktisk poster.
+	const seen = new Map<number, number>();
+	const parsed: Array<{
+		timestamp: Date;
+		dataType: string;
+		data: Record<string, unknown>;
+		metadata: Record<string, unknown>;
+	}> = [];
+
+	for (const grp of data as any[]) {
+		for (const measure of grp.measures ?? []) {
+			const kind = kindForMeastype(measure.type);
+			if (!kind) continue;
+			seen.set(measure.type, (seen.get(measure.type) ?? 0) + 1);
+
+			const celsius = Math.round(measure.value * Math.pow(10, measure.unit) * 10) / 10;
+			if (!isPlausibleTemperature(kind, celsius)) {
+				console.warn(
+					`   [temperatur] Forkastet ${kind}-verdi ${celsius} (rå: value=${measure.value} unit=${measure.unit} meastype=${measure.type}) — utenfor plausibelt spenn.`
+				);
+				continue;
+			}
+
+			parsed.push({
+				timestamp: new Date(grp.date * 1000),
+				// Størrelsen er en del av datatypen, ikke et valgfritt metadatafelt.
+				dataType: kind === 'skin' ? 'skin_temperature' : 'body_temperature',
+				data: { celsius },
+				metadata: { grpid: grp.grpid, deviceid: grp.deviceid, meastype: measure.type }
+			});
+		}
+	}
+
+	if (seen.size > 0) {
+		const summary = [...seen.entries()].map(([type, n]) => `${type}:${n}`).join(' ');
+		console.log(`   [temperatur] Målinger per meastype — ${summary}`);
+	}
+
+	if (parsed.length === 0) return 0;
+
+	await SensorEventService.writeMany(
+		parsed.map((event) => ({
+			userId,
+			sensorId,
+			eventType: 'measurement' as const,
+			dataType: event.dataType,
+			timestamp: event.timestamp,
+			data: event.data,
+			metadata: event.metadata,
+			source: 'withings_sync_temperature'
 		})),
 		{ conflictMode: 'ignore' }
 	);
@@ -1000,6 +1130,19 @@ export async function syncAllWithingsData(
 	} catch (err) {
 		console.warn(
 			`[withings-sync] VO2max-synk feilet (ufarlig) user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
+
+	// Temperatur er best-effort av samme grunn som VO2max: den krever Thermo
+	// eller en klokke som måler hudtemperatur, og kartet meastype → størrelse er
+	// ikke bekreftet mot ekte data ennå. En feil her skal ikke stoppe synken.
+	let temperature = 0;
+	try {
+		temperature = await syncTemperatureData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate, floor);
+		if (temperature > 0) console.log(`   ✓ Synced ${temperature} temperature measurements`);
+	} catch (err) {
+		console.warn(
+			`[withings-sync] Temperatur-synk feilet (ufarlig) user=${userId}: ${err instanceof Error ? err.message : String(err)}`
 		);
 	}
 

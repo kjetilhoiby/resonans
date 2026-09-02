@@ -21,7 +21,9 @@ export async function createNudgeEvent(params: {
 		| 'program_morning_readiness'
 		| 'program_adaptive_recalc'
 		| 'grocery_weekly'
-		| 'project_followup';
+		| 'project_followup'
+		/** «Hvordan går det?» mens du er syk — se $lib/server/sick-checkin. */
+		| 'sick_checkin';
 	mode: 'interactive' | 'digest' | 'announce';
 	channel?: string;
 	context?: Record<string, unknown>;

@@ -18,6 +18,8 @@ export type NotificationRouteKey =
 	| 'fuelSnack'
 	/** Kveldens skriveøvelse — se $lib/server/writing-nudge. */
 	| 'writingExercise'
+	/** «Hvordan går det?» mens en sykeperiode står — se $lib/server/sick-checkin. */
+	| 'sickCheckin'
 	| 'projectFollowUp';
 
 export type GoogleChatChannel = {

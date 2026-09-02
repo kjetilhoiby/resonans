@@ -247,7 +247,7 @@ describe('buildHealthBriefing', () => {
 			weight,
 			training,
 			streaks: [streak()],
-			goals: [goal()], sick: null
+			goals: [goal()], sick: null, symptoms: null, temperature: null
 		});
 		expect(text).toContain('--- HELSE: HVOR BRUKEREN STÅR NÅ ---');
 		expect(text).toContain('VEKT:');
@@ -259,12 +259,12 @@ describe('buildHealthBriefing', () => {
 
 	it('sier at briefingen er et utsnitt', () => {
 		// Uten denne setningen slutter modellen å hente historikk den trenger.
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null });
 		expect(text).toContain('UTSNITT');
 	});
 
 	it('dropper seksjoner uten innhold framfor tomme overskrifter', () => {
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null });
 		expect(text).toContain('VEKT:');
 		expect(text).not.toContain('TRENING:');
 		expect(text).not.toContain('STREAKS:');
@@ -273,7 +273,7 @@ describe('buildHealthBriefing', () => {
 
 	it('gir tom streng når det ikke er noe å si', () => {
 		// En overskrift uten innhold ser ut som at data mangler.
-		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [], sick: null })).toBe('');
+		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null })).toBe('');
 	});
 
 	it('tar med målene med progresjon og pause', () => {
@@ -282,7 +282,7 @@ describe('buildHealthBriefing', () => {
 			training: null,
 			streaks: [],
 			goals: [goal(), goal({ title: 'Løpe 5 km under 25 min', progressText: null, paused: true })],
-			sick: null
+			sick: null, symptoms: null, temperature: null
 		});
 		expect(text).toContain('4,4 kg igjen');
 		expect(text).toContain('83 dager igjen');
@@ -297,7 +297,7 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [],
-			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)'
+			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)', symptoms: null, temperature: null
 		});
 		expect(text).toContain('SYKDOM:');
 		expect(text).toContain('Syk siden 1. sep');
@@ -309,11 +309,12 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [],
-			sick: 'Syk 1.–3. sep (3 dager)'
+			sick: 'Syk 1.–3. sep (3 dager)', symptoms: null, temperature: null
 		});
 		expect(text).toContain('Streaks er pauset');
 		expect(text).toContain('ikke som sviktende rytme');
-		expect(text).toContain('Ikke gi medisinske råd');
+		// Regelen står nå i den lengre grense-linja, sammen med symptomforbudet.
+		expect(text).toContain('ikke gi medisinske råd');
 	});
 
 	it('ingen seksjon uten en aktiv periode', () => {
@@ -322,8 +323,62 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [goal()],
-			sick: null
+			sick: null, symptoms: null, temperature: null
 		});
 		expect(text).not.toContain('SYKDOM');
+	});
+});
+
+describe('buildHealthBriefing — symptomer og temperatur', () => {
+	const sick = (over: Record<string, unknown> = {}) =>
+		buildHealthBriefing({
+			weight: null,
+			training: null,
+			streaks: [],
+			goals: [],
+			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)',
+			symptoms: null,
+			temperature: null,
+			...over
+		});
+
+	it('tar med symptomene brukeren selv har meldt', () => {
+		const text = sick({
+			symptoms: 'vondt i halsen (mye) er det som begrenser; også: slimhoste (merkbart)'
+		});
+		expect(text).toContain('Symptomer brukeren selv har meldt');
+		expect(text).toContain('slimhoste');
+	});
+
+	it('navngir temperaturkilden — de to tallene er ikke sammenlignbare', () => {
+		const text = sick({
+			temperature: {
+				core: '38,9 °C',
+				skin: 'Hudtemperatur 0,8 °C over ditt eget snitt'
+			}
+		});
+		expect(text).toContain('Termometer (kjernetemperatur): 38,9 °C');
+		expect(text).toContain('Klokka (hudtemperatur, avvik fra eget snitt)');
+	});
+
+	it('forbyr tolkning eksplisitt — loggen er en journal, ikke et grunnlag for råd', () => {
+		const text = sick({ symptoms: 'vondt i halsen (mye) er det som begrenser' });
+		expect(text).toContain('ikke tolk dem');
+		expect(text).toContain('ikke antyd en diagnose');
+		expect(text).toContain('heller ikke om å oppsøke lege');
+	});
+
+	it('uten sykeperiode finnes ingen seksjon å legge symptomene i', () => {
+		const text = buildHealthBriefing({
+			weight: null,
+			training: null,
+			streaks: [],
+			goals: [goal()],
+			sick: null,
+			symptoms: 'ømt kne (litt)',
+			temperature: null
+		});
+		expect(text).not.toContain('SYKDOM');
+		expect(text).not.toContain('ømt kne');
 	});
 });

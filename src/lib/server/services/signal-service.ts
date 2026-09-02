@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
+import { readNightlyPhysiology } from '$lib/server/health/nightly-physiology';
+import { buildSleepHeartRateNights } from '$lib/domain/health/sleep-heart-rate';
 import { users } from '$lib/db/schema';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
@@ -1501,13 +1503,25 @@ async function produceFlokeStagnation(userId: string, now: Date) {
 }
 
 /**
- * Forhøyet hvilepuls: snittpuls under søvn siste 7 netter mot baseline
+ * Forhøyet hvilepuls: hvilepuls under søvn siste 7 netter mot baseline
  * (nettene 8–28 dager tilbake). Varsler sykdom/overtrening/søvnunderskudd.
  * Null uten nok netter med puls i begge vinduer (≥3 hver).
+ *
+ * **Leser `hr_min`, ikke `hr_average`, og det er en rettelse fra september 2026.**
+ * Signalet hadde sin egen SQL som brøt de tre reglene nattfysiologien har
+ * (se `$lib/server/health/nightly-physiology.ts`): `hr_average` ligger 5–10 slag
+ * over hvilepulsen fordi det blander inn REM og oppvåkninger, dupper ble tatt med
+ * som netter, og segmenter ble snittet framfor å ta minimum. Søvn-flaten og dette
+ * signalet svarte altså ulikt på «hva er hvilepulsen din», og begge sto synlig på
+ * helseflatene. Nå går begge gjennom `readNightlyPhysiology` +
+ * `buildSleepHeartRateNights`.
+ *
+ * Konsekvens for historikken: `value_number` er på en ANNEN skala enn før
+ * rettelsen. Deltaene er sammenlignbare i retning, men et lagret avvik fra før
+ * september 2026 er regnet på snittpuls.
  */
 async function produceRestingHrElevated7d(userId: string, now: Date) {
 	const windowStart = daysAgo(now, 7);
-	const baselineStart = daysAgo(now, 28);
 
 	await ensureSignalContract({
 		signalType: 'resting_hr_elevated_7d',
@@ -1517,21 +1531,16 @@ async function produceRestingHrElevated7d(userId: string, now: Date) {
 			'Snittpuls under søvn siste 7 netter mot baseline (nettene 8–28 dager tilbake). Positiv delta = forhøyet hvilepuls (sykdom/overtrening/søvnunderskudd).'
 	});
 
-	const rows = await db.execute(sql`
-		SELECT timestamp, (data->>'hr_average')::numeric AS hr
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'sleep'
-		  AND data->>'hr_average' IS NOT NULL
-		  AND timestamp >= ${baselineStart}
-		  AND timestamp < ${now}
-	`);
-	const typed = rowsOf<{ timestamp: Date | string; hr: number }>(rows)
-		.map((r) => ({ ts: new Date(r.timestamp), hr: toNumber(r.hr) }))
-		.filter((r) => r.hr > 0);
+	// Én natt per innslag, hvilepuls = min av segmentene, dupper filtrert bort.
+	const { heartRateRows } = await readNightlyPhysiology(userId, 28);
+	const nights = buildSleepHeartRateNights(heartRateRows).filter(
+		(n): n is typeof n & { restingBpm: number } => n.restingBpm !== null
+	);
 
-	const recent = typed.filter((r) => r.ts >= windowStart).map((r) => r.hr);
-	const baseline = typed.filter((r) => r.ts < windowStart).map((r) => r.hr);
+	// Nattnøkkelen er datoen man våkner, så vinduene sammenlignes på dagsnøkler.
+	const windowStartKey = windowStart.toISOString().slice(0, 10);
+	const recent = nights.filter((n) => n.date >= windowStartKey).map((n) => n.restingBpm);
+	const baseline = nights.filter((n) => n.date < windowStartKey).map((n) => n.restingBpm);
 	if (recent.length < 3 || baseline.length < 3) return null;
 
 	const avg = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
@@ -1545,7 +1554,7 @@ async function produceRestingHrElevated7d(userId: string, now: Date) {
 		ownerDomain: 'health',
 		userId,
 		valueNumber: delta,
-		valueText: `${recentAvg} mot baseline ${baselineAvg}`,
+		valueText: `hvilepuls ${recentAvg} mot baseline ${baselineAvg}`,
 		valueBool: delta >= 1.5,
 		severity,
 		confidence: recent.length >= 5 ? 0.85 : 0.6,

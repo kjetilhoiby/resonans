@@ -1,0 +1,194 @@
+# Symptomer, temperatur og «hvordan går det?»
+
+Dato: 2026-09-02
+Status: ferdig
+
+Bygger på `2026-09-02-sykeperioder.md`, som gjorde sykdom til en periode som
+pauser streaks.
+
+## Kontekst
+
+Brukeren formulerte innsikten som avgjorde modellen:
+
+> «Nå har vi jo satt statusen "syk" (egentlig en proxy for "ute av stand til å
+> løpe"). Akkurat nå har jeg vondt i halsen, slimhoste og samtidig har jeg et
+> litt ømt kne, men det er luftveisinfeksjonen som gjør at jeg holder senga.»
+
+Tre ting følger av det, og alle tre gjorde symptomer umulige å presse inn som
+felter på sykeperioden:
+
+1. **Flere samtidig.** Tre rader, ikke ett felt.
+2. **Bare én holder deg i senga.** Kneet er der, men infeksjonen er grunnen.
+3. **De overlever perioden, og finnes uten den.** Et ømt kne varer lenger enn
+   infeksjonen, og et vondt ankel finnes når du ellers er frisk — det er nettopp
+   da det betyr noe for hva du kan trene.
+
+Underveis kom det også fram at vi har **to** temperaturkilder (Withings Thermo
+over wifi, og klokka som måler kontinuerlig-ish), og at det burde finnes en
+oppfølging mens perioden står.
+
+## Faser
+
+### Fase 1: Hvilepuls hadde to lesninger, og signalet leste feil felt
+
+Før noe kunne drive et sykdomsforslag måtte dette rettes.
+`resting_hr_elevated_7d` (`signal-service.ts`) hadde sin egen SQL som brøt alle
+tre reglene nattfysiologien har:
+
+- Den leste **`hr_average`**, som `sleep-heart-rate.ts` sier eksplisitt IKKE er
+  hvilepulsen — snittet blander inn REM og oppvåkninger og ligger 5–10 slag
+  høyere.
+- Den tok med **dupper** som netter (`isNap` ble ikke filtrert).
+- Den **snittet segmenter** framfor å ta minimum, mens en natt normalt har flere
+  segmenter fordi Withings deler den når man er ute av senga.
+
+Søvn-flaten og signalet svarte altså ulikt på «hva er hvilepulsen din», og begge
+sto synlig på helseflatene. `readNightlyPhysiology` er flyttet ut av
+`sleep-dashboard.ts` til `$lib/server/health/nightly-physiology.ts`, og begge går
+nå gjennom den. `signal-service.ts` er ute av `knownRawReaders` for `sleep`.
+
+**Konsekvens:** `value_number` på lagrede signaler fra før rettelsen er på en
+annen skala (regnet på snittpuls). Retningen er sammenlignbar, nivået ikke.
+
+### Fase 2: Symptomer som egen logg
+
+`$lib/domain/health/symptoms.ts` (rent, 19 tester) +
+`$lib/server/health/symptom-log.ts`. En rad per symptom, `dataType: 'symptom'`,
+med `label`, `kind`, `severity`, `startDate`/`endDate` og **`limiting`** — det
+siste er feltet som gjør sykeperioden presis: det sier HVORFOR du er ute.
+
+Koblingen til en periode er ren datooverlapp (`symptomsDuringPeriod`), ikke en
+lagret fremmednøkkel. Kneet som startet under infeksjonen og varer to måneder
+etter «tilhører» ikke perioden i noen meningsfull forstand.
+
+### Fase 3: To temperatursignaler, holdt fra hverandre
+
+`$lib/domain/health/temperature.ts` (rent, 14 tester) + `syncTemperatureData` i
+Withings-synken + `$lib/server/health/temperature-log.ts`.
+
+- **Termometeret** (Thermo) er kjernetemperatur — absolutt, 38,9.
+- **Klokka** er hudtemperatur på håndleddet, flere grader lavere, og oppgis
+  **bare som avvik fra brukerens eget snitt**.
+
+Egne datatyper (`body_temperature` / `skin_temperature`), aldri én
+«temperature».
+
+### Fase 4: «Er du syk?», spurt av tallene
+
+`$lib/domain/health/illness-hint.ts` (rent, 11 tester) +
+`$lib/server/health/illness-hint.ts`. Sovepuls ≥7 slag eller hudtemperatur
+≥0,5 °C over egen baseline i ≥2 netter på rad → et spørsmål på Helse-flaten, med
+`since` = første natt avviket startet. Sier brukeren ja, backdateres perioden dit
+og streaks repareres bakover.
+
+### Fase 5: «Hvordan går det?» mens perioden står
+
+`$lib/domain/health/sick-checkin.ts` (rent, 12 tester) +
+`$lib/server/sick-checkin.ts` + `/api/cron/sick-checkin` (hver time).
+
+Spør **konkret** om symptomene som pågår («Sist meldte du vondt i halsen og
+slimhoste. Bedre, uendret eller verre?»), og svaret er ett trykk per rad på
+kortet.
+
+## Beslutninger
+
+**Symptomer er sin egen logg, ikke felter på perioden.** De tre egenskapene over
+gjør det umulig å modellere som felter. Samme forhold som mellom en økt og en
+tur: to ting med hver sin levetid, koblet der de faktisk møtes.
+
+**Alvorlighet er tre nivåer, ikke ti.** Sultskalaen (1–5) virker fordi den er
+DAGLIG — `predictHunger` krever fem observasjoner og to sterke, og får dem på ei
+uke. Symptomer under sykdom er kanskje fire målinger per forløp og to-tre forløp
+i året; en 1–10-skala ville aldri blitt kalibrert mot brukerens egne svar, så en
+7 i mars og en 7 i november ville ikke betydd det samme. Tre nivåer trenger ingen
+kalibrering fordi ordene bærer betydningen selv: «litt», «merkbart», «mye».
+
+**De to temperaturkildene slås ALDRI sammen.** Slått sammen ville serien hatt
+34,2 og 38,9 side om side, og hver trend over den vært tull. Det er samme felle
+som `hr_min`/`hr_average` (fase 1) og meastype 6/8 (fettPROSENT lagret som
+`fatMass` og lest som kilo) — begge kostet en gal visning i prod. Derfor er
+kilden en del av datatypen, ikke et valgfritt metadatafelt.
+
+**Hudtemperatur vises aldri som et absolutt tall.** Det finnes ingen normtabell
+for håndleddstemperatur, og tallet ser autoritativt ut uten å være det. Retningen
+er som HRV og sovepuls: siste måling mot egen baseline, ikke beste observasjon.
+
+**Kartet meastype → størrelse er en HYPOTESE.** Vi vet hva Withings kaller
+typene (12 «Temperature», 71 «Body Temperature», 73 «Skin Temperature»), ikke
+hvilken enhet som poster hvilken. Synken logger antall per type ved hver kjøring
+og forkaster verdier utenfor plausibilitetsspennet med rå-verdien i loggen. Samme
+framgangsmåte som meastype 123 ble bekreftet med. **Ikke tolk hardere før loggen
+har bekreftet kartet.**
+
+**Temperatur måtte ha sitt EGET kall.** `parseWeightData` filtrerer gruppene på
+`MEASTYPE.weight`, så en temperaturmåling — som ikke har vekt i gruppa — ville
+blitt kastet i sin helhet, stille. Samme grunn som VO2max har sitt eget kall.
+
+**Forslagets terskel er høyere enn flatens.** `NOTABLE_DEVIATION_BPM` (5) er
+«verdt å se på» på et kort du alt har åpnet; et forslag dytter seg på deg, så det
+må klare en høyere lut eller bli bakgrunnsstøy. Derav 7 slag og kravet om to
+netter — én natt er en sen kveld.
+
+**Forslaget nevner hard trening som den andre forklaringen.** Vi kan ikke skille
+sykdom fra en hard uke, og å late som ville gjort et forslag brukeren avviser til
+en påstand hen må korrigere — og neste gang ville hen ikke trodd på det.
+
+**Oppfølgingen er den ENESTE nudgen som skal gå i en sykeperiode.** De andre
+maser om å gjøre noe, og det er feil når man ligger nede. Denne spør hvordan du
+har det, og det blir mer relevant av tilstanden, ikke mindre.
+
+**Kadensen faller av.** Daglig → hver 2. → hver 4. → ukentlig. Et spørsmål hver
+dag i tre uker er ikke omsorg, det er mas — og mas blir slått av. En influensa
+får fire-fem spørsmål; en skade som varer i to måneder får ikke seksti.
+
+**Ingen oppfølging på dag 1.** Du registrerte deg som syk i dag; du vet hvordan
+det går. Et spørsmål samme dag leser som at appen ikke fikk det med seg.
+
+**Et symptom markeres som over med sluttdato I DAG, en sykeperiode med
+GÅRSDAGEN.** Skillet er hva de gjør: perioden UNNSKYLDER dager, så én for mye
+koster en streak-dag brukeren kunne holdt. Et symptom beskriver bare.
+
+**Symptomer og temperatur går i briefingen med et eksplisitt tolkningsforbud.**
+Det er en grense, ikke et forbehold: en klinisk form drar en språkmodell hardt
+mot triage. Loggen er brukerens journal — noe hen kan sammenligne forløp med og
+vise en lege — ikke et grunnlag for en vurdering vi ikke har dekning for. Vi
+måler ingenting her; brukeren har skrevet det selv.
+
+**Ingen smerteskala 1–10.** Vurdert og forkastet av kalibreringsgrunnen over.
+`note` på perioden dekker fritekst, og `severity` dekker retningen.
+
+## Verifisering
+
+- `npm test`: 4177 tester i 291 filer, alle passerer. 60 nye — 19 på symptomer,
+  14 på temperatur, 12 på oppfølgingen, 11 på forslaget, og fire i briefingen.
+- `npm run check`: 0 feil, 0 advarsler.
+- `npm run build`: grønn (med attrapp-env i analyse-steget, som Dockerfilen gjør).
+- `sensor-event-access.test.ts` passerer med `signal-service.ts` fjernet fra
+  `sleep`-lista.
+- **Ikke verifisert mot ekte data:** temperatursynken har aldri kjørt mot
+  Withings herfra (miljøet har ingen `DATABASE_URL` og ingen tokens), så kartet
+  meastype → størrelse er ubekreftet, og vi vet ikke om kontoen har
+  temperaturmålinger i det hele tatt. Loggingen er bygget for nettopp det.
+- **Ikke kjørt:** `npm run test:visual` — krever database og dev-server med ekte
+  data. Kortet er altså ikke piksel-verifisert.
+
+## Kjent rest
+
+- **Temperatursynken må bekreftes mot prod.** Kjør en synk, les
+  `[temperatur] Målinger per meastype`-linja, og bekreft mot Health Mate før noe
+  tolkes hardere. Er kartet feil, er det den ene linja som må endres.
+- **Muskel/skjelett-skillet lagres, men brukes ikke.** Et vondt ankel betyr
+  oftest «kan ikke løpe, kan sykle» — en substitusjon, ikke en unnskyldning.
+  `generateSessionAlternative` finnes i readiness-motoren og er den naturlige
+  koblingen, men den er ikke gjort.
+- **`MAX_OPEN_SICK_DAYS` (14) er kort for en skade.** En belastningsskade som
+  varer i to måneder blir `staleOpen` etter to uker og slutter å unnskylde.
+  Brukeren kan forlenge, men det er en påminnelse hen ikke burde trengt.
+- **De øvrige nudgene er fortsatt ikke gatet på sykdom.** `fuel-nudge`,
+  skrivenudgen og øktvarslene maser videre.
+- **Ingen chat-inngang** for hverken sykeperioder eller symptomer. Skrivestiene
+  (`saveSickPeriod`, `saveSymptom`) er klare for verktøy.
+- Kjerne­temperatur har ingen graf; bare siste og høyeste vises. Hudtemperatur har
+  ingen kurve på Søvn-flaten, der den hører sammen med HRV og sovepuls.
+- Oppfølgingen kan bare besvares på flaten, ikke fra varselet — et interaktivt
+  svar i pushen ville spart et trykk.
