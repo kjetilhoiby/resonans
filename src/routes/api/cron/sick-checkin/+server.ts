@@ -5,7 +5,6 @@ import { sendSickCheckinsForAllUsers } from '$lib/server/sick-checkin';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 120 };
 
 /**
  * GET /api/cron/sick-checkin
