@@ -17,6 +17,57 @@
 	let workerRunning = $state(false);
 	let workerResult = $state<{ ok: boolean; message: string } | null>(null);
 
+	let dispatch = $state(data.dispatch);
+	let dispatchTesting = $state(false);
+	let dispatchTestResult = $state<{ ok: boolean; message: string } | null>(null);
+
+	async function refreshDispatchStatus() {
+		try {
+			const res = await fetch('/api/jobs/cron-dispatch');
+			const json = await res.json();
+			if (json.success) dispatch = json.status;
+		} catch {
+			// Statuskortet beholder forrige visning; testresultatet sier fra om feil.
+		}
+	}
+
+	async function testDispatchPath() {
+		dispatchTesting = true;
+		dispatchTestResult = null;
+		try {
+			const res = await fetch('/api/jobs/cron-dispatch', { method: 'POST' });
+			const json = await res.json();
+			if (json.success) {
+				dispatchTestResult = {
+					ok: true,
+					message: `${json.status} fra ${json.baseUrl}/api/cron/jobs på ${json.latencyMs} ms — ${json.jobCount} jobber i registeret.`
+				};
+			} else {
+				dispatchTestResult = {
+					ok: false,
+					message: json.error ?? `Testen feilet mot ${json.baseUrl}.`
+				};
+			}
+			await refreshDispatchStatus();
+		} catch (err) {
+			dispatchTestResult = { ok: false, message: String(err) };
+		} finally {
+			dispatchTesting = false;
+		}
+	}
+
+	function claimantLabel(claimedBy: string | null) {
+		if (claimedBy?.startsWith('dispatcher-')) return 'intern';
+		if (claimedBy === 'github-actions') return 'GitHub';
+		return claimedBy ?? '—';
+	}
+
+	function fmtSlot(iso: string | Date) {
+		return new Intl.DateTimeFormat('nb-NO', {
+			day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo'
+		}).format(new Date(iso));
+	}
+
 	type BulkAction = 'delete_failed' | 'delete_completed' | 'cancel_queued' | 'requeue_failed';
 	let bulkRunning = $state<BulkAction | null>(null);
 	let bulkResult = $state<{ ok: boolean; message: string } | null>(null);
@@ -233,6 +284,63 @@
 	</PageHeader>
 
 	<div class="jobs-content">
+
+	<section class="dispatch-section">
+		<h2 class="jobs-section-title">Cron-dispatcher</h2>
+		<p class="dispatch-verdict" class:ok={dispatch.verdict.tone === 'ok'} class:warn={dispatch.verdict.tone === 'warn'}>
+			{dispatch.verdict.tone === 'ok' ? '✅' : dispatch.verdict.tone === 'warn' ? '⚠️' : '⏸'}
+			{dispatch.verdict.text}
+		</p>
+		<div class="dispatch-chips">
+			<span class="dispatch-chip" class:chip-ok={dispatch.lockHeld} class:chip-warn={!dispatch.lockHeld && dispatch.enabled}>
+				Lederlås: {dispatch.lockHeld ? 'holdt' : 'ikke holdt'}
+			</span>
+			<span class="dispatch-chip">
+				Denne instansen: {dispatch.local.leader ? 'leder' : dispatch.local.running ? 'standby' : 'dispatcher av'}
+			</span>
+			<span class="dispatch-chip">
+				Siste døgn: {dispatch.counts.internal} interne · {dispatch.counts.github} GitHub{dispatch.counts.other > 0 ? ` · ${dispatch.counts.other} andre` : ''}
+			</span>
+		</div>
+		<div class="manual-row">
+			<button class="manual-btn" onclick={testDispatchPath} disabled={dispatchTesting}>
+				{dispatchTesting ? '⏳ Tester dispatch-veien…' : '▶ Test dispatch-veien'}
+			</button>
+		</div>
+		<p class="dispatch-test-hint">
+			Testen self-fetcher jobbregisteret over nøyaktig samme vei som dispatcheren bruker
+			(loopback + CRON_SECRET) — ingen jobber kjøres.
+		</p>
+		{#if dispatchTestResult}
+			<p class="manual-result" class:ok={dispatchTestResult.ok} class:err={!dispatchTestResult.ok}>
+				{dispatchTestResult.ok ? '✅' : '❌'} {dispatchTestResult.message}
+			</p>
+		{/if}
+		{#if dispatch.recentClaims.length > 0}
+			<div class="dispatch-lists">
+				<div class="dispatch-list">
+					<span class="job-block-label">Siste krav (slot · jobb · klokke)</span>
+					{#each dispatch.recentClaims as claim}
+						<div class="dispatch-list-row">
+							<span class="mono dispatch-slot">{fmtSlot(claim.slotAt)}</span>
+							<span class="mono dispatch-path">{claim.jobPath.replace('/api/cron/', '').replace('/api/notifications/', '')}</span>
+							<span class="dispatch-claimant" class:claimant-intern={claimantLabel(claim.claimedBy) === 'intern'}>{claimantLabel(claim.claimedBy)}</span>
+						</div>
+					{/each}
+				</div>
+				<div class="dispatch-list">
+					<span class="job-block-label">Siste kjøringer (fra cron_executions)</span>
+					{#each dispatch.recentExecutions as exec}
+						<div class="dispatch-list-row">
+							<span class="mono dispatch-slot">{fmtSlot(exec.executedAt)}</span>
+							<span class="mono dispatch-path">{exec.jobPath.replace('/api/cron/', '').replace('/api/notifications/', '')}</span>
+							<span class="dispatch-exec-status">{exec.status === 'success' ? '✅' : exec.status === 'partial' ? '◐' : '❌'}{exec.durationMs != null ? ` ${exec.durationMs} ms` : ''}</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	</section>
 
 	<section class="manual-section">
 		<h2 class="jobs-section-title">Manuelle kjøringer</h2>
@@ -624,6 +732,97 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+
+	.dispatch-section {
+		background: #171717;
+		border-radius: 12px;
+		padding: 14px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.dispatch-verdict {
+		margin: 0;
+		font-size: 0.86rem;
+		color: #aaa;
+		line-height: 1.45;
+	}
+	.dispatch-verdict.ok { color: #7ec8a8; }
+	.dispatch-verdict.warn { color: #f0b96b; }
+
+	.dispatch-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.dispatch-chip {
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 999px;
+		color: #999;
+		font-size: 0.74rem;
+		padding: 3px 10px;
+	}
+	.dispatch-chip.chip-ok { color: #7ec8a8; border-color: #2d5a40; }
+	.dispatch-chip.chip-warn { color: #f0b96b; border-color: #5a4a2d; }
+
+	.dispatch-test-hint {
+		margin: 0;
+		font-size: 0.76rem;
+		color: #666;
+		line-height: 1.4;
+	}
+
+	.dispatch-lists {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 14px;
+		margin-top: 2px;
+	}
+
+	.dispatch-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.dispatch-list-row {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		font-size: 0.76rem;
+		min-width: 0;
+	}
+
+	.dispatch-slot {
+		color: #666;
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+
+	.dispatch-path {
+		color: #c0c0c0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.dispatch-claimant {
+		color: #f0b96b;
+		flex-shrink: 0;
+	}
+	.dispatch-claimant.claimant-intern { color: #7ec8a8; }
+
+	.dispatch-exec-status {
+		color: #888;
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.manual-hint {
