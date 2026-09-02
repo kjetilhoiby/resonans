@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
 
 /**
- * Trigger egenfrekvens-sjekkin-nudges. Kallbart av Vercel Cron eller in-app scheduler.
+ * Trigger egenfrekvens-sjekkin-nudges. Kallbart av cron-dispatcheren eller manuelt.
  * Default: kjør for alle brukere med time-window-sjekk slik at hver bruker bare nudges
  * innenfor sitt valgte tidspunkt-vindu.
  */
@@ -35,7 +35,7 @@ export const POST: RequestHandler = async ({ url }) => {
 };
 
 export const GET: RequestHandler = async ({ url }) => {
-	// GET-variant for Vercel Cron som bruker GET som default.
+	// GET-variant: cron-dispatcheren kaller med GET.
 	try {
 		const result = await run({ url });
 		return json({ success: true, ...result });

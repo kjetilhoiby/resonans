@@ -5,8 +5,6 @@ import { sendGroceryWeeklyNudgesForAllUsers } from '$lib/server/grocery-nudge';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 120 };
-
 /**
  * GET /api/cron/grocery-nudge
  * Ukentlig dagligvare-oppsummering (mandag, lokal tid per bruker, 60-min vindu).

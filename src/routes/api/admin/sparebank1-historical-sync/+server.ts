@@ -3,8 +3,6 @@ import { requireAdmin } from '$lib/server/admin-auth';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import type { RequestHandler } from './$types';
 
-export const config = { maxDuration: 30 };
-
 /**
  * Historical sync for SpareBank 1 — queues an async job.
  * POST /api/admin/sparebank1-historical-sync

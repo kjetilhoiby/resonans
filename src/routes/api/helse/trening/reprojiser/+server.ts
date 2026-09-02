@@ -13,8 +13,6 @@ import {
 	type WeekEffortRow
 } from '$lib/domain/health/reproject-window';
 
-export const config = { maxDuration: 60 };
-
 /**
  * Reberegner lagrede `effortScore` fra gjeldende skåringsmodell.
  *

@@ -3,7 +3,7 @@
  *
  * Bakgrunn: repoet hadde ingen `handleError`-hook, så en kastet feil i en
  * `+server.ts` eller en `load` ble til `{"message":"Internal Error"}` uten
- * rute, uten stack og uten noe å søke etter i Vercel-loggen. Da mor-dashboardet
+ * rute, uten stack og uten noe å søke etter i serverloggen. Da mor-dashboardet
  * feilet i prod (se `docs/changelog/2026-08-02-helse-mortema.md`) var eneste
  * spor teksten «Kunne ikke laste dashboarddata.» i UI-et.
  *
@@ -30,7 +30,8 @@ export function describeError(error: unknown): { name: string; message: string; 
 /**
  * Én linje som er lett å kjenne igjen i loggen, pluss stacken under.
  *
- * Prefikset `[500]` er bevisst: det er det man søker etter i Vercel-loggen.
+ * Prefikset `[500]` er bevisst: det er det man søker etter i loggen — i
+ * containerloggen, eller over `GET /api/admin/logs?grep=[500]`.
  * `errorId` gjentas i svaret til klienten, så en skjermdump kan kobles til
  * loggraden.
  */

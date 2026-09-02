@@ -104,7 +104,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	});
 
 	// Kick off processing immediately and keep it running after the response
-	// is sent (waitUntil on Vercel, plain event-loop locally).
+	// is sent (plain event-loop — see runInBackground).
 	runInBackground(processDueBackgroundJobs({ limit: 1, workerId: `book-create-${book.id}` }));
 
 	return json(book, { status: 201 });

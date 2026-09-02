@@ -7,9 +7,6 @@ import { parseSparebank1Pdf, normaliseAccountNumber } from '$lib/server/integrat
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import type { RequestHandler } from './$types';
 
-// Vercel: allow up to 60 s for a ZIP with many PDFs
-export const config = { maxDuration: 60 };
-
 /**
  * GET /api/admin/import-statements
  * Returns a summary of stored balance anchors per account.

@@ -74,8 +74,8 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 		.where(eq(books.id, params.bookId))
 		.returning();
 
-	// Vi eier kjøringen: claim spesifikk jobb og kjør den nå. waitUntil
-	// holder funksjonen i live på Vercel til collectoren er ferdig.
+	// Vi eier kjøringen: claim spesifikk jobb og kjør den nå. Collectoren
+	// fortsetter på event-loopen etter at responsen er sendt.
 	runInBackground(processBackgroundJobById(jobIdToRun, `book-inline-${book.id}`));
 
 	return json({ ...updated, action });

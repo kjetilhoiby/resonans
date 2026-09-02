@@ -1,24 +1,20 @@
 /**
  * Kjør en async-oppgave i bakgrunnen som overlever responsen.
  *
- * På Vercel serverless dør funksjonen så fort responsen er sendt, så
- * `void promise` blir kuttet. `waitUntil` fra @vercel/functions ber
- * runtimet holde funksjonen i live til promisen settler.
+ * Under adapter-node lever Node-prosessen videre etter at responsen er sendt,
+ * så en promise som ikke ventes på tikker ferdig av seg selv på event-loopen.
+ * Det var ikke tilfellet på serverless, der funksjonen ble frosset i det
+ * responsen gikk ut — derfor lå det tidligere en `waitUntil` fra
+ * `@vercel/functions` her. Den er borte sammen med resten av Vercel-oppsettet.
  *
- * Lokalt (dev) er waitUntil en no-op, men der lever Node-prosessen
- * uansett til promisen er ferdig — så det funker også.
+ * Prisen ved en container er en annen: en redeploy sender SIGTERM, og arbeid
+ * som ikke er ferdig da, blir ikke ferdig. Bruk derfor jobbkøen
+ * (`background_jobs`) for noe som MÅ fullføres — denne er for etterarbeid der
+ * et tapt forsøk er greit.
  */
 
-import { waitUntil } from '@vercel/functions';
-
 export function runInBackground(promise: Promise<unknown>): void {
-	const guarded = promise.catch((err) => {
+	void promise.catch((err) => {
 		console.error('[runInBackground] uncaught error:', err);
 	});
-	try {
-		waitUntil(guarded);
-	} catch {
-		// waitUntil throws if not in a request context (e.g. during build).
-		// The promise itself is still ticking via the event loop.
-	}
 }

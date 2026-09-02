@@ -8,8 +8,6 @@ import {
 import { looksMislabelled } from '$lib/domain/health/workout-removal';
 import { normalizeSportType } from '$lib/utils/sport';
 
-export const config = { maxDuration: 60 };
-
 /**
  * «Rett og slett» fra Ekko — én økt, hele kaskaden.
  *

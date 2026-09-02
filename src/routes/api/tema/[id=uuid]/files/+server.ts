@@ -88,8 +88,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		})
 		.returning();
 
-	// Parse content and store on the file row — kjører i bakgrunnen via waitUntil
-	// så den ikke kverkes når responsen sendes på Vercel.
+	// Parse content and store on the file row — kjører videre i bakgrunnen etter
+	// at responsen er sendt (se runInBackground).
 	runInBackground(
 		extractFileContent(buffer, file.type, file.name, result.secure_url).then(async ({ text, kind }) => {
 			if (!text.trim() || kind === 'unsupported') return;

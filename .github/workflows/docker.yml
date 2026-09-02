@@ -83,7 +83,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Ingen build-args, og det er et poeng: Dockerfilen setter selv
-          # `DEPLOY_TARGET` og attrapper for de to variablene bygget krever
+          # attrappene for de to variablene bygget krever
           # (`DATABASE_URL`, `OPENAI_API_KEY` — se kommentaren der).
           # Bygget oppfører seg dermed likt her, lokalt og i Coolify, og ingen
           # hemmelighet har en vei inn hit.

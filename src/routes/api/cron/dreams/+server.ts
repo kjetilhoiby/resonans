@@ -4,8 +4,6 @@ import { DreamService } from '$lib/server/services/dream-service';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 import { denyUnauthorizedCron } from '$lib/server/cron-guard';
 
-export const config = { maxDuration: 300 };
-
 const LEVELS = ['daily', 'weekly', 'monthly', 'yearly'] as const;
 type Level = (typeof LEVELS)[number];
 
@@ -16,7 +14,8 @@ type Level = (typeof LEVELS)[number];
  * sammendraget under seg, så registeret i /api/cron/jobs planlegger nivåene
  * på adskilte (og ulike) tidspunkter slik at rekkefølgen holdes (dag → uke →
  * måned → år). Tidsstyringen lå tidligere i den in-app node-cron-scheduleren
- * (scheduler.ts), som ikke kjører på Vercel serverless — derfor flyttet hit.
+ * (scheduler.ts), som ikke overlevde en serverless-kjøring — derfor flyttet hit.
+ * Registeret er nå eneste sted en jobb planlegges.
  */
 export const GET: RequestHandler = async ({ request }) => {
 	const denied = denyUnauthorizedCron(request);

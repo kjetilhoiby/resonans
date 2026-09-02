@@ -56,12 +56,13 @@ export function startCronDispatcher() {
 	}
 
 	// Advisory-låsen trenger en sesjon å holdes på; neon-http er én
-	// HTTPS-request per spørring og har ingen. På Vercel skal GitHub Actions
-	// fortsatt være klokka — dette er ikke en feilsituasjon der, bare feil flagg.
+	// HTTPS-request per spørring og har ingen. Da finnes det ingen klokke i det
+	// hele tatt, så dette skal være høyt: ingen cron kjører.
 	if (dbDriver !== 'postgres') {
 		console.error(
 			`[cron-dispatch] startet ikke: krever DB-driveren 'postgres' (er '${dbDriver}'). ` +
-				'På Vercel/neon-http er GitHub Actions klokka — skru av ENABLE_CRON_DISPATCHER der.'
+				'Med neon-http kan lederlåsen ikke holdes, og INGEN cron-jobber kjører — ' +
+				'sett DB_DRIVER=postgres.'
 		);
 		return;
 	}

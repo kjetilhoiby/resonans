@@ -5,9 +5,6 @@ import { invalidateSpendingCache, aggregateSpendingMetrics } from '$lib/server/i
 import { runInBackground } from '$lib/server/run-in-background';
 import type { RequestHandler } from './$types';
 
-// Allow longer runtime for non-historical manual sync requests.
-export const config = { maxDuration: 120 };
-
 /**
  * POST /api/sensors/sparebank1/sync
  * Manually trigger SpareBank1 data synchronization
