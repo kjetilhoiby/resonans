@@ -171,6 +171,18 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   `$lib/server/cron-guard`, og wrap arbeidet med `withCronTracking` fra
   `$lib/server/monitoring/cron-wrapper`.
 - Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
+- **En synk som feiler, skal skrive `lastError`.** Kall `recordSensorSyncFailure`
+  (`$lib/server/sensors/sync-status.ts`) fra fall-stien, og sett `lastError: null`
+  på suksess-stien i samme funksjon — begge halvdelene, ellers blir en skrevet
+  feil stående lenge etter at den er rettet. Fram til september 2026 skrev
+  SpareBank1, Withings og Spond feltet BARE som `null` og BARE ved suksess, så
+  varselet sa «lastError: null» gjennom tre døgn med død banksynk. Se
+  `docs/changelog/2026-09-03-synkfeil-som-sier-fra.md`.
+- **Returnerer et cron-endepunkt `failed`, blir kjøringen `partial`.**
+  `classifyCronResult` (`$lib/server/monitoring/cron-result.ts`) ser på
+  `error`-nøkkel, `failed > 0` og `success: false`. Fanger endepunktet feilen per
+  bruker og legger den i `results[]` — som alle «for hver bruker»-synkene gjør —
+  er `failed` det ENESTE som skiller en død kjøring fra en vellykket.
 - `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
 
 **Uventede serverfeil** (`handleError` i `hooks.server.ts`, se
@@ -2196,6 +2208,15 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 - Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
 - Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
 - Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+- **En JS-Array er ALDRI en gyldig parameter til rå SQL.** Bruk
+  `toPgArrayLiteral` (`$lib/db/pg-array.ts`) og send en ferdig streng til
+  `$1::text[]`. postgres-js sin `inferType` gir en Array skalar-OID-en til
+  FØRSTE element, ikke array-OID-en: en liste med strenger blir da `"a,b"`
+  («malformed array literal»), og en liste med `Date` først overlever som Array
+  inn i `Buffer.byteLength` og kaster «Received an instance of Array». Begge
+  virket under neon-http og brøt da containeren tok over 30. august 2026 — det
+  tok fire døgn å finne. Se
+  `docs/changelog/2026-09-03-array-parametere-til-postgres.md`.
 - **Rå `db.execute(sql\`…\`)` som leser rader MÅ gå gjennom `rowsOf()`** fra `$lib/db`.
   Neon HTTP-driveren returnerer et resultat-*objekt* (`{ rowCount, rows, … }`), mens
   postgres-js returnerer en bar *array*. `for…of`/`.map()` rett på resultatet kaster

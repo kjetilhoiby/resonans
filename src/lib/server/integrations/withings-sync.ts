@@ -19,6 +19,7 @@ import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 import { syncHrRecovery } from './withings-hr-recovery';
 import { syncSleepHrv } from './withings-sleep-hrv';
+import { recordSensorSyncFailure } from '$lib/server/sensors/sync-status';
 
 /**
  * Get active Withings sensor for user
@@ -1056,6 +1057,17 @@ export async function syncWorkoutData(
  * Full sync of all Withings data
  */
 export async function syncAllWithingsData(
+	...args: Parameters<typeof runWithingsSync>
+): ReturnType<typeof runWithingsSync> {
+	try {
+		return await runWithingsSync(...args);
+	} catch (err) {
+		await recordSensorSyncFailure(args[0], 'withings', err);
+		throw err;
+	}
+}
+
+async function runWithingsSync(
 	userId: string,
 	fullSync = false,
 	overrideLastSync?: Date,
@@ -1239,12 +1251,15 @@ export async function syncAllWithingsData(
 		);
 	}
 
-	// Update last sync timestamp
+	// Update last sync timestamp. `lastError: null` hører HER: skriver vi en feil
+	// ved fall, må en vellykket kjøring rydde den bort, ellers står feilen fra i
+	// forrige uke og sier at noe er galt lenge etter at det er rettet.
 	await db
 		.update(sensors)
 		.set({
 			lastSync: new Date(),
-			updatedAt: new Date()
+			updatedAt: new Date(),
+			lastError: null
 		})
 		.where(eq(sensors.id, sensor.id));
 

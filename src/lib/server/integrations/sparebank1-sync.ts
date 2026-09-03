@@ -4,6 +4,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { createHash } from 'node:crypto';
 import { hasFormatPrefix, merchantKeyFromDescription } from '$lib/domain/economics/merchant-key';
+import { recordSensorSyncFailure } from '$lib/server/sensors/sync-status';
+import { toPgArrayLiteral } from '$lib/db/pg-array';
 import {
 	loadSalaryProfile,
 	buildSalaryProfile,
@@ -158,21 +160,21 @@ async function writeRawAndCanonicalTransactions(
 			merchant_key = EXCLUDED.merchant_key,
 			updated_at = NOW()`,
 		[
-			rawRows.map((r) => r.userId),
-			rawRows.map((r) => r.sensorId),
-			rawRows.map((r) => r.accountId),
-			rawRows.map((r) => r.externalId),
-			rawRows.map((r) => r.bookingStatus),
-			rawRows.map((r) => r.statusRank),
-			rawRows.map((r) => r.txDate),
-			rawRows.map((r) => r.postedAt),
-			rawRows.map((r) => r.amount),
-			rawRows.map((r) => r.currency),
-			rawRows.map((r) => r.descriptionRaw),
-			rawRows.map((r) => r.descriptionNorm),
-			rawRows.map((r) => r.typeText),
-			rawRows.map((r) => r.fingerprint),
-			rawRows.map((r) => r.payload)
+			toPgArrayLiteral(rawRows.map((r) => r.userId)),
+			toPgArrayLiteral(rawRows.map((r) => r.sensorId)),
+			toPgArrayLiteral(rawRows.map((r) => r.accountId)),
+			toPgArrayLiteral(rawRows.map((r) => r.externalId)),
+			toPgArrayLiteral(rawRows.map((r) => r.bookingStatus)),
+			toPgArrayLiteral(rawRows.map((r) => r.statusRank)),
+			toPgArrayLiteral(rawRows.map((r) => r.txDate)),
+			toPgArrayLiteral(rawRows.map((r) => r.postedAt)),
+			toPgArrayLiteral(rawRows.map((r) => r.amount)),
+			toPgArrayLiteral(rawRows.map((r) => r.currency)),
+			toPgArrayLiteral(rawRows.map((r) => r.descriptionRaw)),
+			toPgArrayLiteral(rawRows.map((r) => r.descriptionNorm)),
+			toPgArrayLiteral(rawRows.map((r) => r.typeText)),
+			toPgArrayLiteral(rawRows.map((r) => r.fingerprint)),
+			toPgArrayLiteral(rawRows.map((r) => r.payload))
 		]
 	);
 
@@ -249,19 +251,19 @@ async function writeRawAndCanonicalTransactions(
 			paycheck_type = COALESCE(EXCLUDED.paycheck_type, canonical_bank_transactions.paycheck_type),
 			updated_at = NOW()`,
 		[
-			rows.map((r) => r.userId),
-			rows.map((r) => r.sensorId),
-			rows.map((r) => r.accountId),
-			rows.map((r) => r.txDate),
-			rows.map((r) => r.amount),
-			rows.map((r) => r.currency),
-			rows.map((r) => r.descriptionNorm), // merchant_key
-			rows.map((r) => r.descriptionRaw),  // description_display
-			rows.map((r) => r.bookingStatus),
-			rows.map((r) => r.statusRank),
-			rows.map((r) => r.postedAt),
-			rows.map((r) => r.paycheckType ?? ''),
-			rows.map((r) => r.typeText)
+			toPgArrayLiteral(rows.map((r) => r.userId)),
+			toPgArrayLiteral(rows.map((r) => r.sensorId)),
+			toPgArrayLiteral(rows.map((r) => r.accountId)),
+			toPgArrayLiteral(rows.map((r) => r.txDate)),
+			toPgArrayLiteral(rows.map((r) => r.amount)),
+			toPgArrayLiteral(rows.map((r) => r.currency)),
+			toPgArrayLiteral(rows.map((r) => r.descriptionNorm)), // merchant_key
+			toPgArrayLiteral(rows.map((r) => r.descriptionRaw)),  // description_display
+			toPgArrayLiteral(rows.map((r) => r.bookingStatus)),
+			toPgArrayLiteral(rows.map((r) => r.statusRank)),
+			toPgArrayLiteral(rows.map((r) => r.postedAt)),
+			toPgArrayLiteral(rows.map((r) => r.paycheckType ?? '')),
+			toPgArrayLiteral(rows.map((r) => r.typeText))
 		]
 	);
 
@@ -290,11 +292,11 @@ async function writeRawAndCanonicalTransactions(
 				updated_at = NOW()`,
 			[
 				sensorId,
-				aliasRows.map((r) => r.accountId),
-				aliasRows.map((r) => r.txDate),
-				aliasRows.map((r) => r.amount),
-				aliasRows.map((r) => r.descriptionNorm),
-				aliasRows.map((r) => r.externalId)
+				toPgArrayLiteral(aliasRows.map((r) => r.accountId)),
+				toPgArrayLiteral(aliasRows.map((r) => r.txDate)),
+				toPgArrayLiteral(aliasRows.map((r) => r.amount)),
+				toPgArrayLiteral(aliasRows.map((r) => r.descriptionNorm)),
+				toPgArrayLiteral(aliasRows.map((r) => r.externalId))
 			]
 		);
 	}
@@ -461,16 +463,30 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: {
-		fromDate?: Date;
-		toDate?: Date;
-		includeDebug?: boolean;
-		resetBeforeImport?: boolean;
-		skipExistingDedup?: boolean;
-		prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
-		/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
-		prefetchedTransactions?: Record<string, any[]>;
-	} = {}
+	options: Sparebank1SyncOptions = {}
+): Promise<Sparebank1SyncResult> {
+	try {
+		return await runSparebank1Sync(userId, options);
+	} catch (err) {
+		await recordSensorSyncFailure(userId, 'sparebank1', err);
+		throw err;
+	}
+}
+
+type Sparebank1SyncOptions = {
+	fromDate?: Date;
+	toDate?: Date;
+	includeDebug?: boolean;
+	resetBeforeImport?: boolean;
+	skipExistingDedup?: boolean;
+	prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
+	/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
+	prefetchedTransactions?: Record<string, any[]>;
+};
+
+async function runSparebank1Sync(
+	userId: string,
+	options: Sparebank1SyncOptions = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 
