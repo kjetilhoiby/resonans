@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { createHash } from 'node:crypto';
 import { hasFormatPrefix, merchantKeyFromDescription } from '$lib/domain/economics/merchant-key';
+import { recordSensorSyncFailure } from '$lib/server/sensors/sync-status';
 import {
 	loadSalaryProfile,
 	buildSalaryProfile,
@@ -461,16 +462,30 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: {
-		fromDate?: Date;
-		toDate?: Date;
-		includeDebug?: boolean;
-		resetBeforeImport?: boolean;
-		skipExistingDedup?: boolean;
-		prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
-		/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
-		prefetchedTransactions?: Record<string, any[]>;
-	} = {}
+	options: Sparebank1SyncOptions = {}
+): Promise<Sparebank1SyncResult> {
+	try {
+		return await runSparebank1Sync(userId, options);
+	} catch (err) {
+		await recordSensorSyncFailure(userId, 'sparebank1', err);
+		throw err;
+	}
+}
+
+type Sparebank1SyncOptions = {
+	fromDate?: Date;
+	toDate?: Date;
+	includeDebug?: boolean;
+	resetBeforeImport?: boolean;
+	skipExistingDedup?: boolean;
+	prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
+	/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
+	prefetchedTransactions?: Record<string, any[]>;
+};
+
+async function runSparebank1Sync(
+	userId: string,
+	options: Sparebank1SyncOptions = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 

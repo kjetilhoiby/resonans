@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { spondLogin, spondGetGroups, spondGetEvents, spondGetProfile, type SpondEvent, type SpondGroup } from './spond';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { SpondPersonMappingService } from '$lib/server/services/spond-person-mapping-service';
+import { recordSensorSyncFailure } from '$lib/server/sensors/sync-status';
 
 /**
  * Retrieve the active Spond sensor row for a user.
@@ -93,7 +94,18 @@ function parseSpondEvent(
  * For conflicts at the same timestamp, later imports will be silently skipped.
  * A future improvement could use ON CONFLICT DO UPDATE to refresh event data.
  */
-export async function syncSpondData(userId: string): Promise<{ events: number; groups: number }> {
+export async function syncSpondData(
+	userId: string
+): Promise<{ events: number; groups: number }> {
+	try {
+		return await runSpondSync(userId);
+	} catch (err) {
+		await recordSensorSyncFailure(userId, 'spond', err);
+		throw err;
+	}
+}
+
+async function runSpondSync(userId: string): Promise<{ events: number; groups: number }> {
 	const sensor = await getSpondSensor(userId);
 	if (!sensor) {
 		throw new Error('No active Spond sensor found for this user');
@@ -163,6 +175,8 @@ export async function syncSpondData(userId: string): Promise<{ events: number; g
 		.set({
 			lastSync: new Date(),
 			updatedAt: new Date(),
+			// Se withings-sync: en feil som skrives ved fall må ryddes ved suksess.
+			lastError: null,
 			config: {
 				...((sensor.config as any) ?? {}),
 				myMemberIds: [...myMemberIds],

@@ -171,6 +171,18 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   `$lib/server/cron-guard`, og wrap arbeidet med `withCronTracking` fra
   `$lib/server/monitoring/cron-wrapper`.
 - Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
+- **En synk som feiler, skal skrive `lastError`.** Kall `recordSensorSyncFailure`
+  (`$lib/server/sensors/sync-status.ts`) fra fall-stien, og sett `lastError: null`
+  på suksess-stien i samme funksjon — begge halvdelene, ellers blir en skrevet
+  feil stående lenge etter at den er rettet. Fram til september 2026 skrev
+  SpareBank1, Withings og Spond feltet BARE som `null` og BARE ved suksess, så
+  varselet sa «lastError: null» gjennom tre døgn med død banksynk. Se
+  `docs/changelog/2026-09-03-synkfeil-som-sier-fra.md`.
+- **Returnerer et cron-endepunkt `failed`, blir kjøringen `partial`.**
+  `classifyCronResult` (`$lib/server/monitoring/cron-result.ts`) ser på
+  `error`-nøkkel, `failed > 0` og `success: false`. Fanger endepunktet feilen per
+  bruker og legger den i `results[]` — som alle «for hver bruker»-synkene gjør —
+  er `failed` det ENESTE som skiller en død kjøring fra en vellykket.
 - `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
 
 **Uventede serverfeil** (`handleError` i `hooks.server.ts`, se

@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { cronExecutions } from '$lib/db/schema';
 import { and, lt, sql } from 'drizzle-orm';
+import { classifyCronResult } from './cron-result';
 
 export async function withCronTracking<T>(
 	jobPath: string,
@@ -13,9 +14,7 @@ export async function withCronTracking<T>(
 
 	try {
 		const result = await fn();
-		if (result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)) {
-			status = 'partial';
-		}
+		status = classifyCronResult(result);
 		resultSummary = result && typeof result === 'object' ? result as Record<string, unknown> : null;
 		return result;
 	} catch (err) {
