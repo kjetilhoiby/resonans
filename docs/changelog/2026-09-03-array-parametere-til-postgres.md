@@ -61,6 +61,22 @@ punktet, stille.
 lister. Det gjør ikke SpareBank1-stien riktigere — den går ikke der lenger — men
 det fjerner fella for neste rå spørring.
 
+### Fase 3: Batch-steg som feiler, sier fra
+
+`stepBatchJob` fanget feilen, skrev den til jobbraden og logget ingenting. Et
+steg som feiler svarer derfor **200** med feilen i kroppen — `handleError` i
+`hooks.server.ts` ser den aldri, og det finnes ingen `[500]`-linje å søke etter.
+Raden bar dessuten bare `err.message`, uten stack: den sa HVA som feilet, aldri
+HVOR.
+
+Det var akkurat denne kombinasjonen som gjorde feilsøkingen dyr. Et oppslag i
+ringbufferen etter meldingen ga `matched: 0` — ikke fordi den var rullet ut (det
+var den også), men fordi den aldri ble skrevet dit. Nå logges den med
+`[batch]`-prefiks og stack.
+
+Skillet er verdt å ha i hodet: feiler `prefetch`, går 500-en gjennom
+`handleError` og ER søkbar. Feiler et steg, var den usynlig.
+
 ## Beslutninger
 
 **Driveren får ikke gjette typen.** Alternativet var `sql.array()`, som lar
@@ -96,7 +112,11 @@ literalet er identisk med driverens eget — sterkt, men ikke det samme som en
 vellykket synk. Neste SpareBank1-kjøring er fasit; `lastError` bærer nå feilen
 hvis den fortsatt er der (se `2026-09-03-synkfeil-som-sier-fra.md`).
 
-**Stacktracen fra prod er aldri sett.** Ringbufferen er per prosess og var tømt
-av to redeploys før feilen ble undersøkt. Det er derfor ikke utelukket at
-`Buffer.byteLength`-krasjen kom fra et fjerde sted enn de tre som er rettet —
-men de tre var brutt uansett, på en måte som forklarer tidspunktet nøyaktig.
+**Stacktracen fra prod er aldri sett.** Et oppslag i ringbufferen ga
+`matched: 0` av to grunner: bufferen holder 2000 linjer og hadde fanget 6838, og
+steg-feilen ble aldri logget i det hele tatt (rettet i fase 3). Det er derfor
+ikke utelukket at `Buffer.byteLength`-krasjen kom fra et fjerde sted enn de tre
+som er rettet — men at feilen kom gjennom jobbradens `error` og ikke som en
+`[500]`, plasserer den i `processStep`, altså i nettopp skrivestien som er
+rettet. Og de tre var brutt uansett, på en måte som forklarer tidspunktet
+nøyaktig.

@@ -195,6 +195,17 @@ export async function stepBatchJob(jobId: string): Promise<BatchProgress> {
 		processedDays += stepSize;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
+		// Loggen er ikke pynt ved siden av `error`-kolonnen: et steg som feiler
+		// fanges HER og svarer 200 med feilen i kroppen, så `handleError` i
+		// hooks.server.ts ser den aldri og det finnes ingen `[500]`-linje å søke
+		// etter. Raden bærer dessuten bare meldingen — uten stacken sier den HVA
+		// som feilet, aldri HVOR. En «Received an instance of Array» fra
+		// SpareBank1-importen kostet fire døgn nettopp fordi begge manglet
+		// (2026-09-03). Prefikset er søkbart over GET /api/admin/logs.
+		console.error(
+			`[batch] ${payload.batchType} feilet: jobId=${jobId} dato=${nextDate} — ${message}`,
+			err instanceof Error ? err.stack : err
+		);
 		await db
 			.update(backgroundJobs)
 			.set({ status: 'failed', error: message, finishedAt: new Date(), updatedAt: new Date(), result: { ...result, processedDays, nextDate, stats: accStats } })
