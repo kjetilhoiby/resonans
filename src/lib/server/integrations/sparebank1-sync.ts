@@ -16,17 +16,13 @@ import {
 	fetchSparebank1Accounts,
 	fetchSparebank1HelloWorld,
 	fetchSparebank1Transactions,
-	refreshSparebank1AccessToken,
+	isUnauthorized,
 	type RateLimitSnapshot
 } from './sparebank1';
-
-type BankCredentials = {
-	access_token: string;
-	refresh_token?: string;
-	expires_at?: number;
-	token_type?: string;
-	scope?: string;
-};
+import {
+	getValidSparebank1AccessToken,
+	refreshAfterUnauthorized
+} from './sparebank1-token';
 
 function parseNumber(value: unknown): number | undefined {
 	if (typeof value === 'number' && !Number.isNaN(value)) return value;
@@ -39,14 +35,6 @@ function parseNumber(value: unknown): number | undefined {
 		return parseNumber(amountValue);
 	}
 	return undefined;
-}
-
-function decodeCredentials(encoded: string): BankCredentials {
-	return JSON.parse(atob(encoded));
-}
-
-function encodeCredentials(credentials: BankCredentials): string {
-	return btoa(JSON.stringify(credentials));
 }
 
 /**
@@ -416,50 +404,14 @@ export async function getSparebank1Sensor(userId: string) {
 	});
 }
 
-export async function getValidSparebank1AccessToken(sensor: any): Promise<string> {
-	if (!sensor.credentials) {
-		throw new Error('No stored credentials for SpareBank1 sensor');
-	}
-
-	const credentials = decodeCredentials(sensor.credentials);
-	const now = Math.floor(Date.now() / 1000);
-
-	if (credentials.expires_at && now >= credentials.expires_at - 60) {
-		if (!credentials.refresh_token) {
-			throw new Error('SpareBank1 access token is expired and refresh token is missing');
-		}
-
-		const refreshed = await refreshSparebank1AccessToken(credentials.refresh_token);
-
-		if (!refreshed.access_token) {
-			throw new Error(`Invalid refresh response from SpareBank1: ${JSON.stringify(refreshed)}`);
-		}
-
-		const refreshedCredentials: BankCredentials = {
-			access_token: refreshed.access_token,
-			refresh_token: refreshed.refresh_token || credentials.refresh_token,
-			expires_at: refreshed.expires_in ? now + refreshed.expires_in : credentials.expires_at,
-			token_type: refreshed.token_type || credentials.token_type,
-			scope: refreshed.scope || credentials.scope
-		};
-
-		await db
-			.update(sensors)
-			.set({
-				credentials: encodeCredentials(refreshedCredentials),
-				config: {
-					...(sensor.config as any),
-					expiresAt: refreshedCredentials.expires_at
-				},
-				updatedAt: new Date()
-			})
-			.where(eq(sensors.id, sensor.id));
-
-		return refreshedCredentials.access_token;
-	}
-
-	return credentials.access_token;
-}
+/**
+ * Token-håndteringen bor i `sparebank1-token.ts`. Re-eksportert her fordi seks
+ * kallsteder importerer den fra denne modulen — og fordi den gamle utgaven tok
+ * et sensor-OBJEKT og leste legitimasjonen derfra. Den nye tar bare `id` og
+ * leser alltid fra basen; se modul-kommentaren der for hvorfor det skillet er
+ * hele rettelsen.
+ */
+export { getValidSparebank1AccessToken };
 
 export async function syncAllSparebank1Data(
 	userId: string,
@@ -479,7 +431,7 @@ type Sparebank1SyncOptions = {
 	includeDebug?: boolean;
 	resetBeforeImport?: boolean;
 	skipExistingDedup?: boolean;
-	prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
+	prefetchedAccounts?: { accounts: any[]; accessToken?: string; rateLimitHeaders: RateLimitSnapshot };
 	/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
 	prefetchedTransactions?: Record<string, any[]>;
 };
@@ -510,17 +462,43 @@ async function runSparebank1Sync(
 		console.log('[sparebank1-sync] replace-mode wipe completed', { userId, sensorId: sensor.id, wiped });
 	}
 
-	let accessToken: string;
 	let accounts: any[];
 	const rateLimitHeaders: RateLimitSnapshot = {};
 
+	// Tokenet hentes LAT. Backfillen sender med et prefetchet sett der alle
+	// transaksjonene alt ligger i payloaden, og da gjøres det ingen API-kall i
+	// det hele tatt — å hente et token per chunk var ren rotasjonsslitasje på
+	// refresh-kjeden. Se sparebank1-token.ts.
+	let cachedToken: string | null = options.prefetchedAccounts?.accessToken ?? null;
+	const resolveToken = async (): Promise<string> =>
+		(cachedToken ??= await getValidSparebank1AccessToken(sensor));
+
+	/**
+	 * Kall SB1 med et gyldig token, og gjør ETT nytt forsøk etter en 401.
+	 *
+	 * Et token kan dø før `expires_at` sier — tilbakekalt, klokkeavvik, kortere
+	 * levetid enn oppgitt. Uten dette ble en slik 401 en hard feil som bare en
+	 * ny innlogging kunne rette. Retryen er bevisst ÉN: går den andre også i
+	 * 401, er det ikke tokenet som er problemet.
+	 */
+	const callWithAuth = async <T>(fn: (token: string) => Promise<T>): Promise<T> => {
+		const token = await resolveToken();
+		try {
+			return await fn(token);
+		} catch (err) {
+			if (!isUnauthorized(err)) throw err;
+			const refreshed = await refreshAfterUnauthorized(sensor, token);
+			cachedToken = refreshed;
+			return fn(refreshed);
+		}
+	};
+
 	if (options.prefetchedAccounts) {
-		({ accounts, accessToken } = options.prefetchedAccounts);
+		accounts = options.prefetchedAccounts.accounts;
 		Object.assign(rateLimitHeaders, options.prefetchedAccounts.rateLimitHeaders);
 	} else {
-		accessToken = await getValidSparebank1AccessToken(sensor);
-		await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
-		accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
+		await callWithAuth((token) => fetchSparebank1HelloWorld(token, rateLimitHeaders));
+		accounts = await callWithAuth((token) => fetchSparebank1Accounts(token, rateLimitHeaders));
 	}
 
 	const balanceEvents = accounts.map((account) => {
@@ -600,8 +578,11 @@ async function runSparebank1Sync(
 			const accountName = String(account.name || account.accountName || accountKey);
 			syncedAccountNames.push(accountName);
 			console.log(`[sparebank1-sync] syncing account ${accountName} (${accountKey})`);
-			const transactions = options.prefetchedTransactions?.[accountKey]
-				?? await fetchSparebank1Transactions(accessToken, accountKey, since, toDate, rateLimitHeaders);
+			const transactions =
+				options.prefetchedTransactions?.[accountKey] ??
+				(await callWithAuth((token) =>
+					fetchSparebank1Transactions(token, accountKey, since, toDate, rateLimitHeaders)
+				));
 			console.log(`[sparebank1-sync] fetched ${transactions.length} transactions for ${accountName}`);
 			results.push(transactions.map((transaction) => {
 				const timestamp =
