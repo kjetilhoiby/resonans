@@ -1085,11 +1085,37 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
 - **Beltetoppene på 200+ er ikke målinger.** De er ute som kandidater til
   `resolveMaxHr`. Tanaka 179 står, 188 fra Strava er et redigerbart felt, og et
   ekte tall krever én hard innsats med et belte som virker.
+- **«Hvilke år er pulsdata til å stole på» besvares av
+  `GET /api/helse/trening/pulstillit`**, ikke av å lese koden. Reglene i
+  `$lib/domain/health/hr-trust-periods.ts`, lasteren i
+  `$lib/server/health/hr-trust.ts`, flaten `HrTrustCard` i `/settings/sources`.
+  To lag med ULIKE nevnere: skalarene (snitt/maks fra `canonical_workouts` over
+  hele historikken, én lett spørring) og `?curves=true`, som henter et UTVALG på
+  fem spor per år. `curvesRejected` skal ALDRI legges til `suspect` — samme
+  lærdom som `hrRejected`.
+- **«Ingen funn» er ikke «ren», og det er lag 1s viktigste setning.** Skalarene
+  fanger bare det umulige; et belte låst på 200 gir et snitt rundt 190, som er
+  mistenkelig og fullt mulig. `describeHrTrust` avslutter alltid med forbeholdet,
+  og kortet rendrer domenelagets setninger framfor sine egne.
+- **Utvalget er et FUNN-verktøy.** Fem rene kurver beviser ingenting om året; to
+  fastlåste avgjør det. Det spres utover perioden — «de fem første» er alle i
+  januar, og et belte ødelagt i mai ville sett friskt ut hele året.
+  `MIN_CURVE_SAMPLE_FOR_VERDICT` (3) finnes fordi flertallsregelen ellers gjorde
+  «én forkastet av to» til et flertall og stemplet et år på én kurve — fanget av
+  en test.
+- **Merkelappen måler UTBREDELSE, ikke alvor** (`ren`/`enkeltavvik`/`utbredt`/
+  `for-lite-data`). Et enkeltfunn er et enkeltfunn uansett hvor stygt;
+  `curveReasons` sier hva slags. Bare `utbredt` får varselfarge på kortet.
+- **Sporene slås opp på id fra canonical evidence**, aldri med et `data_type`-
+  filter: canonical ER det dedupliserte laget, og et rått filter ville gitt tre
+  rader for samme tur og trippet vakten i `sensor-event-access.ts`. Beskriver
+  flere kilder samme økt, dømmes den BESTE kurven.
 - Kjent rest: `getEffortBaseline` leser bare siste 30 døgn og filtrerer
   `observedMaxes` mot `trimmedObservedMax` sitt eget spenn (100–230), ikke mot
-  `MAX_PLAUSIBLE_HR`; ingen diagnose per PERIODE (spørsmålet «hvilke år er
-  pulsdata til å stole på» hører før arkivimporten); dommen lagres ikke, så bare
-  etterfyllingsjobben ser den; Ekko har ingen tilsvarende vakt på egne live-økter.
+  `MAX_PLAUSIBLE_HR`; dommen per økt lagres ikke; periodediagnosen dekker én
+  sportsfamilie av gangen og lag 2 er et utvalg, ikke en full gjennomgang; ingen
+  kobling mellom diagnosen og importen; Ekko har ingen tilsvarende vakt på egne
+  live-økter.
 
 ### Sesongkurver: samme periode lagt oppå hverandre
 
