@@ -23,6 +23,7 @@
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
+	import type { SickCheckinFlowContext } from '$lib/flows/sick-checkin';
 	import { goto, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount, setContext } from 'svelte';
@@ -398,6 +399,43 @@
 		chatInputAutoFocus = false; egenfrekvensFlowOpen = true; void loadEgenfrekvensContext();
 	}
 	function openEgenfrekvensQuick(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensQuickFlowOpen = true; }
+
+	// ── Sykeinnsjekk ───────────────────────────────────────────────────────
+	let sickCheckinFlow = $state<SickCheckinFlowContext | null>(null);
+
+	/**
+	 * Henter konteksten flyten bygges av, og åpner den først når den er der.
+	 *
+	 * Symptomlista og forløpsdagen ER flytens innhold — åpner vi før de er lastet,
+	 * bygges flyten på tom kontekst og brukeren ser et steg uten symptomer i det
+	 * som nettopp spurte om dem.
+	 */
+	async function openSickCheckin() {
+		try {
+			const res = await fetch('/api/helse/syk');
+			if (!res.ok) { void goto('/tema/helse'); return; }
+			const data = await res.json();
+			const period = data.periods?.find((p: { id: string }) => p.id === data.activePeriodId);
+			// Uten en periode med kjent start kan vi ikke si «dag N» — da er kortet
+			// på Helse det ærlige stedet å havne.
+			if (!period) { void goto('/tema/helse'); return; }
+			sickCheckinFlow = {
+				dayOfPeriod: period.days,
+				todayKey: data.today,
+				symptoms: (data.symptoms ?? [])
+					.filter((sym: { ongoing: boolean }) => sym.ongoing)
+					.map((sym: { id: string; label: string; severity: string }) => ({
+						id: sym.id,
+						label: sym.label,
+						severity: sym.severity
+					})),
+				previousLevel: data.checkin?.previousLevel ?? null,
+				signals: data.checkin?.signals ?? []
+			};
+		} catch {
+			void goto('/tema/helse');
+		}
+	}
 	function openEgenfrekvensFull(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
 
 	// ── Livskompasset (ukentlig helgekompass) ──────────────────────────────
@@ -574,6 +612,7 @@
 				else if (intent.flowId === 'birthday_interview') void openBirthdayInterview();
 				else if (intent.flowId === 'livsintervju') void openLivsintervju();
 				else if (intent.flowId === 'retning_kvartal') void openRetningKvartal();
+				else if (intent.flowId === 'sick_checkin') void openSickCheckin();
 				else if (intent.flowId === 'egenfrekvens_quick') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensQuickFlowOpen = true; }
 				else if (intent.flowId === 'egenfrekvens_checkin') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
 				else console.warn('[home] unhandled flow intent', intent.flowId);
@@ -1141,6 +1180,7 @@
 		get egenfrekvensSlotGate() { return egenfrekvensSlotGate; }, set egenfrekvensSlotGate(v) { egenfrekvensSlotGate = v; },
 		get egenfrekvensSlotCheckin() { return egenfrekvensSlotCheckin; }, set egenfrekvensSlotCheckin(v) { egenfrekvensSlotCheckin = v; },
 		get egenfrekvensSlotChip() { return egenfrekvensSlotChip; }, set egenfrekvensSlotChip(v) { egenfrekvensSlotChip = v; },
+		get sickCheckinFlow() { return sickCheckinFlow; }, set sickCheckinFlow(v) { sickCheckinFlow = v; },
 		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; }, set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },
 		get egenfrekvensReflectionPrompt() { return egenfrekvensReflectionPrompt; }, set egenfrekvensReflectionPrompt(v) { egenfrekvensReflectionPrompt = v; },
 		get egenfrekvensDreamReasons() { return egenfrekvensDreamReasons; }, set egenfrekvensDreamReasons(v) { egenfrekvensDreamReasons = v; },

@@ -25,9 +25,16 @@
 		(settings.reminders?.enabled === false ? 0 : 1) +
 		(settings.inactivityAlerts?.enabled === false ? 0 : 1)
 	);
+	/**
+	 * NB: SpareBank1 svarer med `needsReauth` — «logg inn på nytt er det eneste
+	 * som hjelper» — mens `isExpired` hos de to andre fortsatt betyr at
+	 * ACCESS-tokenet er utløpt, altså normaltilstanden mellom to synker. Se
+	 * `$lib/domain/sensor-connection.ts`; Withings og Sheets er ikke konvertert.
+	 */
 	const hasSourceWarning = $derived(
 		Boolean(withingsStatus?.sensor?.isExpired) ||
-		Boolean(sparebank1Status?.sensor?.isExpired) ||
+		Boolean(sparebank1Status?.sensor?.needsReauth) ||
+		Boolean(sparebank1Status?.sensor?.lastError) ||
 		Boolean(googleSheetsStatus?.sensor?.isExpired)
 	);
 	const hasProfileWarning = $derived(!user?.name || !user?.email || !data.bodyProfileComplete);

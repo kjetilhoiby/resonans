@@ -1369,6 +1369,38 @@ Se samme changelog, fase 5. `$lib/domain/health/sick-checkin.ts`, cron
   `$lib/server/health/health-theme.ts`). To oppslag som begge gjetter på temanavnet
   kunne pekt ulike steder, og en chip som havner et annet sted enn varselet den
   svarer på er verre enn ingen chip.
+- **Chipen åpner INNSJEKKEN, ikke Helse-temaet.** `sick_checkin`-flyten
+  (`$lib/flows/sick-checkin.ts`, bygget av en fabrikk som egenfrekvens-slotten)
+  er tre steg: nivå-slider, symptomretninger, «noe nytt?». Pushen lenker
+  fortsatt til temaet — en varsel-URL må virke i en kald nettleser uten
+  flyt-tilstand.
+- **Vi spør om NIVÅET (1–5, «elendig → frisk»), og REGNER retningen.** Det var
+  et valg mellom to spørsmål: «verre eller bedre?» er det du vet når noen
+  spør, men det kan ikke plottes og feilen akkumulerer — tre «bedre» på rad fra
+  et lavpunkt er fortsatt et lavpunkt. Nivået er sammenlignbart gjennom hele
+  forløpet OG mellom forløp. Retningen er `nivå nå − nivå sist`, altså gratis:
+  ett spørsmål gir begge svar. Samme grep som egenfrekvens (`level` lagres,
+  `balance` utledes). `describeLevelChange` SIER retningen; den spør ikke.
+- **Sensortallene kommer ETTER slideren, aldri før.** Vises sovepuls og
+  hudtemperatur først, ANKRER de selvrapporten — og den er det eneste signalet
+  ingen sensor kan hente. Samme regel som `log_hunger`, der modellen ikke får
+  gjette at «dritsulten» er en 5. Et ankret nivå ødelegger kalibreringen, og da
+  er slideren verdiløs. Tallene står som SETNINGER fra domenelaget med kilde,
+  aldri rå verdier, og aldri med en dom.
+- **`level 5` avslutter perioden.** Sier du «frisk», er innsjekken stedet
+  forløpet ender — ikke et kort du må finne på Helse. Sluttdatoen er fortsatt
+  `endSickPeriod` sin beslutning (gårsdagen).
+- **Praten er en `secondaryAction`, ikke et fjerde steg** — nøyaktig som
+  egenfrekvens' «Fortsett i chat». «Kort innsjekk» er kravet: den som bare vil
+  svare er ferdig på tre trykk.
+- **`buildPrompts` gjelder ALLE stegtyper nå** (var chat-only fram til
+  september 2026). Et form- eller listesteg kunne ellers ikke si noe som
+  avhenger av svaret brukeren nettopp ga, og den utledede retningen krevde
+  nettopp det. `systemPrompt` leses fortsatt bare av chat-steg.
+- **`decision-list` nøkler beslutningene på punktets TEKST, ikke på id.**
+  Etikettene snapshotes i `symptomLabels` i samme rekkefølge som symptomene, og
+  mappes tilbake på indeks — to symptomer med samme ordlyd ville kollidert på
+  tekst alene.
 - Ingen medisinske råd: den spør og registrerer.
 
 ### Streaks: én motor, tre flater
@@ -2520,7 +2552,24 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
   Neon HTTP legger radtallet på `rowCount`, postgres-js på `count` — og
   `.rowCount` på en array er `undefined`, altså en stille 0. Les aldri noen av
   dem rått.
-- **Poolen lukkes ved SIGTERM.** En container redeployes ved hver push;
+- **Del ALDRI en postgres-js-klient mellom drizzle og rå SQL.** `drizzle(client)`
+  MUTERER klientens options: parsers og serializers for alle dato-/tidstyper og
+  numeric[] (OID 1231) settes til identiteten `(val) => val`, fordi drizzle
+  mapper selv. Rå `unsafe`-kall på samme klient krasjer da med «The "string"
+  argument must be of type string … Received an instance of Array» så snart en
+  parameter er en numeric-array eller en Date — det felte SB1-backfillen
+  3. september 2026, og Fase 1.2s konsolidering til én delt klient var årsaken
+  (dato-serializer-fixen derfra var død ved ankomst, overskrevet av
+  drizzle-init). `$lib/db` har derfor TO klienter: drizzle sin egen
+  (`DB_POOL_MAX`), og rå-klienten (fast 4) med ekte serializers men
+  identitetsparsers for datotypene — pgClient-lesere er skrevet mot rå strenger
+  (`toDate(job.run_at)`-mønsteret), og det skal de forbli. Splitten opphever
+  IKKE `toPgArrayLiteral`-regelen over: kallsteder sender fortsatt ferdige
+  literaler (det er den delen `inferType` gjetter feil på uansett klient);
+  splitten fjerner sabotasjen for alt annet — Date-skalarer, jsonb-objekter og
+  neste `unsafe`-kall noen skriver. Se
+  `docs/changelog/2026-09-03-drizzle-sabotererer-raa-sql.md`.
+- **Begge poolene lukkes ved SIGTERM.** En container redeployes ved hver push;
   `max_connections` er en telling som ikke tilgir.
 
 **Ting som er ulikt i containeren, og hvorfor:**
@@ -2600,6 +2649,25 @@ En 401 skal føre til refresh og ETT nytt forsøk (`Sparebank1HttpError` bærer
 statusen som et felt, ikke i meldingsteksten). Withings og Spond har samme
 struktur i gatene, men er ikke konvertert.
 
+**Et utløpt ACCESS-token er ikke en feil, og flaten må ikke si at det er det.**
+`needsReauthentication` (`$lib/domain/sensor-connection.ts`) er regelen: en
+innlogging hjelper BARE når refresh-tokenet mangler. Se
+`docs/changelog/2026-09-03-utlopt-access-token-er-ikke-en-feil.md`.
+
+- **`config.expiresAt` er access-tokenets utløp**, skrevet av innloggingen og av
+  hver refresh. SB1 synker hver 6. time og tokenet lever rundt en time, så det er
+  utløpt det MESTE av døgnet — helt normalt. Kortet regnet det som «Tilkoblingen
+  har utløpt» og ba om innlogging i fem av seks timer, målt 3. september 2026 med
+  en vellykket synk 1t 38m tidligere.
+- **Den grenen erstattet HELE kortet**, så «Synk nå», importvalgene og `lastError`
+  lå bak beskjeden. Den ene tilstanden som betyr noe var usynlig i nettopp den
+  situasjonen den skulle vises i.
+- **Et avvist refresh-token ser identisk ut med et friskt** — det ligger i raden
+  uansett. `lastError` er eneste signal, og knappen står nå VED SIDEN AV feilen,
+  ikke i stedet for kortet.
+- Withings og Google Sheets svarer fortsatt med `isExpired` i den gamle
+  betydningen; `/settings`-merket leser dem som før. Ikke konvertert.
+
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 
@@ -2637,7 +2705,9 @@ fire jobber bor nå i cron-registeret (`$lib/server/cron-jobs.ts`) og spores av
 `withCronTracking` som alt annet.
 
 **Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
-`DB_POOL_MAX` (default 10, ignoreres av neon-http).
+`DB_POOL_MAX` (default 10, ignoreres av neon-http — styrer DRIZZLE-poolen;
+rå-klienten har fast 4 i tillegg, se «Del ALDRI en postgres-js-klient …» under
+Deployment).
 
 **Container:** `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER` og
 `SKIP_DRIZZLE_PUSH` settes i `Dockerfile`/entrypointet, ikke per miljø.

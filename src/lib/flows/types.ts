@@ -30,7 +30,8 @@ export type FlowId =
 	| 'quick_win'
 	| 'inbox_note'
 	| 'hodedump'
-	| 'jobb_focus_timer';
+	| 'jobb_focus_timer'
+	| 'sick_checkin';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'self' | 'jobb';
 
@@ -44,7 +45,17 @@ export interface FlowStep {
 	prompt?: string;
 	/** For chat: system prompt sent with every message in this step */
 	systemPrompt?: string;
-	/** For chat: build prompt and systemPrompt dynamically from accumulated flowData */
+	/**
+	 * Bygg `prompt` og `systemPrompt` dynamisk fra akkumulert `flowData`.
+	 *
+	 * Gjelder ALLE stegtyper. Var chat-only fram til september 2026, og da kunne
+	 * et form- eller listesteg ikke si noe som avhenger av svaret brukeren nettopp
+	 * ga — sykeinnsjekken trengte nettopp det: retningen («ett hakk opp fra i
+	 * går») er REGNET av nivået fra forrige steg, ikke spurt om.
+	 *
+	 * `systemPrompt` leses fortsatt bare av chat-steg; det er `prompt` som ble
+	 * generell.
+	 */
 	buildPrompts?: (data: Record<string, any>) => { prompt?: string; systemPrompt?: string };
 	/** For chat: send `prompt` automatically on mount (no user input needed to trigger first response) */
 	autoSend?: boolean;

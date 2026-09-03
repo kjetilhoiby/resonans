@@ -221,3 +221,76 @@ export function decideSickChip(input: SickChipInput): SickChipDecision | null {
 		pending
 	};
 }
+
+/* ── Nivået: dårlig → frisk ──────────────────────────────────────────────── */
+
+/**
+ * **Vi spør om NIVÅET, og regner ut retningen.** Det var et valg mellom to
+ * spørsmål, og de er ikke likeverdige:
+ *
+ *  - «Verre eller bedre?» er det du VET når noen spør. Men det kan ikke
+ *    plottes, og feilen akkumulerer: tre «bedre» på rad fra et lavpunkt er
+ *    fortsatt et lavpunkt. Om fjorten dager kan ingen si hvor du lå.
+ *  - «Hvor dårlig er du?» er sammenlignbart gjennom hele forløpet OG mellom
+ *    forløp («forrige influensa lå jeg på 2 i fire dager»).
+ *
+ * Og retningen er ikke tapt — den er `nivå nå` minus `nivå sist`, altså gratis.
+ * Ett spørsmål gir begge svar. Samme grep som egenfrekvens, der `level` lagres
+ * og `balance` utledes.
+ *
+ * Retningen SIES derfor, den spørres ikke om: «ett hakk opp fra i går» er
+ * regnet, ikke påstått.
+ */
+export const SICK_LEVEL_LABELS: Record<number, string> = {
+	1: 'Elendig',
+	2: 'Dårlig',
+	3: 'Midt på treet',
+	4: 'Nesten frisk',
+	5: 'Frisk'
+};
+
+export const SICK_LEVEL_MIN = 1;
+export const SICK_LEVEL_MAX = 5;
+
+/**
+ * Nivået der friskmelding tilbys.
+ *
+ * Sier du «frisk», er det unaturlig å måtte finne kortet på Helse for å avslutte
+ * perioden. Innsjekken er stedet forløpet faktisk ender.
+ */
+export const SICK_LEVEL_RECOVERED = 5;
+
+export interface SickLevelReading {
+	/** Dagsnøkkel for målingen. */
+	day: string;
+	level: number;
+}
+
+/**
+ * «Ett hakk opp fra i går», «Uendret siden i går», «To hakk ned siden 1. sep».
+ *
+ * Null når det ikke finnes noe å sammenligne med — første innsjekk skal ikke
+ * få en setning som later som den har en historie.
+ */
+export function describeLevelChange(
+	current: number,
+	previous: SickLevelReading | null,
+	todayKey: string
+): string | null {
+	if (!previous) return null;
+
+	const delta = current - previous.level;
+	const days = dayNumber(todayKey) - dayNumber(previous.day);
+	// «i går» bare når det faktisk var i går; ellers navngis dagen.
+	const since = days === 1 ? 'fra i går' : days === 0 ? 'siden i dag' : `siden ${shortDay(previous.day)}`;
+
+	if (delta === 0) return `Uendret ${since}`;
+	const steps = Math.abs(delta);
+	const word = steps === 1 ? 'Ett hakk' : `${steps} hakk`;
+	return `${word} ${delta > 0 ? 'opp' : 'ned'} ${since}`;
+}
+
+function shortDay(dayKey: string): string {
+	const months = ['jan', 'feb', 'mar', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'des'];
+	return `${Number(dayKey.slice(8))}. ${months[Number(dayKey.slice(5, 7)) - 1]}`;
+}

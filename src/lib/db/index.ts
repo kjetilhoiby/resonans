@@ -6,7 +6,6 @@ import { env } from '$env/dynamic/private';
 import { describeDriverChoice, resolveDbDriver } from './driver-choice';
 import { affectedRows, rowsOf } from './result-shape';
 import * as schema from './schema';
-import { toPgArrayLiteral } from './pg-array';
 
 const connectionString = env.DATABASE_URL;
 
@@ -31,52 +30,60 @@ const useNeonHttp = driverChoice.driver === 'neon-http';
 export const dbDriver = driverChoice.driver;
 
 /**
- * Poolstørrelse. Neon HTTP har ingen pool (hver spørring er en HTTPS-request), og
- * `pgClient` er der bare et sidespor for rå SQL — derfor 1. En langtlevende
- * Node-prosess mot en vanlig Postgres skal derimot ha en ekte pool.
+ * Poolstørrelse for DRIZZLE-klienten. Neon HTTP har ingen pool (hver spørring
+ * er en HTTPS-request). En langtlevende Node-prosess mot en vanlig Postgres
+ * skal derimot ha en ekte pool.
  */
 const POOL_MAX = useNeonHttp ? 1 : Number(env.DB_POOL_MAX ?? '10');
 
 /**
- * Den ENE postgres-js-klienten.
- *
- * Fram til flyttingen var det to: `db`-poolen (`max: 5`) og en lat `pgClient`
- * (`max: 1`), som mot en vanlig Postgres ga to uavhengige pooler mot samme base.
- * Nå deler `db` og `pgClient` samme klient når driveren er `postgres`; i
- * neon-http-modus er `db` HTTP-basert og denne finnes bare for rå SQL.
- *
- * Fortsatt lat: en serverless cold-start skal ikke åpne TCP før noe faktisk
- * bruker klienten.
+ * Poolstørrelse for RÅ-klienten: dispatcherens reserverte lederlås-tilkobling
+ * (1, permanent) + jobbkøens claims + SB1-batchskrivinger. Bevisst liten og
+ * fast — DB_POOL_MAX styrer drizzle-poolen, og totalen (10 + 4) skal leses
+ * som ett budsjett mot Postgres' max_connections.
  */
-let _pgClient: ReturnType<typeof postgres> | undefined;
+const RAW_POOL_MAX = 4;
+
+/**
+ * TO postgres-js-klienter, og det er en LÆRDOM, ikke sløsing.
+ *
+ * Fase 1.2 av plattformporten konsoliderte til ÉN delt klient («to uavhengige
+ * pooler mot samme base» så ut som feilen). Men `drizzle(client)` MUTERER
+ * klientens options: parsers OG serializers for alle dato-/tidstyper
+ * (1082–1231, deriblant numeric[] = 1231) og jsonb-serializers settes til
+ * identiteten `(val) => val`, fordi drizzle mapper verdier selv. For all rå
+ * SQL på samme klient betyr det at numeric-arrays og Date-parametre når
+ * wire-koden useriali­sert og kaster «The "string" argument must be of type
+ * string … Received an instance of Array» — det felte SB1-backfillen
+ * 3. september 2026, og dato-serializer-fixen fra Fase 1.2 var død ved
+ * ankomst (overskrevet av drizzle-init to linjer senere).
+ *
+ * Derfor: drizzle får sin egen klient å transparentisere, og rå-klienten
+ * beholder postgres-js' ekte serializers. Del ALDRI en postgres-js-klient
+ * mellom drizzle og rå SQL.
+ *
+ * Rå-klienten er fortsatt lat: en serverless cold-start skal ikke åpne TCP
+ * før noe faktisk bruker den.
+ */
+let _rawClient: ReturnType<typeof postgres> | undefined;
 function getPgClient(): ReturnType<typeof postgres> {
-	if (!_pgClient) {
-		_pgClient = postgres(connectionString!, { max: POOL_MAX });
-		// drizzle setter transparente serializers for dato-typene (den forventer at
-		// ORM-laget alt har konvertert Date → string). Rå sql``-templates sender
-		// Date-objekter og ville krasjet i Buffer.byteLength — serialiser dem selv.
-		//
-		// Serializeren MÅ returnere en streng, aldri verdien urørt. postgres-js
-		// sender resultatet rett i `bytes.js` sin `str()`, som gjør
-		// `Buffer.byteLength(x)` — og en Array der kaster «The "string" argument
-		// must be of type string … Received an instance of Array». Det er ikke et
-		// teoretisk tilfelle: `inferType` gir en ARRAY skalar-OID-en til første
-		// element, så `[Date, …]` havner nettopp her. En pass-through gjorde da en
-		// feil parameter til en krasj uten spor av hvilken spørring det gjaldt.
-		const dateSerializer = (value: unknown): string => {
-			if (value instanceof Date) return value.toISOString();
-			if (Array.isArray(value)) {
-				return toPgArrayLiteral(value.map((v) => (v instanceof Date ? v.toISOString() : v)));
-			}
-			return String(value);
-		};
-		for (const type of ['1184', '1114', '1082']) {
-			_pgClient.options.serializers[type as unknown as number] = dateSerializer as never;
+	if (!_rawClient) {
+		_rawClient = postgres(connectionString!, { max: RAW_POOL_MAX });
+		// LESE-atferden skal være uendret fra den delte klienten: alle
+		// pgClient-lesere er skrevet mot rå STRENGER for dato-/tidskolonner
+		// (drizzles identitetsparsers), og `toDate(job.run_at)`-mønsteret
+		// forventer det. Identitetsparsers beholdes derfor for de samme
+		// OID-ene drizzle rører — det er SERIALIZERS (skriving) som skal være
+		// postgres-js' egne, for det var dem drizzle brakk.
+		const identityParser = (val: string) => val;
+		for (const type of [1082, 1083, 1114, 1115, 1182, 1184, 1185, 1231]) {
+			_rawClient.options.parsers[type] = identityParser as never;
 		}
 		registerShutdownHook();
 	}
-	return _pgClient;
+	return _rawClient;
 }
+
 
 /**
  * Lukk poolen ved SIGTERM.
@@ -97,8 +104,11 @@ function registerShutdownHook() {
 	for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 		process.once(signal, () => {
 			console.log(`[db] ${signal} — lukker tilkoblingene.`);
-			void _pgClient?.end({ timeout: 5 }).catch((error) => {
-				console.warn('[db] feil ved lukking av poolen:', error);
+			void _rawClient?.end({ timeout: 5 }).catch((error) => {
+				console.warn('[db] feil ved lukking av rå-poolen:', error);
+			});
+			void drizzleClient?.end({ timeout: 5 }).catch((error) => {
+				console.warn('[db] feil ved lukking av drizzle-poolen:', error);
 			});
 		});
 	}
@@ -107,8 +117,14 @@ function registerShutdownHook() {
 // Neon HTTP-driver: bruker HTTPS fetch i stedet for TCP, ingen cold-start overhead
 const neonSql = useNeonHttp ? neon(connectionString) : null;
 
+/** Drizzle-klienten — se doc-kommentaren ved `getPgClient` for hvorfor den er separat. */
+const drizzleClient = useNeonHttp ? null : postgres(connectionString, { max: POOL_MAX });
+// Drizzle-poolen finnes fra modullast (rå-poolen er lat), så SIGTERM-kroken må
+// ikke vente på at noen bruker rå SQL.
+if (drizzleClient) registerShutdownHook();
+
 export const db = (
-	useNeonHttp ? drizzle(neonSql!, { schema }) : drizzlePostgres(getPgClient(), { schema })
+	useNeonHttp ? drizzle(neonSql!, { schema }) : drizzlePostgres(drizzleClient!, { schema })
 ) as ReturnType<typeof drizzle<typeof schema>>;
 
 /**

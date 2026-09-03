@@ -246,14 +246,21 @@
 	<h2>SpareBank 1</h2>
 	{#if loadingSparebank1}
 		<p>Laster...</p>
-	{:else if sparebank1Status?.connected && sparebank1Status.sensor?.isExpired}
-		<p class="warn">Tilkoblingen har utløpt</p>
+	{:else if sparebank1Status?.connected && sparebank1Status.sensor?.needsReauth}
+		<p class="warn">Tilkoblingen må fornyes</p>
 		<p class="meta">Sist synket: {sparebank1Status.sensor?.lastSync ? new Date(sparebank1Status.sensor.lastSync).toLocaleString('nb-NO') : 'ukjent'}</p>
 		<div class="row"><Button href="/api/sensors/sparebank1/connect">Re-autentiser SpareBank 1</Button></div>
 	{:else if sparebank1Status?.connected}
 		<p class="ok">Tilkoblet</p>
 		{#if sparebank1Status.sensor?.lastError}
+			<!--
+				Siste synk feilet, men refresh-tokenet finnes. Vi kan ikke se om
+				SB1 har avvist det uten å prøve, så knappen står ved siden av
+				feilen framfor å erstatte kortet: hjelper ikke neste synk, er en
+				innlogging veien videre.
+			-->
 			<p class="err">Siste synk feilet: {sparebank1Status.sensor.lastError}</p>
+			<div class="row"><Button variant="secondary" href="/api/sensors/sparebank1/connect">Re-autentiser SpareBank 1</Button></div>
 		{/if}
 		<div class="field">
 			<p class="field-title">Importperiode</p>
