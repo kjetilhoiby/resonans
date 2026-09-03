@@ -2496,7 +2496,24 @@ Neon HTTP-driveren, og feilen kom først ved første spørring.
   Neon HTTP legger radtallet på `rowCount`, postgres-js på `count` — og
   `.rowCount` på en array er `undefined`, altså en stille 0. Les aldri noen av
   dem rått.
-- **Poolen lukkes ved SIGTERM.** En container redeployes ved hver push;
+- **Del ALDRI en postgres-js-klient mellom drizzle og rå SQL.** `drizzle(client)`
+  MUTERER klientens options: parsers og serializers for alle dato-/tidstyper og
+  numeric[] (OID 1231) settes til identiteten `(val) => val`, fordi drizzle
+  mapper selv. Rå `unsafe`-kall på samme klient krasjer da med «The "string"
+  argument must be of type string … Received an instance of Array» så snart en
+  parameter er en numeric-array eller en Date — det felte SB1-backfillen
+  3. september 2026, og Fase 1.2s konsolidering til én delt klient var årsaken
+  (dato-serializer-fixen derfra var død ved ankomst, overskrevet av
+  drizzle-init). `$lib/db` har derfor TO klienter: drizzle sin egen
+  (`DB_POOL_MAX`), og rå-klienten (fast 4) med ekte serializers men
+  identitetsparsers for datotypene — pgClient-lesere er skrevet mot rå strenger
+  (`toDate(job.run_at)`-mønsteret), og det skal de forbli. Splitten opphever
+  IKKE `toPgArrayLiteral`-regelen over: kallsteder sender fortsatt ferdige
+  literaler (det er den delen `inferType` gjetter feil på uansett klient);
+  splitten fjerner sabotasjen for alt annet — Date-skalarer, jsonb-objekter og
+  neste `unsafe`-kall noen skriver. Se
+  `docs/changelog/2026-09-03-drizzle-sabotererer-raa-sql.md`.
+- **Begge poolene lukkes ved SIGTERM.** En container redeployes ved hver push;
   `max_connections` er en telling som ikke tilgir.
 
 **Ting som er ulikt i containeren, og hvorfor:**
@@ -2632,7 +2649,9 @@ fire jobber bor nå i cron-registeret (`$lib/server/cron-jobs.ts`) og spores av
 `withCronTracking` som alt annet.
 
 **Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
-`DB_POOL_MAX` (default 10, ignoreres av neon-http).
+`DB_POOL_MAX` (default 10, ignoreres av neon-http — styrer DRIZZLE-poolen;
+rå-klienten har fast 4 i tillegg, se «Del ALDRI en postgres-js-klient …» under
+Deployment).
 
 **Container:** `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER` og
 `SKIP_DRIZZLE_PUSH` settes i `Dockerfile`/entrypointet, ikke per miljø.
