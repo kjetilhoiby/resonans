@@ -9,6 +9,7 @@
 		TeslaSourceCard,
 		EmailRulesCard,
 		EffortReprojectCard,
+		WorkoutReanalyzeCard,
 		EconomyDiagnosticsCard,
 		ReservationCleanupCard,
 		BookedDuplicateCleanupCard
@@ -111,6 +112,7 @@
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
 		<EffortReprojectCard />
+		<WorkoutReanalyzeCard />
 		<!--
 			Bankdiagnosen står rett under bank-kortet i ånden, men til sist blant kortene:
 			endepunktet er admin-gated, så for alle andre ville den bare vært en knapp som gir

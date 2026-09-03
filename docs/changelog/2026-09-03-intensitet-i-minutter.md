@@ -122,10 +122,33 @@ bakgrunnen. `intensitet` og `kvalitetsminutt` er lagt til i
 - `weekly-intensity.test.ts`: 19 tester (tomme uker som nuller, ukeankeret over
   søndagskvelder, aktive uker som nevner).
 - `npm test`: 4226 tester passerer. `npm run check`: 0 feil.
-- **Reanalyse kreves** for at historikken skal ha feltet:
-  `POST /api/sensors/workouts/reanalyze`. Til den har kjørt er
-  `intensity.coverage.withSplit` 0, og flaten sier det med ord framfor å vise
-  tomme bjelker.
+- **Reanalyse kreves** for at historikken skal ha feltet. Knappen er
+  `WorkoutReanalyzeCard` i `/settings/sources`; endepunktet er
+  `POST /api/sensors/workouts/reanalyze?missing=intensitySplit`. Til den har
+  kjørt er `intensity.coverage.withSplit` 0, og flaten sier det med ord framfor
+  å vise tomme bjelker.
+
+### Fase 5: Etterfyllingen måtte kunne startes fra en telefon
+
+Endepunktet kunne ikke fylle feltet i det hele tatt: standardutvalget er «rader
+uten `analyticsComputedAt`», og hele historikken har det satt fra den gangen
+`intensity_split` ikke fantes. Jobben svarte «analyzed: 0» og så fullført ut —
+stum feil, og nøyaktig den `EffortReprojectCard` finnes for å avsløre for
+makspulsen.
+
+- `?missing=<felt>` velger rader der NETTOPP det feltet er null.
+  `MISSING_FIELDS` er lista over hva som kan etterfylles for seg; et ukjent navn
+  gir 400 framfor en stille full reanalyse, som er et helt annet og mye tyngre
+  utvalg enn det man ba om.
+- `?limit` (40) + `?before=<ISO>` pagineres synkende på `startTime`. **Markør,
+  ikke sidetall:** en økt uten trackPoints får aldri feltet, så en løkke som
+  kjørte til «ingen mangler» ville løpt i ring over de samme radene.
+  `nextBefore` er null når batchen var kortere enn limit.
+- `WorkoutReanalyzeCard` i `/settings/sources` kaller endepunktet om igjen med
+  markøren og teller ferdige økter per runde. Løkka går i klienten fordi en
+  serverside-løkke ville truffet svartidsgrensa, og fordi en jobb som tar tid på
+  mobilnett må vise framdrift — en knapp som bare spinner ser ut som at den
+  henger. `MAX_ROUNDS` (60) er et tak mot en bug i markøren, ikke mot dataene.
 
 ## Kjent rest
 

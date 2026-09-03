@@ -977,8 +977,25 @@ Se `docs/changelog/2026-09-03-intensitet-i-minutter.md`. Blokkmålingen i
   sonefordelingen. Men stale baseline TELLES MED her, i motsetning til der: å
   droppe en økt lager et hull i en bjelke, og et hull leses som en hvileuke —
   verre enn minutter bøttet mot bånd et par slag unna. Tallet rapporteres.
-- **Feltet krever reanalyse** (`POST /api/sensors/workouts/reanalyze`).
-  `coverage.withSplit` 0 betyr «ikke analysert ennå», ikke «ikke trent», og
+- **Feltet krever reanalyse, og STANDARDUTVALGET fyller det ikke.**
+  `POST /api/sensors/workouts/reanalyze` hoppet over alt med
+  `analyticsComputedAt` satt — altså hele historikken, som fikk stempelet den
+  gangen feltet ikke fantes. Jobben svarte «analyzed: 0» og så fullført ut. Nye
+  felt etterfylles med **`?missing=<felt>`** (navnet må stå i `MISSING_FIELDS`,
+  ukjent navn gir 400), som velger rader der nettopp det feltet er null.
+- **Vinduet er en MARKØR, ikke et sidetall.** `?limit` (40) med `?before=<ISO>`
+  synkende på `startTime`. En teller kan ikke terminere: en økt uten trackPoints
+  får aldri feltet, så «kjør til ingen mangler» ville løpt i evig løkke over de
+  samme radene. `nextBefore` er null når batchen var kortere enn limit.
+  Grensa finnes uansett fordi trackPoints er tunge — ni år med løping i ett kall
+  ville lastet hvert spor samtidig.
+- **Knappen bor i `/settings/sources`** (`WorkoutReanalyzeCard`), ved siden av
+  `EffortReprojectCard`. Løkka over markøren går i KLIENTEN: en serverside-løkke
+  ville truffet svartidsgrensa, og en halvferdig jobb uten framdriftstall er
+  verre enn en som teller. Kortet finnes fordi jobben trengs *etter* at flaten er
+  ute, og den som ser den tomme grafen sitter på telefonen — et endepunkt som
+  bare nås med en POST fra en maskin er da ikke tilgjengelig.
+- `coverage.withSplit` 0 betyr «ikke analysert ennå», ikke «ikke trent», og
   flaten må si det — en tom bjelke ser ellers ut som en uke uten trening.
 - **`session-character.ts` er beholdt, men nedgradert til bakgrunn.** Bøttene
   svarer fortsatt på «hvor mange av øktene var rolige». Bygg ingen nye dommer på
