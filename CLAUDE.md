@@ -2492,6 +2492,25 @@ En 401 skal føre til refresh og ETT nytt forsøk (`Sparebank1HttpError` bærer
 statusen som et felt, ikke i meldingsteksten). Withings og Spond har samme
 struktur i gatene, men er ikke konvertert.
 
+**Et utløpt ACCESS-token er ikke en feil, og flaten må ikke si at det er det.**
+`needsReauthentication` (`$lib/domain/sensor-connection.ts`) er regelen: en
+innlogging hjelper BARE når refresh-tokenet mangler. Se
+`docs/changelog/2026-09-03-utlopt-access-token-er-ikke-en-feil.md`.
+
+- **`config.expiresAt` er access-tokenets utløp**, skrevet av innloggingen og av
+  hver refresh. SB1 synker hver 6. time og tokenet lever rundt en time, så det er
+  utløpt det MESTE av døgnet — helt normalt. Kortet regnet det som «Tilkoblingen
+  har utløpt» og ba om innlogging i fem av seks timer, målt 3. september 2026 med
+  en vellykket synk 1t 38m tidligere.
+- **Den grenen erstattet HELE kortet**, så «Synk nå», importvalgene og `lastError`
+  lå bak beskjeden. Den ene tilstanden som betyr noe var usynlig i nettopp den
+  situasjonen den skulle vises i.
+- **Et avvist refresh-token ser identisk ut med et friskt** — det ligger i raden
+  uansett. `lastError` er eneste signal, og knappen står nå VED SIDEN AV feilen,
+  ikke i stedet for kortet.
+- Withings og Google Sheets svarer fortsatt med `isExpired` i den gamle
+  betydningen; `/settings`-merket leser dem som før. Ikke konvertert.
+
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 
