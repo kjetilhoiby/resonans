@@ -5,6 +5,7 @@ import { canonicalWorkouts, sensorEvents } from '$lib/db/schema';
 import { and, count, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { analyzeWorkout, type TrackPoint } from '$lib/server/workouts/workout-analytics';
 import { getEffortBaseline } from '$lib/server/services/effort-service';
+import { describeHrRejection, type HrRejectionReason } from '$lib/domain/health/hr-artefacts';
 
 /**
  * POST /api/sensors/workouts/reanalyze
@@ -32,6 +33,14 @@ import { getEffortBaseline } from '$lib/server/services/effort-service';
  *
  * Grensa finnes uansett fordi trackPoints er tunge: ett kall over ni år med
  * løping ville lastet hvert spor i minnet samtidig.
+ *
+ * ## Tre utfall, pluss én observasjon
+ *
+ * `filled`/`analyzedWithoutField`/`skipped` deler kandidatene og summerer.
+ * `hrRejected` gjør det IKKE: den teller øktene der sporet hadde puls vi ikke
+ * tror på (`hr-artefacts.ts`), og de skrives likevel — distanserekorder og
+ * terrengjustering er upåvirket av at pulssensoren løy. En slik økt kan derfor
+ * stå i `filled` og i `hrRejected` samtidig, og flaten må si det.
  */
 
 /** Felt som kan etterfylles for seg. Nye felt hører HER, ikke i en query-string. */
@@ -105,7 +114,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			filled: 0,
 			analyzedWithoutField: 0,
 			analyzed: 0,
-			skipped: 0
+			skipped: 0,
+			hrRejected: 0
 		});
 	}
 
@@ -134,6 +144,7 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			analyzedWithoutField: 0,
 			analyzed: 0,
 			skipped: 0,
+			hrRejected: 0,
 			candidates: 0,
 			outstanding: total,
 			nextBefore: null,
@@ -161,6 +172,7 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			analyzedWithoutField: 0,
 			analyzed: 0,
 			skipped: candidates.length,
+			hrRejected: 0,
 			candidates: candidates.length,
 			outstanding: total,
 			nextBefore,
@@ -213,6 +225,17 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	let filled = 0;
 	let analyzedWithoutField = 0;
 	let skipped = 0;
+	/**
+	 * Økter der sporet HAR puls, men vi ikke tror på den.
+	 *
+	 * Eget tall fordi handlingen er en annen: en for kort pulskurve kan bli lang
+	 * nok neste gang kilden reviderer økta, mens et brystbelte som var ødelagt den
+	 * dagen aldri blir bedre. Tallet er en OBSERVASJON, ikke en fjerde bøtte —
+	 * distanserekorder og terrengjustering regnes av sporet og skrives likevel, så
+	 * en slik økt kan godt stå i `filled`.
+	 */
+	let hrRejected = 0;
+	const hrRejectionReasons: Partial<Record<HrRejectionReason, number>> = {};
 	const now = new Date();
 	for (const c of candidates) {
 		const a = bestPerCanonical.get(c.id);
@@ -234,6 +257,18 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			.where(eq(canonicalWorkouts.id, c.id));
 		// Fikk raden feltet som ble etterspurt? Uten `missing` er spørsmålet
 		// «ble noe skrevet», og da er hver skriving et treff.
+		if (a.hrDiagnosis && !a.hrDiagnosis.usable && a.hrDiagnosis.reasons.length > 0) {
+			hrRejected += 1;
+			for (const reason of a.hrDiagnosis.reasons) {
+				hrRejectionReasons[reason] = (hrRejectionReasons[reason] ?? 0) + 1;
+			}
+			// Én linje per forkastet kurve, søkbar over /api/admin/logs?grep=[puls].
+			// Et stille avslag ser ut som «økta hadde ingen puls», og det er en annen
+			// sak enn «sensoren var ødelagt den dagen».
+			console.warn(
+				`[puls] ${c.startTime?.toISOString() ?? 'ukjent dato'} ${describeHrRejection(a.hrDiagnosis)}`
+			);
+		}
 		if (!missing || a[missing] != null) filled += 1;
 		else analyzedWithoutField += 1;
 	}
@@ -243,6 +278,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 		filled,
 		analyzedWithoutField,
 		skipped,
+		hrRejected,
+		hrRejectionReasons,
 		// Skrivinger totalt. Beholdt fordi den svarer på «rørte jobben noe», men
 		// `filled` er tallet en flate skal vise.
 		analyzed: filled + analyzedWithoutField,

@@ -12,6 +12,7 @@ import {
 	type RestingHrCandidate,
 	type RestingHrSource
 } from '$lib/domain/health/heart-rate-baseline';
+import { isCredibleAverageHr } from '$lib/domain/health/hr-artefacts';
 // Modellens tall bor i domenelaget fordi effort-budsjettet (rent, uten DB) må
 // prise en planlagt økt likt med det denne fila gir en faktisk økt.
 import {
@@ -89,7 +90,13 @@ export function computeWorkoutEffort(
 	const family = classifyEffortFamily(input.sportType, input.sportFamily);
 
 	const avgHr = typeof input.avgHeartRate === 'number' && input.avgHeartRate > 0 ? input.avgHeartRate : null;
-	const hasUsableHr = avgHr !== null && baseline.maxHr > baseline.restHr;
+	// `isCredibleAverageHr` skiller «lav puls under styrke» (håndtert under, av
+	// TRIMP < 1) fra «sensoren løy». Et brystbelte som mister kontakten låser seg
+	// HØYT, og et snitt på 230 klemmes ellers til full reserve: 4,36 TRIMP per
+	// minutt gjør 45 minutter til ~196 der svaret er ~45. Klampen gjør søppelet
+	// plausibelt, og det er derfor vakta må stå FØR den.
+	const hasUsableHr =
+		avgHr !== null && baseline.maxHr > baseline.restHr && isCredibleAverageHr(avgHr, baseline);
 
 	if (hasUsableHr) {
 		const hrrRaw = (avgHr - baseline.restHr) / (baseline.maxHr - baseline.restHr);

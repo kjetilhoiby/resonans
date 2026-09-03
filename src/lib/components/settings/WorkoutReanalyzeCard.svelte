@@ -62,6 +62,15 @@
 	let withoutField = $state(0);
 	/** Økter uten spor i det hele tatt. */
 	let skipped = $state(0);
+	/**
+	 * Økter der sporet HAR puls, men kurven ble forkastet.
+	 *
+	 * NB: dette er en OBSERVASJON, ikke en del av oppdelingen over. En slik økt
+	 * kan godt stå i `filled` — distanserekorder og terrengjustering regnes av
+	 * sporet og er upåvirket av at pulssensoren løy. Linja står derfor for seg,
+	 * så ingen prøver å summere den inn.
+	 */
+	let hrRejected = $state(0);
 	let rounds = $state(0);
 	let done = $state(false);
 	let maxHrSource = $state<string | null>(null);
@@ -100,6 +109,7 @@
 		filled = 0;
 		withoutField = 0;
 		skipped = 0;
+		hrRejected = 0;
 		rounds = 0;
 		try {
 			let before: string | null = null;
@@ -120,6 +130,7 @@
 				filled += data.filled ?? 0;
 				withoutField += data.analyzedWithoutField ?? 0;
 				skipped += data.skipped ?? 0;
+				hrRejected += data.hrRejected ?? 0;
 				rounds = round + 1;
 				outstanding = data.outstanding ?? outstanding;
 				if (data.baseline?.maxHrSource) maxHrSource = data.baseline.maxHrSource;
@@ -199,6 +210,17 @@
 				</li>
 			{/if}
 		</ul>
+		{#if hrRejected > 0}
+			<!-- Utenfor lista med vilje: dette er ikke en fjerde bøtte som summerer
+			     med de tre, men en observasjon om øktene som ble behandlet. -->
+			<p class="note">
+				{hrRejected}
+				{hrRejected === 1 ? 'økt hadde' : 'økter hadde'} puls i sporet som ble forkastet —
+				fastlåst kurve, ufysiologiske hopp eller verdier utenfor det mulige. Sone og
+				tidsdeling er utelatt for dem; distanse og terreng er beholdt. Et ødelagt
+				pulsbelte blir ikke bedre av en ny runde.
+			</p>
+		{/if}
 		{#if rounds >= MAX_ROUNDS}
 			<p class="warn">
 				Stoppet på {MAX_ROUNDS} runder. Trykk igjen for å fortsette der jobben sto.
@@ -266,6 +288,13 @@
 		font-size: 0.8rem;
 		line-height: 1.5;
 		color: var(--text-secondary, #aaa);
+	}
+
+	.note {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.5;
 	}
 
 	.warn {

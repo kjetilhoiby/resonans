@@ -1033,6 +1033,64 @@ Se `docs/changelog/2026-09-03-intensitet-i-minutter.md`. Blokkmålingen i
   `/api/apps/workouts/[id]/analysis`), og ingen sammenligning mot brukerens egne
   beste uker finnes.
 
+### En pulskurve vi ikke tror på er verre enn ingen
+
+Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
+`$lib/domain/health/hr-artefacts.ts`.
+
+- **Et ødelagt brystbelte hopper og låser seg.** Målt på brukerens gamle belte:
+  130 → 230 på ett sekund, og fast der oppe resten av økta. Fram til september
+  2026 godtok `computeHrZoneDistribution` og `computeIntensitySplit` enhver
+  `hr > 0` — ingen himling, ingen sjekk på endringsrate — så den økta kom ut som
+  **100 % Z5** og som **hele økta i kvalitetsminutter**, altså null rolig og null
+  grått.
+- **Effort er verre, fordi KLAMPEN skjuler feilen.** `Math.min(1, hrr)` gjør et
+  snitt på 230 til full reserve: `trimpPerMinute(1)` ≈ 4,36 per minutt gjør 45
+  minutter til ~196 der svaret er ~45. Et tall fire ganger for høyt ser ut som en
+  hard økt, ikke som et avvik. Vakta må derfor stå FØR klampen —
+  `isCredibleAverageHr` i `hasUsableHr`, siden effort leser `avgHeartRate` fra
+  hendelsen og ikke sporet.
+- **Mengde, ikke ett punkt.** Samme lærdom som tidsdelingen: én stray 220 i et
+  spor på 2000 punkter er 0,05 % og skal ikke koste økta pulskurven, et belte låst
+  i 40 minutter er ~90 % og skal. `MAX_ARTEFACT_SHARE` er 2 %.
+- **Vi forkaster, vi reparerer ikke.** «Ingen brukbar puls» er en tilstand
+  systemet alt håndterer riktig — sone og tidsdeling blir `undefined`, effort
+  faller til MET. Å kaste enkeltpunkter og beholde resten ville skjult at
+  sensoren var ødelagt; å gjette en verdi ville gjort en gjetning til en måling.
+  **Distanse og terreng beholdes** — de er upåvirket av at pulssensoren løy.
+- **`pinned` krever et HOPP å støtte seg på, og det er en beslutning.** Fem
+  minutter innenfor ett slag er ikke fysiologi, men en enhet som glatter og
+  rapporterer heltall kan levere en flat serie likevel, og prisen for en falsk
+  positiv er hele øktas pulskurve. Feilen ble fanget av testene: tidsdelingens
+  egne tester bruker konstant puls (`at(130, 600)`), og en fastlåst-detektor uten
+  korroborering felte dem. Kjent pris: et belte som glir fast UNDER taket, uten
+  hopp, slipper gjennom.
+- **Vakta står INNI begge HR-funksjonene**, ikke bare i `analyzeWorkout`. Alle
+  produksjonskallere går i dag gjennom `analyzeWorkout`, men en vakt som kan gås
+  rundt blir gått rundt — samme begrunnelse som testen over rå sensorlesing.
+- **`MAX_PLAUSIBLE_HR` ER `MAX_HR_MAX`.** «Over dette er tallet ikke en puls» er
+  samme påstand enten den gjelder en oppgitt makspuls eller en måling i et spor.
+  Terskelen på 3 slag/s er derimot bevisst romsligere enn `hr-recovery.ts` sine
+  2: der koster en falsk positiv én måling, her hele øktas pulskurve.
+- **`hrRejected` fra reanalyse-endepunktet SUMMERER IKKE** med
+  `filled`/`analyzedWithoutField`/`skipped`. En forkastet kurve skrives likevel,
+  så samme økt kan stå i `filled` og i `hrRejected` — kortet sier det i klartekst.
+  Én `[puls]`-linje per forkastet kurve i loggen
+  (`GET /api/admin/logs?grep=[puls]`).
+- **Dette er en landmine under arkivimporten, ikke en levende feil.** De øktene
+  ligger i Strava, ikke hos oss. Å hente inn iSmoothRun-filene med puls ville
+  lagt en hel periode av rene kvalitetsminutter inn i nøyaktig den grafen som
+  skal svare på om de rolige øktene er rolige — symptomet blir identisk med
+  «72 % hard», men denne gangen er terskelen uskyldig og dataene lyver.
+- **Beltetoppene på 200+ er ikke målinger.** De er ute som kandidater til
+  `resolveMaxHr`. Tanaka 179 står, 188 fra Strava er et redigerbart felt, og et
+  ekte tall krever én hard innsats med et belte som virker.
+- Kjent rest: `getEffortBaseline` leser bare siste 30 døgn og filtrerer
+  `observedMaxes` mot `trimmedObservedMax` sitt eget spenn (100–230), ikke mot
+  `MAX_PLAUSIBLE_HR`; ingen diagnose per PERIODE (spørsmålet «hvilke år er
+  pulsdata til å stole på» hører før arkivimporten); dommen lagres ikke, så bare
+  etterfyllingsjobben ser den; Ekko har ingen tilsvarende vakt på egne live-økter.
+
 ### Sesongkurver: samme periode lagt oppå hverandre
 
 Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i

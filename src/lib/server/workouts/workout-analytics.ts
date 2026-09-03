@@ -15,6 +15,11 @@ import {
 	zoneLowerBpm,
 	type HeartRateBaselineInput
 } from '$lib/domain/health/hr-zones';
+import {
+	diagnoseHrSeries,
+	type HrSample,
+	type HrSeriesDiagnosis
+} from '$lib/domain/health/hr-artefacts';
 
 export interface TrackPoint {
 	lat?: number;
@@ -56,6 +61,15 @@ export interface WorkoutAnalyticsResult {
 	gapSecPerKm?: number;
 	hrZoneDistribution?: HrZoneDistribution;
 	intensitySplit?: IntensitySplit;
+	/**
+	 * Dommen over pulskurven, uansett utfall.
+	 *
+	 * Alltid med, også når kurven var brukbar: en etterfyllingsjobb skal kunne si
+	 * hvor mange kurver den forkastet og hvorfor. Lagres ikke — den beskriver
+	 * sporet slik det ble lest nå, og et lagret felt ville blitt en påstand om en
+	 * analyse ingen kan etterprøve.
+	 */
+	hrDiagnosis?: HrSeriesDiagnosis;
 }
 
 /**
@@ -154,6 +168,32 @@ function buildCumulative(points: TrackPoint[]): Cumulative[] {
 		});
 	}
 	return cum;
+}
+
+/**
+ * Pulsserien ut av det kumulative sporet, til artefaktvakta.
+ *
+ * Punkter uten puls faller ut her framfor å bli 0: en 0 ville sett ut som et
+ * fall på hundre slag og trippet hoppdetektoren på hvert BLE-drop.
+ */
+function hrSamplesFrom(cum: Cumulative[]): HrSample[] {
+	const samples: HrSample[] = [];
+	for (const c of cum) {
+		if (typeof c.hr === 'number' && c.hr > 0) samples.push({ tSec: c.tSec, hr: c.hr });
+	}
+	return samples;
+}
+
+/**
+ * Er pulskurven i dette sporet brukbar?
+ *
+ * Vakta står INNI hver av de to HR-funksjonene, ikke bare i `analyzeWorkout`.
+ * Alle produksjonskallere går i dag gjennom `analyzeWorkout`, men en vakt som
+ * kan gås rundt er en vakt som blir gått rundt — samme begrunnelse som testen
+ * over rå sensorlesing: problemet er etterlevelse, ikke design.
+ */
+function hasCredibleHrCurve(cum: Cumulative[]): boolean {
+	return diagnoseHrSeries(hrSamplesFrom(cum)).usable;
 }
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -284,6 +324,8 @@ export function computeHrZoneDistribution(
 
 	const cum = buildCumulative(points);
 	if (cum.length < 2) return undefined;
+	// Et belte som har mistet kontakten gir 100 % Z5 uten å se ut som en feil.
+	if (!hasCredibleHrCurve(cum)) return undefined;
 
 	let totalTime = 0;
 	const seconds: [number, number, number, number, number] = [0, 0, 0, 0, 0];
@@ -331,7 +373,11 @@ export function analyzeWorkout(
 	const gapSecPerKm = computeGapSecPerKm(points);
 	const hrZoneDistribution = hrInput ? computeHrZoneDistribution(points, hrInput) : undefined;
 	const intensitySplit = hrInput ? computeIntensitySplit(points, hrInput) : undefined;
-	return { bestEfforts, gapSecPerKm, hrZoneDistribution, intensitySplit };
+	// Distanse og terreng er upåvirket av en ødelagt pulssensor, så de beholdes.
+	// Diagnosen følger med uansett utfall, så en jobb kan skille «ingen puls i
+	// sporet» (tom `reasons`) fra «puls vi ikke tror på».
+	const hrDiagnosis = diagnoseHrSeries(hrSamplesFrom(buildCumulative(points)));
+	return { bestEfforts, gapSecPerKm, hrZoneDistribution, intensitySplit, hrDiagnosis };
 }
 
 /**
@@ -372,6 +418,9 @@ export function computeIntensitySplit(
 
 	const cum = buildCumulative(points);
 	if (cum.length < 2) return undefined;
+	// En fastlåst kurve blir ellers ÉN sammenhengende blokk over Z4s gulv, altså
+	// hele økta som kvalitet — motsatt vei av bugen tidsdelingen ble bygget for.
+	if (!hasCredibleHrCurve(cum)) return undefined;
 
 	const easyCeiling = zoneLowerBpm(3, baseline) - 1; // Z2s tak
 	const qualityFloor = zoneLowerBpm(4, baseline);
