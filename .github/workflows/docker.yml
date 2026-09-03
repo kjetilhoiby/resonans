@@ -112,6 +112,53 @@ jobs:
         run: |
           SHA="${{ github.sha }}"
 
+          # ── En glipp i nettverket er ikke en deployfeil, men kostet like ─────
+          # mye. 3. september 2026 hang PATCH-kallet under i FEM minutter og
+          # døde på «curl: (28) SSL connection timeout». Steget hadde hverken
+          # tidsgrense eller nytt forsøk, så en Coolify som var borte et
+          # øyeblikk kostet hele deployet — og prod sto igjen på forrige image
+          # med et rødt kryss som eneste spor.
+          #
+          # Taket er 30 s per forsøk. Coolify svarer normalt på under ett
+          # sekund, så alt over det er en maskin som ikke er der, og ventingen
+          # kjøper ingenting. Verste tilfelle er nå ~100 s mot fem minutter.
+          #
+          # `--retry` dekker nettopp timeout (curl regner den som forbigående),
+          # og NB: den gjelder også 5xx. På `POST /deploy` betyr det at et
+          # svar som gikk tapt underveis kan starte deploy nummer to — det er
+          # ufarlig her, siden begge peker på SAMME tagg og altså samme image;
+          # utfallet er en rullende oppdatering til det man alt ba om.
+          # `--retry-all-errors` er bevisst IKKE med: den ville også gjentatt
+          # feil som ikke er forbigående.
+          coolify() {
+            local metode=$1 sti=$2 kropp=${3:-}
+            local -a args=(
+              -sS -o /tmp/coolify-svar.json -w '%{http_code}'
+              --connect-timeout 10 --max-time 30
+              --retry 2 --retry-delay 5 --retry-connrefused
+              -X "$metode"
+              -H "authorization: Bearer $COOLIFY_TOKEN"
+              -H "accept: application/json"
+            )
+            if [ -n "$kropp" ]; then
+              args+=( -H "content-type: application/json" -d "$kropp" )
+            fi
+            curl "${args[@]}" "$COOLIFY_URL$sti"
+          }
+
+          # Sier hva som IKKE skjedde, og hvordan man kommer videre. Uten de to
+          # setningene måtte den som leser en rød kjøring selv finne ut at
+          # imaget alt ligger i registeret og at bare dette steget gjenstår.
+          uten_kontakt() {
+            echo "::error::Nådde ikke Coolify. Imaget er bygget og pushet, men taggen ble IKKE flyttet — prod kjører fortsatt forrige image."
+            echo 'Ingen halvveis tilstand: taggen flyttes før deployet bes om, så et'
+            echo 'kall som ikke nådde fram har ikke endret noe.'
+            echo 'Kjør workflowen på nytt når Coolify svarer (Actions → Bygg'
+            echo 'container-image → Run workflow). Imaget finnes alt, så bygget blir'
+            echo 'cache-treff og dette steget er i praksis det eneste som gjentas:'
+            echo "  ghcr.io/${{ github.repository }}:$SHA"
+          }
+
           # ── Flytt taggen FØRST. Uten dette steget er hele deployet et ────────
           # skuespill, og det er ikke en hypotese: 31. august 2026 bygget
           # workflowen `:afac9be`, ba Coolify deploye, fikk en gyldig
@@ -128,13 +175,11 @@ jobs:
           # token som ikke kan flytte taggen gir et deploy som ser vellykket ut
           # og kjører gammel kode, og det er en dårligere handel.
           echo "Setter image-tag til $SHA …"
-          kode=$(curl -sS -o /tmp/patch.json -w '%{http_code}' -X PATCH \
-            -H "authorization: Bearer $COOLIFY_TOKEN" \
-            -H "content-type: application/json" \
-            -H "accept: application/json" \
-            -d "{\"docker_registry_image_tag\":\"$SHA\"}" \
-            "$COOLIFY_URL/api/v1/applications/$COOLIFY_APP_UUID")
-          cat /tmp/patch.json; echo
+          if ! kode=$(coolify PATCH "/api/v1/applications/$COOLIFY_APP_UUID" "{\"docker_registry_image_tag\":\"$SHA\"}"); then
+            uten_kontakt
+            exit 1
+          fi
+          cat /tmp/coolify-svar.json; echo
           case "$kode" in
             200|201|204) echo "Tag satt." ;;
             403)
@@ -149,10 +194,16 @@ jobs:
           esac
 
           echo "Deployer $SHA til Coolify …"
-          svar=$(curl -sS -X POST \
-            -H "authorization: Bearer $COOLIFY_TOKEN" \
-            -H "accept: application/json" \
-            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_APP_UUID")
+          if ! coolify POST "/api/v1/deploy?uuid=$COOLIFY_APP_UUID" >/dev/null; then
+            # Taggen ER flyttet nå, så neste kjøring — eller et manuelt deploy i
+            # Coolify — plukker opp riktig image. Det er verdt å si, ellers ser
+            # dette ut som samme tilstand som feilen over.
+            echo '::error::Taggen er satt, men deploy-kallet nådde ikke Coolify.'
+            echo 'Prod kjører fortsatt forrige image. Et deploy fra Coolify-UI-et'
+            echo 'vil nå plukke opp riktig tagg, siden PATCH-en gikk gjennom.'
+            exit 1
+          fi
+          svar=$(cat /tmp/coolify-svar.json)
           echo "$svar"
           # Coolify svarer 200 med en feilmelding i kroppen på flere feil, så en
           # exit-kode alene er ikke nok til å si at deployet startet.
@@ -160,7 +211,6 @@ jobs:
             echo "::error::Coolify startet ikke et deploy. Svar over."
             exit 1
           }
-
       - name: Si fra at deployet ikke er koblet opp ennå
         if: ${{ env.COOLIFY_URL == '' || env.COOLIFY_TOKEN == '' || env.COOLIFY_APP_UUID == '' }}
         run: |

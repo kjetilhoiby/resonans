@@ -2542,6 +2542,18 @@ fjernes der.
   til `deploy`**. Minste privilegium tilsier deploy alene, men et token som ikke
   kan flytte taggen kjøper en dårligere handel — et deploy som ser vellykket ut
   og kjører gammel kode.
+- **Deploy-kallene har tidsgrense og nytt forsøk, og en Coolify som henger tar
+  ikke ned prod.** 3. september 2026 hang PATCH-en i FEM minutter og døde på
+  «curl: (28) SSL connection timeout» — imaget lå i registeret, men taggen ble
+  aldri flyttet. Nå: 30 s per forsøk, `--retry 2`, altså ~100 s i verste fall.
+  **Rekkefølgen gir en nyttig garanti: siden taggen flyttes FØR deployet bes om,
+  finnes ingen halvveis tilstand** — et kall som ikke nådde fram har ikke endret
+  noe, og prod står trygt på forrige image. Feilmeldingen sier det, og navngir
+  taggen som alt ligger klar, siden en ny kjøring da blir cache-treff.
+  `--retry` gjelder også 5xx, så et tapt svar på `POST /deploy` kan starte deploy
+  nummer to; ufarlig, fordi begge peker på samme tagg. Merk også at Coolifys
+  kontrollplan kan være helt nede mens appen svarer som normalt — containerne
+  lever videre uten den. Sjekk `/api/health` før du tror prod er berørt.
 
 **Det finnes ÉN driver: postgres-js.** `neon-http`-stien er fjernet (september
 2026, se `docs/changelog/2026-09-03-neon-stien-ut.md`) — `DB_DRIVER` er borte, og
