@@ -1001,6 +1001,14 @@ Se `docs/changelog/2026-09-03-intensitet-i-minutter.md`. Blokkmålingen i
   samme radene. `nextBefore` er null når batchen var kortere enn limit.
   Grensa finnes uansett fordi trackPoints er tunge — ni år med løping i ett kall
   ville lastet hvert spor samtidig.
+- **En SKRIVING er ikke et TREFF.** `analyzed` telte skrivinger, og en økt med
+  spor men uten brukbar pulskurve får `bestEfforts` og GAP mens feltet du ba om
+  blir stående null. Kortet sa derfor «63 analysert … 484 uten brukbare data» og
+  «495 står igjen» — tall som ikke summerer, målt 3. september 2026, der elleve
+  økter var av det slaget. Endepunktet returnerer nå `filled`,
+  `analyzedWithoutField` og `skipped`, og flaten lister dem hver for seg: en
+  sekkepost på «uten data» kan ikke summeres mot det som gjenstår, og da ser
+  tallene gale ut selv når de er riktige.
 - **Knappen bor i `/settings/sources`** (`WorkoutReanalyzeCard`), ved siden av
   `EffortReprojectCard`. Løkka over markøren går i KLIENTEN: en serverside-løkke
   ville truffet svartidsgrensa, og en halvferdig jobb uten framdriftstall er
