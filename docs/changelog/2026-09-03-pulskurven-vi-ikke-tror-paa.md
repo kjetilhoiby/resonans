@@ -62,6 +62,22 @@ men `avgHeartRate` fra hendelsen, så en vakt over trackPoints treffer den ikke.
 grunn og målt spenn — søkbar over `GET /api/admin/logs?grep=[puls]`.
 `WorkoutReanalyzeCard` viser tallet som en egen setning under oppdelingen.
 
+### Fase 4: Diagnose per periode
+
+Vakta dømmer én kurve av gangen, og det er riktig når en økt analyseres. Men
+spørsmålet FØR en arkivimport er et annet: *hvilke år* kan vi ta inn puls fra?
+
+`$lib/domain/health/hr-trust-periods.ts` svarer i to lag med **ulike nevnere**:
+
+- **Lag 1** leser `avgHeartRate` og `maxHeartRate` fra `canonical_workouts` over
+  hele historikken, i én lett spørring uten å røre et spor. Den finner bare det
+  umulige (`isCredibleAverageHr`, og makspuls over `MAX_PLAUSIBLE_HR`).
+- **Lag 2** (`?curves=true`) henter et UTVALG på fem spor per år, spredt utover
+  året, og kjører dem gjennom `diagnoseHrSeries`.
+
+Lasteren i `$lib/server/health/hr-trust.ts`, endepunktet
+`GET /api/helse/trening/pulstillit`, flaten `HrTrustCard` i `/settings/sources`.
+
 ## Beslutninger
 
 **Mengde, ikke ett punkt.** Samme lærdom som `IntensitySplit`: en binær dom over
@@ -106,6 +122,46 @@ distanserekorder og terrengjustering er upåvirket av at pulssensoren løy. Samm
 lærdom som telle-fiksen tidligere samme dag — en sekkepost man prøver å summere
 gjør riktige tall til gale.
 
+**«Ingen funn» er ikke «ren», og den setningen bærer hele lag 1.**
+Skalarene fanger bare det fysisk umulige. Et belte som låser seg på 200 gir et
+snitt rundt 190 — mistenkelig, og fullt mulig med en makspuls vi bare har
+anslått. `describeHrTrust` avslutter derfor ALLTID med forbeholdet, og kortet
+rendrer domenelagets setninger framfor sine egne: flatens ord skal ikke kunne gå
+fra sannheten om tallet.
+
+**Utvalget er et FUNN-verktøy, ikke en måling.** Fem rene kurver beviser ingenting
+om året; to fastlåste avgjør det. Derfor er `curvesRejected` aldri lagt til
+`suspect` — to ulike nevnere, samme lærdom som `hrRejected` i fase 3 — og
+feltnavnene sier at det er et utvalg.
+
+**Utvalget spres utover perioden.** «De fem første» er alle i januar, og et belte
+som ble ødelagt i mai ville sett friskt ut hele året. Indeksene plukkes jevnt
+gjennom periodens økter.
+
+**Merkelappen måler UTBREDELSE, ikke alvor**, og gradene er fire — `ren`,
+`enkeltavvik`, `utbredt`, `for-lite-data`. Et enkeltfunn er et enkeltfunn uansett
+hvor stygt det er; `curveReasons` sier hva slags, og `pinned` er synlig der.
+
+**`MIN_CURVE_SAMPLE_FOR_VERDICT` (3) kom av en feilende test.** Flertallsregelen
+var `curvesRejected * 2 >= curvesSampled`, og med to hentede kurver var én
+forkastet et «flertall» — et helt år stemplet på én kurve. Samme feil enhver
+terskel gjør ved n = 2, og `MIN_SESSIONS_FOR_VERDICT` finnes for nøyaktig samme
+grunn på skalarsiden.
+
+**Året leses av Oslo-DATOSTRENGEN**, ikke av `getFullYear()`: serverens lokale tid
+er UTC i drift, så en økt 1. januar kl. 00:30 Oslo ville havnet i året før. Samme
+grunn som `mondayOf` i `weekly-intensity.ts`.
+
+**Sporene slås opp på id fra canonical evidence**, aldri med et filter på
+`data_type`. Canonical ER det dedupliserte laget: et rått typefilter ville gitt
+tre rader for samme tur og samtidig trippet vakten i `sensor-event-access.ts`.
+Og når flere kilder beskriver samme økt, dømmes den BESTE kurven — en tom GPX fra
+Dropbox ved siden av en god Ekko-opplasting skal ikke gjøre året mistenkelig.
+
+**Kortet er rent lesende, og bare «ikke til å stole på» får varselfarge.** Et
+enkeltavvik er noe å se på, ikke noe galt — samme regel som at bare
+akutt/kronisk får rødt.
+
 **Ingen tom påstand om makspuls.** Beltetoppene på 200+ er ikke målinger, så de
 er ute som kandidater til `resolveMaxHr`. Tanaka 179 står, 188 fra Strava er et
 redigerbart felt, og et ekte tall krever én hard innsats med et belte som virker.
@@ -120,7 +176,12 @@ redigerbart felt, og et ekte tall krever én hard innsats med et belte som virke
 - 4 nye tester i `intensity-split.test.ts` på integrasjonen: det ødelagte beltet
   gir hverken tidsdeling eller sonefordeling, men beholder `bestEfforts` og
   rapporterer grunnen — og en ekte økt beholder begge.
-- `npm test`: 4265 tester i 298 filer, alle grønne (fra 4247/297).
+- 15 tester i `hr-trust-periods.test.ts`: Oslo-året over UTC-årsskiftet, unionen
+  framfor summen når en økt feiler på både snitt og maks, nevneren som bare
+  teller økter med puls, minstekravet før en merkelapp settes, en forkastet kurve
+  som løfter et ellers rent år, flertallskravet på utvalget, og at forbeholdet om
+  blindsonen alltid står i teksten.
+- `npm test`: 4286 tester i 299 filer, alle grønne (fra 4247/297 før prosjektet).
 - `npm run check`: 0 feil, 0 advarsler.
 
 ## Kjent rest
@@ -130,9 +191,11 @@ redigerbart felt, og et ekte tall krever én hard innsats med et belte som virke
   Riktig for hvilepuls, som er en tilstand; galt for makspuls, som er et tak som
   faller med omtrent ett slag i året. Ikke rørt her, siden `resolveMaxHr`
   behandler observerte topper som siste utvei uansett.
-- **Ingen diagnose per PERIODE.** Vakta dømmer én økt av gangen. Spørsmålet
-  «hvilke år er pulsdata til å stole på» krever en egen lesing, og den hører før
-  arkivimporten.
-- Dommen lagres ikke, så en flate kan ikke si «denne øktas puls ble forkastet» —
-  bare etterfyllingsjobben ser det.
+- Dommen per ØKT lagres ikke, så en flate kan ikke si «denne øktas puls ble
+  forkastet» — bare etterfyllingsjobben og periodediagnosen ser det.
+- **Periodediagnosen dekker én sportsfamilie av gangen** (`?sport=`, standard
+  `running`), og lag 2 er et utvalg — ikke en full gjennomgang. En full
+  kurvegjennomgang av ni år trenger markøren fra reanalyse-jobben.
+- Diagnosen er ikke koblet til importen: den sier hvilke år som er tvilsomme, men
+  ingenting hindrer at de importeres likevel.
 - Ekko har ingen tilsvarende vakt på egne live-økter.

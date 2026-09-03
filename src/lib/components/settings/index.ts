@@ -7,6 +7,7 @@ export { default as TeslaSourceCard } from './TeslaSourceCard.svelte';
 export { default as EmailRulesCard } from './EmailRulesCard.svelte';
 export { default as EffortReprojectCard } from './EffortReprojectCard.svelte';
 export { default as WorkoutReanalyzeCard } from './WorkoutReanalyzeCard.svelte';
+export { default as HrTrustCard } from './HrTrustCard.svelte';
 export { default as EconomyDiagnosticsCard } from './EconomyDiagnosticsCard.svelte';
 export { default as ReservationCleanupCard } from './ReservationCleanupCard.svelte';
 export { default as BookedDuplicateCleanupCard } from './BookedDuplicateCleanupCard.svelte';
