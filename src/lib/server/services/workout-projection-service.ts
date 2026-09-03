@@ -264,6 +264,7 @@ export class WorkoutProjectionService {
 				bestEfforts: analytics?.bestEfforts ?? null,
 				gapSecPerKm: analytics?.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
 				hrZoneDistribution: analytics?.hrZoneDistribution ?? null,
+				intensitySplit: analytics?.intensitySplit ?? null,
 				analyticsComputedAt: analytics ? new Date() : null,
 				updatedAt: new Date()
 			};

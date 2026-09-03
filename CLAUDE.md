@@ -922,6 +922,73 @@ Se `docs/changelog/2026-08-31-slepende-volum-og-sammensetning.md`. Motorene i
   Helse-temaet. `navigateForWidget` svarte på et annet spørsmål enn det man har
   foran widgeten.
 
+### Intensitet måles i minutter, ikke i bøtter
+
+Se `docs/changelog/2026-09-03-intensitet-i-minutter.md`. Blokkmålingen i
+`computeIntensitySplit` (`$lib/server/workouts/workout-analytics.ts`), uka i
+`$lib/domain/health/weekly-intensity.ts`, bjelken i
+`components/domain/health/WeeklyIntensityBars.svelte`.
+
+- **En binær etikett gjør et grensetilfelle katastrofalt, en mengde gjør det
+  ikke.** `session-character.ts` ga «72 % hard» over nitti dager for en bruker
+  hvis økter lå på puls 120–136 — fire oppsamlede minutter over Z4 er fire
+  bakker på en kupert rolig tur. Feilen var ikke tallet, det var formen: den
+  samme økta ble «rolig» eller «hard» av om en bakke varte 55 eller 65 sekunder.
+  Nå måles tre MENGDER i sekunder — rolig (≤ Z2s tak), kvalitet (sammenhengende
+  blokker ≥ 60 s over Z4s gulv) og grått som RESIDUAL — og
+  `MIN_QUALITY_BLOCK_SECONDS` kan derfor være romslig: to kvalitetsminutter fra
+  en bakke er sant og harmløst.
+- **Grået regnes som residual, aldri summert for seg.** Da kan ikke de tre
+  delene komme til å ikke summere til det målte.
+- **`hrZoneDistribution` kan IKKE svare på dette.** Andeler per sone har mistet
+  blokkstrukturen i det de er regnet: fire minutter over Z4 ser identisk ut om de
+  kom som fire bakker eller som 4×1 minutt. Blokkstruktur måles mot punktene, og
+  `MAX_SAMPLE_GAP_SECONDS` (30) hindrer at et BLE-drop skjøter to korte drag til
+  én lang blokk.
+- **To uavhengige spørsmål, aldri ett forholdstall.** «Er de rolige øktene
+  rolige?» og «får jeg nok kvalitet?» kan svares ja på det ene og nei på det
+  andre — 80 % grått og 20 % grått er også 80/20. Alt er i minutter, aldri
+  normalisert, og bjelkens LENGDE er ukas volum.
+- **Ingen terskel for grået, og det er en beslutning.** Brukerens eget gulv skal
+  leses av hens egne beste uker, ikke settes av oss. `describeWeeklyIntensity`
+  sier tallene uten dom under `MIN_WEEKS_FOR_PATTERN` (4), og sier alltid at
+  grået aldri blir null — oppvarming, nedjogg og bakker havner der. En graf som
+  anklager permanent er en graf man slutter å åpne.
+- **`mondayOf` regner på Oslo-DATOSTRENGEN**, og gjenbruker med vilje ikke
+  `startOfWeekMondayMs` (`workout-nugget-rules.ts`): den bruker `getDay`, altså
+  serverens lokale tid, som er UTC i drift — en søndagskveldsøkt ville havnet i
+  feil uke.
+- **`qualityPerActiveWeek` deler på AKTIVE uker.** To hvileuker ville ellers
+  halvert snittet. Motsatt av effort-ankeret, der en hvileuke teller som 0 fordi
+  den er informasjon om normalen din; her er nevneren et snitt over uker det ble
+  trent.
+- **Bjelken er divergerende, med grået PÅ senterlinja** — halvparten på hver
+  side, rolig til venstre, kvalitet til høyre. «Bli kvitt dritten i midten» leses
+  da rett av bildet. Felles skala for begge armer, men nullpunktet ligger på
+  `leftMax / (leftMax + rightMax)`: rolige minutter er typisk ti ganger
+  kvalitetsminuttene, og en visuelt sentrert akse ville kastet bort halve flaten
+  mens en egen skala per arm ville løyet om forholdet.
+- **Blått (#3987e5) mot oransje (#d95926), ikke mot grønt.** Blått mot grønt ble
+  foreslått og målt: tritan-ΔE 4,0 mot 32,4 — palettens egen «blått mot aqua
+  avvises, begge er kalde», tallfestet. Grået er `#6a6a66` (3,5:1 mot flaten),
+  kromafritt og dermed dempet, men synlig: en regel om å bli kvitt et felt
+  forutsetter at feltet kan ses.
+- **`intensity_split` er LAGRET og bærer sin egen baseline**, som
+  sonefordelingen. Men stale baseline TELLES MED her, i motsetning til der: å
+  droppe en økt lager et hull i en bjelke, og et hull leses som en hvileuke —
+  verre enn minutter bøttet mot bånd et par slag unna. Tallet rapporteres.
+- **Feltet krever reanalyse** (`POST /api/sensors/workouts/reanalyze`).
+  `coverage.withSplit` 0 betyr «ikke analysert ennå», ikke «ikke trent», og
+  flaten må si det — en tom bjelke ser ellers ut som en uke uten trening.
+- **`session-character.ts` er beholdt, men nedgradert til bakgrunn.** Bøttene
+  svarer fortsatt på «hvor mange av øktene var rolige». Bygg ingen nye dommer på
+  dem.
+- Bjelken følger IKKE 7/30/90-velgeren — den er alltid tolv uker, og
+  undertittelen sier det.
+- Kjent rest: Ekko leser ikke `intensitySplit` ennå (det ligger i
+  `/api/apps/workouts/[id]/analysis`), og ingen sammenligning mot brukerens egne
+  beste uker finnes.
+
 ### Sesongkurver: samme periode lagt oppå hverandre
 
 Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i

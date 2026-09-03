@@ -77,7 +77,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	const scoreOf = (a: ReturnType<typeof analyzeWorkout>) =>
 		(a.bestEfforts ? Object.keys(a.bestEfforts).length : 0) +
 		(a.gapSecPerKm != null ? 1 : 0) +
-		(a.hrZoneDistribution ? 1 : 0);
+		(a.hrZoneDistribution ? 1 : 0) +
+		(a.intensitySplit ? 1 : 0);
 
 	for (const row of rows) {
 		const pts = Array.isArray(row.trackPoints) ? row.trackPoints : null;
@@ -107,6 +108,7 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 				bestEfforts: a.bestEfforts ?? null,
 				gapSecPerKm: a.gapSecPerKm != null ? String(a.gapSecPerKm) : null,
 				hrZoneDistribution: a.hrZoneDistribution ?? null,
+				intensitySplit: a.intensitySplit ?? null,
 				analyticsComputedAt: now,
 				updatedAt: now
 			})

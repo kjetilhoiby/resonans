@@ -69,6 +69,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				}
 			])
 		),
+		intensity: result.intensity,
 		quality: Object.fromEntries(
 			Object.entries(result.quality).map(([days, view]) => [
 				days,

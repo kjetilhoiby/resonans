@@ -288,6 +288,10 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    //
    // Samme runde, august 2026: «polaris», «sonefordeling», «sonetrening», «rolig
    // trening», «i rute» og «volum» for de slepende tallene og sammensetningen.
+   // September 2026: «intensitet» og «kvalitetsminutt» for minuttmålingen.
+   // Fortsatt UTE med vilje: «midten» og «grå» — «midten av uka» og «en grå
+   // hverdag» er ikke treningsspørsmål, og et ord som ruter feil er dyrere enn
+   // et som mangler (setningen finnes i konteksten uansett).
    // «trener jeg for mye i midten?» inneholder ingen av de gamle ordene.
    //
    // To bevisste utelatelser: «midten» alene («møt meg på midten») og «grå»
@@ -330,7 +334,7 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // scroller/scrolling/scrollet; «mobilbruk»/«telefonbruk» er ordene folk bruker når
    // de IKKE sier skjermtid.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk|polaris|sonefordeling|sonetrening|\brolig trening|\bi rute\b|volum/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk|polaris|sonefordeling|sonetrening|\brolig trening|\bi rute\b|volum|intensitet|kvalitetsminutt/.test(
          text
       )
    )

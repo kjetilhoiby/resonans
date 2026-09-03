@@ -9,7 +9,12 @@
  * Modulen er server-only men har ingen db-avhengighet — gjør den lett å enhetsteste.
  */
 
-import { isUsableHrBaseline, zoneForHeartRate } from '$lib/domain/health/hr-zones';
+import {
+	isUsableHrBaseline,
+	zoneForHeartRate,
+	zoneLowerBpm,
+	type HeartRateBaselineInput
+} from '$lib/domain/health/hr-zones';
 
 export interface TrackPoint {
 	lat?: number;
@@ -50,6 +55,49 @@ export interface WorkoutAnalyticsResult {
 	bestEfforts?: BestEfforts;
 	gapSecPerKm?: number;
 	hrZoneDistribution?: HrZoneDistribution;
+	intensitySplit?: IntensitySplit;
+}
+
+/**
+ * Øktas tid delt i rolig, grått og kvalitet — i SEKUNDER, ikke i andeler.
+ *
+ * ## Hvorfor dette finnes ved siden av `hrZoneDistribution`
+ *
+ * Sonefordelingen er andeler av tid per sone, og den kan ikke svare på om tida
+ * over terskel kom i SAMMENHENGENDE blokker. 2. september 2026 klassifiserte vi
+ * 31 av 43 løpeøkter som «harde» fordi de hadde fire oppsamlede minutter over
+ * Z4 — i praksis fire bakker à ett minutt på en rolig tur i Oslo-terreng. De
+ * øktene snittet 5,2 km; det var ikke intervalløkter.
+ *
+ * Blokkstrukturen er borte i det andelene er regnet, så den må måles her, mot
+ * punktene.
+ *
+ * ## Og hvorfor det er sekunder og ikke en dom
+ *
+ * Bøttene rolig/grå/hard tvang fram terskler som ikke kunne begrunnes: en
+ * binær etikett gjør et grensetilfelle katastrofalt. Som MENGDE er terskelen
+ * langt mindre kritisk — en kupert rolig tur som bidrar med to kvalitetsminutter
+ * er både sant og harmløst. Derfor er `minBlockSeconds` bevisst romslig.
+ */
+export interface IntensitySplit {
+	/** Tid på eller under Z2s tak. Grunnmuren. */
+	easySeconds: number;
+	/**
+	 * Tid over Z2 som IKKE ligger i en sammenhengende Z4+-blokk.
+	 *
+	 * Residualet, og det tallet som skal ned: for hardt til å bygge grunnmur
+	 * billig, for kort til å flytte terskelen.
+	 */
+	greySeconds: number;
+	/** Tid i sammenhengende blokker på eller over Z4s gulv. */
+	qualitySeconds: number;
+	/** Total tid med brukbar puls. Nevneren, og den er ikke øktas varighet. */
+	measuredSeconds: number;
+	/** Blokkravet som ble brukt, så en endring i det er synlig i dataene. */
+	minBlockSeconds: number;
+	basis: 'hrr';
+	restHr: number;
+	maxHr: number;
 }
 
 export const BEST_EFFORT_DISTANCES_M = [400, 1000, 3000, 5000, 10000] as const;
@@ -282,5 +330,112 @@ export function analyzeWorkout(
 	const bestEfforts = computeBestEfforts(points);
 	const gapSecPerKm = computeGapSecPerKm(points);
 	const hrZoneDistribution = hrInput ? computeHrZoneDistribution(points, hrInput) : undefined;
-	return { bestEfforts, gapSecPerKm, hrZoneDistribution };
+	const intensitySplit = hrInput ? computeIntensitySplit(points, hrInput) : undefined;
+	return { bestEfforts, gapSecPerKm, hrZoneDistribution, intensitySplit };
+}
+
+/**
+ * Korteste sammenhengende tid over Z4s gulv som teller som kvalitet.
+ *
+ * **Ett minutt, og det er bevisst romslig.** Et 30/30-drag faller utenfor, og en
+ * lang bakke på en rolig tur faller innenfor. Begge er akseptert: utfallet er en
+ * MENGDE, ikke en etikett, så en bakke som bidrar med to kvalitetsminutter er
+ * sant og harmløst — mens den samme bakken under det gamle regimet stemplet hele
+ * økta «hard».
+ *
+ * Asymmetrien er den samme som i Ekkos `EffortMoment`: å telle for lite koster
+ * et tall som er litt lavt, å telle for mye koster tilliten til flaten.
+ */
+export const MIN_QUALITY_BLOCK_SECONDS = 60;
+
+/**
+ * Største hull mellom to pulsmålinger som fortsatt regnes som sammenhengende.
+ *
+ * Uten grensa skjøter et BLE-drop eller en pause to korte drag til én lang blokk,
+ * og tida i hullet — der vi ikke vet noe — tilskrives kvalitet.
+ */
+export const MAX_SAMPLE_GAP_SECONDS = 30;
+
+/**
+ * Deler økta i rolig, grått og kvalitet. Se `IntensitySplit`.
+ *
+ * Går gjennom punktene TO ganger med vilje: først samles strekkene over Z4s
+ * gulv, så avgjøres hvilke av dem som var lange nok. En ettpass-variant måtte
+ * gjettet på om et strekk kom til å bli langt nok, og et strekk som avbrytes av
+ * et hull skal ikke tilbakedateres til kvalitet.
+ */
+export function computeIntensitySplit(
+	points: TrackPoint[],
+	baseline: HeartRateBaselineInput
+): IntensitySplit | undefined {
+	if (!isUsableHrBaseline(baseline)) return undefined;
+
+	const cum = buildCumulative(points);
+	if (cum.length < 2) return undefined;
+
+	const easyCeiling = zoneLowerBpm(3, baseline) - 1; // Z2s tak
+	const qualityFloor = zoneLowerBpm(4, baseline);
+
+	let measuredSeconds = 0;
+	let easySeconds = 0;
+	let aboveEasySeconds = 0;
+	/** Sammenhengende strekk over kvalitetsgulvet, i sekunder. */
+	const runs: number[] = [];
+	let currentRun = 0;
+	let pointsWithHr = 0;
+
+	const closeRun = () => {
+		if (currentRun > 0) runs.push(currentRun);
+		currentRun = 0;
+	};
+
+	for (let i = 1; i < cum.length; i += 1) {
+		// Intervallet tilskrives pulsen ved STARTEN, som i sonefordelingen.
+		const hr = cum[i - 1].hr ?? cum[i].hr;
+		const dt = cum[i].tSec - cum[i - 1].tSec;
+		if (typeof hr !== 'number' || hr <= 0 || dt <= 0) {
+			closeRun();
+			continue;
+		}
+		pointsWithHr += 1;
+		if (dt > MAX_SAMPLE_GAP_SECONDS) {
+			// Hullet er ukjent tid: den telles ikke, og den bryter blokken.
+			closeRun();
+			continue;
+		}
+
+		measuredSeconds += dt;
+		if (hr <= easyCeiling) {
+			easySeconds += dt;
+			closeRun();
+			continue;
+		}
+
+		aboveEasySeconds += dt;
+		if (hr >= qualityFloor) {
+			currentRun += dt;
+		} else {
+			closeRun();
+		}
+	}
+	closeRun();
+
+	if (measuredSeconds <= 0 || pointsWithHr < 10) return undefined;
+
+	const qualitySeconds = runs
+		.filter((r) => r >= MIN_QUALITY_BLOCK_SECONDS)
+		.reduce((sum, r) => sum + r, 0);
+
+	return {
+		easySeconds: Math.round(easySeconds),
+		// Residual, og regnet slik framfor å summeres separat: da kan ikke de tre
+		// delene komme til å ikke summere til det målte.
+		greySeconds: Math.round(aboveEasySeconds - qualitySeconds),
+		qualitySeconds: Math.round(qualitySeconds),
+		measuredSeconds: Math.round(measuredSeconds),
+		minBlockSeconds: MIN_QUALITY_BLOCK_SECONDS,
+		basis: 'hrr',
+		restHr: baseline.restHr,
+		maxHr: baseline.maxHr
+	};
 }

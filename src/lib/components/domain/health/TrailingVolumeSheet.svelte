@@ -20,6 +20,8 @@
 	import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 	import { CHARACTER_LABELS, type SessionCharacter } from '$lib/domain/health/session-character';
+	import WeeklyIntensityBars from './WeeklyIntensityBars.svelte';
+	import type { IntensityTotals, WeekIntensity } from '$lib/domain/health/weekly-intensity';
 
 	interface Props {
 		widgetId: string;
@@ -81,6 +83,19 @@
 		};
 		volume: Record<string, VolumeView>;
 		quality: Record<string, QualityView>;
+		/**
+		 * Rolige minutter mot kvalitetsminutter per uke.
+		 *
+		 * Følger IKKE vindusvelgeren: bjelken er alltid tolv uker, og seksjonen
+		 * sier det selv. Sammensetningen under er andeler av ØKTER i det valgte
+		 * vinduet — to ulike spørsmål, og derfor to seksjoner.
+		 */
+		intensity: {
+			weeks: WeekIntensity[];
+			totals: IntensityTotals;
+			text: string;
+			coverage: { sessions: number; withSplit: number; share: number; staleBaseline: number };
+		};
 	}
 
 	const WINDOWS = [7, 30, 90];
@@ -345,7 +360,17 @@
 				</p>
 			{/if}
 
-			<!-- 3. Sammensetning -->
+			<!-- 3a. Nok rolig, nok hardt — og hvor bredt er feltet i midten -->
+			{#if data}
+				<WeeklyIntensityBars
+					weeks={data.intensity.weeks}
+					totals={data.intensity.totals}
+					text={data.intensity.text}
+					coverage={data.intensity.coverage}
+				/>
+			{/if}
+
+			<!-- 3b. Sammensetning -->
 			{#if quality}
 				<section class="tv-section">
 					<h3>Sammensetning</h3>
