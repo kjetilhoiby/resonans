@@ -2208,6 +2208,15 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 - Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
 - Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
 - Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+- **En JS-Array er ALDRI en gyldig parameter til rå SQL.** Bruk
+  `toPgArrayLiteral` (`$lib/db/pg-array.ts`) og send en ferdig streng til
+  `$1::text[]`. postgres-js sin `inferType` gir en Array skalar-OID-en til
+  FØRSTE element, ikke array-OID-en: en liste med strenger blir da `"a,b"`
+  («malformed array literal»), og en liste med `Date` først overlever som Array
+  inn i `Buffer.byteLength` og kaster «Received an instance of Array». Begge
+  virket under neon-http og brøt da containeren tok over 30. august 2026 — det
+  tok fire døgn å finne. Se
+  `docs/changelog/2026-09-03-array-parametere-til-postgres.md`.
 - **Rå `db.execute(sql\`…\`)` som leser rader MÅ gå gjennom `rowsOf()`** fra `$lib/db`.
   Neon HTTP-driveren returnerer et resultat-*objekt* (`{ rowCount, rows, … }`), mens
   postgres-js returnerer en bar *array*. `for…of`/`.map()` rett på resultatet kaster

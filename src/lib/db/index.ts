@@ -6,6 +6,7 @@ import { env } from '$env/dynamic/private';
 import { describeDriverChoice, resolveDbDriver } from './driver-choice';
 import { affectedRows, rowsOf } from './result-shape';
 import * as schema from './schema';
+import { toPgArrayLiteral } from './pg-array';
 
 const connectionString = env.DATABASE_URL;
 
@@ -54,7 +55,21 @@ function getPgClient(): ReturnType<typeof postgres> {
 		// drizzle setter transparente serializers for dato-typene (den forventer at
 		// ORM-laget alt har konvertert Date → string). Rå sql``-templates sender
 		// Date-objekter og ville krasjet i Buffer.byteLength — serialiser dem selv.
-		const dateSerializer = (value: unknown) => (value instanceof Date ? value.toISOString() : value);
+		//
+		// Serializeren MÅ returnere en streng, aldri verdien urørt. postgres-js
+		// sender resultatet rett i `bytes.js` sin `str()`, som gjør
+		// `Buffer.byteLength(x)` — og en Array der kaster «The "string" argument
+		// must be of type string … Received an instance of Array». Det er ikke et
+		// teoretisk tilfelle: `inferType` gir en ARRAY skalar-OID-en til første
+		// element, så `[Date, …]` havner nettopp her. En pass-through gjorde da en
+		// feil parameter til en krasj uten spor av hvilken spørring det gjaldt.
+		const dateSerializer = (value: unknown): string => {
+			if (value instanceof Date) return value.toISOString();
+			if (Array.isArray(value)) {
+				return toPgArrayLiteral(value.map((v) => (v instanceof Date ? v.toISOString() : v)));
+			}
+			return String(value);
+		};
 		for (const type of ['1184', '1114', '1082']) {
 			_pgClient.options.serializers[type as unknown as number] = dateSerializer as never;
 		}
