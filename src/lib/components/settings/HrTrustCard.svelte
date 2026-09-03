@@ -25,7 +25,7 @@
 		baseline: { restHr: number; maxHr: number; maxHrSource: string | null };
 		periods: HrTrustPeriod[];
 		text: string[];
-		curveSample: { perPeriod: number; requested: number; loaded: number };
+		curveSample: { perPeriod: number; maxTotal: number; requested: number; loaded: number };
 	}
 
 	let report = $state<Report | null>(null);

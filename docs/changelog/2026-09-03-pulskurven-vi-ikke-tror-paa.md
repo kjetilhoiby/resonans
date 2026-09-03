@@ -138,6 +138,13 @@ feltnavnene sier at det er et utvalg.
 som ble ødelagt i mai ville sett friskt ut hele året. Indeksene plukkes jevnt
 gjennom periodens økter.
 
+**`MAX_CURVE_SAMPLE_TOTAL` (40) er taket, og det er ikke teoretisk.** Fem per
+periode ganger ni år er 45 økter, og hver økt kan ha spor fra tre kilder — altså
+opptil ~135 trackPoints-arrayer i ÉN spørring, hver på opptil 2000 punkter. Førti
+er tallet reanalyse-jobben er målt trygg på. Utvalget tynnes **jevnt** når taket
+treffer, ikke ved en `slice`: en kapping ville tatt de siste årene helt bort, og
+«hvilke år» er nettopp spørsmålet.
+
 **Merkelappen måler UTBREDELSE, ikke alvor**, og gradene er fire — `ren`,
 `enkeltavvik`, `utbredt`, `for-lite-data`. Et enkeltfunn er et enkeltfunn uansett
 hvor stygt det er; `curveReasons` sier hva slags, og `pinned` er synlig der.

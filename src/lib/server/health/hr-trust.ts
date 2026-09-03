@@ -29,6 +29,20 @@ import { osloDayKey } from '$lib/domain/oslo-time';
  */
 export const CURVE_SAMPLE_PER_PERIOD = 5;
 
+/**
+ * Tak på ANTALL ØKTER lag 2 henter spor for, uansett hvor mange perioder.
+ *
+ * Fem per periode ganger ni år er 45 økter, og hver økt kan ha spor fra tre
+ * kilder — altså opptil ~135 trackPoints-arrayer i ÉN spørring, hver på opptil
+ * 2000 punkter. Førti er tallet reanalyse-jobben er målt trygg på, og det er
+ * grunnen til at det er valgt her også.
+ *
+ * Utvalget tynnes JEVNT over lista når taket treffer, ikke ved å kappe halen:
+ * en kapping ville tatt de siste periodene helt bort, og «hvilke år» er
+ * nettopp spørsmålet.
+ */
+export const MAX_CURVE_SAMPLE_TOTAL = 40;
+
 /** Under dette antallet punkter er en kurve ikke verdt å hente. */
 const MIN_TRACK_POINTS = 10;
 
@@ -38,6 +52,8 @@ export interface HrTrustReport {
 	text: string[];
 	curveSample: {
 		perPeriod: number;
+		/** Taket på antall økter, uansett antall perioder. */
+		maxTotal: number;
 		requested: number;
 		loaded: number;
 	};
@@ -81,7 +97,7 @@ export async function loadHrTrustReport(
 	let curves: HrTrustCurveSample[] = [];
 	let requested = 0;
 	if (options.sampleCurves) {
-		const picked = pickCurveSample(rows);
+		const picked = thinToCap(pickCurveSample(rows), MAX_CURVE_SAMPLE_TOTAL);
 		requested = picked.length;
 		curves = await diagnoseSampledCurves(userId, picked);
 	}
@@ -102,6 +118,7 @@ export async function loadHrTrustReport(
 		text: describeHrTrust(periods),
 		curveSample: {
 			perPeriod: CURVE_SAMPLE_PER_PERIOD,
+			maxTotal: MAX_CURVE_SAMPLE_TOTAL,
 			requested,
 			loaded: curves.length
 		}
@@ -153,6 +170,22 @@ function pickCurveSample(rows: CandidateRow[]): PickedCurve[] {
 		}
 	}
 	return picked;
+}
+
+/**
+ * Tynner utvalget jevnt ned til taket.
+ *
+ * Lista er gruppert per periode, så en jevn sil beholder omtrent samme andel
+ * fra hvert år — i motsetning til en `slice`, som ville tatt de siste årene
+ * helt bort.
+ */
+function thinToCap<T>(items: T[], cap: number): T[] {
+	if (items.length <= cap) return items;
+	const kept: T[] = [];
+	for (let i = 0; i < cap; i += 1) {
+		kept.push(items[Math.floor((i * items.length) / cap)]);
+	}
+	return kept;
 }
 
 /**
