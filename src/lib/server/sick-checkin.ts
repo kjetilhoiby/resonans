@@ -21,7 +21,7 @@
 
 import { and, eq, gte } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { nudgeEvents, themes, users } from '$lib/db/schema';
+import { nudgeEvents, users } from '$lib/db/schema';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 import {
 	getGoogleChatWebhooksForRoutes,
@@ -36,7 +36,7 @@ import { decideSickCheckin } from '$lib/domain/health/sick-checkin';
 import { getSickState } from '$lib/server/health/sick-log';
 import { listSymptoms } from '$lib/server/health/symptom-log';
 import { rankOngoingSymptoms } from '$lib/domain/health/symptoms';
-import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { healthThemeUrl } from '$lib/server/health/health-theme';
 
 const NUDGE_TYPE = 'sick_checkin' as const;
 
@@ -55,15 +55,6 @@ async function lastCheckinDay(userId: string): Promise<string | null> {
 		.limit(500);
 	const last = rows[rows.length - 1];
 	return last ? osloDayKey(last.createdAt) : null;
-}
-
-async function findHealthThemeUrl(userId: string, appUrl: string): Promise<string> {
-	const rows = await db
-		.select({ id: themes.id, name: themes.name })
-		.from(themes)
-		.where(eq(themes.userId, userId));
-	const theme = rows.find((t) => resolveThemeDashboardKind(t.name) === 'health');
-	return theme ? `${appUrl}/tema/${theme.id}` : `${appUrl}/tema/helse`;
 }
 
 export async function sendSickCheckin(
@@ -92,7 +83,7 @@ export async function sendSickCheckin(
 
 	if (!decision) return { sent: false, reason: 'nothing-to-ask' };
 
-	const themeUrl = await findHealthThemeUrl(userId, appUrl);
+	const themeUrl = await healthThemeUrl(userId, appUrl);
 	const lines = [decision.body, '', `Svar med ett trykk: ${themeUrl}`];
 
 	const eventId = await createNudgeEvent({
