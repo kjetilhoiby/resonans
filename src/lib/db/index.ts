@@ -1,9 +1,7 @@
-import { drizzle } from 'drizzle-orm/neon-http';
-import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
-import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { env } from '$env/dynamic/private';
-import { describeDriverChoice, resolveDbDriver } from './driver-choice';
+import { assertNoRemovedDriverOverride, describeConnection } from './connection-info';
 import { affectedRows, rowsOf } from './result-shape';
 import * as schema from './schema';
 
@@ -13,28 +11,17 @@ if (!connectionString) {
 	throw new Error('DATABASE_URL environment variable is not set');
 }
 
-// Se driver-choice.ts: valget lå i en localhost-regex, som ville sendt en
-// Coolify-URL (`@postgres:5432`) til Neon HTTP-driveren. Logglinja er en del av
-// rettelsen — et feil driverbytte skal ses i deploy-loggen, ikke i en
-// uforståelig spørringsfeil.
-const driverChoice = resolveDbDriver(connectionString, env.DB_DRIVER);
-console.log(describeDriverChoice(driverChoice));
-
-const useNeonHttp = driverChoice.driver === 'neon-http';
+// Ett drivervalg finnes ikke lenger, men ADRESSEN er fortsatt verdt en linje i
+// oppstartsloggen: «hvilken base snakker denne containeren med» er det første
+// spørsmålet når tallene ser rare ut, og et skjermbilde av loggen svarer på
+// det. Uten passord — se connection-info.ts.
+assertNoRemovedDriverOverride(env.DB_DRIVER);
+console.log(describeConnection(connectionString));
 
 /**
- * Driveren i bruk, for kode som bare gir mening over en ekte TCP-økt —
- * cron-dispatcherens advisory-lås trenger en sesjon å holde låsen på, og det
- * har ikke neon-http (én HTTPS-request per spørring).
+ * Poolstørrelse for DRIZZLE-klienten.
  */
-export const dbDriver = driverChoice.driver;
-
-/**
- * Poolstørrelse for DRIZZLE-klienten. Neon HTTP har ingen pool (hver spørring
- * er en HTTPS-request). En langtlevende Node-prosess mot en vanlig Postgres
- * skal derimot ha en ekte pool.
- */
-const POOL_MAX = useNeonHttp ? 1 : Number(env.DB_POOL_MAX ?? '10');
+const POOL_MAX = Number(env.DB_POOL_MAX ?? '10');
 
 /**
  * Poolstørrelse for RÅ-klienten: dispatcherens reserverte lederlås-tilkobling
@@ -62,8 +49,8 @@ const RAW_POOL_MAX = 4;
  * beholder postgres-js' ekte serializers. Del ALDRI en postgres-js-klient
  * mellom drizzle og rå SQL.
  *
- * Rå-klienten er fortsatt lat: en serverless cold-start skal ikke åpne TCP
- * før noe faktisk bruker den.
+ * Rå-klienten er fortsatt lat: ingenting skal åpne TCP før noe faktisk
+ * bruker den.
  */
 let _rawClient: ReturnType<typeof postgres> | undefined;
 function getPgClient(): ReturnType<typeof postgres> {
@@ -79,65 +66,49 @@ function getPgClient(): ReturnType<typeof postgres> {
 		for (const type of [1082, 1083, 1114, 1115, 1182, 1184, 1185, 1231]) {
 			_rawClient.options.parsers[type] = identityParser as never;
 		}
-		registerShutdownHook();
 	}
 	return _rawClient;
 }
 
+/** Drizzle-klienten — se doc-kommentaren ved `getPgClient` for hvorfor den er separat. */
+const drizzleClient = postgres(connectionString, { max: POOL_MAX });
+
+export const db = drizzle(drizzleClient, { schema });
 
 /**
- * Lukk poolen ved SIGTERM.
+ * Lukk begge poolene ved SIGTERM.
  *
- * Poolen ble aldri lukket, og på Vercel spilte det ingen rolle — funksjonen dør
- * med prosessen. En container som redeployes hver gang vi pusher, etterlater
- * derimot åpne tilkoblinger til Postgres rekker å time dem ut, og
- * `max_connections` er en telling som ikke tilgir.
+ * Poolen ble aldri lukket, og fram til flyttingen spilte det ingen rolle —
+ * en serverless-funksjon dør med prosessen. En container som redeployes hver
+ * gang vi pusher, etterlater derimot åpne tilkoblinger til Postgres rekker å
+ * time dem ut, og `max_connections` er en telling som ikke tilgir.
  *
  * `{ timeout: 5 }` lar spørringer som alt kjører få gjøre seg ferdige.
+ * Registreres ved modullast, siden drizzle-poolen åpnes der — rå-poolen er
+ * lat, og kroken skal ikke vente på at noen bruker rå SQL.
  */
-let shutdownHookRegistered = false;
-function registerShutdownHook() {
-	if (shutdownHookRegistered || useNeonHttp) return;
-	if (typeof process === 'undefined' || typeof process.once !== 'function') return;
-	shutdownHookRegistered = true;
-
+if (typeof process !== 'undefined' && typeof process.once === 'function') {
 	for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 		process.once(signal, () => {
 			console.log(`[db] ${signal} — lukker tilkoblingene.`);
 			void _rawClient?.end({ timeout: 5 }).catch((error) => {
 				console.warn('[db] feil ved lukking av rå-poolen:', error);
 			});
-			void drizzleClient?.end({ timeout: 5 }).catch((error) => {
+			void drizzleClient.end({ timeout: 5 }).catch((error) => {
 				console.warn('[db] feil ved lukking av drizzle-poolen:', error);
 			});
 		});
 	}
 }
 
-// Neon HTTP-driver: bruker HTTPS fetch i stedet for TCP, ingen cold-start overhead
-const neonSql = useNeonHttp ? neon(connectionString) : null;
-
-/** Drizzle-klienten — se doc-kommentaren ved `getPgClient` for hvorfor den er separat. */
-const drizzleClient = useNeonHttp ? null : postgres(connectionString, { max: POOL_MAX });
-// Drizzle-poolen finnes fra modullast (rå-poolen er lat), så SIGTERM-kroken må
-// ikke vente på at noen bruker rå SQL.
-if (drizzleClient) registerShutdownHook();
-
-export const db = (
-	useNeonHttp ? drizzle(neonSql!, { schema }) : drizzlePostgres(drizzleClient!, { schema })
-) as ReturnType<typeof drizzle<typeof schema>>;
-
 /**
  * Raw parameterisert SQL.
  * API: sql(queryString, paramsArray) → Row[]
  */
 export function sql(query: string, params?: unknown[]): Promise<Record<string, unknown>[]> {
-	if (!neonSql) {
-		return getPgClient().unsafe(query, (params ?? []) as never[]) as unknown as Promise<
-			Record<string, unknown>[]
-		>;
-	}
-	return neonSql.query(query, params) as Promise<Record<string, unknown>[]>;
+	return getPgClient().unsafe(query, (params ?? []) as never[]) as unknown as Promise<
+		Record<string, unknown>[]
+	>;
 }
 
 // For rå SQL som krever tagged templates eller persistent TCP-tilkobling.
@@ -155,6 +126,6 @@ export const pgClient = new Proxy((() => {}) as unknown as ReturnType<typeof pos
 
 export const migrationClient = pgClient;
 
-// Formlogikken over driverforskjellene bor i result-shape.ts, men importeres
-// fra `$lib/db` av ~50 kallsteder.
+// Bor i result-shape.ts (ren, testet), men importeres fra `$lib/db` av
+// kallstedene.
 export { affectedRows, rowsOf };

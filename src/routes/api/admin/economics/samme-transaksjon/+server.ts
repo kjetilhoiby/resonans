@@ -73,8 +73,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	// gruppe. Rå-strømmen og ikke canonical, fordi det er der `external_transaction_id` per
 	// variant finnes — canonical har bare én rad per bøtte.
 	//
-	// `rowsOf` er påkrevd: Neon HTTP-driveren gir et resultat-OBJEKT, ikke en bar array, og
-	// `for…of` rett på resultatet kaster «is not iterable» i prod. Se CLAUDE.md.
+	// `rowsOf` er påkrevd: `db.execute()` typer resultatet løst, og det blinde
+	// castet kallstedene brukte før kastet «is not iterable» i prod. Se
+	// `$lib/db/result-shape.ts`.
 	const groups = rowsOf<GroupRow>(
 		await db.execute(sql`
 			SELECT

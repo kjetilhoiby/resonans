@@ -19,9 +19,12 @@
  * Begge er samme rot: driveren gjetter typen av ett element. Vi slutter å la
  * den gjette — parameteren sendes som en ferdig streng.
  *
- * NB: dette rammet bare postgres-js. Under neon-http serialiseres parametere av
- * en annen driver, så koden virket fram til containeren tok over 30. august
- * 2026. Se `docs/changelog/2026-09-03-array-parametere-til-postgres.md`.
+ * NB: dette rammet bare postgres-js. Under den (nå fjernede) neon-http-stien
+ * serialiseres parametere av en annen driver, så koden virket fram til
+ * containeren tok over 30. august 2026 — derfor lå feilen latent i årevis.
+ * Regelen gjelder uansett: `inferType` gjetter på elementtypen, og gjettet
+ * er postgres-js' eget. Se
+ * `docs/changelog/2026-09-03-array-parametere-til-postgres.md`.
  */
 
 /**

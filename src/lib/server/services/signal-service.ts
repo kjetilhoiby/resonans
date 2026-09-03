@@ -871,7 +871,8 @@ async function produceProteinVsLoad(userId: string, now: Date) {
 		LIMIT 1
 	`);
 
-	// NB: MÅ gå gjennom rowsOf — neon-http gir et resultatobjekt, ikke en array.
+	// NB: MÅ gå gjennom rowsOf — `db.execute()` typer resultatet løst, og et
+	// cast rett til en array er nettopp det som kastet i prod. Se result-shape.ts.
 	const metrics = rowsOf<{ metrics: Record<string, any> | null }>(weekRows)[0]?.metrics ?? null;
 	if (!metrics) return null;
 
