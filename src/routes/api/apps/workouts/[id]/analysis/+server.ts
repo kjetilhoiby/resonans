@@ -31,7 +31,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		if (
 			canonical.bestEfforts ||
 			canonical.gapSecPerKm != null ||
-			canonical.hrZoneDistribution
+			canonical.hrZoneDistribution ||
+			canonical.intensitySplit
 		) {
 			return json({
 				ok: true,
@@ -39,7 +40,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				analyticsComputedAt: canonical.analyticsComputedAt?.toISOString() ?? null,
 				bestEfforts: canonical.bestEfforts ?? null,
 				gapSecPerKm: canonical.gapSecPerKm != null ? Number(canonical.gapSecPerKm) : null,
-				hrZoneDistribution: canonical.hrZoneDistribution ?? null
+				hrZoneDistribution: canonical.hrZoneDistribution ?? null,
+				intensitySplit: canonical.intensitySplit ?? null
 			});
 		}
 		// Cache mangler — kjør on-demand fra evidence
@@ -50,7 +52,12 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 	// Fallback: behandle id som sensor_event-id
 	const result = await analyzeFromEventIds(userId, [id]);
-	if (!result.bestEfforts && result.gapSecPerKm == null && !result.hrZoneDistribution) {
+	if (
+		!result.bestEfforts &&
+		result.gapSecPerKm == null &&
+		!result.hrZoneDistribution &&
+		!result.intensitySplit
+	) {
 		throw error(404, 'No analytics available — workout has no trackPoints');
 	}
 	return json({ ok: true, source: 'computed', ...result });
@@ -63,9 +70,10 @@ async function analyzeFromEventIds(
 	bestEfforts: BestEfforts | null;
 	gapSecPerKm: number | null;
 	hrZoneDistribution: Record<string, unknown> | null;
+	intensitySplit: Record<string, unknown> | null;
 }> {
 	if (eventIds.length === 0) {
-		return { bestEfforts: null, gapSecPerKm: null, hrZoneDistribution: null };
+		return { bestEfforts: null, gapSecPerKm: null, hrZoneDistribution: null, intensitySplit: null };
 	}
 	const rows = await db
 		.select({
@@ -89,16 +97,19 @@ async function analyzeFromEventIds(
 		const score =
 			(a.bestEfforts ? Object.keys(a.bestEfforts).length : 0) +
 			(a.gapSecPerKm != null ? 1 : 0) +
-			(a.hrZoneDistribution ? 1 : 0);
+			(a.hrZoneDistribution ? 1 : 0) +
+			(a.intensitySplit ? 1 : 0);
 		if (score > bestScore) {
 			bestScore = score;
 			best = a;
 		}
 	}
-	if (!best) return { bestEfforts: null, gapSecPerKm: null, hrZoneDistribution: null };
+	if (!best)
+		return { bestEfforts: null, gapSecPerKm: null, hrZoneDistribution: null, intensitySplit: null };
 	return {
 		bestEfforts: best.bestEfforts ?? null,
 		gapSecPerKm: best.gapSecPerKm ?? null,
-		hrZoneDistribution: (best.hrZoneDistribution as unknown as Record<string, unknown>) ?? null
+		hrZoneDistribution: (best.hrZoneDistribution as unknown as Record<string, unknown>) ?? null,
+		intensitySplit: (best.intensitySplit as unknown as Record<string, unknown>) ?? null
 	};
 }

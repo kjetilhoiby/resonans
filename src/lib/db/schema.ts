@@ -2835,6 +2835,20 @@ export const canonicalWorkouts = pgTable('canonical_workouts', {
 		restHr: number;
 		maxHr: number;
 	}>(),
+	// Rolig / grått / kvalitet i SEKUNDER. Ligger ved siden av sonefordelingen
+	// fordi andeler per sone ikke kan si om tida over terskel kom i
+	// SAMMENHENGENDE blokker — se IntensitySplit i workout-analytics.ts.
+	intensitySplit: jsonb('intensity_split').$type<{
+		easySeconds: number;
+		greySeconds: number;
+		qualitySeconds: number;
+		measuredSeconds: number;
+		// Blokkravet som ble brukt, så en endring i det er synlig i dataene
+		minBlockSeconds: number;
+		basis: 'hrr';
+		restHr: number;
+		maxHr: number;
+	}>(),
 	analyticsComputedAt: timestamp('analytics_computed_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()

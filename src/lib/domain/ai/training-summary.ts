@@ -157,6 +157,34 @@ export interface TrainingSummaryInput {
 				text: string;
 			}
 		>;
+		/**
+		 * Rolige minutter, kvalitetsminutter og grått per uke.
+		 *
+		 * Ligger ved siden av `quality` fordi de svarer på samme spørsmål i to
+		 * former, og minuttene er den presise: en bøtte per økt tvinger en
+		 * terskel, en mengde gjør det ikke.
+		 */
+		intensity: {
+			weeks: Array<{
+				weekStart: string;
+				easyMinutes: number;
+				greyMinutes: number;
+				qualityMinutes: number;
+				totalMinutes: number;
+				sessions: number;
+			}>;
+			totals: {
+				easyMinutes: number;
+				greyMinutes: number;
+				qualityMinutes: number;
+				totalMinutes: number;
+				weeks: number;
+				activeWeeks: number;
+				qualityPerActiveWeek: number | null;
+			};
+			text: string;
+			coverage: { sessions: number; withSplit: number; share: number; staleBaseline: number };
+		} | null;
 	} | null;
 }
 
@@ -318,7 +346,18 @@ export function summarizeQuality(input: TrainingSummaryInput) {
 		// brukes. En fordeling bygget på fire av tolv økter ser like autoritativ ut
 		// som en bygget på alle tolv.
 		zoneCoverage: vq.zoneCoverage,
-		windows
+		windows,
+		// **Minuttene er hovedsvaret, bøttene er bakgrunnen.** Uken-for-uken-tallene
+		// tvinger ingen terskel: «for mye i midten» er et tall som skal ned, ikke
+		// en etikett en økt får. Se `weekly-intensity.ts`.
+		weeklyMinutes: vq.intensity
+			? {
+					weeks: vq.intensity.weeks,
+					totals: vq.intensity.totals,
+					sentence: vq.intensity.text,
+					coverage: vq.intensity.coverage
+				}
+			: null
 	};
 }
 

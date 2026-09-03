@@ -34,6 +34,14 @@ import {
 	type SessionInput,
 	type SessionZoneBaseline
 } from '$lib/domain/health/session-character';
+import {
+	buildWeeklyIntensity,
+	describeWeeklyIntensity,
+	totalsFor,
+	type IntensityTotals,
+	type SessionIntensity,
+	type WeekIntensity
+} from '$lib/domain/health/weekly-intensity';
 import { getEffortBaseline } from '$lib/server/services/effort-service';
 import type { DayValue } from '$lib/domain/health/cycle-series';
 
@@ -54,6 +62,16 @@ export type TrailingWindow = (typeof TRAILING_WINDOWS)[number];
 /** Vinduene sonesammensetningen regnes for. */
 export const COMPOSITION_WINDOWS = [7, 30, 90] as const;
 
+/**
+ * Hvor mange uker intensitetsbjelken dekker.
+ *
+ * Tolv uker er et kvartal: nok til at en oppbyggingsperiode er synlig, og få nok
+ * til at hver bjelke er bred nok å trykke på på en telefon. Vinduet er i UKER og
+ * ikke i dager fordi bjelken er per uke — en dagsakse ville sagt noe annet enn
+ * den viser.
+ */
+export const INTENSITY_WEEKS = 12;
+
 export interface TrailingVolumeView {
 	windowDays: number;
 	series: TrailingSeries;
@@ -69,6 +87,35 @@ export interface QualityView {
 	text: string;
 }
 
+export interface IntensityView {
+	/** Én bjelke per uke, eldste først. Uker uten trening er nuller, ikke hull. */
+	weeks: WeekIntensity[];
+	totals: IntensityTotals;
+	/** Setningen flaten og chatten deler. Se `describeWeeklyIntensity`. */
+	text: string;
+	/**
+	 * Hvor mange av øktene i vinduet som har tidsdelingen i det hele tatt.
+	 *
+	 * Feltet er nytt (september 2026) og fylles bare av en analyse, så
+	 * historikken er tom til `POST /api/sensors/workouts/reanalyze` har kjørt.
+	 * Uten dette tallet ser en tom bjelke ut som en uke uten trening.
+	 */
+	coverage: {
+		sessions: number;
+		withSplit: number;
+		share: number;
+		/**
+		 * Økter der tidsdelingen ble regnet mot en annen baseline enn dagens.
+		 *
+		 * De TELLES MED likevel, i motsetning til i sonesammensetningen: å droppe
+		 * dem ville laget hull i bjelkene, og et hull leses som en hvileuke — en
+		 * verre feil enn minutter som er bøttet mot bånd et par slag unna. Tallet
+		 * rapporteres så flaten kan si det, og handlingen er en reanalyse.
+		 */
+		staleBaseline: number;
+	};
+}
+
 export interface VolumeQualityResult {
 	today: string;
 	sportFamily: string;
@@ -76,6 +123,14 @@ export interface VolumeQualityResult {
 	volume: Record<number, TrailingVolumeView>;
 	/** Sonesammensetning per vindu. */
 	quality: Record<number, QualityView>;
+	/**
+	 * Rolige minutter, kvalitetsminutter og grått per uke.
+	 *
+	 * Står ved siden av `quality` og ikke i stedet for den mens dekningen bygges
+	 * opp: sonefordelingen finnes på historikken, tidsdelingen gjør det ikke før
+	 * en reanalyse har kjørt.
+	 */
+	intensity: IntensityView;
 	/**
 	 * Hvor stor andel av øktene siste 90 dager som har sonefordeling.
 	 *
@@ -135,7 +190,8 @@ export async function loadVolumeAndQuality(
 			startTime: canonicalWorkouts.startTime,
 			distanceMeters: canonicalWorkouts.distanceMeters,
 			durationSeconds: canonicalWorkouts.durationSeconds,
-			hrZoneDistribution: canonicalWorkouts.hrZoneDistribution
+			hrZoneDistribution: canonicalWorkouts.hrZoneDistribution,
+			intensitySplit: canonicalWorkouts.intensitySplit
 		})
 		.from(canonicalWorkouts)
 		.where(
@@ -149,6 +205,9 @@ export async function loadVolumeAndQuality(
 
 	const days: DayValue[] = [];
 	const sessions: SessionInput[] = [];
+	const intensities: SessionIntensity[] = [];
+	/** Økter med tidsdeling regnet mot noe annet enn dagens bånd. */
+	let staleSplits = 0;
 	for (const row of rows) {
 		// Oslo-dagen, ikke UTC-datoen: en kveldsøkt kl. 23 hører til den dagen den
 		// føltes som. Samme regel som `running-history.ts`.
@@ -162,6 +221,24 @@ export async function loadVolumeAndQuality(
 		const dist = row.hrZoneDistribution as
 			| (NonNullable<SessionInput['zones']> & SessionZoneBaseline)
 			| null;
+		const split = row.intensitySplit;
+		if (split) {
+			intensities.push({
+				date,
+				easySeconds: split.easySeconds,
+				greySeconds: split.greySeconds,
+				qualitySeconds: split.qualitySeconds,
+				measuredSeconds: split.measuredSeconds
+			});
+			if (
+				!isBaselineComparable(
+					{ basis: split.basis, restHr: split.restHr, maxHr: split.maxHr },
+					currentBaseline
+				)
+			) {
+				staleSplits += 1;
+			}
+		}
 		sessions.push({
 			date,
 			distanceKm: km,
@@ -205,6 +282,17 @@ export async function loadVolumeAndQuality(
 		quality[windowDays] = { composition, text: describeComposition(composition) };
 	}
 
+	const intensityWeeks = buildWeeklyIntensity(intensities, {
+		today,
+		weeks: INTENSITY_WEEKS
+	});
+	const intensityTotals = totalsFor(intensityWeeks);
+	// Dekningen måles over de samme ukene bjelken tegner, ikke over 90 dager:
+	// spørsmålet er om GRAFEN er til å lese, og den dekker tolv uker.
+	const intensityFrom = intensityWeeks[0]?.weekStart ?? today;
+	const intensitySessions = sessions.filter((s) => s.date >= intensityFrom && s.date <= today);
+	const withSplit = intensities.filter((s) => s.date >= intensityFrom && s.date <= today).length;
+
 	const coverageFrom = dayKeyDaysAgo(today, 89);
 	const coverageSessions = sessions.filter((s) => s.date >= coverageFrom && s.date <= today);
 	const withZones = coverageSessions.filter((s) => s.zones !== null).length;
@@ -217,6 +305,17 @@ export async function loadVolumeAndQuality(
 		sportFamily,
 		volume,
 		quality,
+		intensity: {
+			weeks: intensityWeeks,
+			totals: intensityTotals,
+			text: describeWeeklyIntensity(intensityTotals),
+			coverage: {
+				sessions: intensitySessions.length,
+				withSplit,
+				share: intensitySessions.length > 0 ? withSplit / intensitySessions.length : 0,
+				staleBaseline: staleSplits
+			}
+		},
 		zoneCoverage: {
 			sessions: coverageSessions.length,
 			withZones,

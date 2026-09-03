@@ -35,7 +35,7 @@ queryType:
 - 'plan': aktivt treningsløp, dagens forslag, forventet tempo og milepæler.
 - 'volume': akkumulerte løpte kilometer hittil i år og hittil i måneden, mot de foregående årene og månedene PÅ SAMME DAG i perioden. Bruk denne på «hvor mye har jeg løpt i år», «ligger jeg foran i fjor», «er dette en god måned».
 - 'trailing': SLEPENDE volum — summen av siste 7, 30 og 90 dager, med brukerens eget kvartilbånd for samme tid på året, og rampen mot forrige like lange vindu. Bruk denne på «hvor mye løper jeg nå», «er jeg i rute», «bygger jeg opp», «har volumet falt». Dette er et ANNET spørsmål enn 'volume': den nullstilles 1. januar, denne gjør ikke det.
-- 'quality': SAMMENSETNING — andel rolige, grå og harde ØKTER siste 7/30/90 dager. Bruk denne på «trener jeg riktig», «er det for mye i midten», «er treningen polarisert», «nok rolig trening».
+- 'quality': INTENSITET — rolige minutter, kvalitetsminutter og minutter «i midten» per uke siste tolv uker (weeklyMinutes), pluss andelen rolige/grå/harde ØKTER siste 7/30/90 dager. Bruk denne på «trener jeg riktig», «er det for mye i midten», «er treningen polarisert», «nok rolig trening», «nok hardt».
 
 Om tallene:
 - effort er TRIMP når puls finnes, MET-fallback ellers. El-sykkel teller mindre per minutt enn vanlig sykkel og telles som egen kategori.
@@ -47,8 +47,11 @@ Om tallene:
 - completed er tidligere perioders SLUTTALL. Det er svaret på «hvor mye løp jeg i 2024», ikke på «ligger jeg foran».
 - 'trailing' og 'quality' har hver et sentence-felt per vindu. SITER det ordrett — det bærer forbeholdene: hva sammenligningen ble gjort mot, og at en bratt rampe IKKE er en dom om kroppen. Restitusjonsspørsmålet svares av 'load' (TSB), aldri av rampen.
 - En bratt rampe i 'trailing' betyr at volumet vokser fort, ikke at brukeren har overtrent. To ulike dommer om «for mye» blir aldri enige; si «rask oppbygging» og vis til formkurven.
-- 'quality' teller ØKTER, ikke minutter, og det er med vilje: hver hard økt bærer oppvarming, pauser og nedjogg i de lave sonene, så en minuttfordeling viser «mest rolig» både for en polarisert og en helt grå måned. Ikke regn om til minutter.
-- 'quality' krever pulskurve per økt. coverage under 0,5 eller classifiedSessions under 5 betyr at fordelingen IKKE skal brukes — sentence sier det da selv. Si hvor mange økter som mangler, framfor å presentere andeler som fakta.
+- weeklyMinutes er HOVEDSVARET i 'quality', og de tre tallene er UAVHENGIGE: «nok rolig» og «nok hardt» kan svares ja på det ene og nei på det andre. Regn dem ALDRI om til et forholdstall — 80 % grått og 20 % grått er også 80/20. Bruk qualityMinutes og qualityPerActiveWeek som absolutte tall.
+- «I midten» (greyMinutes) er tid over sone 2 som IKKE ligger i en sammenhengende blokk over sone 4s gulv — for hardt til å bygge grunnmur billig, for kort til å flytte terskelen. Den blir aldri null: oppvarming, nedjogg og bakker på rolige turer havner der. Ikke sett et mål om 0, og ikke kall et tall høyt uten å ha ukene å sammenligne med — sentence sier det selv når det er for få uker.
+- Kvalitetsminutter krever en SAMMENHENGENDE blokk (minst ett minutt) over sone 4s gulv. Fire bakker à 30 sekunder gir derfor 0 kvalitetsminutter og havner i midten — det er riktig, og det er hele grunnen til at målingen finnes.
+- weeklyMinutes.coverage sier hvor mange økter i perioden som har tidsdelingen. withSplit 0 betyr at målingen er ny og historikken ikke er analysert ennå — si det, ikke at brukeren ikke har trent.
+- Bøttene (windows/buckets) teller ØKTER, ikke minutter, og er BAKGRUNN til weeklyMinutes. coverage under 0,5 eller classifiedSessions under 5 betyr at fordelingen IKKE skal brukes — sentence sier det da selv. Si hvor mange økter som mangler, framfor å presentere andeler som fakta.
 - Karakterene er en proxy: polarisert trening er definert av laktatterskler vi ikke måler. Si «grå er den største bøtta», ikke «du er 68/22/10».
 - Mangler et felt, si hva som mangler kort — ikke påstå at du ikke har tilgang.`,
 

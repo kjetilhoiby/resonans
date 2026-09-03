@@ -338,13 +338,20 @@ async function backfillAnalyticsForUser(userId: string): Promise<void> {
 		const canonicalId = eventToCanonical.get(row.id);
 		if (!canonicalId) continue;
 		const analytics = analyzeWorkout(pts, { restHr: baseline.restHr, maxHr: baseline.maxHr });
-		if (!analytics.bestEfforts && analytics.gapSecPerKm == null && !analytics.hrZoneDistribution) continue;
+		if (
+			!analytics.bestEfforts &&
+			analytics.gapSecPerKm == null &&
+			!analytics.hrZoneDistribution &&
+			!analytics.intensitySplit
+		)
+			continue;
 		await db
 			.update(canonicalWorkouts)
 			.set({
 				bestEfforts: analytics.bestEfforts ?? null,
 				gapSecPerKm: analytics.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
 				hrZoneDistribution: analytics.hrZoneDistribution ?? null,
+				intensitySplit: analytics.intensitySplit ?? null,
 				analyticsComputedAt: now,
 				updatedAt: now
 			})
