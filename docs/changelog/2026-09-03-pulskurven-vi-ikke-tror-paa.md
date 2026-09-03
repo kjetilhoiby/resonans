@@ -78,6 +78,46 @@ spørsmålet FØR en arkivimport er et annet: *hvilke år* kan vi ta inn puls fr
 Lasteren i `$lib/server/health/hr-trust.ts`, endepunktet
 `GET /api/helse/trening/pulstillit`, flaten `HrTrustCard` i `/settings/sources`.
 
+### Fase 5: Første kjøring mot prod rettet tre ting
+
+Kortet ble kjørt, og tallene avslørte mer om diagnosen enn om pulsen.
+
+**Målt 3. september 2026** (løping, hele historikken): 2015 har 2 av 8 og 2016
+har 1 av 5 økter med umulige tall, begge med topp 228 — beltetida, som ventet.
+Men **2026 har 7 av 74 og topp 237**, og 2021 har 1 av 26 med topp 235. Det er
+ikke det gamle beltet; det er klokka og Ekko. Toppene i årene som står som
+«ingen funn» er dessuten 208 (2019), 200 (2025), 193 (2024) og 192 (2022) —
+alle over Tanaka-anslaget på 179, altså ikke umulige, men ikke troverdige. Det
+er blindsonen, tallfestet.
+
+7 av 74 er 9,5 %, altså **rett under `WIDESPREAD_SHARE`** (10 %). Terskelen er
+IKKE justert mot det tallet — det ville vært å kalibrere mot svaret — men at
+den lander der er notert.
+
+Tre defekter ble rettet:
+
+- **Lag 2 var i praksis dødt: én kurve over tolv år.** `pickCurveSample` valgte
+  fem økter per år på «raden har en evidence-id», som nesten alle
+  canonical-rader har, og `diagnoseSampledCurves` droppet deretter stille dem
+  uten spor. Nytt steg `findEventsWithHrCurves` finner først hvilke events som
+  faktisk HAR en pulskurve (`jsonb_typeof` = array, lengde ≥ 10, og
+  `jsonb_path_exists` på `$.trackPoints[*].hr`), og utvalget velges blant dem.
+  `curveSample.eligible` rapporteres, så et lite utvalg kan skilles fra et
+  ødelagt.
+- **`suspect` skjulte skillet som betyr noe.** Den er unionen av umulig snitt og
+  umulig maks, og de har ulike konsekvenser: et umulig SNITT gjør at effort
+  faller til MET for den økta, et umulig MAKS forurenser bare utledningen av
+  makspuls. Kortet viser dem nå hver for seg, og teksten sier MET-konsekvensen
+  bare når snittet faktisk er rammet.
+- **2026-linja brakk og leste som en totalsum.** `.year` var én flex-rad med
+  `flex-wrap`, så «7 av 74 · topp 237 · 0/1 kurver forkastet» havnet på egen
+  linje uten årstall foran. Året og dommen står nå på én linje, tallene innrykket
+  under.
+
+Og det tallene ba om: **`suspectExamples`** navngir opptil fire flaggede økter
+per periode med dato, snitt, maks og hvilken av de to reglene som feilet.
+«7 av 74» kan ikke handles på; datoene kan.
+
 ## Beslutninger
 
 **Mengde, ikke ett punkt.** Samme lærdom som `IntensitySplit`: en binær dom over
@@ -188,7 +228,12 @@ redigerbart felt, og et ekte tall krever én hard innsats med et belte som virke
   teller økter med puls, minstekravet før en merkelapp settes, en forkastet kurve
   som løfter et ellers rent år, flertallskravet på utvalget, og at forbeholdet om
   blindsonen alltid står i teksten.
-- `npm test`: 4286 tester i 299 filer, alle grønne (fra 4247/297 før prosjektet).
+- 5 tester på fase 5: at et umulig snitt og et umulig maks skilles og navngis
+  hver for seg, at unionen er to økter og ikke én, at resten telles framfor å
+  listes, og — den viktigste — at teksten sier INGENTING om MET når bare maksen
+  er umulig. Effort leser `avgHeartRate`, så en MET-påstand der ville sendt
+  brukeren på jakt etter en effekt som ikke finnes.
+- `npm test`: 4302 tester i 300 filer, alle grønne (fra 4247/297 før prosjektet).
 - `npm run check`: 0 feil, 0 advarsler.
 
 ## Kjent rest

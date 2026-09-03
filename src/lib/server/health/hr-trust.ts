@@ -46,6 +46,44 @@ export const MAX_CURVE_SAMPLE_TOTAL = 40;
 /** Under dette antallet punkter er en kurve ikke verdt å hente. */
 const MIN_TRACK_POINTS = 10;
 
+/**
+ * Hvilke evidence-events har en pulskurve I DET HELE TATT?
+ *
+ * Dette steget er hele grunnen til at lag 2 virker. Første utgave valgte fem
+ * økter per år på «raden har en evidence-id» — som nesten alle canonical-rader
+ * har — og `diagnoseSampledCurves` droppet deretter STILLE dem uten spor.
+ * Resultatet, målt 3. september 2026: **én kurve over tolv år**, mens tallet
+ * ved siden av så fullført ut.
+ *
+ * Det er samme feilmodus som reanalyse-jobbens standardutvalg: velg på en
+ * proxy, og rapporter et tall som ikke er det du tror. Utvalget må derfor
+ * velges blant økter som faktisk HAR pulspunkter.
+ *
+ * Spørringen henter ingen payload — bare id-en og to predikater — så den kan
+ * dekke hele historikkens evidence-ideer.
+ */
+async function findEventsWithHrCurves(userId: string, eventIds: string[]): Promise<Set<string>> {
+	if (eventIds.length === 0) return new Set();
+	const rows = await db
+		.select({ id: sensorEvents.id })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				inArray(sensorEvents.id, eventIds),
+				// Array-sjekken må stå FØR `jsonb_array_length`: feltet kan være null
+				// eller et objekt, og funksjonen kaster på begge.
+				sql`jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array'`,
+				sql`jsonb_array_length(${sensorEvents.data}->'trackPoints') >= ${MIN_TRACK_POINTS}`,
+				// Punkter uten puls er ikke en pulskurve. Uten dette leddet ville en
+				// ren GPX fra Dropbox sett kvalifisert ut og falt ut senere — altså
+				// samme stille drop, ett lag lenger inn.
+				sql`jsonb_path_exists(${sensorEvents.data}, '$.trackPoints[*].hr')`
+			)
+		);
+	return new Set(rows.map((row) => row.id));
+}
+
 export interface HrTrustReport {
 	baseline: { restHr: number; maxHr: number; maxHrSource: string | null };
 	periods: HrTrustPeriod[];
@@ -54,6 +92,8 @@ export interface HrTrustReport {
 		perPeriod: number;
 		/** Taket på antall økter, uansett antall perioder. */
 		maxTotal: number;
+		/** Kilderader med en faktisk pulskurve — utvalgets grunnmengde. */
+		eligible: number;
 		requested: number;
 		loaded: number;
 	};
@@ -96,8 +136,20 @@ export async function loadHrTrustReport(
 
 	let curves: HrTrustCurveSample[] = [];
 	let requested = 0;
+	let eligible = 0;
 	if (options.sampleCurves) {
-		const picked = thinToCap(pickCurveSample(rows), MAX_CURVE_SAMPLE_TOTAL);
+		const allEventIds = [
+			...new Set(
+				rows.flatMap((row) =>
+					(row.evidence ?? [])
+						.map((e) => e?.eventId)
+						.filter((id): id is string => typeof id === 'string')
+				)
+			)
+		];
+		const withCurves = await findEventsWithHrCurves(userId, allEventIds);
+		eligible = withCurves.size;
+		const picked = thinToCap(pickCurveSample(rows, withCurves), MAX_CURVE_SAMPLE_TOTAL);
 		requested = picked.length;
 		curves = await diagnoseSampledCurves(userId, picked);
 	}
@@ -119,6 +171,10 @@ export async function loadHrTrustReport(
 		curveSample: {
 			perPeriod: CURVE_SAMPLE_PER_PERIOD,
 			maxTotal: MAX_CURVE_SAMPLE_TOTAL,
+			// Hvor mange kilderader som i det hele tatt HAR en pulskurve. Står her
+			// fordi et lite utvalg da kan skilles fra et ødelagt utvalg: er `eligible`
+			// lav, finnes det ikke mer å hente.
+			eligible,
 			requested,
 			loaded: curves.length
 		}
@@ -144,11 +200,12 @@ interface PickedCurve {
  * ble ødelagt i mai ville da sett friskt ut hele året. Indeksene plukkes derfor
  * jevnt gjennom periodens økter.
  */
-function pickCurveSample(rows: CandidateRow[]): PickedCurve[] {
+function pickCurveSample(rows: CandidateRow[], withCurves: Set<string>): PickedCurve[] {
 	const byPeriod = new Map<string, CandidateRow[]>();
 	for (const row of rows) {
-		const withEvidence = (row.evidence ?? []).some((e) => e?.eventId);
-		if (!withEvidence) continue;
+		// Kravet er en pulsKURVE, ikke en evidence-id. Se `findEventsWithHrCurves`.
+		const hasCurve = (row.evidence ?? []).some((e) => e?.eventId && withCurves.has(e.eventId));
+		if (!hasCurve) continue;
 		const period = osloDayKey(row.startTime).slice(0, 4);
 		const list = byPeriod.get(period);
 		if (list) list.push(row);
@@ -165,7 +222,7 @@ function pickCurveSample(rows: CandidateRow[]): PickedCurve[] {
 			const row = list[index];
 			const eventIds = (row.evidence ?? [])
 				.map((e) => e?.eventId)
-				.filter((id): id is string => typeof id === 'string');
+				.filter((id): id is string => typeof id === 'string' && withCurves.has(id));
 			if (eventIds.length > 0) picked.push({ period, eventIds });
 		}
 	}
