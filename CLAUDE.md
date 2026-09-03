@@ -2449,6 +2449,27 @@ Tesla-credentials ligger altså under `AUTH_SECRET`.
   hvert token å validere — og her finnes ingen rotasjonsvei i det hele tatt,
   siden en hash ikke kan leses tilbake.
 
+**OAuth-tokens fornyes ÉTT sted, med lås og fersk lesing.** For SpareBank1:
+`$lib/server/integrations/sparebank1-token.ts`. Fire regler, hver av dem en
+rettet feil (`docs/changelog/2026-09-03-sb1-token-en-vei-inn.md`):
+
+- **Les aldri legitimasjonen fra et sensor-OBJEKT kalleren har med seg.** Den
+  kan være rotert bort av en annen flyt. Funksjonen tar `id` og leser fra basen.
+- **Serialiser refresh** (`pg_advisory_xact_lock` per sensor) og les legitimasjonen
+  PÅ NYTT inne i låsen. SB1 roterer refresh-tokenet, og gjenbruk av et rotert
+  token invaliderer hele familien — cron, jobbkø-workeren og knappene i
+  `/settings/sources` kan alle be om et token samtidig.
+- **Manglende `expires_at` betyr FORNY.** Den gamle gaten var
+  `expires_at && now >= expires_at - 60`, så et manglende felt betydde «ikke
+  forny» og tokenet ble brukt til det døde.
+- **Arv aldri en gammel `expires_at`.** Den lå i fortida — det var derfor vi
+  refresha — og ga et token som var permanent «utløpt», altså ett refresh per
+  kall. Mangler `expires_in`, sett et kort vindu.
+
+En 401 skal føre til refresh og ETT nytt forsøk (`Sparebank1HttpError` bærer
+statusen som et felt, ikke i meldingsteksten). Withings og Spond har samme
+struktur i gatene, men er ikke konvertert.
+
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 

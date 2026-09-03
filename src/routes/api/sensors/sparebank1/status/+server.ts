@@ -50,6 +50,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 				type: sensor.type,
 				lastSync: sensor.lastSync,
 				isExpired,
+				// `isExpired` regnes av `config.expiresAt` og at et refresh token
+				// FINNES — men et refresh token SB1 har avvist ligger fortsatt i
+				// raden. Flaten sa derfor «Tilkoblet» mens kjeden var død, og
+				// dataene bare stoppet. `lastError` er signalet som faktisk vet.
+				lastError: sensor.lastError,
 				createdAt: sensor.createdAt
 			}
 		});

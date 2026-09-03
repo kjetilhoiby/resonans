@@ -163,6 +163,29 @@ function collectRateLimitHeaders(response: Response, label: string, collector?: 
 	}
 }
 
+/**
+ * HTTP-feil fra SpareBank1 med statuskoden bevart.
+ *
+ * Statusen må være et FELT, ikke noe man leser ut av meldingen: 401 skal
+ * utløse en token-refresh og ett nytt forsøk (se `callWithAuth` i
+ * sparebank1-sync), og en regex over en feiltekst er feil sted å ta den
+ * avgjørelsen. Meldingsformatet er uendret, så `probe`-endepunktets
+ * statusuttrekk fortsetter å virke — men nye kallsteder skal lese `.status`.
+ */
+export class Sparebank1HttpError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+		this.name = 'Sparebank1HttpError';
+	}
+}
+
+export function isUnauthorized(error: unknown): boolean {
+	return error instanceof Sparebank1HttpError && (error.status === 401 || error.status === 403);
+}
+
 async function fetchWithRetry(
 	url: string,
 	options: RequestInit,
@@ -175,7 +198,7 @@ async function fetchWithRetry(
 		collectRateLimitHeaders(response, label, collector);
 		if (response.status === 429) {
 			if (attempt === maxRetries - 1) {
-				throw new Error(`${label} failed: ${response.status}`);
+				throw new Sparebank1HttpError(`${label} failed: ${response.status}`, response.status);
 			}
 			const retryAfter = response.headers.get('Retry-After');
 			const delayMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : (attempt + 1) * 2000;
@@ -201,7 +224,7 @@ export async function fetchSparebank1HelloWorld(
 	);
 
 	if (!response.ok) {
-		throw new Error(`SpareBank1 hello world failed: ${response.status}`);
+		throw new Sparebank1HttpError(`SpareBank1 hello world failed: ${response.status}`, response.status);
 	}
 
 	return response.json();
@@ -221,7 +244,7 @@ export async function fetchSparebank1Accounts(
 	);
 
 	if (!response.ok) {
-		throw new Error(`SpareBank1 accounts fetch failed: ${response.status}`);
+		throw new Sparebank1HttpError(`SpareBank1 accounts fetch failed: ${response.status}`, response.status);
 	}
 
 	return parseArrayResponse(await response.json());
@@ -255,7 +278,7 @@ export async function fetchSparebank1Transactions(
 	);
 
 	if (!response.ok) {
-		throw new Error(`SpareBank1 transactions fetch failed: ${response.status}`);
+		throw new Sparebank1HttpError(`SpareBank1 transactions fetch failed: ${response.status}`, response.status);
 	}
 
 	return parseArrayResponse(await response.json());

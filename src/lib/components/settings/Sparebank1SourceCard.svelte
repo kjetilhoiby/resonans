@@ -252,6 +252,9 @@
 		<div class="row"><Button href="/api/sensors/sparebank1/connect">Re-autentiser SpareBank 1</Button></div>
 	{:else if sparebank1Status?.connected}
 		<p class="ok">Tilkoblet</p>
+		{#if sparebank1Status.sensor?.lastError}
+			<p class="err">Siste synk feilet: {sparebank1Status.sensor.lastError}</p>
+		{/if}
 		<div class="field">
 			<p class="field-title">Importperiode</p>
 			<div class="row import-mode-row">

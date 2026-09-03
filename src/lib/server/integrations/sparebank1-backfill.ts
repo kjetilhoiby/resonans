@@ -117,13 +117,15 @@ registerBatchHandler('sparebank1_backfill', {
 			(isLastChunk ? ' (siste)' : '')
 		);
 
-		const sensor = await getSparebank1Sensor(userId);
-		if (!sensor) throw new Error('Ingen SpareBank1-sensor funnet');
-		const accessToken = await getValidSparebank1AccessToken(sensor);
-
+		// INGEN tokenhenting her. Transaksjonene ligger alt i payloaden, så steget
+		// gjør ingen API-kall — og en henting per chunk betød ett refresh per
+		// chunk når `expires_at` var stale. Med rotasjon ble det en kjede av
+		// rotasjoner per import, altså nettopp det som drepte refresh-tokenet.
+		// `syncAllSparebank1Data` henter selv et token LAT hvis den mot formodning
+		// skulle trenge det. Se sparebank1-token.ts.
 		const result = await syncAllSparebank1Data(userId, {
 			skipExistingDedup: true,
-			prefetchedAccounts: { accounts: [account], accessToken, rateLimitHeaders: {} },
+			prefetchedAccounts: { accounts: [account], rateLimitHeaders: {} },
 			prefetchedTransactions: { [accountKey]: chunk }
 		});
 
