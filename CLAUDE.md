@@ -214,6 +214,13 @@ et vindu, ikke et arkiv.
 
 **Brukslogging** (`usage_events`-tabellen, se `docs/changelog/2026-06-09-brukslogging.md`):
 
+**Hurtighandlingene på hjemskjermen: navnet bor PÅ oppføringen.** `PRODUCERS` i
+`action-suggestion-service.ts` er `{ name, produce }`, ikke to parallelle arrayer.
+Fram til september 2026 sto navnene i en egen `PRODUCER_NAMES` «holdt i samme
+rekkefølge», og den hadde drevet: `hodedump` manglet, så alt fra indeks 4 og
+utover ble perf-logget under NABOENS navn og den siste som `undefined` — en treg
+produsent var umulig å finne. Legger du til en produsent, legg den i den ene lista.
+
 Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$lib/client/usage-logger`) — ingen instrumentering trengs per side. Klikk på interaktive elementer får label etter denne prioriteringen: `data-track` > `aria-label` > input-type/navn > knappetekst.
 
 - **Knapper med beskrivende tekst** («Legg til», «Opprett»): trenger ingenting — teksten blir label.
@@ -1297,6 +1304,21 @@ Se samme changelog, fase 5. `$lib/domain/health/sick-checkin.ts`, cron
   det går. Et spørsmål samme dag leser som at appen ikke fikk det med seg.
 - **Bokføringen skjer før utsending** (som `workout_notifications`), så to
   samtidige kjøringer ikke sender hver sin. Et tapt spørsmål prøves ikke på nytt.
+- **Pushen MÅ ha en svarflate, og chipen er den.** `sickCheckinProducer` legger en
+  hurtighandling på hjemskjermen så lenge perioden står (beslutningen rent i
+  `decideSickChip`). Uten den finnes spørsmålet bare i varselet, og er borte idet
+  varselet sveipes bort — og friskmeldingen lå to navigasjoner unna. Chipen er
+  altså IKKE en nudge: pushen er tids- og kadensegatet, chipen står. Samme skille
+  som `screen-time-onboarding`-chipen.
+- **«Besvart» måles mot `sensor_events.createdAt`, aldri `timestamp`.** På et
+  symptom er tidsstempelet STARTDAGEN, så et symptom registrert i etterkant ville
+  sett ut som et svar som kom før spørsmålet. Og sammenligningen er tidspunkt mot
+  tidspunkt, ikke «sendt i dag» — en ubesvart oppfølging fra i går kveld er
+  fortsatt ubesvart.
+- **Chip og push lenker til samme sted** (`healthThemePath` i
+  `$lib/server/health/health-theme.ts`). To oppslag som begge gjetter på temanavnet
+  kunne pekt ulike steder, og en chip som havner et annet sted enn varselet den
+  svarer på er verre enn ingen chip.
 - Ingen medisinske råd: den spør og registrerer.
 
 ### Streaks: én motor, tre flater

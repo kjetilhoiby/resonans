@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+	SICK_CHIP_PRIORITY_PENDING,
+	SICK_CHIP_PRIORITY_STANDING,
+	decideSickChip,
 	CHECKIN_EARLIEST_HOUR,
 	CHECKIN_LATEST_HOUR,
 	MAX_CHECKIN_SYMPTOMS,
@@ -119,5 +122,61 @@ describe('decideSickCheckin — når den spør', () => {
 	it('gir ingen medisinske råd', () => {
 		const d = decideSickCheckin({ ...base, symptoms: [sym({ severity: 'mye' })] })!;
 		expect(`${d.title} ${d.body}`).not.toMatch(/lege|bør|antibiotika|alvorlig|normalt varer/i);
+	});
+});
+
+describe('decideSickChip', () => {
+	const at = (iso: string) => new Date(iso);
+	const base = {
+		periodStart: '2026-09-01',
+		checkinSentAt: null as Date | null,
+		lastAnswerAt: null as Date | null,
+		todayKey: '2026-09-03'
+	};
+
+	it('ingen chip når man ikke er syk', () => {
+		expect(decideSickChip({ ...base, periodStart: null })).toBeNull();
+	});
+
+	it('står der mens perioden varer, med dag som kontekst', () => {
+		const d = decideSickChip(base)!;
+		expect(d.label).toBe('Syk');
+		expect(d.value).toBe('dag 3');
+		expect(d.pending).toBe(false);
+		expect(d.priority).toBe(SICK_CHIP_PRIORITY_STANDING);
+	});
+
+	it('et sendt og ubesvart spørsmål løfter chipen', () => {
+		const d = decideSickChip({ ...base, checkinSentAt: at('2026-09-03T12:00:00Z') })!;
+		expect(d.label).toBe('Hvordan går det?');
+		expect(d.pending).toBe(true);
+		expect(d.priority).toBe(SICK_CHIP_PRIORITY_PENDING);
+		expect(d.priority).toBeGreaterThan(SICK_CHIP_PRIORITY_STANDING);
+	});
+
+	it('et svar ETTER spørsmålet senker den igjen', () => {
+		const d = decideSickChip({
+			...base,
+			checkinSentAt: at('2026-09-03T12:00:00Z'),
+			lastAnswerAt: at('2026-09-03T12:05:00Z')
+		})!;
+		expect(d.pending).toBe(false);
+		expect(d.label).toBe('Syk');
+	});
+
+	it('et svar FØR spørsmålet er ikke et svar', () => {
+		// Symptomet ble registrert i går; spørsmålet kom i dag.
+		const d = decideSickChip({
+			...base,
+			checkinSentAt: at('2026-09-03T12:00:00Z'),
+			lastAnswerAt: at('2026-09-02T09:00:00Z')
+		})!;
+		expect(d.pending).toBe(true);
+	});
+
+	it('en ubesvart oppfølging fra i går er fortsatt ubesvart i dag', () => {
+		// Derfor sammenlignes tidspunkter, ikke «sendt i dag ja/nei».
+		const d = decideSickChip({ ...base, checkinSentAt: at('2026-09-02T20:00:00Z') })!;
+		expect(d.pending).toBe(true);
 	});
 });

@@ -25,6 +25,7 @@ import { birthdayInterviewProducer } from './action-producers/birthday-interview
 import { birthdayKavalkadeProducer } from './action-producers/birthday-kavalkade';
 import { livsintervjuProducer } from './action-producers/livsintervju';
 import { retningKvartalProducer } from './action-producers/retning-kvartal';
+import { sickCheckinProducer } from './action-producers/sick-checkin';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -56,24 +57,33 @@ export type ActionProducer = (
 	ctx: ProducerContext
 ) => Promise<ActionCandidate[]> | ActionCandidate[];
 
-// Sjekk inn-chipen produseres ikke lenger server-side: slot-sjekkinnen (HomeScreen)
-// viser en lokal chip når fullskjermen er dismisset men slottet ikke registrert.
-const PRODUCERS: ActionProducer[] = [
-	focusTimerProducer,
-	reflectionLightProducer,
-	quickWinProducer,
-	inboxNoteProducer,
-	hodedumpProducer,
-	sortInboxProducer,
-	planTomorrowProducer,
-	planWeekProducer,
-	planMonthProducer,
-	trainingProgramProducer,
-	screenTimeOnboardingProducer,
-	birthdayInterviewProducer,
-	birthdayKavalkadeProducer,
-	livsintervjuProducer,
-	retningKvartalProducer
+/**
+ * Sjekk inn-chipen produseres ikke lenger server-side: slot-sjekkinnen (HomeScreen)
+ * viser en lokal chip når fullskjermen er dismisset men slottet ikke registrert.
+ *
+ * **Navnet bor PÅ oppføringen, ikke i en parallell liste.** Fram til september
+ * 2026 sto navnene i en egen `PRODUCER_NAMES`-array «holdt i samme rekkefølge»,
+ * og den hadde drevet: `hodedump` manglet, så alt fra indeks 4 og utover ble
+ * perf-logget under NABOENS navn, og den siste produsenten som `undefined`. En
+ * treg `retning-kvartal` var altså umulig å finne. Formen her kan ikke drive.
+ */
+const PRODUCERS: Array<{ name: string; produce: ActionProducer }> = [
+	{ name: 'focus-timer', produce: focusTimerProducer },
+	{ name: 'reflection-light', produce: reflectionLightProducer },
+	{ name: 'quick-win', produce: quickWinProducer },
+	{ name: 'inbox-note', produce: inboxNoteProducer },
+	{ name: 'hodedump', produce: hodedumpProducer },
+	{ name: 'sort-inbox', produce: sortInboxProducer },
+	{ name: 'plan-tomorrow', produce: planTomorrowProducer },
+	{ name: 'plan-week', produce: planWeekProducer },
+	{ name: 'plan-month', produce: planMonthProducer },
+	{ name: 'training-program', produce: trainingProgramProducer },
+	{ name: 'screen-time-onboarding', produce: screenTimeOnboardingProducer },
+	{ name: 'birthday-interview', produce: birthdayInterviewProducer },
+	{ name: 'birthday-kavalkade', produce: birthdayKavalkadeProducer },
+	{ name: 'livsintervju', produce: livsintervjuProducer },
+	{ name: 'retning-kvartal', produce: retningKvartalProducer },
+	{ name: 'sick-checkin', produce: sickCheckinProducer }
 ];
 
 async function loadPlannedContexts(userId: string) {
@@ -131,14 +141,6 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 	};
 }
 
-// Holdes i samme rekkefølge som PRODUCERS (kun brukt til perf-logging)
-const PRODUCER_NAMES = [
-	'focus-timer', 'reflection-light', 'quick-win',
-	'inbox-note', 'sort-inbox', 'plan-tomorrow', 'plan-week',
-	'plan-month', 'training-program', 'screen-time-onboarding',
-	'selvangivelse', 'kavalkade', 'livsintervju', 'retning-kvartal'
-];
-
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {
 	const t0 = performance.now();
 	const ctx = await buildContext(userId);
@@ -146,12 +148,12 @@ export async function produceActions(userId: string): Promise<ActionCandidate[]>
 
 	const [results, snoozed] = await Promise.all([
 		Promise.all(
-			PRODUCERS.map(async (p, i) => {
+			PRODUCERS.map(async ({ name, produce }) => {
 				const pt = performance.now();
 				try {
-					const items = await p(ctx);
+					const items = await produce(ctx);
 					const ms = performance.now() - pt;
-					if (ms > 50) console.log(`[perf][actions] producer=${PRODUCER_NAMES[i]} ms=${ms.toFixed(0)} items=${items.length}`);
+					if (ms > 50) console.log(`[perf][actions] producer=${name} ms=${ms.toFixed(0)} items=${items.length}`);
 					return items;
 				} catch (err) {
 					console.error('[action-suggestion-service] producer failed', err);

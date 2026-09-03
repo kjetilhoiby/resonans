@@ -150,3 +150,74 @@ export function decideSickCheckin(input: SickCheckinInput): SickCheckinDecision 
 		symptomIds: ranked.map((s) => s.id)
 	};
 }
+
+/* ── Hurtighandlingen på hjemskjermen ────────────────────────────────────── */
+
+/**
+ * Chipen er IKKE nudgen, og det er hele poenget.
+ *
+ * Pushen er tidsgatet (11–21) og kadensegatet — den kommer sjelden, med vilje.
+ * Men et spørsmål som bare finnes i et varsel er borte i det øyeblikket man
+ * sveiper varselet bort, og da kan man ikke svare i det hele tatt. Chipen er
+ * svarflaten: den står så lenge perioden står, på en skjerm brukeren selv har
+ * åpnet. Det er samme skille som mellom `screen-time-onboarding`-chipen (står
+ * til oppgaven er gjort) og en nudge.
+ *
+ * Den bærer også **friskmeldingen**, som ellers ligger to navigasjoner unna.
+ */
+
+/** Chipen når et spørsmål er sendt og ikke besvart. Tidssensitivt og personlig. */
+export const SICK_CHIP_PRIORITY_PENDING = 85;
+/** Chipen som bare står der mens perioden varer. Til stede, uten å rope. */
+export const SICK_CHIP_PRIORITY_STANDING = 50;
+
+export interface SickChipInput {
+	/** Startdagen på den aktive sykeperioden. Null = ikke syk. */
+	periodStart: string | null;
+	/**
+	 * Da siste oppfølging ble SENDT, eller null.
+	 *
+	 * Ikke «i dag ja/nei»: en oppfølging sendt i går kveld som fortsatt ikke er
+	 * besvart er like ubesvart i dag.
+	 */
+	checkinSentAt: Date | null;
+	/**
+	 * Da brukeren sist skrev noe om sykdommen (symptom eller periode).
+	 *
+	 * Sammenligningen er mot `createdAt` — altså da raden ble MOTTATT — ikke mot
+	 * `timestamp`, som på et symptom er startdagen. Et symptom registrert i
+	 * etterkant har et tidsstempel bakover i tid og ville sett ut som et svar
+	 * som kom før spørsmålet.
+	 */
+	lastAnswerAt: Date | null;
+	todayKey: string;
+}
+
+export interface SickChipDecision {
+	label: string;
+	/** «dag 3» — konteksten som gjør chipen verdt å lese. */
+	value: string;
+	priority: number;
+	/** Sann når et sendt spørsmål ikke er besvart. */
+	pending: boolean;
+}
+
+export function decideSickChip(input: SickChipInput): SickChipDecision | null {
+	if (!input.periodStart) return null;
+
+	const dayOfPeriod = dayNumber(input.todayKey) - dayNumber(input.periodStart) + 1;
+	if (dayOfPeriod < 1) return null;
+
+	const pending =
+		input.checkinSentAt !== null &&
+		(input.lastAnswerAt === null || input.lastAnswerAt < input.checkinSentAt);
+
+	return {
+		// Ubesvart: gjenta spørsmålet pushen stilte, med de samme ordene.
+		// Ellers: si tilstanden, siden det er den chipen finnes for.
+		label: pending ? 'Hvordan går det?' : 'Syk',
+		value: `dag ${dayOfPeriod}`,
+		priority: pending ? SICK_CHIP_PRIORITY_PENDING : SICK_CHIP_PRIORITY_STANDING,
+		pending
+	};
+}

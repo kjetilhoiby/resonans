@@ -192,3 +192,39 @@ måler ingenting her; brukeren har skrevet det selv.
   ingen kurve på Søvn-flaten, der den hører sammen med HRV og sovepuls.
 - Oppfølgingen kan bare besvares på flaten, ikke fra varselet — et interaktivt
   svar i pushen ville spart et trykk.
+
+## Etterspill 3. september: nudgen manglet en svarflate
+
+Brukeren fikk oppfølgingen og oppdaget hullet med én setning: «den ligger ikke som
+Hurtighandling på hjemskjermen». Riktig — pushen ble bygget, men ingen
+`ActionProducer`. Konsekvensen er verre enn en manglende snarvei: **et spørsmål
+som bare finnes i et varsel er borte i det øyeblikket varselet sveipes bort**, og
+da kan det ikke besvares i det hele tatt. Friskmeldingen lå dessuten to
+navigasjoner unna.
+
+`sickCheckinProducer` (`action-producers/sick-checkin.ts`) med beslutningen rent i
+`decideSickChip`:
+
+- **Chipen er ikke nudgen.** Pushen er tids- og kadensegatet med vilje; chipen
+  står så lenge perioden gjør, på en skjerm brukeren selv har åpnet. Samme skille
+  som `screen-time-onboarding`-chipen, som står til oppgaven er gjort.
+- **To tilstander.** Sendt og ubesvart → «Hvordan går det?» (prioritet 85, samme
+  ord som pushen). Ellers → «Syk · dag 3» (prioritet 50). Begge fører til samme
+  kort.
+- **«Besvart» måles mot `createdAt`, aldri `timestamp`.** På et symptom er
+  tidsstempelet STARTDAGEN, så et symptom registrert i etterkant ville sett ut som
+  et svar som kom før spørsmålet.
+- **Sammenligningen er tidspunkt mot tidspunkt, ikke «sendt i dag».** En ubesvart
+  oppfølging fra i går kveld er fortsatt ubesvart i dag.
+- Kun en ekte periode med kjent startdag gir chip — samme gate som pushen, så de
+  to er enige om når spørsmålet finnes.
+
+**Og en utilsiktet bug funnet på veien:** `PRODUCER_NAMES` i
+`action-suggestion-service.ts` var en parallell array «holdt i samme rekkefølge
+som PRODUCERS», og den hadde drevet — `hodedump` manglet, så alt fra indeks 4 og
+utover ble perf-logget under NABOENS navn, og den siste produsenten som
+`undefined`. En treg `retning-kvartal` var altså umulig å finne i loggen. Navnet
+bor nå på oppføringen (`{ name, produce }`), en form som ikke kan drive.
+
+Verifisering: 4202 tester (6 nye), `npm run check` og `npm run build` grønne.
+`npm run test:visual` fortsatt ikke kjørt.
