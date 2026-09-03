@@ -144,6 +144,16 @@ makspulsen.
   ikke sidetall:** en økt uten trackPoints får aldri feltet, så en løkke som
   kjørte til «ingen mangler» ville løpt i ring over de samme radene.
   `nextBefore` er null når batchen var kortere enn limit.
+- **En skriving er ikke et treff, og den forvekslingen ble målt samme dag.**
+  Kortet sa «63 økter analysert over 14 runder. 484 uten brukbare data» og
+  deretter «495 står igjen» — tall som ikke summerer. `analyzed` telte
+  SKRIVINGER, og en økt med spor men uten brukbar pulskurve får `bestEfforts`
+  og GAP mens `intensity_split` blir stående null. Elleve økter var av det
+  slaget. Endepunktet returnerer derfor tre utfall: `filled` (fikk feltet),
+  `analyzedWithoutField` (spor, men pulskurven bar ikke) og `skipped` (ingen
+  spor). Kortet lister dem hver for seg — en sekkepost på «uten data» kan ikke
+  summeres mot det som står igjen, og da ser tallene gale ut selv når de er
+  riktige.
 - `WorkoutReanalyzeCard` i `/settings/sources` kaller endepunktet om igjen med
   markøren og teller ferdige økter per runde. Løkka går i klienten fordi en
   serverside-løkke ville truffet svartidsgrensa, og fordi en jobb som tar tid på

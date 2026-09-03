@@ -97,7 +97,16 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 		.where(selection);
 
 	if (dryRun) {
-		return json({ ok: true, dryRun: true, outstanding: total, limit, analyzed: 0, skipped: 0 });
+		return json({
+			ok: true,
+			dryRun: true,
+			outstanding: total,
+			limit,
+			filled: 0,
+			analyzedWithoutField: 0,
+			analyzed: 0,
+			skipped: 0
+		});
 	}
 
 	const candidates = await db
@@ -121,6 +130,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	if (candidates.length === 0) {
 		return json({
 			ok: true,
+			filled: 0,
+			analyzedWithoutField: 0,
 			analyzed: 0,
 			skipped: 0,
 			candidates: 0,
@@ -146,6 +157,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	if (eventIds.size === 0) {
 		return json({
 			ok: true,
+			filled: 0,
+			analyzedWithoutField: 0,
 			analyzed: 0,
 			skipped: candidates.length,
 			candidates: candidates.length,
@@ -192,12 +205,19 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 		}
 	}
 
-	let analyzed = 0;
+	// TRE utfall, ikke to. En skriving er ikke et treff: en økt med spor men uten
+	// brukbar pulskurve får `bestEfforts` og GAP, mens det feltet du BA om blir
+	// stående null. Telles den som «analysert», summerer ikke tallene — 63
+	// analysert + 484 uten data mot 495 gjenstående, målt 3. september 2026, og
+	// de elleve i differansen var nettopp dette utfallet.
+	let filled = 0;
+	let analyzedWithoutField = 0;
 	let skipped = 0;
 	const now = new Date();
 	for (const c of candidates) {
 		const a = bestPerCanonical.get(c.id);
 		if (!a) {
+			// Ingen trackPoints i det hele tatt (eller ingen evidence som svarte).
 			skipped += 1;
 			continue;
 		}
@@ -212,13 +232,20 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 				updatedAt: now
 			})
 			.where(eq(canonicalWorkouts.id, c.id));
-		analyzed += 1;
+		// Fikk raden feltet som ble etterspurt? Uten `missing` er spørsmålet
+		// «ble noe skrevet», og da er hver skriving et treff.
+		if (!missing || a[missing] != null) filled += 1;
+		else analyzedWithoutField += 1;
 	}
 
 	return json({
 		ok: true,
-		analyzed,
+		filled,
+		analyzedWithoutField,
 		skipped,
+		// Skrivinger totalt. Beholdt fordi den svarer på «rørte jobben noe», men
+		// `filled` er tallet en flate skal vise.
+		analyzed: filled + analyzedWithoutField,
 		candidates: candidates.length,
 		outstanding: total,
 		nextBefore,

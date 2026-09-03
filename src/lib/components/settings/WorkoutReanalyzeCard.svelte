@@ -49,7 +49,18 @@
 	let outstanding = $state<number | null>(null);
 	let running = $state(false);
 	let error = $state<string | null>(null);
-	let analyzed = $state(0);
+	/** Økter som FIKK feltet. Det er tallet jobben handler om. */
+	let filled = $state(0);
+	/**
+	 * Økter med spor, men der feltet ikke kunne regnes ut likevel.
+	 *
+	 * Eget tall fordi det er en ANNEN mangel enn «ingen spor»: her finnes en
+	 * pulskurve som er for kort eller for hullete, og en ny runde endrer det ikke.
+	 * Slått sammen med skrivingene summerte ikke tallene — 63 «analysert» mot 495
+	 * gjenstående var elleve økter av dette slaget.
+	 */
+	let withoutField = $state(0);
+	/** Økter uten spor i det hele tatt. */
 	let skipped = $state(0);
 	let rounds = $state(0);
 	let done = $state(false);
@@ -86,7 +97,8 @@
 		running = true;
 		error = null;
 		done = false;
-		analyzed = 0;
+		filled = 0;
+		withoutField = 0;
 		skipped = 0;
 		rounds = 0;
 		try {
@@ -105,7 +117,8 @@
 				// Tallene oppdateres per runde, ikke til slutt: på en telefon over
 				// mobilnett tar dette tid, og en knapp som bare står og spinner ser
 				// ut som at den henger.
-				analyzed += data.analyzed ?? 0;
+				filled += data.filled ?? 0;
+				withoutField += data.analyzedWithoutField ?? 0;
 				skipped += data.skipped ?? 0;
 				rounds = round + 1;
 				outstanding = data.outstanding ?? outstanding;
@@ -140,7 +153,7 @@
 	<div class="controls">
 		<Button variant="secondary" disabled={running} onClick={check}>Se hvor mange</Button>
 		<Button disabled={running} onClick={run}>
-			{running ? `Jobber… ${analyzed} ferdig` : 'Etterfyll nå'}
+			{running ? `Jobber… ${filled} ferdig` : 'Etterfyll nå'}
 		</Button>
 	</div>
 
@@ -160,19 +173,32 @@
 	{/if}
 
 	{#if done}
+		<!-- Tre utfall, hvert med sin egen grunn. En sekkepost på «uten data» kan
+		     ikke summeres mot det som står igjen, og da ser tallene gale ut selv
+		     når de er riktige. -->
 		<p class="summary">
-			{analyzed} {analyzed === 1 ? 'økt' : 'økter'} analysert over {rounds}
+			{filled} av {filled + withoutField + skipped}
+			{filled + withoutField + skipped === 1 ? 'økt' : 'økter'} fikk {FIELD_LABELS[field]},
+			over {rounds}
 			{rounds === 1 ? 'runde' : 'runder'}.
+		</p>
+		<ul class="breakdown">
+			{#if withoutField > 0}
+				<li>
+					{withoutField} har spor, men pulskurven er for kort eller for hullete å dele
+					opp.
+				</li>
+			{/if}
 			{#if skipped > 0}
-				{skipped} uten brukbare data.
+				<li>{skipped} har ingen lagret pulskurve — de fleste er registrert av klokka alene.</li>
 			{/if}
 			{#if outstanding !== null && outstanding > 0}
-				<span class="dim"
-					>{outstanding} står igjen — de har ingen pulskurve å dele opp, og en ny runde
-					endrer det ikke.</span
-				>
+				<li>
+					{outstanding} står igjen totalt. En ny runde henter dem ikke inn; det kreves et
+					spor med puls, altså en økt lastet opp fra Ekko eller en GPX-fil.
+				</li>
 			{/if}
-		</p>
+		</ul>
 		{#if rounds >= MAX_ROUNDS}
 			<p class="warn">
 				Stoppet på {MAX_ROUNDS} runder. Trykk igjen for å fortsette der jobben sto.
@@ -231,7 +257,14 @@
 		line-height: 1.5;
 	}
 
-	.dim {
+	.breakdown {
+		margin: 0;
+		padding-left: 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.8rem;
+		line-height: 1.5;
 		color: var(--text-secondary, #aaa);
 	}
 
