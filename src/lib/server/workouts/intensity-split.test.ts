@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	MAX_SAMPLE_GAP_SECONDS,
 	MIN_QUALITY_BLOCK_SECONDS,
+	analyzeWorkout,
+	computeHrZoneDistribution,
 	computeIntensitySplit,
 	type TrackPoint
 } from './workout-analytics';
@@ -138,5 +140,40 @@ describe('computeIntensitySplit', () => {
 
 		const grey = computeIntensitySplit(track(at(139, 600)), baseline)!;
 		expect(grey.greySeconds).toBeGreaterThan(560);
+	});
+});
+
+/**
+ * Det gamle brystbeltet: 130 → 230 på ett sekund, og fast der oppe resten av
+ * økta. Uten vakta i `hr-artefacts.ts` er dette den verste inputen tidsdelingen
+ * kan få — hele økta blir ÉN sammenhengende blokk over Z4s gulv, altså 100 %
+ * kvalitet og null rolig, i nøyaktig den grafen som skal svare på om de rolige
+ * øktene er rolige.
+ */
+describe('ødelagt pulsbelte', () => {
+	const brokenBelt = track([...at(130, 300), ...at(230, 2100)]);
+
+	it('gir ingen tidsdeling', () => {
+		expect(computeIntensitySplit(brokenBelt, baseline)).toBeUndefined();
+	});
+
+	it('gir ingen sonefordeling', () => {
+		expect(computeHrZoneDistribution(brokenBelt, baseline)).toBeUndefined();
+	});
+
+	it('beholder distanse og terreng, og sier hvorfor pulsen falt ut', () => {
+		const result = analyzeWorkout(brokenBelt, baseline);
+		expect(result.bestEfforts).toBeDefined();
+		expect(result.hrDiagnosis?.usable).toBe(false);
+		expect(result.hrDiagnosis?.reasons).toContain('pinned');
+	});
+
+	it('lar en ekte økt beholde begge', () => {
+		// Puls som vandrer et par slag rundt kvalitetsgulvet.
+		const real = track(Array.from({ length: 1200 }, (_, i) => 154 + (i % 5) - 2));
+		const result = analyzeWorkout(real, baseline);
+		expect(result.hrDiagnosis?.usable).toBe(true);
+		expect(result.intensitySplit?.qualitySeconds).toBeGreaterThan(1000);
+		expect(result.hrZoneDistribution).toBeDefined();
 	});
 });
