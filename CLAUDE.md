@@ -1188,9 +1188,13 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
   lagt en hel periode av rene kvalitetsminutter inn i nøyaktig den grafen som
   skal svare på om de rolige øktene er rolige — symptomet blir identisk med
   «72 % hard», men denne gangen er terskelen uskyldig og dataene lyver.
-- **Beltetoppene på 200+ er ikke målinger.** De er ute som kandidater til
-  `resolveMaxHr`. Tanaka 179 står, 188 fra Strava er et redigerbart felt, og et
-  ekte tall krever én hard innsats med et belte som virker.
+- **Beltetoppene er ikke målinger, men grensa går på ~204 — ikke på 200.** Målt
+  over hele Strava-eksporten er 185–200 en tett, sammenhengende fordeling
+  (~85 økter), mens 204–237 er 24 spredte treff. En tidligere utgave her sa
+  «200+ er ikke målinger»; flere av 200-lesningene har troverdige snitt
+  (155–164, intervalløkter) og er antakelig ekte. **Makspuls er nå satt manuelt
+  til 192**, som er forsvarlig men konservativt — fordelingen støtter ~198, og
+  et for lavt tak blåser opp HRR og dermed effort.
 - **«Hvilke år er pulsdata til å stole på» besvares av
   `GET /api/helse/trening/pulstillit`**, ikke av å lese koden. Reglene i
   `$lib/domain/health/hr-trust-periods.ts`, lasteren i
@@ -1234,12 +1238,47 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
 - **Året og dommen på én linje, tallene innrykket under.** `.year` var én
   flex-rad med `flex-wrap`, og 2026 sin lange tall-linje brakk ned uten årstall
   foran — den leste som en totalsum for hele tabellen.
-- **Målt 3. september 2026: umulige pulstall er IKKE avgrenset til beltetida.**
-  2015 (2 av 8, topp 228) og 2016 (1 av 5, topp 228) er som ventet, men 2026 har
-  7 av 74 med topp 237 og 2021 har 1 av 26 med topp 235 — altså klokka og Ekko.
-  Toppene i «ingen funn»-årene er 208, 200, 193 og 192, alle over Tanaka-anslaget
-  på 179. 7 av 74 er 9,5 %, rett under `WIDESPREAD_SHARE` (10 %); terskelen er
-  IKKE justert mot det tallet.
+- **ÉN ødelagt pulssensor forklarer alle funnene, og den var i bruk hele veien.**
+  Brukeren hadde ett brystbelte fra 2014 til 30. juni 2026. Det begynte å gi
+  umulig høy, stabil puls et stykke inn i levetiden, og ble deretter brukt
+  SPORADISK — «prøvde, fikk søppel, ga opp, prøvde igjen». Målt mot Strava-
+  eksporten (1120 økter, 574 med puls) 3. september 2026:
+  - **Det finnes ingen bruddato å gate på.** De dårlige øktene er 24 spredte
+    treff fra mai 2015 til 30. juni 2026, ikke et intervall. En import kan
+    derfor ikke gates på dato — hver fil må dømmes på sin egen kurve.
+  - **Andelen er lav VED KONSTRUKSJON**, siden beltet ble brukt sjelden. Derfor
+    kan ikke `WIDESPREAD_SHARE` (10 %) skille noe: hvert år leser
+    «enkeltavvik» uansett hvor ødelagt beltet var. Utbredelse er feil akse for
+    denne brukeren; kilde og enkeltøkt er de riktige.
+  - **Bruddet i fordelingen ligger på 200–204, ikke på 192.** 185–200 er en tett,
+    sammenhengende fordeling (~85 økter) — altså normal variasjon rundt en ekte
+    makspuls. 204–237 er 24 spredte verdier. Terskelen er IKKE justert mot dette;
+    tallet står her som en måling.
+  - **Bare ÉN økt er et fastlåst belte** (24. desember 2021: snitt 192, maks 237,
+    altså hrr 1,00 gjennom hele økta). De 23 andre har helt plausible SNITT
+    (hrr 0,73–0,88) og bare en umulig topp — enkeltutslag, ikke låste kurver.
+    Konsekvensen for importen er at `MAX_ARTEFACT_SHARE` (2 %) korrekt GODTAR
+    dem: noen spike-punkter i et spor på 2000 forkaster ikke kurven, og maksen
+    nøytraliseres av en manuelt satt makspuls.
+  - **To sykkelturer i august 2025** (snitt 112 og 125, maks 214 begge) er en
+    TREDJE feilmodus: optisk sensor som mister feste på en rolig tur. Ikke
+    beltet, og ikke i beltets tidsrom.
+  - **Juli 2026 og senere er rent** (41 økter, topp 179 i både juli og august).
+    Juni er det IKKE: 237, 235 og 233. Skjæringspunktet er 1. juli.
+  - **Ingen puls finnes før 2015.** 2012 (10 økter), 2014 (62) og 2017 (12) har
+    null pulsmålinger i Strava. Et «rent tidlig vindu med brukbar puls» ble
+    antatt og finnes ikke — de årene bidrar med ruter og distanse.
+  **NB: en tidligere utgave av dette avsnittet slo fast at funnene i 2021 og 2026
+  var «altså klokka og Ekko».** Det var galt. Beltet levde gjennom hele perioden,
+  så «beltetida» er hele historikken, og slutningen sendte feilsøkingen etter en
+  sensorfeil i klokka som ikke finnes.
+- **Makspuls er nå satt MANUELT** (`metricSettings.maxHr.goal` på Helse-mortemaet,
+  lest av `readManualMaxHr` i `effort-service.ts`). Det gjør `observedMaxes`-stien
+  uoppnåelig — `resolveMaxHr` returnerer på manuell FØR den rører observerte
+  topper — så filter-gapet under er latent, ikke levende. Endrer du verdien, må
+  BÅDE `POST /api/sensors/workouts/reanalyze` (sone- og intensitets-baseliner har
+  toleranse 2 slag) og `POST /api/helse/trening/reprojiser` kjøres: `effortScore`
+  er lagret, og uten reprojeksjon leser ankeret rader skåret mot den gamle maksen.
 - Kjent rest: `getEffortBaseline` leser bare siste 30 døgn og filtrerer
   `observedMaxes` mot `trimmedObservedMax` sitt eget spenn (100–230), ikke mot
   `MAX_PLAUSIBLE_HR`; dommen per økt lagres ikke; periodediagnosen dekker én
