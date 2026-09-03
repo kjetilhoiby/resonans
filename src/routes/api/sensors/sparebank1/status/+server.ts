@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
+import { needsReauthentication } from '$lib/domain/sensor-connection';
 import type { RequestHandler } from './$types';
 
 function decodeCredentials(encoded: string) {
@@ -39,7 +40,14 @@ export const GET: RequestHandler = async ({ locals }) => {
 		const expiresAt = (sensor.config as Record<string, unknown> | null)?.expiresAt;
 		const expiresAtMs = typeof expiresAt === 'string' ? Number(expiresAt) * 1000
 			: typeof expiresAt === 'number' ? expiresAt * 1000 : null;
-		const isExpired = !hasRefreshToken || (expiresAtMs !== null && expiresAtMs < Date.now());
+
+		// `accessTokenExpired` er DIAGNOSE, ikke et varsel: access-tokenet lever
+		// rundt en time og synken går hver 6., så det er utløpt det meste av
+		// døgnet — det er nettopp det refresh-tokenet er til for. Feltet het
+		// `isExpired` fram til september 2026 og drev re-autentiseringsknappen;
+		// se `$lib/domain/sensor-connection.ts`.
+		const accessTokenExpired = expiresAtMs !== null && expiresAtMs < Date.now();
+		const tokenState = { hasRefreshToken, lastError: sensor.lastError };
 
 		return json({
 			connected: true,
@@ -49,11 +57,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 				provider: sensor.provider,
 				type: sensor.type,
 				lastSync: sensor.lastSync,
-				isExpired,
-				// `isExpired` regnes av `config.expiresAt` og at et refresh token
-				// FINNES — men et refresh token SB1 har avvist ligger fortsatt i
-				// raden. Flaten sa derfor «Tilkoblet» mens kjeden var død, og
-				// dataene bare stoppet. `lastError` er signalet som faktisk vet.
+				// Bare det ENE tilfellet en innlogging faktisk løser.
+				needsReauth: needsReauthentication(tokenState),
+				accessTokenExpired,
+				// Et refresh token SB1 har avvist ligger fortsatt i raden og ser
+				// friskt ut. `lastError` er det eneste signalet som vet.
 				lastError: sensor.lastError,
 				createdAt: sensor.createdAt
 			}
