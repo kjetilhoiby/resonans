@@ -12,6 +12,7 @@ import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 import type { VideoPreviewFields } from './home-media';
 import type { FlowContext } from '$lib/flows/types';
+import type { SickCheckinFlowContext } from '$lib/flows/sick-checkin';
 import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
 import type { LivskompassScores, LivskompassWeekGoal } from '$lib/domains/livskompass/dimensions';
 import type { StreakState } from '$lib/domain/streaks';
@@ -332,6 +333,16 @@ export interface HomeContext {
 		points: EgenfrekvensRecentPoint[];
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null;
+
+	// ── Sykeinnsjekk ──
+	/**
+	 * Konteksten flyten bygges av, null = lukket.
+	 *
+	 * Hentes ved åpning (ikke i sidelasteren): symptomer, forrige nivå og
+	 * sensortallene koster fire spørringer, og hjemskjermen skal ikke betale for
+	 * dem når man ikke er syk.
+	 */
+	sickCheckinFlow: SickCheckinFlowContext | null;
 
 	// ── Livskompasset (ukentlig helgekompass) ──
 	/** Fullskjerm-teppe mens vi avklarer om helgekompasset skal vises */

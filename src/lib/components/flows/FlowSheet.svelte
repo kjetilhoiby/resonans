@@ -144,6 +144,19 @@
 	const isFocus = $derived(flow?.focus === true);
 	const totalSteps = $derived(flow?.steps?.length ?? 1);
 	const currentStep = $derived(flow?.steps?.[currentStepIndex]);
+
+	/**
+	 * Stegets ledetekst, med `buildPrompts` og context-overstyring lagt på.
+	 *
+	 * Samme prioritering som chat-stegene bruker (`context.prompts` >
+	 * `buildPrompts` > `step.prompt`), så et form- eller listesteg kan si noe som
+	 * avhenger av svarene så langt — f.eks. en retning regnet av forrige steg.
+	 */
+	const currentStepPrompt = $derived.by(() => {
+		const step = currentStep;
+		if (!step) return undefined;
+		return context.prompts?.[step.id] ?? step.buildPrompts?.(flowData)?.prompt ?? step.prompt;
+	});
 	const isFirstStep = $derived(currentStepIndex === 0);
 	const isLastStep = $derived(
 		flow?.steps ? findNextStepIndex(flow, currentStepIndex, flowData) >= flow.steps.length : true
@@ -673,7 +686,7 @@
 				<h3 class="fs-step-title" class:fs-focus-title={isFocus}>{currentStep.title}</h3>
 			{/if}
 			{#if isFocus && currentStep.prompt && currentStep.type !== 'mixed'}
-				<p class="fs-focus-prompt">{currentStep.prompt}</p>
+				<p class="fs-focus-prompt">{currentStepPrompt}</p>
 			{/if}
 
 			<!-- CHAT -->
@@ -694,8 +707,8 @@
 
 			<!-- FORM / MIXED -->
 			{#if currentStep.type === 'form' || currentStep.type === 'mixed'}
-				{#if currentStep.type === 'mixed' && currentStep.prompt}
-					<p class="fs-step-prompt">{currentStep.prompt}</p>
+				{#if currentStep.type === 'mixed' && currentStepPrompt}
+					<p class="fs-step-prompt">{currentStepPrompt}</p>
 				{/if}
 				{#if currentStep.fields}
 					<FlowFormStep

@@ -15,6 +15,7 @@
 	import Icon from '../../ui/Icon.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import { buildEgenfrekvensSlotFlow } from '$lib/flows/egenfrekvens-slot';
+	import { buildSickCheckinFlow } from '$lib/flows/sick-checkin';
 	import {
 		localIsoDay,
 		periodSlotStorageKey,
@@ -435,6 +436,34 @@
 			<circle class="core" cx="256" cy="256" r="26" fill="#82c882" />
 		</svg>
 	</div>
+{/if}
+
+<!-- Sykeinnsjekk: «Hvordan er det i dag?» mens en periode står -->
+{#if ctx.sickCheckinFlow}
+	<FlowSheet
+		flow={buildSickCheckinFlow(ctx.sickCheckinFlow)}
+		context={{
+			initialData: {
+				level: 3,
+				// `decision-list` nøkler på punktets TEKST, så etikettene snapshotes
+				// i samme rekkefølge som symptomene — se `onComplete` i flyten.
+				symptomLabels: ctx.sickCheckinFlow.symptoms.map((s) => s.label)
+			}
+		}}
+		onclose={() => (ctx.sickCheckinFlow = null)}
+		oncomplete={() => {
+			ctx.sickCheckinFlow = null;
+			// Chipen leses serverside, så handlingene må hentes på nytt:
+			// «Hvordan går det?» skal bli «Syk» idet spørsmålet er besvart.
+			void ctx.loadActionCandidates();
+		}}
+		onsecondaryaction={(action) => {
+			// «Snakk om det» — samme grep som egenfrekvens' «Fortsett i chat».
+			if (action.id !== 'sick-chat') return;
+			ctx.sickCheckinFlow = null;
+			void goto('/tema/helse?chat=1');
+		}}
+	/>
 {/if}
 
 <!-- Slot-sjekkin: app-open fullskjerm «Hvordan gikk …?» -->

@@ -307,3 +307,61 @@ export async function loadSickDayKeys(
 	if (periods.length === 0) return [];
 	return [...sickDayKeys(periods, fromKey, toKey, todayOsloKey(now))];
 }
+
+/* ── Nivået: dårlig → frisk ──────────────────────────────────────────────── */
+
+export const SICK_LEVEL_DATA_TYPE = 'sick_level';
+
+/**
+ * Én rad per innsjekk. `timestamp` er dagen målingen gjelder, så to innsjekker
+ * samme dag er to rader og den nyeste vinner ved lesing — vi overskriver ikke,
+ * fordi «hvordan var det i går kveld» og «hvordan er det nå» begge er sanne.
+ */
+export async function recordSickLevel(
+	userId: string,
+	level: number,
+	opts: { note?: string | null; day?: string } = {},
+	now: Date = new Date()
+): Promise<void> {
+	const day = opts.day ?? todayOsloKey(now);
+	const sensor = await getOrCreateTilstandSensor(userId);
+	await SensorEventService.write({
+		userId,
+		sensorId: sensor.id,
+		eventType: 'measurement',
+		dataType: SICK_LEVEL_DATA_TYPE,
+		timestamp: now,
+		data: { day, level, note: opts.note ?? null },
+		source: 'sick_checkin_flow'
+	});
+}
+
+/**
+ * Forrige nivåmåling FØR i dag — grunnlaget for den utledede retningen.
+ *
+ * Dagens egne målinger holdes utenfor med vilje: «ett hakk opp fra i går» skal
+ * sammenligne med i går, ikke med svaret man ga to timer siden. Sjekker man inn
+ * to ganger på én dag, er den andre en retting, ikke en ny observasjon.
+ */
+export async function lastSickLevel(
+	userId: string,
+	now: Date = new Date()
+): Promise<{ day: string; level: number } | null> {
+	const today = todayOsloKey(now);
+	const rows = await db
+		.select({ data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, SICK_LEVEL_DATA_TYPE)))
+		.orderBy(desc(sensorEvents.timestamp))
+		.limit(20);
+
+	for (const row of rows) {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const day = data.day;
+		const level = data.level;
+		if (!isDayKey(day) || typeof level !== 'number') continue;
+		if (day >= today) continue;
+		return { day, level };
+	}
+	return null;
+}

@@ -228,3 +228,88 @@ bor nå på oppføringen (`{ name, produce }`), en form som ikke kan drive.
 
 Verifisering: 4202 tester (6 nye), `npm run check` og `npm run build` grønne.
 `npm run test:visual` fortsatt ikke kjørt.
+
+## Etterspill 3. september, del 2: innsjekken som en flyt
+
+«'Hvordan går det?' lander bare på helse-temaet» — riktig, og en navigasjon til
+et kort blant mange lar spørsmålet stå ubesvart. Brukeren foreslo en flowsheet
+med slider og en kort sykeprat, med søvn/HR/temp som kontekst: «ikke for
+diagnostisering og villedning».
+
+`sick_checkin` (`$lib/flows/sick-checkin.ts`), bygget av en fabrikk som
+egenfrekvens-slotten fordi symptomlista og forløpsdagen ER innholdet.
+
+### Nivå framfor retning — «eller»-en i spørsmålet
+
+Brukeren tilbød begge («'dårlig-frisk' eller 'verre-bedre'»). De er ikke
+likeverdige:
+
+- **«Verre eller bedre?»** er det du VET når noen spør. Men det kan ikke
+  plottes, og feilen akkumulerer: tre «bedre» på rad fra et lavpunkt er fortsatt
+  et lavpunkt. Om fjorten dager kan ingen si hvor du lå.
+- **«Hvor dårlig er du?»** er sammenlignbart gjennom hele forløpet OG mellom
+  forløp — «forrige influensa lå jeg på 2 i fire dager».
+
+Og retningen er ikke tapt: den er `nivå nå − nivå sist`. **Ett spørsmål gir
+begge svar**, og retningen SIES («Ett hakk opp fra i går») framfor å spørres om.
+Samme grep som egenfrekvens, der `level` lagres og `balance` utledes.
+
+### Tallene etter slideren, ikke før
+
+Den viktigste beslutningen i flyten. Sovepuls og hudtemperatur ligger i steg 2.
+Vises de først, **ankrer de selvrapporten** — og den er det eneste signalet ingen
+sensor kan hente. Samme regel som `log_hunger`, der modellen ikke får gjette at
+«dritsulten» er en 5 fordi skalaen er kalibrert mot brukerens egne svar. Et
+ankret nivå ødelegger nettopp den kalibreringen.
+
+Tallene er SETNINGER fra domenelaget med kilde navngitt, aldri rå verdier, og
+uten en dom.
+
+### Tre steg
+
+1. Slider 1–5 «elendig → frisk», `autoAdvance`, ingen tall rundt seg.
+2. `decision-list` over pågående symptomer: bedre / uendret / verre / over.
+   Ledeteksten bærer den utledede retningen først, deretter tallene.
+3. «Noe nytt?» — fritekst symptom + notat, med `secondaryAction` «💬 Snakk om
+   det».
+
+Praten er en `secondaryAction`, ikke et fjerde steg — «kort innsjekk» er kravet,
+og det er nøyaktig hva egenfrekvens gjør med «Fortsett i chat». Symptomsteget
+droppes helt når det ikke finnes symptomer: et steg som ber om ingenting er verre
+enn ingen steg.
+
+### Beslutninger
+
+**`level 5` avslutter perioden.** Sier du «frisk», er det unaturlig å måtte finne
+kortet på Helse. Innsjekken er stedet forløpet faktisk ender; sluttdatoen er
+fortsatt `endSickPeriod` sin (gårsdagen).
+
+**Én skrivevei for hele innsjekken** (`POST /api/helse/syk/innsjekk`). Halvveis
+lagret er verre enn ikke lagret — en flyt som feiler på steg tre skal ikke
+etterlate nivået skrevet og symptomene urørt. Retningene skrives gjennom
+`saveSymptom`/`endSymptom`, altså de samme funksjonene kortet bruker.
+
+**`lastSickLevel` holder dagens egne målinger utenfor.** «Ett hakk opp fra i går»
+skal sammenligne med i går, ikke med svaret man ga to timer siden — en andre
+innsjekk samme dag er en retting, ikke en ny observasjon.
+
+**Et avvist nytt symptom velter ikke innsjekken.** Nivået er alt skrevet;
+feilen returneres som `newSymptomError` framfor å forsvinne.
+
+### Utvidelser den krevde
+
+**`buildPrompts` gjelder nå ALLE stegtyper.** Den var chat-only, så et form-
+eller listesteg kunne ikke si noe som avhenger av svaret brukeren nettopp ga —
+og den utledede retningen krevde nettopp det. Alle fjorten eksisterende brukere
+er chat-steg, så endringen er atferdsnøytral for dem. `systemPrompt` leses
+fortsatt bare av chat.
+
+**`decision-list` nøkler på punktets TEKST, ikke på id.** Etikettene snapshotes i
+`symptomLabels` i samme rekkefølge som symptomene og mappes tilbake på indeks —
+to symptomer med samme ordlyd ville kollidert på tekst alene.
+
+**Sovepuls manglet i `buildSickPayload`** og er lagt til gjennom
+`loadSleepHeartRate`, altså den samme ene lesningen.
+
+Verifisering: 4272 tester (25 nye), `npm run check` og `npm run build` grønne.
+`npm run test:visual` fortsatt ikke kjørt — flyten er ikke piksel-verifisert.

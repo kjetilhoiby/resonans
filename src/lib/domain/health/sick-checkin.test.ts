@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+	SICK_LEVEL_LABELS,
+	SICK_LEVEL_MAX,
+	SICK_LEVEL_MIN,
+	SICK_LEVEL_RECOVERED,
+	describeLevelChange,
 	SICK_CHIP_PRIORITY_PENDING,
 	SICK_CHIP_PRIORITY_STANDING,
 	decideSickChip,
@@ -178,5 +183,46 @@ describe('decideSickChip', () => {
 		// Derfor sammenlignes tidspunkter, ikke «sendt i dag ja/nei».
 		const d = decideSickChip({ ...base, checkinSentAt: at('2026-09-02T20:00:00Z') })!;
 		expect(d.pending).toBe(true);
+	});
+});
+
+describe('describeLevelChange — retningen er REGNET, ikke spurt om', () => {
+	const prev = (day: string, level: number) => ({ day, level });
+
+	it('null uten en forrige måling — første innsjekk har ingen historie', () => {
+		expect(describeLevelChange(3, null, '2026-09-03')).toBeNull();
+	});
+
+	it('ett hakk opp fra i går', () => {
+		expect(describeLevelChange(3, prev('2026-09-02', 2), '2026-09-03')).toBe('Ett hakk opp fra i går');
+	});
+
+	it('to hakk ned fra i går', () => {
+		expect(describeLevelChange(2, prev('2026-09-02', 4), '2026-09-03')).toBe('2 hakk ned fra i går');
+	});
+
+	it('uendret sies også — det er et svar', () => {
+		expect(describeLevelChange(3, prev('2026-09-02', 3), '2026-09-03')).toBe('Uendret fra i går');
+	});
+
+	it('eldre måling navngir dagen framfor å påstå «i går»', () => {
+		expect(describeLevelChange(4, prev('2026-08-31', 2), '2026-09-03')).toBe(
+			'2 hakk opp siden 31. aug'
+		);
+	});
+});
+
+describe('nivåskalaen', () => {
+	it('dekker 1–5 og går fra elendig til frisk', () => {
+		expect(SICK_LEVEL_MIN).toBe(1);
+		expect(SICK_LEVEL_MAX).toBe(5);
+		expect(SICK_LEVEL_LABELS[1]).toBe('Elendig');
+		expect(SICK_LEVEL_LABELS[SICK_LEVEL_MAX]).toBe('Frisk');
+	});
+
+	it('friskmelding tilbys på toppen av skalaen', () => {
+		// Sier du «frisk», er innsjekken stedet forløpet ender — ikke et kort
+		// du må finne på Helse.
+		expect(SICK_LEVEL_RECOVERED).toBe(SICK_LEVEL_MAX);
 	});
 });

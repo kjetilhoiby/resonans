@@ -7,7 +7,6 @@ import { decideSickChip } from '$lib/domain/health/sick-checkin';
 import { getSickState, todayOsloKey } from '$lib/server/health/sick-log';
 import { SICK_PERIOD_DATA_TYPE } from '$lib/server/health/sick-log';
 import { SYMPTOM_DATA_TYPE } from '$lib/server/health/symptom-log';
-import { healthThemePath } from '$lib/server/health/health-theme';
 
 /**
  * «Hvordan går det?» som hurtighandling mens en sykeperiode står.
@@ -70,8 +69,15 @@ export const sickCheckinProducer: ActionProducer = async (ctx) => {
 			value: decision.value,
 			priority: decision.priority,
 			source: 'domain',
-			// Samme sted pushen lenker til — se `health-theme.ts`.
-			intent: { kind: 'navigate', href: await healthThemePath(ctx.userId) }
+			/**
+			 * Åpner INNSJEKKEN, ikke Helse-temaet.
+			 *
+			 * En navigasjon til temaet lander deg på et kort blant mange og lar
+			 * spørsmålet stå ubesvart — «Hvordan går det?» fortjener en flate som
+			 * stiller spørsmålet. Pushen lenker fortsatt til temaet, siden en
+			 * varsel-URL må virke i en kald nettleser uten flyt-tilstand.
+			 */
+			intent: { kind: 'open-flow', flowId: 'sick_checkin' }
 		};
 		return [candidate];
 	} catch (err) {

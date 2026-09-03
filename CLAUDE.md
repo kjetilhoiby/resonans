@@ -1345,6 +1345,38 @@ Se samme changelog, fase 5. `$lib/domain/health/sick-checkin.ts`, cron
   `$lib/server/health/health-theme.ts`). To oppslag som begge gjetter på temanavnet
   kunne pekt ulike steder, og en chip som havner et annet sted enn varselet den
   svarer på er verre enn ingen chip.
+- **Chipen åpner INNSJEKKEN, ikke Helse-temaet.** `sick_checkin`-flyten
+  (`$lib/flows/sick-checkin.ts`, bygget av en fabrikk som egenfrekvens-slotten)
+  er tre steg: nivå-slider, symptomretninger, «noe nytt?». Pushen lenker
+  fortsatt til temaet — en varsel-URL må virke i en kald nettleser uten
+  flyt-tilstand.
+- **Vi spør om NIVÅET (1–5, «elendig → frisk»), og REGNER retningen.** Det var
+  et valg mellom to spørsmål: «verre eller bedre?» er det du vet når noen
+  spør, men det kan ikke plottes og feilen akkumulerer — tre «bedre» på rad fra
+  et lavpunkt er fortsatt et lavpunkt. Nivået er sammenlignbart gjennom hele
+  forløpet OG mellom forløp. Retningen er `nivå nå − nivå sist`, altså gratis:
+  ett spørsmål gir begge svar. Samme grep som egenfrekvens (`level` lagres,
+  `balance` utledes). `describeLevelChange` SIER retningen; den spør ikke.
+- **Sensortallene kommer ETTER slideren, aldri før.** Vises sovepuls og
+  hudtemperatur først, ANKRER de selvrapporten — og den er det eneste signalet
+  ingen sensor kan hente. Samme regel som `log_hunger`, der modellen ikke får
+  gjette at «dritsulten» er en 5. Et ankret nivå ødelegger kalibreringen, og da
+  er slideren verdiløs. Tallene står som SETNINGER fra domenelaget med kilde,
+  aldri rå verdier, og aldri med en dom.
+- **`level 5` avslutter perioden.** Sier du «frisk», er innsjekken stedet
+  forløpet ender — ikke et kort du må finne på Helse. Sluttdatoen er fortsatt
+  `endSickPeriod` sin beslutning (gårsdagen).
+- **Praten er en `secondaryAction`, ikke et fjerde steg** — nøyaktig som
+  egenfrekvens' «Fortsett i chat». «Kort innsjekk» er kravet: den som bare vil
+  svare er ferdig på tre trykk.
+- **`buildPrompts` gjelder ALLE stegtyper nå** (var chat-only fram til
+  september 2026). Et form- eller listesteg kunne ellers ikke si noe som
+  avhenger av svaret brukeren nettopp ga, og den utledede retningen krevde
+  nettopp det. `systemPrompt` leses fortsatt bare av chat-steg.
+- **`decision-list` nøkler beslutningene på punktets TEKST, ikke på id.**
+  Etikettene snapshotes i `symptomLabels` i samme rekkefølge som symptomene, og
+  mappes tilbake på indeks — to symptomer med samme ordlyd ville kollidert på
+  tekst alene.
 - Ingen medisinske råd: den spør og registrerer.
 
 ### Streaks: én motor, tre flater

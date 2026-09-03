@@ -25,7 +25,8 @@ import {
 	describeCoreTemperature,
 	describeSkinTemperature
 } from '$lib/domain/health/temperature';
-import { getSickState, listSickPeriods, todayOsloKey } from './sick-log';
+import { getSickState, lastSickLevel, listSickPeriods, todayOsloKey } from './sick-log';
+import { loadSleepHeartRate } from './nightly-physiology';
 import { listSymptoms, symptomsDuringPeriod } from './symptom-log';
 import { loadTemperature } from './temperature-log';
 import { loadIllnessHint } from './illness-hint';
@@ -33,13 +34,15 @@ import { loadIllnessHint } from './illness-hint';
 export async function buildSickPayload(userId: string, now: Date = new Date()) {
 	const today = todayOsloKey(now);
 
-	const [periods, state, symptoms, temperature, hint] = await Promise.all([
+	const [periods, state, symptoms, temperature, hint, previousLevel, sleepHr] = await Promise.all([
 		listSickPeriods(userId),
 		getSickState(userId, now),
 		listSymptoms(userId),
 		loadTemperature(userId).catch(() => null),
 		// Forslaget er pynt på toppen: feiler det, skal ikke flaten feile.
-		loadIllnessHint(userId, now).catch(() => null)
+		loadIllnessHint(userId, now).catch(() => null),
+		lastSickLevel(userId, now).catch(() => null),
+		loadSleepHeartRate(userId, 30).catch(() => null)
 	]);
 
 	const resolvedSymptoms = symptoms.map((s: Symptom) => {
@@ -73,8 +76,46 @@ export async function buildSickPayload(userId: string, now: Date = new Date()) {
 					skinDeviationC: temperature.skin.deviationC
 				}
 			: null,
-		hint
+		hint,
+		/**
+		 * Alt sykeinnsjekk-flyten trenger, ferdig formulert.
+		 *
+		 * `signals` er SETNINGER fra domenelaget, aldri rå verdier — flaten,
+		 * flyten og helsechatten skal si det samme, og et rått tall her ville
+		 * invitert flyten til å finne sine egne ord. Hudtemperatur oppgis som
+		 * avvik fordi det absolutte håndleddstallet ikke betyr noe.
+		 */
+		checkin: {
+			previousLevel,
+			signals: buildSignals(temperature, sleepHr)
+		}
 	};
+}
+
+function buildSignals(
+	temperature: Awaited<ReturnType<typeof loadTemperature>> | null,
+	sleepHr: Awaited<ReturnType<typeof loadSleepHeartRate>> | null
+): string[] {
+	const signals: string[] = [];
+
+	// Sovepuls som AVVIK fra egen baseline, som Søvn-flaten gjør. Uten baseline
+	// sies ingenting: et absolutt hvilepulstall uten sammenligning er ikke et
+	// signal, bare et tall.
+	if (sleepHr?.deviationBpm != null && sleepHr.band !== 'ukjent') {
+		const d = sleepHr.deviationBpm;
+		if (d === 0) signals.push('Sovepuls som vanlig');
+		else
+			signals.push(
+				`Sovepuls ${Math.abs(d)} ${Math.abs(d) === 1 ? 'slag' : 'slag'} ${d > 0 ? 'over' : 'under'} snittet`
+			);
+	}
+
+	const core = temperature ? describeCoreTemperature(temperature.core) : null;
+	if (core) signals.push(`Termometer ${core}`);
+	const skin = temperature ? describeSkinTemperature(temperature.skin) : null;
+	if (skin) signals.push(skin);
+
+	return signals;
 }
 
 export type SickPayload = Awaited<ReturnType<typeof buildSickPayload>>;

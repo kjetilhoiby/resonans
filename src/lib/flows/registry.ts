@@ -44,9 +44,14 @@ export function parseInboxItems(message: string): string[] {
 		.filter((line) => line.length > 0 && line.length < 240);
 }
 
-// egenfrekvens_slot bygges per slot via buildEgenfrekvensSlotFlow (egenfrekvens-slot.ts)
-// og har derfor ingen statisk registry-entry.
-export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
+/**
+ * Flyter som bygges av en FABRIKK har ingen statisk oppføring her, fordi
+ * innholdet avhenger av kjøretidskontekst:
+ *
+ *   egenfrekvens_slot  buildEgenfrekvensSlotFlow  (tittelen ER slottets spørsmål)
+ *   sick_checkin       buildSickCheckinFlow       (symptomlista og forløpsdagen)
+ */
+export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot' | 'sick_checkin'>, Flow> = {
 	health_weight_onboarding: {
 		id: 'health_weight_onboarding',
 		name: 'Vekt & Kropp',
