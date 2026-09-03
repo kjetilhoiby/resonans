@@ -75,6 +75,33 @@ export interface HrTrustSession {
 	maxHr: number | null;
 }
 
+/**
+ * En økt som ble flagget, navngitt.
+ *
+ * Finnes fordi «7 av 74» ikke kan handles på. Et dårlig SNITT gjør at effort
+ * faller til MET for den økta (`isCredibleAverageHr` i `hasUsableHr`); et dårlig
+ * MAKS forurenser bare `observedMaxes`. Uten datoene og hvilken av de to som
+ * feilet, kan ingen sjekke om avslaget var riktig.
+ */
+export interface HrTrustSuspect {
+	/** Oslo-datoen, som streng — det er nok til å finne økta. */
+	date: string;
+	avgHr: number | null;
+	maxHr: number | null;
+	/** Snittet kan ikke være en puls. Dette er det som rører effort. */
+	badAvg: boolean;
+	/** Makspulsen kan ikke være en puls. Rører ikke effort. */
+	badMax: boolean;
+}
+
+/**
+ * Hvor mange flaggede økter som navngis per periode.
+ *
+ * Fire er nok til å se mønsteret uten å gjøre kortet til en logg; resten telles
+ * i `suspect`, og differansen sies med ord.
+ */
+export const MAX_SUSPECT_EXAMPLES = 4;
+
 /** Utfallet av en kurvediagnose, slik lag 2 leverer den per periode. */
 export interface HrTrustCurveSample {
 	/** Perioden kurven hører til, samme nøkkel som lag 1 bruker. */
@@ -107,6 +134,8 @@ export interface HrTrustPeriod {
 	curvesSampled: number;
 	curvesRejected: number;
 	curveReasons: Partial<Record<HrRejectionReason, number>>;
+	/** Opptil `MAX_SUSPECT_EXAMPLES` av de flaggede øktene, navngitt. */
+	suspectExamples: HrTrustSuspect[];
 	severity: HrTrustSeverity;
 }
 
@@ -140,6 +169,7 @@ export function buildHrTrustPeriods(
 			curvesSampled: 0,
 			curvesRejected: 0,
 			curveReasons: {},
+			suspectExamples: [],
 			severity: 'for-lite-data'
 		};
 		byPeriod.set(period, fresh);
@@ -170,7 +200,18 @@ export function buildHrTrustPeriods(
 		if (badAvg) bucket.suspectAvg += 1;
 		if (badMax) bucket.suspectMax += 1;
 		// Unionen, ikke summen: en økt som feiler på begge er én økt.
-		if (badAvg || badMax) bucket.suspect += 1;
+		if (badAvg || badMax) {
+			bucket.suspect += 1;
+			if (bucket.suspectExamples.length < MAX_SUSPECT_EXAMPLES) {
+				bucket.suspectExamples.push({
+					date: osloDayKey(session.startTime),
+					avgHr: avg,
+					maxHr: max,
+					badAvg,
+					badMax
+				});
+			}
+		}
 	}
 
 	for (const curve of curves) {
@@ -236,13 +277,23 @@ export function describeHrTrust(periods: HrTrustPeriod[]): string[] {
 	if (broken.length > 0) {
 		lines.push(
 			`Puls fra ${listPeriods(broken)} bør ikke importeres: ${broken
-				.map((p) => `${p.period} har ${p.suspect} av ${p.withHr} økter med tall som ikke kan være en puls${p.peakHr ? ` (høyeste ${p.peakHr})` : ''}`)
+				.map((p) => `${p.period} har ${p.suspect} av ${p.withHr} økter med tall som ikke kan være en puls (${splitPhrase(p)})`)
 				.join('; ')}.`
 		);
 	}
 	if (spotty.length > 0) {
 		lines.push(
-			`${listPeriods(spotty)} har enkeltavvik — nok til å se på øktene, ikke nok til å forkaste året.`
+			`${listPeriods(spotty)} har enkeltavvik — nok til å se på øktene, ikke nok til å forkaste året: ${spotty
+				.map((p) => `${p.period} ${p.suspect} av ${p.withHr} (${splitPhrase(p)})`)
+				.join('; ')}.`
+		);
+	}
+	// Snitt og maks har ULIKE konsekvenser, og det er derfor de sies hver for seg.
+	const withBadAvg = periods.filter((p) => p.suspectAvg > 0);
+	if (withBadAvg.length > 0) {
+		const total = withBadAvg.reduce((sum, p) => sum + p.suspectAvg, 0);
+		lines.push(
+			`${total} ${total === 1 ? 'økt har' : 'økter har'} et SNITT som ikke kan være en puls, og for dem faller effort til MET-anslaget. Et umulig MAKS gjør ikke det — det forurenser bare utledningen av makspuls.`
 		);
 	}
 	if (clean.length > 0) {
@@ -269,6 +320,15 @@ export function describeHrTrust(periods: HrTrustPeriod[]): string[] {
 		'Skalarene fanger bare det umulige. Et belte som låser seg på 200 gir et snitt som er mistenkelig og fullt mulig, så «ingen funn» betyr ikke «ren» — det betyr at snitt og makspuls ikke avslørte noe.'
 	);
 	return lines;
+}
+
+/** «5 på snitt, 3 på maks» — de to har ulike konsekvenser. */
+function splitPhrase(period: HrTrustPeriod): string {
+	const parts: string[] = [];
+	if (period.suspectAvg > 0) parts.push(`${period.suspectAvg} på snitt`);
+	if (period.suspectMax > 0) parts.push(`${period.suspectMax} på maks`);
+	const peak = period.peakHr ? `, høyeste ${period.peakHr}` : '';
+	return `${parts.join(', ')}${peak}`;
 }
 
 function listPeriods(periods: HrTrustPeriod[]): string {

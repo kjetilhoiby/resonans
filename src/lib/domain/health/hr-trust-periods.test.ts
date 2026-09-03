@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	MAX_SUSPECT_EXAMPLES,
 	MIN_SESSIONS_FOR_VERDICT,
 	WIDESPREAD_SHARE,
 	buildHrTrustPeriods,
@@ -160,5 +161,69 @@ describe('describeHrTrust', () => {
 
 	it('svarer på et tomt datasett uten å kaste', () => {
 		expect(describeHrTrust([])).toEqual(['Ingen økter å vurdere.']);
+	});
+});
+
+describe('flaggede økter navngis', () => {
+	/**
+	 * «7 av 74» kan ikke handles på — og skillet snitt/maks avgjør hva som skjer:
+	 * et umulig SNITT gjør at effort faller til MET for den økta, et umulig MAKS
+	 * forurenser bare utledningen av makspuls.
+	 */
+	it('skiller et umulig snitt fra et umulig maks', () => {
+		const periods = buildHrTrustPeriods(
+			[
+				// Snitt 215 er over taket på 1,15 × reserve; maks 168 er fint.
+				{ startTime: new Date(Date.UTC(2026, 2, 3, 12)), avgHr: 215, maxHr: 168 },
+				// Snitt 140 er fint; maks 237 er over MAX_PLAUSIBLE_HR.
+				{ startTime: new Date(Date.UTC(2026, 3, 4, 12)), avgHr: 140, maxHr: 237 },
+				...year(2026, 18, 140, 168)
+			],
+			baseline
+		);
+		const p = periods[0];
+		expect(p.suspectAvg).toBe(1);
+		expect(p.suspectMax).toBe(1);
+		// To ulike økter, så unionen er to — ikke én, og ikke summen av noe annet.
+		expect(p.suspect).toBe(2);
+
+		const badAvgOnly = p.suspectExamples.find((e) => e.badAvg && !e.badMax);
+		const badMaxOnly = p.suspectExamples.find((e) => e.badMax && !e.badAvg);
+		expect(badAvgOnly?.date).toBe('2026-03-03');
+		expect(badMaxOnly?.date).toBe('2026-04-04');
+		expect(badMaxOnly?.maxHr).toBe(237);
+	});
+
+	it('teller resten framfor å liste alt', () => {
+		const periods = buildHrTrustPeriods(year(2015, 10, 215, 228), baseline);
+		expect(periods[0].suspect).toBe(10);
+		expect(periods[0].suspectExamples).toHaveLength(MAX_SUSPECT_EXAMPLES);
+	});
+
+	it('lar en ren periode stå uten eksempler', () => {
+		const periods = buildHrTrustPeriods(year(2022, 20, 140, 168), baseline);
+		expect(periods[0].suspectExamples).toEqual([]);
+	});
+
+	it('sier i teksten at et umulig SNITT flytter effort til MET', () => {
+		const lines = describeHrTrust(
+			buildHrTrustPeriods(
+				[{ startTime: new Date(Date.UTC(2026, 2, 3, 12)), avgHr: 215, maxHr: 168 }],
+				baseline
+			)
+		);
+		expect(lines.some((l) => l.includes('MET'))).toBe(true);
+	});
+
+	it('sier INGENTING om MET når bare maksen er umulig', () => {
+		// Effort leser `avgHeartRate`, ikke maksen — en påstand om MET her ville
+		// vært feil, og den ville sendt brukeren på jakt etter en effekt som ikke finnes.
+		const lines = describeHrTrust(
+			buildHrTrustPeriods(
+				[{ startTime: new Date(Date.UTC(2026, 2, 3, 12)), avgHr: 140, maxHr: 237 }],
+				baseline
+			)
+		);
+		expect(lines.some((l) => l.includes('MET'))).toBe(false);
 	});
 });

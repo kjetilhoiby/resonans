@@ -1110,6 +1110,30 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
   filter: canonical ER det dedupliserte laget, og et rått filter ville gitt tre
   rader for samme tur og trippet vakten i `sensor-event-access.ts`. Beskriver
   flere kilder samme økt, dømmes den BESTE kurven.
+- **Utvalget må velges blant økter som HAR en pulskurve, ikke blant alle.**
+  Første utgave valgte fem per år på «raden har en evidence-id» — som nesten alle
+  canonical-rader har — og droppet deretter stille dem uten spor: **én kurve over
+  tolv år**, med et tall ved siden av som så fullført ut. Samme feilmodus som
+  reanalyse-jobbens standardutvalg. `findEventsWithHrCurves` gater på
+  `jsonb_typeof` = array, lengde ≥ 10 OG `jsonb_path_exists` på
+  `$.trackPoints[*].hr`; `curveSample.eligible` rapporteres så et lite utvalg kan
+  skilles fra et ødelagt.
+- **`suspect` er unionen av umulig SNITT og umulig MAKS, og de må vises hver for
+  seg.** Et umulig snitt gjør at effort faller til MET for den økta; et umulig
+  maks forurenser bare utledningen av makspuls. Teksten sier MET-konsekvensen
+  BARE når snittet er rammet — effort leser `avgHeartRate`, så en MET-påstand om
+  en dårlig maks sender brukeren etter en effekt som ikke finnes.
+- **`suspectExamples` navngir opptil fire økter per periode** (dato, snitt, maks,
+  hvilken regel som feilet). «7 av 74» kan ikke handles på; datoene kan.
+- **Året og dommen på én linje, tallene innrykket under.** `.year` var én
+  flex-rad med `flex-wrap`, og 2026 sin lange tall-linje brakk ned uten årstall
+  foran — den leste som en totalsum for hele tabellen.
+- **Målt 3. september 2026: umulige pulstall er IKKE avgrenset til beltetida.**
+  2015 (2 av 8, topp 228) og 2016 (1 av 5, topp 228) er som ventet, men 2026 har
+  7 av 74 med topp 237 og 2021 har 1 av 26 med topp 235 — altså klokka og Ekko.
+  Toppene i «ingen funn»-årene er 208, 200, 193 og 192, alle over Tanaka-anslaget
+  på 179. 7 av 74 er 9,5 %, rett under `WIDESPREAD_SHARE` (10 %); terskelen er
+  IKKE justert mot det tallet.
 - Kjent rest: `getEffortBaseline` leser bare siste 30 døgn og filtrerer
   `observedMaxes` mot `trimmedObservedMax` sitt eget spenn (100–230), ikke mot
   `MAX_PLAUSIBLE_HR`; dommen per økt lagres ikke; periodediagnosen dekker én
