@@ -14,7 +14,7 @@ npm run dev             # Dev-server på http://localhost:5174 (strikt port)
 npm run build           # Produksjons-build
 npm run check           # TypeScript + Svelte typesjekk
 
-# Database (Drizzle ORM → Neon PostgreSQL)
+# Database (Drizzle ORM → PostgreSQL)
 npm run db:push         # Push schema til DB (lokal utvikling)
 npm run db:sql-migrate  # Kjør SQL-migrasjoner fra scripts/db-migrations/
 npm run db:sync         # Full deploy-pipeline (SQL + drizzle push)
@@ -311,7 +311,6 @@ med kravtaking i `$lib/server/cron-due.ts`; klokka i `$lib/server/cron-dispatche
   Men `ORIGIN` MÅ være satt: nudge-endepunktene bygger lenker av `url.origin`,
   og uten ORIGIN blir det loopback-adressen — dispatcheren nekter derfor å
   starte uten den (utenfor dev).
-- Krever `DB_DRIVER=postgres` — neon-http har ingen sesjon å holde låsen på.
 - **`cron.yml` (GitHub Actions-dispatcheren) er SLETTET** (2026-09-02, etter et
   døgn der den interne klokka tok alle 630 slots). Erstatningen er
   `watchdog.yml`: hvert 30. minutt leses `clock`-pulsen fra den uautentiserte
@@ -2444,15 +2443,17 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   FØRSTE element, ikke array-OID-en: en liste med strenger blir da `"a,b"`
   («malformed array literal»), og en liste med `Date` først overlever som Array
   inn i `Buffer.byteLength` og kaster «Received an instance of Array». Begge
-  virket under neon-http og brøt da containeren tok over 30. august 2026 — det
-  tok fire døgn å finne. Se
+  virket under den gamle neon-http-stien og brøt da containeren tok over
+  30. august 2026 — det tok fire døgn å finne. Se
   `docs/changelog/2026-09-03-array-parametere-til-postgres.md`.
 - **Rå `db.execute(sql\`…\`)` som leser rader MÅ gå gjennom `rowsOf()`** fra `$lib/db`.
-  Neon HTTP-driveren returnerer et resultat-*objekt* (`{ rowCount, rows, … }`), mens
-  postgres-js returnerer en bar *array*. `for…of`/`.map()` rett på resultatet kaster
-  «is not iterable» i prod — enhetstestene fanger det ikke, siden vi ikke mocker DB.
-  Feilen har truffet minst to ganger. Foretrekk query-builderen når du kan; den
-  returnerer alltid en array.
+  `db.execute()` typer resultatet løst, og kallstedene brukte historisk
+  `as unknown as Array<…>` og kalte `.map()`/`for…of` rett på det — det castet
+  kastet «is not iterable»/«is not a function» i prod, minst to ganger.
+  Enhetstestene fanger det ikke, siden vi ikke mocker DB. `rowsOf<T>()` er den
+  typede, sjekkede veien inn; **erstatt den ikke med et cast**, selv om
+  postgres-js i dag alltid gir en bar array (drivernormaliseringen den ble
+  skrevet for er død — jobben er ikke). Foretrekk query-builderen når du kan.
 
 ---
 
@@ -2518,16 +2519,23 @@ fjernes der.
   kan flytte taggen kjøper en dårligere handel — et deploy som ser vellykket ut
   og kjører gammel kode.
 
-**Databasedriveren velges eksplisitt, ikke gjettes.** `DB_DRIVER`
-(`postgres`/`neon-http`) i `$lib/db/driver-choice.ts`; uten variabelen utledes den
-av verten, og bare en Neon-vert får HTTP-driveren. Valget logges ved oppstart.
-Den gamle localhost-regexen ville sendt en Coolify-URL (`@postgres:5432`) til
-Neon HTTP-driveren, og feilen kom først ved første spørring.
+**Det finnes ÉN driver: postgres-js.** `neon-http`-stien er fjernet (september
+2026, se `docs/changelog/2026-09-03-neon-stien-ut.md`) — `DB_DRIVER` er borte, og
+`DATABASE_URL` alene bestemmer hvor vi kobler til. **Også mot Neon:** postgres-js
+snakker TCP dit som til enhver annen Postgres; HTTP-driveren var en
+serverless-tilpasning (ingen prosess å holde en tilkobling i), ikke et krav fra
+verten. `DB_DRIVER=neon-http` **kaster** ved oppstart framfor stille å bli
+ignorert, med den forklaringen i meldingen. Adressen (host/port/base, aldri
+brukernavn eller passord — linja er lesbar over `/api/admin/logs`) logges
+fortsatt ved oppstart: «hvilken base snakker denne containeren med» er det første
+spørsmålet når tallene ser rare ut. Se `$lib/db/connection-info.ts`.
 
 - **`rowsOf()` har en tvilling: `affectedRows()`** (`$lib/db/result-shape.ts`).
-  Neon HTTP legger radtallet på `rowCount`, postgres-js på `count` — og
-  `.rowCount` på en array er `undefined`, altså en stille 0. Les aldri noen av
-  dem rått.
+  postgres-js legger radtallet på `count`, og `.rowCount` på en array er
+  `undefined` — altså en stille 0 for naiv kode. Målt:
+  `count: 3, rowCount: undefined`. `spond-person-mapping-service.ts` leste
+  `rowCount` og rapporterte «0 merket», et tall som ser ut som et svar. Les aldri
+  noen av dem rått.
 - **Del ALDRI en postgres-js-klient mellom drizzle og rå SQL.** `drizzle(client)`
   MUTERER klientens options: parsers og serializers for alle dato-/tidstyper og
   numeric[] (OID 1231) settes til identiteten `(val) => val`, fordi drizzle
@@ -2670,9 +2678,8 @@ hvorfor. For langvarig maskintilgang er `user_api_secrets` fortsatt riktig vei.
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 
 **Scheduling:** `CRON_SECRET`, `ORIGIN`. `ENABLE_CRON_DISPATCHER=true` skrur på den
-interne cron-klokka (VPS/container, krever `DB_DRIVER=postgres`) — se
-«Cron-dispatcheren» under Autentisering-seksjonen; den er trygg på flere instanser
-(advisory-lås) og ved siden av GitHub Actions (dispatch-krav).
+interne cron-klokka — se «Cron-dispatcheren» under Autentisering-seksjonen; den
+er trygg på flere instanser (advisory-lås) og ved siden av GitHub Actions (dispatch-krav).
 `CRON_DISPATCH_BASE_URL` overstyrer loopback-adressen dispatcheren self-fetcher mot.
 `ENABLE_JOB_WORKER=true` skrur på jobbkø-workeren (LISTEN/NOTIFY + 30 s-poll over
 `background_jobs`; trygg på flere instanser uten lås — `FOR UPDATE SKIP LOCKED`).
@@ -2680,10 +2687,10 @@ interne cron-klokka (VPS/container, krever `DB_DRIVER=postgres`) — se
 fire jobber bor nå i cron-registeret (`$lib/server/cron-jobs.ts`) og spores av
 `withCronTracking` som alt annet.
 
-**Database:** `DB_DRIVER` (`postgres`/`neon-http`, utledes av verten uten den),
-`DB_POOL_MAX` (default 10, ignoreres av neon-http — styrer DRIZZLE-poolen;
-rå-klienten har fast 4 i tillegg, se «Del ALDRI en postgres-js-klient …» under
-Deployment).
+**Database:** `DB_POOL_MAX` (default 10 — styrer DRIZZLE-poolen; rå-klienten har
+fast 4 i tillegg, se «Del ALDRI en postgres-js-klient …» under Deployment).
+(`DB_DRIVER` er borte — det finnes bare én driver nå, som med `DEPLOY_TARGET` og
+adapteren.)
 
 **Container:** `BODY_SIZE_LIMIT`, `PROTOCOL_HEADER`, `HOST_HEADER` og
 `SKIP_DRIZZLE_PUSH` settes i `Dockerfile`/entrypointet, ikke per miljø.

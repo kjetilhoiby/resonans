@@ -74,9 +74,9 @@ export async function getLatestSignalsByType(
 		ORDER BY signal_type, observed_at DESC
 	`);
 
-	// NB: MÅ gå gjennom rowsOf. Neon HTTP-driveren returnerer et resultat-objekt,
-	// ikke en array — `for…of` rett på resultatet kaster «is not iterable» i prod.
-	// Se docstringen på rowsOf i $lib/db.
+	// NB: MÅ gå gjennom rowsOf. `db.execute()` typer resultatet løst, og et cast
+	// rett til en array — som kallstedene brukte før — kastet «is not iterable»
+	// i prod. Se docstringen i `$lib/db/result-shape.ts`.
 	const out = new Map<string, LatestSignal>();
 	for (const row of rowsOf<LatestSignalRow>(result)) {
 		out.set(row.signal_type, mapSignalRow(row));

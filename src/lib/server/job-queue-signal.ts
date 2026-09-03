@@ -1,4 +1,4 @@
-import { dbDriver, pgClient } from '$lib/db';
+import { pgClient } from '$lib/db';
 
 /**
  * NOTIFY-signalet som vekker jobbkø-workeren (`job-worker.ts`).
@@ -16,9 +16,7 @@ import { dbDriver, pgClient } from '$lib/db';
 export const JOB_QUEUE_CHANNEL = 'background_jobs_queued';
 
 export function notifyJobQueued(): void {
-	// neon-http har ingen worker som lytter (der dekkes køen av cron-bursten),
-	// og fire-and-forget: en feilet notify skal aldri velte selve skrivingen.
-	if (dbDriver !== 'postgres') return;
+	// Fire-and-forget — se doc-kommentaren over: en tapt notify koster latens.
 	void pgClient
 		.notify(JOB_QUEUE_CHANNEL, '')
 		.catch((err) => console.warn('[job-queue-signal] pg_notify feilet:', err));

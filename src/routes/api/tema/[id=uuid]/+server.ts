@@ -62,7 +62,10 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 // DELETE /api/tema/[id] — permanent sletting. De fleste avhengighetene har
 // ON DELETE CASCADE / SET NULL i skjemaet og rydder seg selv. goals og memories
 // refererer themes uten onDelete (RESTRICT), så de nulles eksplisitt først.
-// neon-http støtter ikke transaksjoner, så stegene kjøres sekvensielt.
+// Stegene kjøres sekvensielt uten transaksjon. Det var et krav under
+// neon-http (som ikke støtter transaksjoner); etter at stien ble fjernet er
+// det bare en rest — postgres-js kan omslutte hele slettingen i én
+// transaksjon, og bør. Kjent rest, ikke en begrensning.
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const existing = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId)),

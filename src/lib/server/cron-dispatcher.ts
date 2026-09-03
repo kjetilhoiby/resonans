@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { appOrigin } from '$lib/server/app-origin';
-import { dbDriver, pgClient } from '$lib/db';
+import { pgClient } from '$lib/db';
 import { CRON_JOBS } from '$lib/server/cron-jobs';
 import { claimDueCronJobs, releaseCronDispatchClaim, type DueCronJob } from '$lib/server/cron-due';
 import {
@@ -52,18 +52,6 @@ export function cronDispatcherLocalState(): { running: boolean; leader: boolean 
 export function startCronDispatcher() {
 	if (isDispatcherRunning) {
 		console.log('[cron-dispatch] kjører allerede');
-		return;
-	}
-
-	// Advisory-låsen trenger en sesjon å holdes på; neon-http er én
-	// HTTPS-request per spørring og har ingen. Da finnes det ingen klokke i det
-	// hele tatt, så dette skal være høyt: ingen cron kjører.
-	if (dbDriver !== 'postgres') {
-		console.error(
-			`[cron-dispatch] startet ikke: krever DB-driveren 'postgres' (er '${dbDriver}'). ` +
-				'Med neon-http kan lederlåsen ikke holdes, og INGEN cron-jobber kjører — ' +
-				'sett DB_DRIVER=postgres.'
-		);
 		return;
 	}
 

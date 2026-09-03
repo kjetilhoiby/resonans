@@ -1,4 +1,4 @@
-import { dbDriver, pgClient } from '$lib/db';
+import { pgClient } from '$lib/db';
 import { processDueBackgroundJobs } from '$lib/server/background-jobs';
 import { JOB_QUEUE_CHANNEL } from '$lib/server/job-queue-signal';
 
@@ -30,16 +30,6 @@ let runRequestedWhileBusy = false;
 export function startJobWorker() {
 	if (isWorkerRunning) {
 		console.log('[job-worker] kjører allerede');
-		return;
-	}
-
-	// LISTEN krever en dedikert TCP-sesjon; neon-http har ingen. Der er
-	// cron-bursten fortsatt veien, så dette er feil flagg, ikke en feil.
-	if (dbDriver !== 'postgres') {
-		console.error(
-			`[job-worker] startet ikke: krever DB-driveren 'postgres' (er '${dbDriver}'). ` +
-				'Med neon-http tømmes køen av /api/cron/background-jobs i stedet.'
-		);
 		return;
 	}
 

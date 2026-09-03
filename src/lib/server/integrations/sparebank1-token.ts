@@ -1,4 +1,4 @@
-import { db, dbDriver } from '$lib/db';
+import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { refreshSparebank1AccessToken } from './sparebank1';
@@ -64,16 +64,16 @@ async function readCredentials(
 /**
  * Kjør `fn` med refresh-låsen for sensoren holdt.
  *
- * Under neon-http finnes ingen sesjon å holde en lås på (én HTTPS-request per
- * spørring), så der kjøres arbeidet ulåst. Re-lesingen inne i `fn` gjelder
- * uansett, og den er den viktigste av de to halvdelene.
+ * Låsen er en `pg_advisory_xact_lock`, altså bundet til transaksjonen og
+ * dermed til sesjonen — den slippes av commit/rollback uten en egen
+ * opprydding. Re-lesingen av legitimasjonen inne i `fn` er den andre
+ * halvdelen, og den viktigste: låsen serialiserer, re-lesingen sikrer at den
+ * som vant ser tokenet den forrige skrev.
  */
 async function withRefreshLock<T>(
 	sensorId: string,
 	fn: (executor: typeof db) => Promise<T>
 ): Promise<T> {
-	if (dbDriver !== 'postgres') return fn(db);
-
 	return db.transaction(async (tx) => {
 		await tx.execute(
 			sql`select pg_advisory_xact_lock(hashtext(${REFRESH_LOCK_PREFIX + sensorId})::bigint)`
