@@ -911,13 +911,33 @@ Se `docs/changelog/2026-09-04-krydder-paa-veiingen.md`. Reglene rent i
   25. juli–25. august. Og det er trenden, ikke `weight-monthly.ts` sine snitt —
   snitt mot snitt er forskjellen mellom to NIVÅER, som på en jevn nedgang gir
   omtrent halvparten av bevegelsen GJENNOM måneden.
-- **Push-rangeringen er en annen enn kortets** (`PUSH_RANK`). Kortet leses når
-  brukeren åpner det, så der vinner den sterkeste rekorden; et varsel dytter seg
-  på deg, så der vinner det sjeldneste. Månedsoppgjøret fyrer fem dager i
-  måneden, «laveste snittvekt» kan fyre hver morgen i en nedgangsperiode.
-  `below-goal` er løftet av samme grunn — målvekta nås én gang, og
-  `goal-distance` ligger over atferdsmilepælene (motsatt av på kortet: i et
-  varsel OM en veiing sier «1,8 kg til målet» mer enn «27 av 30 dager»).
+- **METNING er problemet `PUSH_RANK` løser, ikke gjentakelse.** «Laveste
+  snittvekt siden [dato]» flytter referansen bakover til den treffer taket, og
+  står så på «Laveste snittvekt vi har målt» — identisk hver morgen så lenge
+  nedgangen varer, altså flertallet av morgenene i et toårsmål. Rekorder er ikke
+  sjeldne; de er KONTINUERLIGE. Derfor ligger de fire som fyrer ÉN gang øverst:
+  `below-goal` (én gang), `threshold-crossed` (én gang per kilo),
+  `goal-progress` (fire ganger) og `month-change` (fem dager i måneden).
+  Kortet rangerer motsatt: der leses den sterkeste rekorden når brukeren selv
+  åpner. `goal-distance` ligger over atferdsmilepælene (motsatt av på kortet: i
+  et varsel OM en veiing sier «1,8 kg til målet» mer enn «27 av 30 dager»).
+- **`year-over-year` er plassert rett under den sterkeste rekorden, og det er en
+  beslutning om ANDRELINJA.** Tittelen metter, så den varierende setningen gjør
+  mest nytte i slot to — sammenligningsdagen flytter seg hver morgen. Den leser
+  `cycle-series.ts` med TRENDverdier, som `WeightYearsCard`.
+- **Terskler er hele kilo, og bare NEDOVER.** Femmere gir to varsler på to år;
+  halve kilo gjør passeringen til en teller. «Over 96 kg for første gang siden
+  mars» er en anklage levert i det brukeren stiger av vekta — atferdsmilepælene
+  skal bære de ukene vekta stiger. En passering krever dessuten at forrige gang
+  under samme terskel er mer enn `MIN_RECORD_SPAN_DAYS` unna, ellers fyrer den
+  gjentatte ganger mens trenden vipper rundt det samme kiloet.
+- **Andelens baseline er periodens topp, og setningen SIER det.**
+  `metricSettings.weight.goal` er et bart tall uten startpunkt, så
+  `goalProgressNugget` bruker toppen av den pågående nedgangen fra
+  `weight-swings` og navngir den: «Halvveis fra 104,2 kg (april 2025) til målet
+  på 93 kg». Et bart «halvveis til målet» ville påstått et startpunkt brukeren
+  ikke kan se. Kjent rest: `goal_tracks.metadata.startValue` er målets EGEN
+  baseline, og samme lesevei ville gitt den estimerte måldatoen (`projectGoal`).
 - **Rekorden faller ikke bort når månedsoppgjøret tar tittelen** — den blir
   andrelinja. `ECHOES` hindrer at andrelinja gjentar tittelen med andre ord.
   **Vekta står alltid først i body-en:** et krydder uten tallet under er en
@@ -1186,6 +1206,17 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
 
 Se `docs/changelog/2026-08-25-sesongkurver.md`. Motoren i
 `$lib/domain/health/cycle-series.ts`, grafen i `components/charts/CycleChart.svelte`.
+
+- **Ordforrådet i `describeCycleComparison` følger hva verdien ER.** `position`
+  («under»/«over») for et NIVÅ, `progress` («foran»/«bak») der verdien
+  akkumulerer mot noe. «2,4 kg foran i fjor» om et vektnivå leser som en
+  konkurranse mot deg selv, der setningen bare skal si hvor vekta ligger — en
+  dom flaten ikke har dekning for, samme grunn som «over båndet er ikke et
+  helsevarsel». Vektkortets ENDRINGSmodus er `progress`: der er verdien et
+  delta, og «under» om en nedgang sier ikke om du har gått mer eller mindre ned.
+  Opsjonene er en union, ikke ett valgfritt felt — `higherIsBetter` er meningsløs
+  for en posisjon, og et felt som ignoreres stille inviterer til å tro at det
+  virker.
 
 - **Én motor for fire flater** — vekt (nivå og endring) og løp (år og måned).
   Tre kopier av grupperingen ville blitt tre ulike svar på «hvor langt ut i

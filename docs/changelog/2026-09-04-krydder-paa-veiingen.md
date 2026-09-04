@@ -83,13 +83,45 @@ jevn nedgang gir snitt mot snitt omtrent halvparten av det som faktisk skjedde.
 
 **Push-rangeringen er en annen enn kortets.** Kortet svarer på «hvor står jeg»
 og leses når brukeren selv åpner det, så der vinner den sterkeste rekorden. Et
-varsel dytter seg på deg i det du stiger av vekta, og da vinner det sjeldneste:
-månedsoppgjøret fyrer fem dager i måneden, mens «laveste snittvekt» kan fyre
-hver morgen gjennom en nedgangsperiode. `below-goal` er løftet av samme grunn —
-å nå målvekta skjer én gang. Og avstanden til målet ligger over
-atferdsmilepælene, motsatt av på kortet: der er veiestreaken den ene setningen
-som er sann uansett hvilken vei vekta går, mens i et varsel OM en veiing er
-«1,8 kg til målet på 90,0 kg» det mer opplysende av de to.
+varsel dytter seg på deg i det du stiger av vekta, og da vinner det sjeldneste.
+Avstanden til målet ligger over atferdsmilepælene, motsatt av på kortet: der er
+veiestreaken den ene setningen som er sann uansett hvilken vei vekta går, mens i
+et varsel OM en veiing er «1,8 kg til målet på 90,0 kg» det mer opplysende.
+
+**METNING er problemet rangeringen løser, og det er ikke det samme som
+gjentakelse.** «Laveste snittvekt siden [dato]» flytter referansen bakover helt
+til den treffer taket, og blir så stående på «Laveste snittvekt vi har målt» —
+identisk hver morgen så lenge nedgangen varer. Over et toårsmål er det
+flertallet av morgenene. Rekorder er altså ikke sjeldne; de er KONTINUERLIGE.
+Derfor ligger de fire som fyrer ÉN gang øverst: måloppnåelse (én gang), en
+passert kilo-terskel (én gang per kilo), et andelsmerke (fire ganger), og
+månedsoppgjøret (fem dager i måneden).
+
+**`year-over-year` er plassert rett under den sterkeste rekorden, og det er en
+beslutning om ANDRELINJA.** Tittelen metter, så den varierende setningen gjør
+mest nytte i slot nummer to. Sammenligningsdagen flytter seg hver morgen, så
+tallet er nytt hver dag. Målt på en jevn nedgang der trendrekorden var
+undertrykt (rekorden var under 30 dager gammel, `MIN_RECORD_SPAN_DAYS`) falt
+pushen før tilbake på «27 av 30 dager med veiing»; nå bærer år-mot-år den.
+
+**Hele kilo som terskel, ikke femmere, og bare NEDOVER.** En femmerskala ville
+gitt to varsler på to år og latt elleve ekte passeringer gå ubemerket; halve
+kilo gjør passeringen til en teller (94,5 og 94,0 krysses i samme uke). En
+oppovergående passering er sann og lett å regne, men «Over 96 kg for første gang
+siden mars» er en anklage levert i det brukeren stiger av vekta —
+atferdsmilepælene er det som skal bære de ukene vekta stiger.
+
+**En passering som gjentar seg er ikke en passering.** Trenden kan vippe rundt
+den samme terskelen noen dager på rad, og uten `MIN_RECORD_SPAN_DAYS`-vakta ville
+«under 95 kg for første gang siden — for fire dager siden» fyrt gjentatte ganger
+på samme kilo. Altså nøyaktig metningen regelen finnes for å bryte.
+
+**Andelens baseline er periodens topp, og setningen SIER det.** En andel trenger
+et startpunkt, og `metricSettings.weight.goal` er et bart tall uten et.
+Startpunktet er derfor toppen av den pågående nedgangen fra `weight-swings`, og
+det navngis: «Halvveis fra 104,2 kg (april 2025) til målet på 93 kg» kan
+etterprøves, mens et bart «halvveis til målet» ville påstått et startpunkt
+brukeren ikke kan se — og trolig et annet enn det hen selv hadde i hodet.
 
 **Rekorden faller ikke bort når månedsoppgjøret tar tittelen.** Pushen har to
 linjer, og den nest høyest rangerte blir andrelinja: «August ble ned 1,2 kg» /
@@ -116,16 +148,49 @@ om, og helsechatten har briefingen med de samme tallene.
 - `src/lib/domain/health/weight-nugget-rules.test.ts` dekker vinduet,
   dekningskravet, støygulvet, begge retninger, at endringen måles gjennom
   måneden og ikke mellom to snitt, rangeringen, fallbacken uten krydder, og at
-  andrelinja ikke gjentar tittelen.
+  andrelinja ikke gjentar tittelen. For fase 4 også: at en passering velger den
+  laveste terskelen, at den ikke gjentar seg når trenden vipper, at den tier
+  uten nok historikk og når vekta stiger, at andelen navngir baselinen og tier
+  uten målvekt, og at år-mot-år bruker posisjonsord og tier under støygulvet.
+- `cycle-series.test.ts` dekker begge ordforrådene, inkludert at
+  posisjonsvarianten ikke dømmer retningen.
+- Forhåndsvist mot en syntetisk toårshistorikk: «Under 92 kg for første gang»,
+  «August ble ned 0,9 kg / 93,1 kg · 7,6 kg under i fjor», og en vanlig dag der
+  trendrekorden var undertrykt og år-mot-år bar tittelen.
 - `npm test` og `npm run check`.
+
+### Fase 4: Tre krydder til, og et ordforråd som ikke dømmer
+
+Etter første runde i drift ble metningen den åpenbare svakheten (se
+beslutningen under). Tre regler til, alle i `weight-nugget-rules.ts`:
+
+- `thresholdCrossedNugget` — «Under 94 kg for første gang siden mars 2024.»
+- `goalProgressNugget` — «Halvveis til 93 kg.»
+- `yearOverYearNugget` — «2,4 kg under i fjor på samme dato.»
+
+Den siste krevde en rettelse i `cycle-series.ts`: `describeCycleComparison` sa
+«2,4 kg foran i fjor» om et vektNIVÅ. `foran/bak` forutsetter at det finnes en
+god retning, og det er en dom flaten ikke har dekning for — samme grunn som at
+«over båndet er ikke et helsevarsel». Funksjonen tar nå et ordforråd:
+`position` («under»/«over») for et nivå, `progress` («foran»/«bak») der verdien
+akkumulerer mot noe. Vektkortets ENDRINGSmodus beholder `progress` — der er
+verdien et delta, og «under» om en nedgang sier ikke om du har gått mer eller
+mindre ned. Løpekortet og `training-summary.ts` er urørt.
 
 ## Kjent rest
 
-- **Krydderet kan gjenta seg.** «Laveste snittvekt siden mars 2025» er sant hver
-  morgen i en nedgangsperiode, og det finnes ingen bokføring av hva vi sa sist
-  (økter har `workout_notifications`; vekt har ingen tilsvarende tabell). Vekta
-  i body-en endrer seg daglig, så varselet er ikke identisk — men tittelen kan
-  stå i en uke. En dedup her ville krevd en ny tabell.
+- **Krydderet kan fortsatt gjenta seg.** De fire som fyrer én gang bryter
+  metningen på dagene de fyrer; de andre dagene står tittelen igjen på den
+  sterkeste rekorden. Det finnes ingen bokføring av hva vi sa sist (økter har
+  `workout_notifications`; vekt har ingen tilsvarende tabell), så en ekte dedup
+  ville krevd en ny tabell.
+- **Andelsbaselinen burde vært målets egen.** `sensor_goals`/`goal_tracks` bærer
+  `metadata.startValue`, altså punktet brukeren faktisk satte målet fra. Å lese
+  den herfra er en ny lesevei, og periodens topp er det nærmeste uten. Samme
+  lesevei ville gitt den estimerte MÅLDATOEN (`projectGoal` med `kind: 'state'`),
+  som er den setningen et toårsmål egentlig handler om.
+- **Runde tall er ikke rangert etter hvor runde de er.** «Under 90» er en større
+  nyhet enn «under 94», men begge behandles likt.
 - Krydderet finnes bare i pushen. Google Chat-fallbacken for vekt finnes ikke
   (bare for økter), og Ekko har ingen vekt-varsling.
 - `HealthKit`-vektbackfillen og manuelle veiinger gir ingen push i det hele
