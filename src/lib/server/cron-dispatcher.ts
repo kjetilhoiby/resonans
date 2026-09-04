@@ -4,6 +4,7 @@ import { env } from '$env/dynamic/private';
 import { appOrigin } from '$lib/server/app-origin';
 import { pgClient } from '$lib/db';
 import { CRON_JOBS } from '$lib/server/cron-jobs';
+import { recordHostSample } from '$lib/server/host-metrics';
 import { claimDueCronJobs, releaseCronDispatchClaim, type DueCronJob } from '$lib/server/cron-due';
 import {
 	dispatchTimeoutMs,
@@ -104,6 +105,11 @@ export function startCronDispatcher() {
 }
 
 async function tick(baseUrl: string, workerId: string) {
+	// Vertsmålingen skjer FØR lederlås-sjekken, med vilje: øyeblikkene vi bryr
+	// oss om er nettopp de der lederskapet kan være i ferd med å ryke. En
+	// standby-instans som måler er mer verdt enn en tapt måling. Feiler stille.
+	await recordHostSample(workerId);
+
 	if (!(await ensureLeadership())) return;
 
 	// In-flight-filteret skjer FØR kravtakingen — ellers brennes slotet for en

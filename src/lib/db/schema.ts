@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, vector, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, boolean, jsonb, decimal, doublePrecision, real, unique, index, uniqueIndex, date, vector, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -4174,6 +4174,31 @@ export const stravaUploads = pgTable(
 );
 
 // Cron execution audit log — tracks every cron endpoint invocation
+/**
+ * Vertens minne og last, samplet hvert minutt av cron-dispatcheren.
+ *
+ * En TABELL og ikke en ringbuffer i minnet, med vilje: hendelsen den finnes
+ * for er den der prosessen blir OOM-drept, og en minnebuffer ville mistet
+ * nettopp det beviset. Se `$lib/domain/host-metrics.ts`.
+ */
+export const hostSamples = pgTable('host_samples', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	sampledAt: timestamp('sampled_at').defaultNow().notNull(),
+	memTotalKb: integer('mem_total_kb').notNull(),
+	memAvailableKb: integer('mem_available_kb').notNull(),
+	memFreeKb: integer('mem_free_kb').notNull(),
+	/** Page cache. Mot null = maskinen thrasher. */
+	cachedKb: integer('cached_kb').notNull(),
+	swapTotalKb: integer('swap_total_kb').notNull(),
+	swapFreeKb: integer('swap_free_kb').notNull(),
+	load1: real('load1').notNull(),
+	load5: real('load5').notNull(),
+	load15: real('load15').notNull(),
+	instance: text('instance')
+}, (table) => ({
+	idxHostSamplesSampledAt: index('host_samples_sampled_at_idx').on(table.sampledAt)
+}));
+
 export const cronExecutions = pgTable('cron_executions', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	jobPath: text('job_path').notNull(),
