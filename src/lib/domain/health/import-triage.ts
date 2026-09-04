@@ -92,6 +92,30 @@ export type PaceReference = { distanceMeters: number; seconds: number };
 export const RIEGEL_EXPONENT = 1.06;
 
 /**
+ * Referansen som en setning: «10 km på 52:00».
+ *
+ * Bor her framfor i kortet fordi BEGGE ekkoene skal si det samme — feltet
+ * brukeren fyller ut, og referansen serveren rapporterer at den brukte. To
+ * formateringer av samme par kunne vist ulike tall for samme import.
+ */
+export function describePaceReference(reference: PaceReference): string {
+	const { distanceMeters, seconds } = reference;
+	const distance =
+		distanceMeters % 1000 === 0 ? `${distanceMeters / 1000} km` : `${distanceMeters} m`;
+	// Timer tas med når de finnes: en maratonreferanse ville ellers stått som
+	// «210:00», som ikke leses som en tid.
+	const total = Math.round(seconds);
+	const hours = Math.floor(total / 3600);
+	const minutes = Math.floor((total % 3600) / 60);
+	const rest = total % 60;
+	const time =
+		hours > 0
+			? `${hours}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`
+			: `${minutes}:${String(rest).padStart(2, '0')}`;
+	return `${distance} på ${time}`;
+}
+
+/**
  * Riegel er validert fra omtrent 1500 m og opp.
  *
  * Ekstrapolert NEDOVER til 400 m spår den for treg tid, så en helt normal
