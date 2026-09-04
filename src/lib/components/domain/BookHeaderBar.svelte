@@ -154,6 +154,21 @@
 				</div>
 			{/if}
 			{#if book.format !== 'print'}
+				<!--
+					Posisjonsraden står OVER slideren, ikke under. Hånda dekker alt
+					under en slider mens man drar, og tallene man setter er nettopp
+					det man trenger å se da.
+				-->
+				<div class="bk-pe-row">
+					<label class="bk-pe-label" for="bk-pe-hours">Posisjon</label>
+					<input id="bk-pe-hours" type="number" class="bk-pe-input bk-pe-input-sm" min="0" value={posHours} oninput={(e) => onPosHoursChange(parseInt((e.target as HTMLInputElement).value) || 0)} />
+					<span class="bk-pe-of">t</span>
+					<input type="number" class="bk-pe-input bk-pe-input-sm" min="0" max="59" value={posMins} oninput={(e) => onPosMinsChange(parseInt((e.target as HTMLInputElement).value) || 0)} />
+					<span class="bk-pe-of">min</span>
+					{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
+						<span class="bk-pe-of">av {totalDurHours}t {totalDurMins < 10 ? '0' : ''}{totalDurMins}m</span>
+					{/if}
+				</div>
 				{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
 					{@const sliderMax = (totalDurHours || 0) * 60 + (totalDurMins || 0)}
 					<input
@@ -169,16 +184,6 @@
 						}}
 					/>
 				{/if}
-				<div class="bk-pe-row">
-					<label class="bk-pe-label" for="bk-pe-hours">Posisjon</label>
-					<input id="bk-pe-hours" type="number" class="bk-pe-input bk-pe-input-sm" min="0" value={posHours} oninput={(e) => onPosHoursChange(parseInt((e.target as HTMLInputElement).value) || 0)} />
-					<span class="bk-pe-of">t</span>
-					<input type="number" class="bk-pe-input bk-pe-input-sm" min="0" max="59" value={posMins} oninput={(e) => onPosMinsChange(parseInt((e.target as HTMLInputElement).value) || 0)} />
-					<span class="bk-pe-of">min</span>
-					{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
-						<span class="bk-pe-of">av {totalDurHours}t {totalDurMins < 10 ? '0' : ''}{totalDurMins}m</span>
-					{/if}
-				</div>
 			{/if}
 			<div class="bk-pe-actions">
 				<button class="bk-pe-cancel" onclick={onCancelEditor}>Avbryt</button>

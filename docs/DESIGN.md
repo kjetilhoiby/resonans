@@ -142,6 +142,35 @@ Alle kort bygger på `--card-*`-tokens fra AppPage (`--card-bg`, `--card-bg-subt
 
 Nybygg: bruk `<SectionCard>` (tones: default/subtle/transparent/bordered + compact/interactive/actions). Ikke definer nye lokale kort-stiler.
 
+## Slidere — referanseinfo hører OVER
+
+**Hånda dekker alt under en slider mens man drar.** Alt brukeren trenger å SE
+mens verdien endrer seg må derfor stå over kontrollen: gjeldende verdi, hva
+verdien betyr, båndets ender, og grafen som er tilbakemeldingen.
+
+Under slideren hører bare det man leser *etterpå* — en forklarende notis, en
+bekreftelse, en knapp.
+
+Fire steder brøt regelen fram til september 2026, og hver på sin måte:
+
+| Flate | Hva som lå under | Hvorfor det bet |
+|-------|------------------|-----------------|
+| `StravaImportCard` | båndets ender og steglengden | man drar for å treffe en tid og ser ikke hva båndet går fra og til |
+| `BookHeaderBar` | «2t 34min av 8t 12m» | tallene man setter var under tommelen |
+| `FlowFormStep` | `helperLabels` («elendig» … «frisk») | ordet som gir tallet mening, i sykeinnsjekken |
+| `WeightYearsCard` | hele `CycleChart` | man drar i nullpunktet nettopp for å se kurvene flytte seg |
+
+De to siste er de lærerike. I flyten er hjelpeteksten hele *poenget* med
+slideren — en 1–5-skala uten ord er ikke kalibrert. Og i vektkortet er grafen
+ikke pynt under kontrollen, den ER svaret; derfor står slideren nå UNDER
+grafen, med sin egen verdi rett over seg.
+
+**Verdien hører alltid rett over slideren**, ikke i en overskrift langt oppe:
+det er den som endrer seg per piksel, og den skal være lesbar med tommelen på.
+
+`FlowFormStep` sin fokus-variant og `LivskompassCheckin` gjorde det riktig fra
+starten — se dem for mønsteret.
+
 ## Oppgaverader
 
 Alle oppgave-/sjekklister i appen skal bruke den samme raden: `<ChecklistItemRow>` (ui/). Se levende eksempler under «Oppgaverader» i `/design`. Bakgrunn og faseplan for foreningen: [`docs/changelog/2026-06-13-forene-oppgavelister.md`](changelog/2026-06-13-forene-oppgavelister.md).

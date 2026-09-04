@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
 	describePaceReference,
 	MAX_RUN_SEC_PER_KM,
+	MAX_SLIDER_POSITIONS,
+	PACE_REFERENCE_DISTANCES,
+	paceReferenceSliderRange,
+	sliderMidpoint,
 	MIN_PACE_AXIS_METERS,
 	riegelSeconds,
 	triageCandidate,
@@ -237,5 +241,57 @@ describe('describePaceReference', () => {
 		expect(describePaceReference({ distanceMeters: 42195, seconds: 3 * 3600 + 30 * 60 })).toBe(
 			'42195 m på 3:30:00'
 		);
+	});
+});
+
+describe('paceReferenceSliderRange', () => {
+	it('følger distansen — båndet er tempo, ikke tid', () => {
+		const short = paceReferenceSliderRange(3000);
+		const long = paceReferenceSliderRange(21097);
+		// Et fast tidsbånd ville gitt en halvmaraton på tjue minutter i nedre ende.
+		expect(short.max).toBeLessThan(long.min);
+	});
+
+	it('dekker brukerens egen mil (52:00 over 10 km)', () => {
+		const range = paceReferenceSliderRange(10000);
+		expect(range.min).toBeLessThanOrEqual(3120);
+		expect(range.max).toBeGreaterThanOrEqual(3120);
+	});
+
+	it('holder seg under taket på posisjoner for alle fire distansene', () => {
+		for (const { meters } of PACE_REFERENCE_DISTANCES) {
+			const range = paceReferenceSliderRange(meters);
+			const positions = (range.max - range.min) / range.step;
+			expect(positions, `${meters} m ga ${positions} posisjoner`).toBeLessThanOrEqual(
+				MAX_SLIDER_POSITIONS
+			);
+			expect(positions).toBeGreaterThan(20);
+		}
+	});
+
+	it('snapper grensene til steget, så slideren lander på rene tall', () => {
+		for (const { meters } of PACE_REFERENCE_DISTANCES) {
+			const { min, max, step } = paceReferenceSliderRange(meters);
+			expect(min % step).toBe(0);
+			expect(max % step).toBe(0);
+		}
+	});
+
+	it('gir grovere steg for lengre distanser', () => {
+		expect(paceReferenceSliderRange(3000).step).toBeLessThan(
+			paceReferenceSliderRange(21097).step
+		);
+	});
+});
+
+describe('sliderMidpoint', () => {
+	it('ligger på et steg, og innenfor båndet', () => {
+		for (const { meters } of PACE_REFERENCE_DISTANCES) {
+			const range = paceReferenceSliderRange(meters);
+			const mid = sliderMidpoint(range);
+			expect(mid % range.step).toBe(0);
+			expect(mid).toBeGreaterThanOrEqual(range.min);
+			expect(mid).toBeLessThanOrEqual(range.max);
+		}
 	});
 });
