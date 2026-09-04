@@ -378,6 +378,44 @@ med kravtaking i `$lib/server/cron-due.ts`; klokka i `$lib/server/cron-dispatche
   klokka den overvåker — dør dispatcheren, dør også Google Chat-varselet.
   Den interne dispatcheren er nå eneste klokke: uten den kjører ingen cron.
 
+### Jobbkøen: en `running`-rad uten eier er en løgn
+
+Se `docs/changelog/2026-09-04-jobber-som-star-fast.md`. Reglene rent i
+`$lib/domain/stale-jobs.ts`, sveipen i `recoverStaleRunningJobs`
+(`$lib/server/background-jobs.ts`), som kjører foran HVER batch.
+
+- **To måter å bli stående i `running`, og de behandles ulikt.** En
+  worker-jobb claimes med `status` + `locked_at` + `locked_by` i én atomisk
+  UPDATE, så den har alltid en eier; dør workeren (redeploy ved hver push, et
+  OOM-drap), er raden trygg å kjøre om igjen → `retry`, ellers `failed`. En
+  `batch:*`-jobb settes rett i `running` av `startBatchJob`, **uten lås**, og
+  drives av en løkke i NETTLESEREN mot `/api/admin/batch/step` — lukkes fanen,
+  er det ingen som fortsetter.
+- **Eierløse rader FEILES, de requeues aldri.** `executeJob` har ingen
+  `batch:*`-gren, så en requeue gir tre runder «Unknown background job type»
+  og ender i `failed` uansett — samme utfall, med en feiltekst som peker på en
+  manglende jobbtype framfor på en lukket fane. Invarianten:
+  **den som skriver `running` uten lås, skriver en jobb ingen worker kan
+  kjøre.**
+- **Alderen på en eierløs rad måles mot `updated_at`, aldri `started_at`.** En
+  batch som faktisk kjører har også `locked_by = null` og kan ha stått i
+  `running` i timer. Det som skiller levende fra forlatt er at `stepBatchJob`
+  skriver `updated_at` for hvert steg. Fram til september 2026 gatet sveipen på
+  `locked_at IS NOT NULL` og så derfor aldri denne klassen: tre
+  `batch:withings_backfill` sto i 28 døgn.
+- **`LEASE_EXPIRY_MINUTES` (60) er romslig fordi det ikke finnes noen
+  heartbeat.** `locked_at` settes ÉN gang ved claim. Var terskelen stram (den
+  var 15 min), requeues en `sparebank1_historical_sync` som fortsatt kjører —
+  og med to instanser under rullende oppdatering betyr det en bank-import kjørt
+  to ganger samtidig. `STUCK_AFTER_MINUTES` (30) i `diagnostics-jobs.ts` er et
+  ANNET tall: flagge, ikke gripe inn. Terskelen for å handle skal ligge over
+  terskelen for å flagge.
+- **Ingen egen cron-jobb og ingen oppstartskrok.** `startJobWorker` kaller
+  `drainQueue` ved oppstart, og `processDueBackgroundJobs` sveiper FØR den
+  claimer — restarten som lager problemet utløser altså ryddingen selv.
+  Sveipen arver `FOR UPDATE SKIP LOCKED` og er trygg på flere instanser uten
+  lederlås, som køen ellers.
+
 ### Ekstern API-flate (Ekko)
 
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss

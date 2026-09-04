@@ -1,7 +1,12 @@
-import { db, pgClient } from '$lib/db';
+import { db, pgClient, rowsOf } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { notifyJobQueued } from '$lib/server/job-queue-signal';
+import {
+	decideStaleJob,
+	ABANDONED_AFTER_MINUTES,
+	LEASE_EXPIRY_MINUTES
+} from '$lib/domain/stale-jobs';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
 import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
@@ -399,35 +404,118 @@ function toDate(input: Date | string | number | null | undefined): Date | null {
 	return Number.isNaN(d.getTime()) ? null : d;
 }
 
-async function recoverStaleRunningJobs(staleAfterMinutes = 15) {
-	const minutes = Math.max(1, Math.min(staleAfterMinutes, 120));
-	const rows = await pgClient.unsafe<{ id: string; status: string }[]>(`
-		WITH stale AS (
-			SELECT id, attempts, max_attempts
-			FROM background_jobs
-			WHERE status = 'running'
-			  AND locked_at IS NOT NULL
-			  AND locked_at < NOW() - make_interval(mins => ${minutes})
-			FOR UPDATE SKIP LOCKED
-		)
-		UPDATE background_jobs AS bj
-		SET
-			status = CASE WHEN stale.attempts < stale.max_attempts THEN 'retry' ELSE 'failed' END,
-			error = CASE
-				WHEN stale.attempts < stale.max_attempts THEN COALESCE(NULLIF(bj.error, ''), 'Worker lease expired; requeued')
-				ELSE COALESCE(NULLIF(bj.error, ''), 'Worker lease expired; marked failed')
-			END,
-			run_at = CASE WHEN stale.attempts < stale.max_attempts THEN NOW() ELSE bj.run_at END,
-			finished_at = CASE WHEN stale.attempts < stale.max_attempts THEN NULL ELSE NOW() END,
-			locked_at = NULL,
-			locked_by = NULL,
-			updated_at = NOW()
-		FROM stale
-		WHERE bj.id = stale.id
-		RETURNING bj.id, bj.status
-	`);
+/**
+ * Tak på hvor mange `running`-rader én sveip vurderer.
+ *
+ * Sveipen kjører foran hver batch (hvert 30. sekund fra workeren), så et tak
+ * holder transaksjonen kort når noe har gått skikkelig galt. Resten tas i
+ * neste runde — `ORDER BY updated_at ASC` gjør at de eldste kommer først.
+ */
+const STALE_SWEEP_LIMIT = 50;
 
-	return rows.length;
+/**
+ * Grovfilter foran `decideStaleJob`, slik at en sveip ikke tar radlås på jobber
+ * som åpenbart lever.
+ *
+ * Tallet er UTLEDET av domenetersklene, ikke skrevet av — den minste av dem er
+ * per definisjon en trygg oversuperset av begge. Rader nyere enn dette kan ingen
+ * av reglene felle, så de trenger ikke leses.
+ *
+ * Hviler på at `updated_at` ikke røres mens en worker-jobb kjører: claimen
+ * setter den til NOW() sammen med `locked_at`, og neste skriving er
+ * fullføringen. Skulle noen legge inn framdriftsoppdateringer, blir filteret
+ * mildere, ikke strengere — en jobb som skriver om seg selv er i live.
+ */
+const STALE_CANDIDATE_AFTER_MINUTES = Math.min(ABANDONED_AFTER_MINUTES, LEASE_EXPIRY_MINUTES);
+
+/**
+ * Rydder `running`-rader ingen kommer til å fullføre.
+ *
+ * Avgjørelsen bor i `decideStaleJob` ($lib/domain/stale-jobs) — hva som er
+ * «fastlåst» og hva det skal bli, er regler med tester, ikke en CASE i en
+ * spørring. SQL-en her gjør bare to ting: velger kandidatene og skriver
+ * utfallet.
+ *
+ * Kandidatene låses med `FOR UPDATE SKIP LOCKED` inne i én transaksjon, samme
+ * mønster som `claimNextDueJob`. To instanser kan derfor rydde samtidig uten
+ * lederlås: den andre hopper over radene den første holder.
+ *
+ * NB: `pgClient` har identitetsparsere for dato-OID-ene (se `$lib/db`), så
+ * tidsstemplene kommer tilbake som STRENGER. `toDate` er ikke pynt.
+ */
+async function recoverStaleRunningJobs(now = new Date()) {
+	let requeued = 0;
+	let failed = 0;
+
+	await pgClient.begin(async (tx) => {
+		const candidates = rowsOf<{
+			id: string;
+			type: string;
+			attempts: number;
+			max_attempts: number;
+			locked_at: string | null;
+			locked_by: string | null;
+			updated_at: string | null;
+		}>(
+			await tx.unsafe(`
+				SELECT id, type, attempts, max_attempts, locked_at, locked_by, updated_at
+				FROM background_jobs
+				WHERE status = 'running'
+				  AND (
+				    updated_at IS NULL
+				    OR updated_at < NOW() - make_interval(mins => ${STALE_CANDIDATE_AFTER_MINUTES})
+				  )
+				ORDER BY updated_at ASC NULLS FIRST
+				LIMIT ${STALE_SWEEP_LIMIT}
+				FOR UPDATE SKIP LOCKED
+			`)
+		);
+
+		for (const row of candidates) {
+			const decision = decideStaleJob(
+				{
+					status: 'running',
+					attempts: Number(row.attempts ?? 0),
+					maxAttempts: Number(row.max_attempts ?? 3),
+					lockedAt: toDate(row.locked_at),
+					lockedBy: row.locked_by,
+					updatedAt: toDate(row.updated_at)
+				},
+				now
+			);
+
+			if (decision.outcome === 'leave') continue;
+
+			const requeue = decision.outcome === 'retry';
+			await tx.unsafe(
+				`
+					UPDATE background_jobs
+					SET status = $2,
+					    error = $3,
+					    run_at = CASE WHEN $4::boolean THEN NOW() ELSE run_at END,
+					    finished_at = CASE WHEN $4::boolean THEN NULL ELSE NOW() END,
+					    locked_at = NULL,
+					    locked_by = NULL,
+					    updated_at = NOW()
+					WHERE id = $1
+				`,
+				[row.id, requeue ? 'retry' : 'failed', decision.reason, requeue]
+			);
+
+			if (requeue) requeued += 1;
+			else failed += 1;
+
+			console.warn('[background-jobs] ryddet fastlåst jobb', {
+				jobId: row.id,
+				type: row.type,
+				outcome: decision.outcome,
+				lockedBy: row.locked_by,
+				reason: decision.reason
+			});
+		}
+	});
+
+	return { requeued, failed, total: requeued + failed };
 }
 
 async function claimNextDueJob(workerId: string) {
@@ -817,7 +905,8 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 	const processStartedAt = Date.now();
 	const limit = Math.max(1, Math.min(opts?.limit ?? 5, 50));
 	const workerId = opts?.workerId ?? `worker-${Date.now()}`;
-	const recoveredStale = await recoverStaleRunningJobs();
+	const stale = await recoverStaleRunningJobs();
+	const recoveredStale = stale.total;
 	const metricsByType: Record<string, {
 		processed: number;
 		completed: number;
@@ -1012,6 +1101,8 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 		failed,
 		retried,
 		recoveredStale,
+		staleRequeued: stale.requeued,
+		staleFailed: stale.failed,
 		queueStatsDurationMs,
 		byType: Object.fromEntries(
 			Object.entries(metricsByType).map(([type, stats]) => [
@@ -1037,6 +1128,8 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 		failed,
 		retried,
 		recoveredStale,
+		staleRequeued: stale.requeued,
+		staleFailed: stale.failed,
 		metrics: {
 			durationMs,
 			queueStatsDurationMs,
