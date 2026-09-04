@@ -1314,8 +1314,9 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
   «72 % hard», men denne gangen er terskelen uskyldig og dataene lyver.
 - **Beltetoppene er ikke målinger, men grensa går på ~204 — ikke på 200.** Målt
   over hele Strava-eksporten er 185–200 en tett, sammenhengende fordeling
-  (~85 økter), mens 204–237 er 24 spredte treff. En tidligere utgave her sa
-  «200+ er ikke målinger»; flere av 200-lesningene har troverdige snitt
+  (~85 økter), mens 204–237 er 26 treff samlet i noen få bunker (se under).
+  En tidligere utgave her sa «200+ er ikke målinger»; flere av 200-lesningene
+  har troverdige snitt
   (155–164, intervalløkter) og er antakelig ekte. **Makspuls er nå satt manuelt
   til 192**, som er forsvarlig men konservativt — fordelingen støtter ~198, og
   et for lavt tak blåser opp HRR og dermed effort.
@@ -1362,22 +1363,36 @@ Se `docs/changelog/2026-09-03-pulskurven-vi-ikke-tror-paa.md`. Vakta bor rent i
 - **Året og dommen på én linje, tallene innrykket under.** `.year` var én
   flex-rad med `flex-wrap`, og 2026 sin lange tall-linje brakk ned uten årstall
   foran — den leste som en totalsum for hele tabellen.
-- **ÉN ødelagt pulssensor forklarer alle funnene, og den var i bruk hele veien.**
-  Brukeren hadde ett brystbelte fra 2014 til 30. juni 2026. Det begynte å gi
-  umulig høy, stabil puls et stykke inn i levetiden, og ble deretter brukt
-  SPORADISK — «prøvde, fikk søppel, ga opp, prøvde igjen». Målt mot Strava-
-  eksporten (1120 økter, 574 med puls) 3. september 2026:
-  - **Det finnes ingen bruddato å gate på.** De dårlige øktene er 24 spredte
-    treff fra mai 2015 til 30. juni 2026, ikke et intervall. En import kan
-    derfor ikke gates på dato — hver fil må dømmes på sin egen kurve.
+- **De dårlige øktene er BUNKER, og puls kommer stort sett fra klokka.**
+  Brukeren hadde ett brystbelte fra 2014 til 30. juni 2026, men brukte det
+  sjelden — «prøvde, fikk søppel, ga opp, prøvde igjen». Løpende pulsmåling
+  kom fra Withings/klokka. Målt mot Strava-eksporten (1120 økter, 574 med
+  puls) 3.–4. september 2026:
+  - **574 med puls er IKKE 574 beltetimer.** Massen er `.gpx.gz` fra 2020 og
+    utover (37, 56, 55, 22, 99, 46, 71 per år, ~386 økter); `.fit.gz` bærer
+    puls hovedsakelig 2015–2019 (~94). Manifestet har ingen kolonne for
+    pulsSENSOR — `Aktivitetsutstyr` er sykkel — så filtype og periode er alt
+    vi kan lese kilden av.
+  - **Avvikene ligger i tre-fire BUNKER, ikke spredt.** Alle økter med maks
+    ≥ 204 (26 stk): mai 2015–jan. 2016 (6, `.fit.gz`), nov. 2018–aug. 2019
+    (5), **nov.–des. 2021 (8, `.tcx.gz`** — 9., 12., 16., 22., 24., 25. nov.,
+    19. og 24. des.), aug. 2025 (2 sykkelturer, optisk) og **apr.–30. juni
+    2026 (6)**. Åtte økter på sju uker er en PERIODE. Den ene faktisk
+    fastlåste kurven (24. des. 2021: snitt 192, maks 237) ligger inni
+    høstbunken, ikke alene.
+  - **NB: en tidligere utgave sa «24 spredte treff … ikke et intervall. En
+    import kan derfor ikke gates på dato».** Det var galt — bunkene ER
+    intervaller. Per-fil-dømming er likevel den riktige mekanismen, men
+    begrunnelsen er en annen: en vakt som ikke trenger at vinduene er riktige
+    er robust, og vinduene er utledet av 26 økter.
   - **Andelen er lav VED KONSTRUKSJON**, siden beltet ble brukt sjelden. Derfor
     kan ikke `WIDESPREAD_SHARE` (10 %) skille noe: hvert år leser
     «enkeltavvik» uansett hvor ødelagt beltet var. Utbredelse er feil akse for
     denne brukeren; kilde og enkeltøkt er de riktige.
   - **Bruddet i fordelingen ligger på 200–204, ikke på 192.** 185–200 er en tett,
     sammenhengende fordeling (~85 økter) — altså normal variasjon rundt en ekte
-    makspuls. 204–237 er 24 spredte verdier. Terskelen er IKKE justert mot dette;
-    tallet står her som en måling.
+    makspuls. 204–237 er 26 verdier fordelt på bunkene over. Terskelen er IKKE
+    justert mot dette; tallet står her som en måling.
   - **Bare ÉN økt er et fastlåst belte** (24. desember 2021: snitt 192, maks 237,
     altså hrr 1,00 gjennom hele økta). De 23 andre har helt plausible SNITT
     (hrr 0,73–0,88) og bare en umulig topp — enkeltutslag, ikke låste kurver.
