@@ -1,4 +1,5 @@
 import { db } from '$lib/db';
+import { describeErrorForStorage } from '$lib/domain/error-text';
 import { backgroundJobs } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -194,7 +195,9 @@ export async function stepBatchJob(jobId: string): Promise<BatchProgress> {
 		accStats = handler.mergeStats(accStats as any, stepStats as any);
 		processedDays += stepSize;
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		// Kappes ved skriving — se $lib/domain/error-text. Meldingen går BÅDE i
+		// `error`-kolonnen og ut i HTTP-svaret her.
+		const message = describeErrorForStorage(err);
 		// Loggen er ikke pynt ved siden av `error`-kolonnen: et steg som feiler
 		// fanges HER og svarer 200 med feilen i kroppen, så `handleError` i
 		// hooks.server.ts ser den aldri og det finnes ingen `[500]`-linje å søke

@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { cronExecutions } from '$lib/db/schema';
 import { and, lt, sql } from 'drizzle-orm';
 import { classifyCronResult } from './cron-result';
+import { describeErrorForStorage } from '$lib/domain/error-text';
 
 export async function withCronTracking<T>(
 	jobPath: string,
@@ -19,7 +20,12 @@ export async function withCronTracking<T>(
 		return result;
 	} catch (err) {
 		status = 'error';
-		error = err instanceof Error ? err.message : String(err);
+		// Kappes ved SKRIVING, av samme grunn som i background-jobs: kolonnen er
+		// `text` uten grense, og en drizzle-feil bærer hele SQL-en og hver
+		// parameter. `cron_executions` er ikke målt like ille som jobbtabellen,
+		// men den har ingen grense den heller — og et cron-endepunkt som lar et
+		// bulk-insert kaste, skriver nøyaktig samme dump.
+		error = describeErrorForStorage(err);
 		throw err;
 	} finally {
 		const durationMs = Date.now() - start;

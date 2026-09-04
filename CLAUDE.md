@@ -254,6 +254,35 @@ mellom. Trenger en Claude-økt loggene, er veien en API-secret i **miljøet**
   `$lib/client/api-error` og **vis** meldingen. `catch {}` med en generisk tekst
   gjør en prod-feil uløselig — det kostet en full kodegjennomgang i august.
 
+**Feiltekst som LAGRES går gjennom `describeErrorForStorage`**
+(`$lib/domain/error-text.ts`), aldri `err.message` rått. Gjelder
+`background_jobs.error` og `cron_executions.error`. Se
+`docs/changelog/2026-09-04-feiltekst-kappes-ved-skriving.md`.
+
+- **Kilden er drizzle, ikke koden vår.** `DrizzleQueryError` bygger meldingen
+  som `Failed query: <hele SQL-en>\nparams: <hver parameter>`, og
+  `refreshForRange` setter inn opptil 2000 canonical-rader i ETT insert —
+  ~38 000 parametere, fire av kolonnene jsonb. Målt i prod 4. september 2026:
+  28 feilede `workout_projection_refresh`-rader, ~19 MiB til sammen, største
+  enkeltmelding **780 277 tegn**. Kolonnene er `text` uten grense.
+- **En naiv `slice(0, 2000)` er verdiløs, og det er hele poenget.** Årsaken
+  ligger IKKE i meldingen — den ligger på `cause` (postgres-feilen). De første
+  2000 tegnene er «Failed query: insert into "canonical_workouts" (…» og
+  deretter plassholdere. Funksjonen stripper `params`-blokka, klipper SQL-en, og
+  følger `cause`-kjeden. **Hvert ledd klippes for seg**, ellers spiser en enorm
+  toppmelding budsjettet og årsaken faller ut.
+- **Kappemerket er en KONSTANT, uten den rå lengden.** `errorFingerprint`
+  svarer på «samme feil som sist?», og med parameterne inne i meldingen var
+  svaret alltid nei — 28 rader ga 28 unike fingeravtrykk av antakelig én feil.
+  «(kappet, 780277 tegn)» ville gjeninnført variasjonen, siden lengden følger
+  radantallet. Den rå lengden logges som `rawErrorLength` ved siden av
+  `[background-jobs] job failed`.
+- **Ingen CHECK-constraint på kolonnen.** En grense i basen ville fått
+  `error`-skrivingen til å kaste i det en for lang melding kom, altså mistet
+  feilen helt i nettopp den situasjonen man trenger den.
+- Kappingen ved LESING (`toPublicError`, 200 tegn) står som før. Den gjorde
+  `/api/diagnostikk` lesbar og basen ingen tjeneste.
+
 **Brukslogging** (`usage_events`-tabellen, se `docs/changelog/2026-06-09-brukslogging.md`):
 
 **Hurtighandlingene på hjemskjermen: navnet bor PÅ oppføringen.** `PRODUCERS` i
