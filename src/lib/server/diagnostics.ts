@@ -11,6 +11,7 @@ import {
 	type PublicCronRun
 } from '$lib/domain/diagnostics';
 import { toPublicError, toPublicJob, type PublicJob } from '$lib/domain/diagnostics-jobs';
+import { loadHostWindow } from '$lib/server/host-metrics';
 
 /**
  * Datainnhentingen bak `/api/diagnostikk`. Utvelgelsen bor i domenelaget —
@@ -117,10 +118,11 @@ export async function loadActiveJobs(now = new Date()): Promise<PublicJob[]> {
 }
 
 export async function loadDiagnostics(window: DiagnosticsWindow, now = new Date()) {
-	const [runs, counts, active] = await Promise.all([
+	const [runs, counts, active, host] = await Promise.all([
 		loadCronRuns(window),
 		loadJobCounts(),
-		loadActiveJobs(now)
+		loadActiveJobs(now),
+		loadHostWindow(window.fromMs, window.toMs)
 	]);
 
 	return {
@@ -137,6 +139,10 @@ export async function loadDiagnostics(window: DiagnosticsWindow, now = new Date(
 			stuck: active.filter((j) => j.stuck).length,
 			truncated: active.length >= MAX_JOB_ROWS
 		},
+		// Vertens minne og last i samme vindu. `worst` er den laveste
+		// tilgjengelige — et snitt ville glattet bort toppen på nøyaktig samme
+		// måte som Coolifys graf gjorde 3. september 2026.
+		host,
 		// Sier om feiltekst er med, så et tomt `error.redacted` ikke leses som
 		// «ingen feilmelding finnes».
 		errorTextEnabled: openErrorsEnabled()

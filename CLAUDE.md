@@ -196,6 +196,23 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   - Svaret sier HVOR man skal se, ikke HVA som sto der. Den uredigerte meldingen
     krever fortsatt legitimasjon, og det er grensa som gjør endepunktet
     forsvarlig å ha åpent.
+- **`host_samples` måler VERTEN hvert minutt** (`$lib/domain/host-metrics.ts`,
+  samplet i cron-dispatcherens tikk, eksponert på `/api/diagnostikk`). Se
+  `docs/changelog/2026-09-04-vertsmaaling.md`.
+  - **`cached` er feltet som avslører en maskin i fritt fall.** Ved OOM-en
+    3. september 2026 sto page cachen på **1 388 kB** mot ~1,4 GiB normalt:
+    kjernen hadde kastet ut alt, og prosesser page-faultet på sin egen
+    programkode. Det var «CPU-toppen» — ikke arbeid. `available` alene viser
+    det ikke, siden den teller page cache som tilgjengelig.
+  - **`worst` er MINIMUM tilgjengelig, aldri et snitt.** Et snitt glatter bort
+    toppen, som er nøyaktig feilen Coolifys graf gjorde: den viste 78 % minne
+    under en hendelse der OOM-killeren fyrte tre ganger, og fikk minne
+    avskrevet som årsak i to døgn.
+  - En TABELL, ikke en ringbuffer i minnet: hendelsen den finnes for er den der
+    prosessen blir OOM-drept.
+  - Samplingen skjer FØR lederlås-sjekken — øyeblikkene som betyr noe er de der
+    lederskapet ryker. To rader samme minutt ved rullende oppdatering er
+    forventet.
 - `.github/workflows/watchdog.yml` er det UAVHENGIGE øyet: monitoreringen
   dispatches av cron-klokka den overvåker, så en død dispatcher kan ikke varsle
   om seg selv. Vakthunden leser `clock`-pulsen fra uautentisert `/api/health`
