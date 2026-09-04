@@ -4,6 +4,7 @@ import { buildMetricSeries } from './weight-series';
 import { findWeightSwings } from './weight-swings';
 import {
 	buildWeightPush,
+	goalDateNugget,
 	goalProgressNugget,
 	monthChangeNugget,
 	thresholdCrossedNugget,
@@ -335,5 +336,93 @@ describe('rangering og gjenklang', () => {
 		expect(push.nugget?.kind).toBe('threshold-crossed');
 		expect(push.secondary?.kind).not.toBe('lowest-trend');
 		expect(push.secondary?.kind).not.toBe('lowest-raw');
+	});
+});
+
+describe('målets egen baseline', () => {
+	/** Et mål fra 100 kg til 90 kg, med frist godt fram i tid. */
+	const goal = {
+		startWeight: 100,
+		targetWeight: 90,
+		startDate: '2026-01-01',
+		endDate: '2027-06-01',
+		startSource: 'oppgitt' as const
+	};
+
+	it('måler andelen fra målets startpunkt, ikke fra periodetoppen', () => {
+		// Perioden starter på 98, målet på 100. Halvveis fra MÅLET er 95.
+		const days = series([...ramp(98, 95.4, 120), 88], '2026-09-12');
+		const nugget = goalProgressNugget(pointsOf(days), findWeightSwings(pointsOf(days)), null, goal);
+		expect(nugget?.kind).toBe('goal-progress');
+		expect(nugget?.sentence).toContain('målets startpunkt på 100,0 kg');
+	});
+
+	it('virker uten målvekt i terskelarket — målet bærer begge tallene', () => {
+		const days = series([...ramp(98, 95.4, 120), 88], '2026-09-12');
+		expect(goalProgressNugget(pointsOf(days), [], null, goal)).not.toBeNull();
+	});
+
+	it('faller tilbake på periodetoppen uten et mål', () => {
+		const days = series([...ramp(100, 95.4, 120), 88], '2026-09-12');
+		const nugget = goalProgressNugget(pointsOf(days), findWeightSwings(pointsOf(days)), 90);
+		expect(nugget?.sentence).not.toContain('målets startpunkt');
+	});
+});
+
+describe('goalDateNugget', () => {
+	const goal = {
+		startWeight: 100,
+		targetWeight: 90,
+		startDate: '2026-01-01',
+		endDate: '2027-06-01',
+		startSource: 'oppgitt' as const
+	};
+
+	it('estimerer datoen med måned og år i overskriften', () => {
+		// Jevn nedgang fra 100 mot 94 — tempoet peker mot 90 et stykke fram.
+		const days = series(ramp(100, 94, 250), '2026-09-12');
+		const nugget = goalDateNugget(pointsOf(days), goal, '2026-09-12');
+		expect(nugget?.kind).toBe('goal-date');
+		// Ingen dag i tittelen: en eksakt dato ville sett ut som en presisjon
+		// estimatet ikke har.
+		expect(nugget?.headline).toMatch(/^På dagens tempo: 90,0 kg i \w+ \d{4}$/);
+	});
+
+	it('bruker kortets ord i setningen', () => {
+		const days = series(ramp(100, 94, 250), '2026-09-12');
+		expect(goalDateNugget(pointsOf(days), goal, '2026-09-12')?.sentence).toContain(
+			'På dagens tempo er du der rundt'
+		);
+	});
+
+	it('tier når vekta går motsatt vei — ingen anklage på repeat', () => {
+		const days = series(ramp(100, 104, 250), '2026-09-12');
+		expect(goalDateNugget(pointsOf(days), goal, '2026-09-12')).toBeNull();
+	});
+
+	it('tier når målet alt er nådd — det er below-goal sin beskjed', () => {
+		const days = series(ramp(100, 88, 250), '2026-09-12');
+		expect(goalDateNugget(pointsOf(days), goal, '2026-09-12')).toBeNull();
+	});
+
+	it('tier uten et mål', () => {
+		const days = series(ramp(100, 94, 250), '2026-09-12');
+		expect(goalDateNugget(pointsOf(days), null, '2026-09-12')).toBeNull();
+	});
+
+	it('står aldri ved siden av et annet måltall', () => {
+		// Terskelarket sier 95, målet sier 90 — to kilder som kan sprike.
+		const push = buildWeightPush({
+			days: series(ramp(100, 94, 250), '2026-09-12'),
+			today: '2026-09-12',
+			goalKg: 95,
+			goal,
+			latestKg: 94
+		});
+		const shown = [push.nugget?.kind, push.secondary?.kind];
+		const goalKinds = shown.filter((k) =>
+			['goal-date', 'goal-distance', 'goal-progress', 'below-goal'].includes(k ?? '')
+		);
+		expect(goalKinds.length).toBeLessThanOrEqual(1);
 	});
 });

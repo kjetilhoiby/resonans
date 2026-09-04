@@ -13,6 +13,7 @@
 import { osloDayKey } from '$lib/domain/oslo-time';
 import { buildWeightPush, type WeightPushCopy } from '$lib/domain/health/weight-nugget-rules';
 import { readWeightDays } from '$lib/server/health/weight-history';
+import { readActiveWeightGoal } from '$lib/server/health/weight-goal-track';
 import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/metric-settings';
 
 /**
@@ -31,16 +32,27 @@ export async function computeWeightPush(args: {
 }): Promise<WeightPushCopy> {
 	const { userId, latestKg } = args;
 	const now = args.now ?? new Date();
+	const today = osloDayKey(now);
 
 	const [days, metricSettings] = await Promise.all([
 		readWeightDays(userId, { now }),
 		readHealthMetricSettings(userId)
 	]);
 
+	// Målet leses ETTER historikken: fallback-baselinen er første måling på eller
+	// etter målets startdato, og den kan bare regnes når begge finnes.
+	const goal = await readActiveWeightGoal(userId, { weightDays: days, today }).catch((err) => {
+		console.error(
+			`[withings-sync] vektmål-oppslag feilet user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+		);
+		return null;
+	});
+
 	return buildWeightPush({
 		days,
-		today: osloDayKey(now),
+		today,
 		goalKg: readMetricNumber(metricSettings, 'weight', 'goal'),
+		goal,
 		latestKg
 	});
 }

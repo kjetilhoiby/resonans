@@ -116,12 +116,39 @@ den samme terskelen noen dager på rad, og uten `MIN_RECORD_SPAN_DAYS`-vakta vil
 «under 95 kg for første gang siden — for fire dager siden» fyrt gjentatte ganger
 på samme kilo. Altså nøyaktig metningen regelen finnes for å bryte.
 
-**Andelens baseline er periodens topp, og setningen SIER det.** En andel trenger
-et startpunkt, og `metricSettings.weight.goal` er et bart tall uten et.
-Startpunktet er derfor toppen av den pågående nedgangen fra `weight-swings`, og
-det navngis: «Halvveis fra 104,2 kg (april 2025) til målet på 93 kg» kan
-etterprøves, mens et bart «halvveis til målet» ville påstått et startpunkt
-brukeren ikke kan se — og trolig et annet enn det hen selv hadde i hodet.
+**Andelens baseline navngis alltid, uansett hvor den kom fra.** Finnes et mål i
+`goals`, er dets `startValue` den riktige — det er der brukeren sa at dette
+begynte. Finnes det ikke, brukes toppen av den pågående nedgangen. Begge sies:
+«Halvveis fra målets startpunkt på 104,0 kg (april 2025) til målet på 90 kg»
+mot «Halvveis fra 104,2 kg (april 2025) …». Et bart «halvveis til målet» ville
+påstått et startpunkt brukeren ikke kan se — og trolig et annet enn det hen selv
+hadde i hodet.
+
+**Måldatoens overskrift er grovere enn kortets setning, med vilje.**
+`describeGoalProjection` sier «rundt 12. mars 2027 — 3 måneder før fristen», og
+det er ordene `/plan/mal` bruker; de står i `sentence`. Men en push-tittel leses
+hver morgen, og et datoestimat flytter seg noen dager fram og tilbake med
+tempoet — en eksakt dato i tittelen ville sett ut som en presisjon estimatet
+ikke har, og invitert til å lese støy som framgang. Måned og år står stille i
+ukevis.
+
+**Måldatoen sier ingenting når den ikke har noe å si.** Går vekta motsatt vei
+eller står stille, har `projectGoal` ingen dato — og et varsel som hver morgen
+sier «ingen dato: vekta går motsatt vei» er en anklage på repeat. Er målet
+passert, er det `below-goal` sin beskjed; en «nådd i mars»-tittel hver morgen
+etterpå er metningen i sin verste form.
+
+**To kilder til målvekt, og `ECHOES` er det som holder dem fra hverandre.**
+`metricSettings.weight.goal` (below-goal, goal-distance) og `goals`-raden
+(goal-progress, goal-date) er ulike rader som ingen holder i sync. Vi velger
+ikke en vinner — vi lar dem aldri stå ved siden av hverandre, så brukeren aldri
+ser to måltall i samme varsel. Det er samme regel som «navngi kilden når to
+kilder betyr det samme», håndhevet i rangeringen framfor i teksten.
+
+**Nærmeste frist vinner når flere mål finnes.** Har man både et toårsmål og et
+delmål til jul, er delmålet det man kan gjøre noe med denne uka. Frister i
+fortida hoppes over: en estimert dato mot en frist som var i fjor er en setning
+om noe som er avgjort.
 
 **Rekorden faller ikke bort når månedsoppgjøret tar tittelen.** Pushen har to
 linjer, og den nest høyest rangerte blir andrelinja: «August ble ned 1,2 kg» /
@@ -154,6 +181,11 @@ om, og helsechatten har briefingen med de samme tallene.
   uten målvekt, og at år-mot-år bruker posisjonsord og tier under støygulvet.
 - `cycle-series.test.ts` dekker begge ordforrådene, inkludert at
   posisjonsvarianten ikke dømmer retningen.
+- For fase 5: at andelen måler fra målets startpunkt og navngir det, at den
+  virker uten et tall i terskelarket, at den faller tilbake på periodetoppen
+  uten et mål; at måldatoen har måned og år i overskriften og kortets ord i
+  setningen, tier ved motsatt retning og ved nådd mål, og at ikke to måltall kan
+  stå ved siden av hverandre i samme varsel.
 - Forhåndsvist mot en syntetisk toårshistorikk: «Under 92 kg for første gang»,
   «August ble ned 0,9 kg / 93,1 kg · 7,6 kg under i fjor», og en vanlig dag der
   trendrekorden var undertrykt og år-mot-år bar tittelen.
@@ -177,6 +209,21 @@ akkumulerer mot noe. Vektkortets ENDRINGSmodus beholder `progress` — der er
 verdien et delta, og «under» om en nedgang sier ikke om du har gått mer eller
 mindre ned. Løpekortet og `training-summary.ts` er urørt.
 
+### Fase 5: Målet fikk sin egen baseline, og en dato
+
+`readActiveWeightGoal` (`$lib/server/health/weight-goal-track.ts`) leser
+`goals`-raden: målvekt, `metadata.startValue` og fristen. Med den:
+
+- `goalProgressNugget` bruker **målets egen** baseline framfor periodetoppen, og
+  sier hvilken av dem tallet kom fra.
+- `goalDateNugget` er ny — «På dagens tempo: 90,0 kg i februar 2027», regnet av
+  `projectGoal` med `kind: 'state'`, altså samme motor som `/plan/mal`.
+
+Fallback-baselinen regnes PER MÅL som første måling på eller etter målets
+startdato, ikke som ett tall kalleren sender inn: et mål startet i april og et
+startet i fjor har ulike startpunkter, og den eldste målingen i historikken er
+ingen av dem.
+
 ## Kjent rest
 
 - **Krydderet kan fortsatt gjenta seg.** De fire som fyrer én gang bryter
@@ -184,11 +231,13 @@ mindre ned. Løpekortet og `training-summary.ts` er urørt.
   sterkeste rekorden. Det finnes ingen bokføring av hva vi sa sist (økter har
   `workout_notifications`; vekt har ingen tilsvarende tabell), så en ekte dedup
   ville krevd en ny tabell.
-- **Andelsbaselinen burde vært målets egen.** `sensor_goals`/`goal_tracks` bærer
-  `metadata.startValue`, altså punktet brukeren faktisk satte målet fra. Å lese
-  den herfra er en ny lesevei, og periodens topp er det nærmeste uten. Samme
-  lesevei ville gitt den estimerte MÅLDATOEN (`projectGoal` med `kind: 'state'`),
-  som er den setningen et toårsmål egentlig handler om.
+- **Et mål uten frist gir ingen dato**, og faller helt ut av `readActiveWeightGoal`
+  — også for andelen, som ellers kunne brukt baselinen. Et mål uten `endDate` er
+  uansett ikke noe `projectGoal` kan uttale seg om.
+- **Måloppnåelse på et mål som bare finnes i `goals`** (uten et tall i
+  terskelarket) gir ingen «nådd»-beskjed: `below-goal` leser
+  `metricSettings.weight.goal`, og `goalDateNugget` tier med vilje når målet er
+  passert.
 - **Runde tall er ikke rangert etter hvor runde de er.** «Under 90» er en større
   nyhet enn «under 94», men begge behandles likt.
 - Krydderet finnes bare i pushen. Google Chat-fallbacken for vekt finnes ikke
