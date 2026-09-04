@@ -89,6 +89,36 @@ Appen skal oppleves enkel og "magisk". Under overflaten:
 - Nudges orkestreres med respekt for tidssone, stille timer og brukerprofil
 - Kategorisering av transaksjoner kjører tre prioritetsnivåer (manuell override → LLM → regex)
 
+### Målingen er et vindu, ikke et emne
+
+Brukerinnsikt (september 2026): en veiing er ett av de få øyeblikkene brukeren
+**selv oppsøker tallet**. Oppmerksomheten er der allerede — vi trenger ikke be om
+den. Det gjør målingen til et leveringsvindu, og krydderet på veiingen og på en
+ny økt utnytter nettopp det.
+
+Men krydderet er i dag gated på at det går riktig vei. Fire av de fem sterkeste
+vekt-reglene krever nedgang (trendrekord, passert kilo-terskel, andel av målet,
+estimert måldato), så i en dårlig fase slukner de samtidig og igjen står
+atferdstallet: «Veid deg 27 av 30 dager». Sant, og nesten ingenting — i akkurat
+den fasen der en nudge er verdt mest.
+
+**Svaret er ikke en negativ speiling.** «Over 96 kg for første gang siden mars»
+er en anklage levert i det brukeren stiger av vekta, og et varsel som anklager
+blir slått av. Det er samme regel som at «over båndet» ikke er et helsevarsel:
+vi måler, vi dømmer ikke.
+
+Retningen er i stedet at **vinduet og emnet er to ulike ting**. Vinduet er vekta;
+emnet i en dårlig fase ligger på inngangssiden, og Resonans har det allerede —
+`intake-pacing` vet at inntaket ligger bak skjema, `effort-standing` vet hvor uka
+står mot båndet, `checkAgainstWeight` vet om underskuddet og vekta er uenige.
+Formen finnes også: `sick-checkin` spør framfor å råde, og `decideFuelNudge`
+rangerer varianter etter hvor sterkt signalet er.
+
+Designimplikasjoner: et leveringsvindu skal kunne bære innhold fra et **annet**
+domene enn det som åpnet det. Og vinduer må koordineres — `fuel-nudge` fyrer alt
+én gang per dag mellom 10 og 20, og to nudger om samme sak samme dag er nettopp
+bakgrunnsstøyen som får folk til å skru av varsler.
+
 ## Dataflyt
 
 ```
