@@ -1,6 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { isPublicPath } from './public-paths';
 
+describe('isPublicPath — /api/diagnostikk er eksakt match', () => {
+	it('er offentlig i seg selv', () => {
+		expect(isPublicPath('/api/diagnostikk')).toBe(true);
+		expect(isPublicPath('/api/diagnostikk/')).toBe(true);
+	});
+
+	// Samme vakt som for /api/health: et framtidig detaljendepunkt skal måtte
+	// be om tilgang selv, ikke arve åpenheten fra forelderen.
+	it('krever auth for alt UNDER /api/diagnostikk/', () => {
+		expect(isPublicPath('/api/diagnostikk/detaljer')).toBe(false);
+		expect(isPublicPath('/api/diagnostikk/logger')).toBe(false);
+		expect(isPublicPath('/api/diagnostikk/hva-som-helst')).toBe(false);
+	});
+
+	it('treffer ikke et navn som bare begynner likt', () => {
+		expect(isPublicPath('/api/diagnostikk-intern')).toBe(false);
+	});
+});
+
 describe('isPublicPath — /api/health er eksakt match', () => {
 	it('slipper gjennom helsesjekken selv', () => {
 		expect(isPublicPath('/api/health')).toBe(true);

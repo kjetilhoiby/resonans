@@ -159,7 +159,26 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   2. Bakgrunnsjobb-helse (failure rate, stuck jobs)
   3. Cron-eksekvering (manglende kjøringer)
 - Google Chat-varsel med kopierbar feilbeskrivelse for Claude-debugging
-- `/api/health?debug=true` gir full systemstatus
+- `/api/health` gir full systemstatus **mot `Authorization: Bearer $CRON_SECRET`**.
+  `?debug` gir INGEN tilgang — den sto i ELLER med auth-sjekken og var dermed en
+  forbikjøring av hele vakten, så `?debug` fra hvem som helst ga full status med
+  rå feiltekst (rettet 2026-09-04). Uautentisert: `status` + `clock`.
+- **`/api/diagnostikk` er ÅPENT med vilje** — cron-kjøringer i et vindu (sti,
+  status, varighet, tidspunkt) og jobbkøen som tellinger. `?minutes=` (default 60,
+  tak 1440) og `?until=<ISO>`: «hva skjedde 12:48 i går» er
+  `?until=2026-09-03T13:00:00Z&minutes=30`. Finnes fordi den som feilsøker en boks
+  som ikke svarer sjelden har en hemmelighet for hånden. Se
+  `docs/changelog/2026-09-04-aapen-driftsdiagnose.md`.
+  - **Hvitelist felt, aldri svartelist dem.** `toPublicCronRun`
+    (`$lib/domain/diagnostics.ts`) bygger et nytt objekt av fire navngitte felt —
+    ingen spread, ingen `delete`. En spread ville lekket hvert felt noen legger
+    til i `cron_executions` senere, uten at noen ser det.
+  - **`error` og `resultSummary` slipper ALDRI ut.** Den første er rå
+    exception-tekst; den andre ser harmløs ut og er verre — SB1-synken legger
+    `accountNames` der. Legger du til et felt i tabellen, er standarden at det
+    IKKE vises.
+  - Svaret sier HVOR man skal se, ikke HVA som sto der. Meldingen krever fortsatt
+    legitimasjon, og det er grensa som gjør endepunktet forsvarlig å ha åpent.
 - `.github/workflows/watchdog.yml` er det UAVHENGIGE øyet: monitoreringen
   dispatches av cron-klokka den overvåker, så en død dispatcher kan ikke varsle
   om seg selv. Vakthunden leser `clock`-pulsen fra uautentisert `/api/health`
@@ -206,6 +225,12 @@ admin-gatet): prosessen holder en ringbuffer over egne logglinjer
 Claude-økt med API-secret (`Authorization: Bearer rsn_…` fra
 `/settings/external-apps`). Per instans og flyktig (tømmes ved restart) —
 et vindu, ikke et arkiv.
+
+**Loggene blir ALDRI et åpent API**, i motsetning til `/api/diagnostikk`.
+Ringbufferen tar imot hva som helst, inkludert `[500]`-linjer med brukerinnhold,
+så den kan ikke gjøres trygg ved utvelgelse — det finnes ingen felt å velge
+mellom. Trenger en Claude-økt loggene, er veien en API-secret i **miljøet**
+(Claude Code-environmentet), ikke en oppmykning av gaten.
 
 - Fanger ikke `error(...)`-kast fra vår egen kode (forventede feil) og ikke 404.
 - Nye `fetch`-kallsteder mot egne API-ruter: bruk `extractApiErrorMessage` fra
@@ -566,7 +591,8 @@ der. To feller:
 - `/api/health` er **eksakt match** i `PUBLIC_API_EXACT` (`src/lib/server/public-paths.ts`),
   ikke prefiks — så nye endepunkter under `/api/health/` får normal auth. Det var motsatt
   fram til 2026-08 og kostet tre bugs. Nye helse-endepunkter hører uansett under
-  `/api/helse/` eller `/api/tema/`.
+  `/api/helse/` eller `/api/tema/`. `/api/diagnostikk` står der av samme grunn og med
+  samme forbehold: åpen i seg selv, men `/api/diagnostikk/detaljer` må be om tilgang selv.
 
 ### Gemini realtime (Ekko)
 

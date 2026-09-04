@@ -48,8 +48,15 @@ const PUBLIC_API_PREFIXES = [
  *
  * Eksakt match gjør en fjerde forekomst umulig: et nytt endepunkt under
  * `/api/health/` får normal auth.
+ *
+ * `/api/diagnostikk` står her av samme grunn og med samme forbehold: den er
+ * åpen fordi den som feilsøker en boks som ikke svarer sjelden har en
+ * hemmelighet for hånden, og den er EKSAKT fordi et framtidig
+ * `/api/diagnostikk/detaljer` skal måtte be om tilgang selv. Hva den får si
+ * er hvitelistet og testet i `$lib/domain/diagnostics.ts` — legger du til noe
+ * her, les den fila først.
  */
-const PUBLIC_API_EXACT = ['/api/health'];
+const PUBLIC_API_EXACT = ['/api/health', '/api/diagnostikk'];
 
 const PUBLIC_EXACT = ['/robots.txt', '/favicon.ico'];
 
