@@ -98,6 +98,79 @@ export const RIEGEL_EXPONENT = 1.06;
  * brukeren fyller ut, og referansen serveren rapporterer at den brukte. To
  * formateringer av samme par kunne vist ulike tall for samme import.
  */
+/**
+ * Distansene en referanse kan settes for.
+ *
+ * En LUKKET liste, ikke et fritt tall, og det er en presisjonsbeslutning:
+ * referansen skal være en distanse brukeren faktisk har en tid på, og de fire
+ * her er de man husker en tid for. Et fritt felt inviterte til «4000 m» fra en
+ * tilfeldig treningsøkt, som ikke er en PR og derfor ikke en referanse.
+ *
+ * Halvmaraton er 21 097 m (offisielt 21 097,5 — vi kutter, siden en halv meter
+ * ikke flytter en Riegel-kurve).
+ */
+export const PACE_REFERENCE_DISTANCES = [
+	{ meters: 3000, label: '3 km' },
+	{ meters: 5000, label: '5 km' },
+	{ meters: 10000, label: '10 km' },
+	{ meters: 21097, label: 'Halvmaraton' }
+] as const;
+
+export type PaceReferenceDistance = (typeof PACE_REFERENCE_DISTANCES)[number]['meters'];
+
+/**
+ * Tempobåndet slideren dekker, i sekunder per km.
+ *
+ * 3:00 er raskere enn noe et menneske holder over 10 km, 9:00 er rask gange.
+ * Båndet er altså vidt nok til å ikke stenge noen ute, og smalt nok til at
+ * feltet der folk faktisk ligger får oppløsning.
+ */
+export const SLIDER_MIN_SEC_PER_KM = 180;
+export const SLIDER_MAX_SEC_PER_KM = 540;
+
+/**
+ * Steglengder å velge blant, og taket på antall posisjoner.
+ *
+ * En slider med tusen posisjoner kan ikke treffes med en tomme på en telefon.
+ * Presisjonen det koster er dessuten gratis her: porten sammenligner mot en
+ * Riegel-kurve med 10 % margin, så ±30 sekunder på en halvmaratontid flytter
+ * ingen dom.
+ */
+const STEP_CANDIDATES = [5, 10, 15, 30, 60] as const;
+export const MAX_SLIDER_POSITIONS = 260;
+
+export type SliderRange = { min: number; max: number; step: number };
+
+/**
+ * Sliderens grenser for en distanse, snappet til steget.
+ *
+ * Grensene MÅ følge distansen: et bånd som passer 3 km gir en halvmaraton på
+ * tjue minutter i nedre ende, og et som passer halvmaraton gir en 3 km der
+ * hvert piksel er et minutt.
+ */
+export function paceReferenceSliderRange(distanceMeters: number): SliderRange {
+	const km = distanceMeters / 1000;
+	const rawMin = SLIDER_MIN_SEC_PER_KM * km;
+	const rawMax = SLIDER_MAX_SEC_PER_KM * km;
+	const span = rawMax - rawMin;
+
+	const step =
+		STEP_CANDIDATES.find((candidate) => span / candidate <= MAX_SLIDER_POSITIONS) ??
+		STEP_CANDIDATES[STEP_CANDIDATES.length - 1];
+
+	return {
+		min: Math.ceil(rawMin / step) * step,
+		max: Math.floor(rawMax / step) * step,
+		step
+	};
+}
+
+/** Midt i båndet — der slideren står før noen har rørt den. */
+export function sliderMidpoint(range: SliderRange): number {
+	const middle = (range.min + range.max) / 2;
+	return Math.round(middle / range.step) * range.step;
+}
+
 export function describePaceReference(reference: PaceReference): string {
 	const { distanceMeters, seconds } = reference;
 	const distance =

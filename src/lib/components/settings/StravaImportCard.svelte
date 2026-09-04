@@ -29,7 +29,13 @@
 		skipReasonFor,
 		type StravaManifestRow
 	} from '$lib/domain/health/strava-export';
-	import { describePaceReference } from '$lib/domain/health/import-triage';
+	import {
+		describePaceReference,
+		PACE_REFERENCE_DISTANCES,
+		paceReferenceSliderRange,
+		sliderMidpoint
+	} from '$lib/domain/health/import-triage';
+	import { formatPace } from '$lib/utils/activity-metrics';
 
 	/**
 	 * Aktiviteter per kall.
@@ -49,8 +55,21 @@
 	let done = $state(false);
 
 	/** Brukerens egen referanse: distanse i meter og tid i sekunder. */
-	let prDistance = $state('');
-	let prTime = $state('');
+	/** Valgt referansedistanse i meter, eller null. */
+	let refDistance = $state<number | null>(null);
+	/** Sliderens posisjon i sekunder. Alltid et tall — se `timeSet`. */
+	let sliderSeconds = $state(0);
+	/**
+	 * Har brukeren rørt slideren?
+	 *
+	 * Slideren MÅ stå et sted visuelt, men den posisjonen er VÅR, ikke
+	 * brukerens. Regnet den som satt, ville tempo-kontrollen slått seg på med
+	 * et tall vi valgte — nøyaktig samme feil som placeholderne «10000» og
+	 * «3120» gjorde, bare vanskeligere å oppdage: da så feltet tomt ut mens
+	 * kontrollen var av, nå ville det sett satt ut mens kontrollen var på med
+	 * en gjetning.
+	 */
+	let timeSet = $state(false);
 	let dryRun = $state(true);
 
 	/** Manifestet, lest i klienten så vi kan vise hva arkivet inneholder FØR noe sendes. */
@@ -89,14 +108,57 @@
 	const importable = $derived(rows.filter((r) => !skipReasonFor(r)));
 	const total = $derived(importable.length);
 
-	const paceReference = $derived.by(() => {
-		const meters = Number(prDistance);
-		const seconds = Number(prTime);
-		if (!Number.isFinite(meters) || !Number.isFinite(seconds) || meters <= 0 || seconds <= 0) {
-			return null;
-		}
-		return { distanceMeters: Math.round(meters), seconds: Math.round(seconds) };
+	const sliderRange = $derived(
+		refDistance != null ? paceReferenceSliderRange(refDistance) : null
+	);
+
+	const paceReference = $derived(
+		refDistance != null && timeSet ? { distanceMeters: refDistance, seconds: sliderSeconds } : null
+	);
+
+	/**
+	 * Hvor langt inn i båndet slideren står, i prosent.
+	 *
+	 * Trengs fordi sporet må tegnes selv: `accent-color` farger tomlen og
+	 * fyllet, men lar SPORET stå i nettleserens lyse standard, og
+	 * `color-scheme: dark` rører det ikke. Styrer man sporet, forsvinner
+	 * fyllet — derfor gradienten, som gir begge.
+	 */
+	const sliderFill = $derived.by(() => {
+		if (!sliderRange || !timeSet) return 0;
+		const span = sliderRange.max - sliderRange.min;
+		if (span <= 0) return 0;
+		return ((sliderSeconds - sliderRange.min) / span) * 100;
 	});
+
+	/** Tempoet tiden svarer til. Det er dette tallet som gjør tiden etterprøvbar. */
+	const referencePace = $derived(
+		paceReference ? formatPace(paceReference.seconds / (paceReference.distanceMeters / 1000)) : ''
+	);
+
+	/**
+	 * Bytte av distanse NULLER tiden.
+	 *
+	 * 52:00 er en mil, ikke en halvmaraton. Ble tiden stående, ville et bytte
+	 * fra 10 km til halvmaraton gitt en referanse på 2:28/km — altså en kurve
+	 * som holder nesten hele arkivet ute.
+	 */
+	function pickDistance(event: Event) {
+		const raw = (event.target as HTMLSelectElement).value;
+		refDistance = raw === '' ? null : Number(raw);
+		timeSet = false;
+		sliderSeconds = refDistance != null ? sliderMidpoint(paceReferenceSliderRange(refDistance)) : 0;
+	}
+
+	function formatSeconds(total: number): string {
+		const hours = Math.floor(total / 3600);
+		const minutes = Math.floor((total % 3600) / 60);
+		const rest = total % 60;
+		if (hours > 0) {
+			return `${hours}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+		}
+		return `${minutes}:${String(rest).padStart(2, '0')}`;
+	}
 
 	/**
 	 * Leser zipen og bygger manifestet.
@@ -293,27 +355,57 @@
 				distanserekordene.
 			</p>
 			<div class="pr-fields">
-				<label>
-					Distanse (m)
-					<input
-						type="number"
-						bind:value={prDistance}
-						placeholder="meter"
-						disabled={running}
-						data-track="strava-import:pr-distanse"
-					/>
-				</label>
-				<label>
-					Tid (sekunder)
-					<input
-						type="number"
-						bind:value={prTime}
-						placeholder="sekunder"
-						disabled={running}
-						data-track="strava-import:pr-tid"
-					/>
+				<label class="pr-select">
+					Distanse
+					<select disabled={running} onchange={pickDistance} data-track="strava-import:pr-distanse">
+						<option value="">Velg …</option>
+						{#each PACE_REFERENCE_DISTANCES as option (option.meters)}
+							<option value={option.meters} selected={refDistance === option.meters}>
+								{option.label}
+							</option>
+						{/each}
+					</select>
 				</label>
 			</div>
+
+			{#if sliderRange}
+				<div class="pr-time">
+					<div class="pr-readout">
+						<!--
+							Tiden STOR, tempoet under. Tiden er det brukeren husker;
+							tempoet er det som gjør den etterprøvbar — «52:00» kan man
+							ta feil av, «5:12/km» kjenner man igjen som sitt eget.
+						-->
+						<span class="pr-value" class:pr-unset={!timeSet}>
+							{timeSet ? formatSeconds(sliderSeconds) : '– – : – –'}
+						</span>
+						<span class="pr-pace">
+							{timeSet ? referencePace : 'Dra for å sette tiden'}
+						</span>
+					</div>
+					<input
+						type="range"
+						min={sliderRange.min}
+						max={sliderRange.max}
+						step={sliderRange.step}
+						value={sliderSeconds}
+						disabled={running}
+						style="--fill: {sliderFill}%"
+						aria-label="Tid på referansedistansen"
+						oninput={(event) => {
+							sliderSeconds = Number((event.target as HTMLInputElement).value);
+							timeSet = true;
+						}}
+						data-track="strava-import:pr-tid"
+					/>
+					<div class="pr-ends">
+						<span>{formatSeconds(sliderRange.min)}</span>
+						<span class="muted">{sliderRange.step} s per steg</span>
+						<span>{formatSeconds(sliderRange.max)}</span>
+					</div>
+				</div>
+			{/if}
+
 			<!--
 				Tilstanden sies med TALLENE, ikke bare med fravær av et varsel.
 				Placeholderne var «10000» og «3120» — altså nøyaktig verdiene
@@ -323,14 +415,15 @@
 			-->
 			{#if paceReference}
 				<p class="ok">
-					Kontroll aktiv: {describePaceReference(paceReference)}. Økter merkbart raskere enn din
-					egen kurve holdes ute.
+					Kontroll aktiv: {describePaceReference(paceReference)} ({referencePace}). Økter
+					merkbart raskere enn din egen kurve holdes ute.
 				</p>
 			{:else}
 				<p class="warn">
-					Ingen referanse satt — alt importeres uten tempo-kontroll.
-					{#if prDistance !== '' || prTime !== ''}
-						Begge feltene må fylles.
+					{#if refDistance == null}
+						Ingen referanse satt — alt importeres uten tempo-kontroll.
+					{:else}
+						Sett tiden med slideren. Til da importeres alt uten tempo-kontroll.
 					{/if}
 				</p>
 			{/if}
@@ -507,13 +600,115 @@
 		color: var(--text-secondary, #aaa);
 	}
 
-	.pr-fields input {
-		width: 8rem;
-		padding: 0.35rem 0.5rem;
+	.pr-select select {
+		padding: 0.4rem 0.5rem;
 		border-radius: 8px;
 		border: 1px solid var(--card-border, #242424);
 		background: var(--surface, #0e0e0e);
 		color: var(--text-primary, #eee);
+		font-size: 0.9rem;
+	}
+
+	.pr-time {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.pr-readout {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+	}
+
+	/* Tiden er tallet man leser av på en armlengdes avstand mens man drar. */
+	.pr-value {
+		font-size: 1.6rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-primary, #eee);
+		line-height: 1.1;
+	}
+
+	.pr-unset {
+		color: var(--text-secondary, #aaa);
+		font-weight: 500;
+	}
+
+	.pr-pace {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #aaa);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/*
+	 * Sporet tegnes selv, og det er ikke smak: nettleserens standardspor er lyst
+	 * grått og lyser på en alltid-mørk flate. `accent-color` fikser det ikke —
+	 * den farger tomlen og fyllet, ikke sporet — og `color-scheme: dark` rører
+	 * det heller ikke (målt i Chromium). Gradienten gir både et mørkt spor og
+	 * et synlig fyll, og bruker kortets egne variabler framfor faste farger.
+	 */
+	.pr-time input[type='range'] {
+		width: 100%;
+		appearance: none;
+		-webkit-appearance: none;
+		height: 1.4rem;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.pr-time input[type='range']:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	.pr-time input[type='range']::-webkit-slider-runnable-track {
+		height: 6px;
+		border-radius: 999px;
+		background: linear-gradient(
+			to right,
+			var(--accent, #5b5bd6) var(--fill, 0%),
+			var(--card-border, #242424) var(--fill, 0%)
+		);
+	}
+
+	.pr-time input[type='range']::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 18px;
+		height: 18px;
+		margin-top: -6px;
+		border-radius: 50%;
+		background: var(--accent, #5b5bd6);
+		border: 2px solid var(--card-bg-subtle, #141414);
+	}
+
+	.pr-time input[type='range']::-moz-range-track {
+		height: 6px;
+		border-radius: 999px;
+		background: var(--card-border, #242424);
+	}
+
+	.pr-time input[type='range']::-moz-range-progress {
+		height: 6px;
+		border-radius: 999px;
+		background: var(--accent, #5b5bd6);
+	}
+
+	.pr-time input[type='range']::-moz-range-thumb {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: var(--accent, #5b5bd6);
+		border: 2px solid var(--card-bg-subtle, #141414);
+	}
+
+	.pr-ends {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		font-size: 0.72rem;
+		color: var(--text-secondary, #aaa);
 		font-variant-numeric: tabular-nums;
 	}
 
