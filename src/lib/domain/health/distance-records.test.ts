@@ -188,3 +188,34 @@ describe('umulige tider holdes utenfor rekordene', () => {
 		expect(recordsSetBy(bogus, [run('ekte', 5, { '5k': 1500 })])).toEqual([]);
 	});
 });
+
+describe('activityId — lenka til økta', () => {
+	it('bærer id-en til økta som holder rekorden', () => {
+		const records = distanceRecords([
+			run('gammel', 30, { '5k': 1500 }),
+			run('rekordholder', 10, { '5k': 1400 })
+		]);
+		expect(records).toHaveLength(1);
+		expect(records[0].activityId).toBe('rekordholder');
+	});
+
+	it('godtar en klynge uten evidence-event og gir null videre', () => {
+		// Rekorden er sann; det er bare lenka som mangler. Flaten viser raden
+		// uten lenke framfor å tilby en som gir 404.
+		const records = distanceRecords([
+			{ activityId: null, startTime: new Date(T0), sportFamily: 'running', bestEfforts: { '1k': 240 } }
+		]);
+		expect(records).toHaveLength(1);
+		expect(records[0].activityId).toBeNull();
+	});
+
+	it('lar hver distanse peke på SIN egen økt', () => {
+		const records = distanceRecords([
+			run('kort-og-kvikk', 20, { '1k': 230 }),
+			run('lang-og-jevn', 5, { '1k': 250, '10k': 2900 })
+		]);
+		const byKey = Object.fromEntries(records.map((r) => [r.key, r.activityId]));
+		expect(byKey['1k']).toBe('kort-og-kvikk');
+		expect(byKey['10k']).toBe('lang-og-jevn');
+	});
+});

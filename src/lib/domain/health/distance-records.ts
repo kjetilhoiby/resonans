@@ -30,8 +30,14 @@ export const RECORD_DISTANCES = [
 export type RecordDistanceKey = (typeof RECORD_DISTANCES)[number]['key'];
 
 export type RecordWorkout = {
-	/** `sensor_events.id` for klyngen — det aktivitetssida slår opp på. */
-	activityId: string;
+	/**
+	 * `sensor_events.id` for klyngen — det aktivitetssida slår opp på.
+	 *
+	 * **`null` når klyngen ikke har et evidence-event å peke på.** Rekorden er
+	 * fortsatt sann; det er bare lenka som mangler. En tom streng eller
+	 * `canonical_workouts.id` ville gitt en lenke som ser ut å virke og gir 404.
+	 */
+	activityId: string | null;
 	startTime: Date;
 	sportFamily: string;
 	/** Sekunder per distansenøkkel, som lagret. */
@@ -50,7 +56,8 @@ export type DistanceRecord = {
 	key: RecordDistanceKey;
 	label: string;
 	seconds: number;
-	activityId: string;
+	/** Økta som holder rekorden, eller `null` når den ikke kan lenkes til. */
+	activityId: string | null;
 	date: Date;
 };
 

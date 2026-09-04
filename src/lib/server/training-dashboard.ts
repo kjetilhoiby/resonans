@@ -297,11 +297,20 @@ async function loadDistanceRecords(userId: string) {
 	// vindu ville gjort at den forsvant fra lista den dagen den ble for gammel.
 	const rows = await db.query.canonicalWorkouts.findMany({
 		where: eq(canonicalWorkouts.userId, userId),
-		columns: { id: true, startTime: true, sportFamily: true, bestEfforts: true }
+		columns: { id: true, startTime: true, sportFamily: true, bestEfforts: true, evidence: true }
 	});
 
+	// **Rekorden må lenke til noe som finnes.** `/aktivitet/[id]` slår opp en
+	// `sensor_events.id` med `dataType = 'workout'`, mens `canonical_workouts.id`
+	// er en helt annen uuid — en lenke bygget av den siste gir 404 uten
+	// forklaring. Klyngens aktivitets-id er dens ELDSTE evidence-event, som er
+	// nøyaktig det `buildUnifiedWorkoutActivities` bruker (`events[0].id`), så
+	// rekordlista og aktivitetslista peker samme sted.
+	//
+	// Rader uten evidence (skrevet før projeksjonen bar feltet) får null, og
+	// flaten lar dem stå uten lenke framfor å tilby en som ikke virker.
 	const workouts: RecordWorkout[] = rows.map((row) => ({
-		activityId: row.id,
+		activityId: row.evidence?.[0]?.eventId ?? null,
 		startTime: row.startTime,
 		sportFamily: row.sportFamily,
 		bestEfforts: (row.bestEfforts as Partial<Record<string, number>> | null) ?? null
@@ -311,6 +320,7 @@ async function loadDistanceRecords(userId: string) {
 		key: r.key,
 		label: r.label,
 		seconds: r.seconds,
+		activityId: r.activityId,
 		date: r.date.toISOString()
 	}));
 }
