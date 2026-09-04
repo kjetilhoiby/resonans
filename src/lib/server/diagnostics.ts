@@ -12,6 +12,7 @@ import {
 } from '$lib/domain/diagnostics';
 import { toPublicError, toPublicJob, type PublicJob } from '$lib/domain/diagnostics-jobs';
 import { loadHostWindow } from '$lib/server/host-metrics';
+import { loadChatPerfWindow } from '$lib/server/chat-perf-store';
 
 /**
  * Datainnhentingen bak `/api/diagnostikk`. Utvelgelsen bor i domenelaget —
@@ -118,11 +119,12 @@ export async function loadActiveJobs(now = new Date()): Promise<PublicJob[]> {
 }
 
 export async function loadDiagnostics(window: DiagnosticsWindow, now = new Date()) {
-	const [runs, counts, active, host] = await Promise.all([
+	const [runs, counts, active, host, chat] = await Promise.all([
 		loadCronRuns(window),
 		loadJobCounts(),
 		loadActiveJobs(now),
-		loadHostWindow(window.fromMs, window.toMs)
+		loadHostWindow(window.fromMs, window.toMs),
+		loadChatPerfWindow(window.fromMs, window.toMs)
 	]);
 
 	return {
@@ -143,6 +145,9 @@ export async function loadDiagnostics(window: DiagnosticsWindow, now = new Date(
 		// tilgjengelige — et snitt ville glattet bort toppen på nøyaktig samme
 		// måte som Coolifys graf gjorde 3. september 2026.
 		host,
+		// Chat-pipelinens faser i samme vindu: persentiler per fase, aldri
+		// snitt. Svarer på «hva er verdt å cache» — se chat-perf-stats.ts.
+		chat,
 		// Sier om feiltekst er med, så et tomt `error.redacted` ikke leses som
 		// «ingen feilmelding finnes».
 		errorTextEnabled: openErrorsEnabled()

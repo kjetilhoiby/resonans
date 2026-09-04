@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildModularSystemPrompt } from '$lib/server/prompts';
 import { createChatPerf, formatChatPerfLine } from '$lib/server/chat-perf';
+import { recordChatPerf } from '$lib/server/chat-perf-store';
 import { openai } from '$lib/server/openai';
 import { getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
@@ -2599,7 +2600,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 		// Målingen som avgjør neste ytelsesgrep: wall er tiden brukeren ventet på
 		// konteksten, sum er samlet DB-arbeid. Se chat-perf.ts for lesenøkkelen.
-		console.log(formatChatPerfLine({ wallMs: chatPerf.wallMs(), phases: chatPerf.phases }));
+		//
+		// Logges OG lagres. Logglinja er primærkilden for én melding;
+		// `chat_perf_samples` bærer fordelingen over mange, som er det «hva er
+		// verdt å cache» faktisk besvares av — og som ikke forsvinner ved
+		// restart. Lagringen feiler stille og ventes ikke på.
+		const perfSample = { wallMs: chatPerf.wallMs(), phases: chatPerf.phases };
+		console.log(formatChatPerfLine(perfSample));
+		runInBackground(recordChatPerf(perfSample));
 
 		// Bygg kontekst-melding med aktive mål
 		let goalsContext = '\n\n--- BRUKERENS AKTIVE MÅL OG OPPGAVER ---\n';

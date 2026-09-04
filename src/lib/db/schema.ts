@@ -4181,6 +4181,21 @@ export const stravaUploads = pgTable(
  * for er den der prosessen blir OOM-drept, og en minnebuffer ville mistet
  * nettopp det beviset. Se `$lib/domain/host-metrics.ts`.
  */
+/**
+ * Fasemåling for chat-pipelinen. Lagret, ikke bare logget: ringbufferen tømmes
+ * ved hver restart, og spørsmålet «hva er verdt å cache» besvares av
+ * fordelingen over mange meldinger. Se `$lib/domain/chat-perf-stats.ts`.
+ */
+export const chatPerfSamples = pgTable('chat_perf_samples', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	measuredAt: timestamp('measured_at').defaultNow().notNull(),
+	wallMs: integer('wall_ms').notNull(),
+	phases: jsonb('phases').$type<{ name: string; ms: number }[]>().notNull().default([]),
+	instance: text('instance')
+}, (table) => ({
+	idxChatPerfMeasuredAt: index('chat_perf_samples_measured_at_idx').on(table.measuredAt)
+}));
+
 export const hostSamples = pgTable('host_samples', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	sampledAt: timestamp('sampled_at').defaultNow().notNull(),

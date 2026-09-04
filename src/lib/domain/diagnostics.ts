@@ -79,6 +79,20 @@ export interface DiagnosticsWindow {
 }
 
 /**
+ * Slakk på den øvre grensa når kalleren IKKE oppgav `until`.
+ *
+ * Vinduet beregnes i Node (`Date.now()`), men radene stemples av Postgres
+ * (`now()`). Uten slakk faller en rad skrevet et øyeblikk senere utenfor, og
+ * «siste time» mangler den ferskeste målingen — som er den man oftest er ute
+ * etter. Fanget av en flakete test på egen kode: 25 skrevne rader ble lest som
+ * 24, og den som forsvant var den nyeste.
+ *
+ * Gjelder BARE den implisitte «nå». Et eksplisitt `until` er et historisk
+ * spørsmål og må være reproduserbart, så det respekteres presis.
+ */
+export const NOW_SLACK_MS = 5_000;
+
+/**
  * Vinduet å hente kjøringer for.
  *
  * `minutes` teller bakover fra `until` (default nå), slik at «hva skjedde
@@ -93,24 +107,28 @@ export function resolveDiagnosticsWindow(
 	params: { minutes?: string | null; until?: string | null },
 	now: Date = new Date()
 ): DiagnosticsWindow {
-	const untilMs = parseIsoOr(params.until, now.getTime());
+	const explicitUntil = parseIso(params.until);
+	const anchorMs = explicitUntil ?? now.getTime();
 
 	const requested = Number.parseInt(params.minutes ?? '', 10);
 	const valid = Number.isFinite(requested) && requested > 0;
 	const minutes = valid ? Math.min(requested, MAX_WINDOW_MINUTES) : DEFAULT_WINDOW_MINUTES;
 
 	return {
-		fromMs: untilMs - minutes * 60_000,
-		toMs: untilMs,
+		// Vindulengden måles fra ankeret, så «60 minutter» er 60 minutter
+		// uansett om den øvre grensa har slakk.
+		fromMs: anchorMs - minutes * 60_000,
+		toMs: explicitUntil == null ? anchorMs + NOW_SLACK_MS : explicitUntil,
 		minutes,
 		clamped: valid && requested > MAX_WINDOW_MINUTES
 	};
 }
 
-function parseIsoOr(value: string | null | undefined, fallback: number): number {
-	if (!value) return fallback;
+/** `null` for manglende eller utolkbar verdi — kalleren avgjør fallbacken. */
+function parseIso(value: string | null | undefined): number | null {
+	if (!value) return null;
 	const parsed = Date.parse(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
+	return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**
