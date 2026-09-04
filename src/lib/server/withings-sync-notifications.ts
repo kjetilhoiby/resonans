@@ -4,6 +4,7 @@ import { eq, and, gte } from 'drizzle-orm';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { ensureThemeForUser, findThemeByName } from '$lib/server/themes';
 import { HEALTH_PARENT_THEME_NAME } from '$lib/domain/health-subthemes';
+import { computeWeightPush } from '$lib/server/health/weight-nugget';
 
 export async function notifyWithingsSyncResults(args: {
 	userId: string;
@@ -84,8 +85,24 @@ export async function notifyWithingsSyncResults(args: {
 
 		if (newWeights.length > 0) {
 			const data = newWeights[0].data as Record<string, unknown>;
-			const weight = data?.weight as number | undefined;
-			const body = weight ? `${weight.toFixed(1)} kg` : 'Ny veiing registrert';
+			const weight = typeof data?.weight === 'number' ? data.weight : null;
+
+			/**
+			 * Krydderet — «Laveste snittvekt siden mars 2025», «August ble ned 1,2 kg».
+			 *
+			 * Fram til september 2026 sa varselet «Veiing registrert / 94,2 kg», altså
+			 * tallet brukeren nettopp hadde lest av på vekta og ikke noe mer. Historikken
+			 * som kunne sagt hva tallet BETYDDE lå ferdig regnet i milepælsmotoren.
+			 *
+			 * Feiler oppslaget, faller vi tilbake på den gamle teksten: et varsel om at
+			 * veiingen kom fram er fortsatt verdt å sende.
+			 */
+			const copy = await computeWeightPush({ userId, latestKg: weight }).catch((err) => {
+				console.error(
+					`[withings-sync] vekt-krydder feilet user=${userId}: ${err instanceof Error ? err.message : String(err)}`
+				);
+				return null;
+			});
 
 			const weightChatUrl = new URL('/samtaler', appUrl);
 			weightChatUrl.searchParams.set('context', 'weight');
@@ -93,8 +110,8 @@ export async function notifyWithingsSyncResults(args: {
 			const delivery = await PushDeliveryService.deliverToUser({
 				userId,
 				payload: {
-					title: 'Veiing registrert',
-					body,
+					title: copy?.title ?? 'Veiing registrert',
+					body: copy?.body ?? (weight !== null ? `${weight.toFixed(1)} kg` : 'Ny veiing registrert'),
 					url: weightChatUrl.toString(),
 					tag: `weight-${newWeights[0].id}`
 				},

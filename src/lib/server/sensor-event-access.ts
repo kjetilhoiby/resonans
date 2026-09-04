@@ -88,9 +88,13 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 		use: 'normalizeBodyComposition fra $lib/domain/health/body-composition (og weight-series for trend)',
 		why: 'Måletype 6 ble lagret som `data.fatMass` og lest som kilo — et fettmasse-mål viste 22 der svaret var 18. Gamle og nye rader har ulik betydning av samme felt.',
 		knownRawReaders: [
+			// Den DELTE leseren av vekthistorikken som dagsverdier: rå spørring inn,
+			// `toWeightMeasurements` → `dailyWeights` ut. Flaten, milepælene og
+			// push-krydderet går alle gjennom denne — den er stedet lista peker på,
+			// ikke et unntak fra den.
+			'lib/server/health/weight-history.ts',
 			// Leser kroppssammensetning gjennom normalisatoren.
 			'lib/server/goal-progress.ts',
-			'lib/server/weight-dashboard.ts',
 			// Leser bare `data.weight` (ett felt, én betydning gjennom historikken).
 			'lib/ai/tools/manage-nutrition-targets.ts',
 			'lib/server/health/effort-weight-data.ts',

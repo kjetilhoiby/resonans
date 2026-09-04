@@ -34,12 +34,13 @@ import {
 	type WeightDay
 } from './weight-series';
 import { describeCompositionChange, type BodyComposition } from './body-composition';
-import { describeSpan, formatMilestoneDate, kg } from './weight-text';
+import { describeSpan, formatMilestoneDate, formatMonthYear, kg } from './weight-text';
 import {
 	currentSwing,
 	describeCurrentSwing,
 	findWeightSwings,
 	isLargestInDirection,
+	swingHeadline,
 	type WeightSwing
 } from './weight-swings';
 
@@ -59,6 +60,16 @@ export interface WeightMilestone {
 	kind: MilestoneKind;
 	/** Ferdig formulert setning. Flaten skal ikke sette sammen tall selv. */
 	sentence: string;
+	/**
+	 * Samme påstand i kortform — til en push-tittel, der `sentence` blir kappet
+	 * av operativsystemet midt i tallet.
+	 *
+	 * Bygget her, av koden som alt har tallene, framfor å regnes en gang til der
+	 * den brukes: to steder som formulerer samme rekord er to steder å endre, og
+	 * et varsel som sier noe annet enn kortet det lenker til er verre enn et
+	 * varsel uten fakta. Se `weight-nugget-rules.ts`.
+	 */
+	headline: string;
 	tone: 'positiv' | 'nøytral';
 	/** Hva setningen er regnet på. Trenden er sterkest, atferd er alltid sann. */
 	basis: 'trend' | 'måling' | 'atferd';
@@ -69,7 +80,17 @@ export interface WeightMilestone {
 }
 
 export interface WeightMilestoneResult {
+	/** Til flaten: sortert og kappet til `MAX_MILESTONES`. */
 	milestones: WeightMilestone[];
+	/**
+	 * Alle milepælene som fyrte, sortert men ukappet.
+	 *
+	 * Kappet er en beslutning om et KORT — tre setninger er så mange en flate kan
+	 * bære — ikke om hva som er sant. Push-krydderet velger etter sin egen
+	 * rangering og trenger hele settet, ellers ville en «3 kg til målet» falt ut
+	 * fordi tre sterkere rekorder tok plassene på et kort ingen leser akkurat da.
+	 */
+	all: WeightMilestone[];
 	/**
 	 * Periodene kurven er delt i — topper og bunner, begge retninger.
 	 *
@@ -281,6 +302,7 @@ function lowestTrendMilestone(ctx: RecordContext): WeightMilestone | null {
 		return {
 			kind: 'lowest-trend',
 			sentence: `Snittvekta på ${kg(value)} kg er den laveste vi har målt — ${describeSpan(ctx.historyDays)} med historikk.`,
+			headline: `Laveste snittvekt vi har målt`,
 			tone: 'positiv',
 			basis: 'trend',
 			longestGapDays: longestGapBetween(ctx.days, ctx.firstDate, ctx.lastDate)
@@ -293,6 +315,7 @@ function lowestTrendMilestone(ctx: RecordContext): WeightMilestone | null {
 	return {
 		kind: 'lowest-trend',
 		sentence: `Snittvekta har ikke vært lavere enn ${kg(value)} kg siden ${formatMilestoneDate(since)} — ${describeSpan(span)} tilbake.`,
+		headline: `Laveste snittvekt siden ${formatMonthYear(since)}`,
 		tone: 'positiv',
 		basis: 'trend',
 		sinceDate: since,
@@ -309,6 +332,7 @@ function lowestRawMilestone(ctx: RecordContext): WeightMilestone | null {
 		return {
 			kind: 'lowest-raw',
 			sentence: `${kg(latest.raw)} kg er den laveste enkeltmålingen i hele historikken.`,
+			headline: `Laveste måling i hele historikken`,
 			tone: 'positiv',
 			basis: 'måling'
 		};
@@ -320,6 +344,7 @@ function lowestRawMilestone(ctx: RecordContext): WeightMilestone | null {
 	return {
 		kind: 'lowest-raw',
 		sentence: `${kg(latest.raw)} kg er den laveste enkeltmålingen siden ${formatMilestoneDate(since)}.`,
+		headline: `Laveste måling siden ${formatMonthYear(since)}`,
 		tone: 'positiv',
 		basis: 'måling',
 		sinceDate: since,
@@ -403,6 +428,8 @@ function largestDropMilestone(ctx: RecordContext): WeightMilestone | null {
 	return {
 		kind: 'largest-drop',
 		sentence,
+		// `headline` er alt kortformen: «Ned 1,8 kg på 90 dager».
+		headline,
 		tone,
 		basis: 'trend',
 		sinceDate: best.sinceDate ?? undefined,
@@ -461,6 +488,7 @@ function currentSwingMilestone(ctx: RecordContext, swing: WeightSwing): WeightMi
 	return {
 		kind: 'current-swing',
 		sentence,
+		headline: `${swingHeadline(swing)} siden ${formatMonthYear(swing.startDate)}`,
 		tone,
 		basis: 'trend',
 		sinceDate: swing.startDate,
@@ -482,6 +510,7 @@ function goalMilestone(ctx: RecordContext, goalKg: number | null | undefined): W
 				diff === 0
 					? `Du er på målvekta på ${kg(goalKg)} kg.`
 					: `Du er ${kg(diff)} kg under målvekta på ${kg(goalKg)} kg.`,
+			headline: diff === 0 ? `På målvekta på ${kg(goalKg)} kg` : `${kg(diff)} kg under målvekta`,
 			tone: 'positiv',
 			basis: ctx.latestTrend ? 'trend' : 'måling'
 		};
@@ -490,6 +519,7 @@ function goalMilestone(ctx: RecordContext, goalKg: number | null | undefined): W
 	return {
 		kind: 'goal-distance',
 		sentence: `${kg(diff)} kg til målet på ${kg(goalKg)} kg.`,
+		headline: `${kg(diff)} kg til målet på ${kg(goalKg)} kg`,
 		tone: 'nøytral',
 		basis: ctx.latestTrend ? 'trend' : 'måling'
 	};
@@ -516,6 +546,7 @@ function streakMilestone(days: WeightDay[], today: string): WeightMilestone | nu
 	return {
 		kind: 'weigh-in-streak',
 		sentence: `${streak} dager på rad med veiing.`,
+		headline: `${streak} dager på rad med veiing`,
 		tone: 'positiv',
 		basis: 'atferd'
 	};
@@ -533,6 +564,7 @@ function coverageMilestone(days: WeightDay[], today: string): WeightMilestone | 
 	return {
 		kind: 'weigh-in-coverage',
 		sentence: `${count} av de siste ${COVERAGE_WINDOW_DAYS} dagene har en veiing.`,
+		headline: `Veid deg ${count} av ${COVERAGE_WINDOW_DAYS} dager`,
 		tone: 'positiv',
 		basis: 'atferd'
 	};
@@ -562,6 +594,7 @@ function nadirMilestone(ctx: RecordContext): WeightMilestone | null {
 	return {
 		kind: 'above-nadir',
 		sentence: `${kg(diff)} kg over lavpunktet på ${kg(nadir.value)} kg, målt ${formatMilestoneDate(nadir.date)}.`,
+		headline: `${kg(diff)} kg over lavpunktet fra ${formatMonthYear(nadir.date)}`,
 		tone: 'nøytral',
 		basis: 'trend',
 		sinceDate: nadir.date
@@ -597,7 +630,7 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 	const weighIns = days.length;
 
 	if (weighIns === 0) {
-		return { milestones: [], swings: [], historyDays: 0, weighIns: 0, enoughHistory: false };
+		return { milestones: [], all: [], swings: [], historyDays: 0, weighIns: 0, enoughHistory: false };
 	}
 
 	const firstDate = days[0].date;
@@ -667,12 +700,13 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 		milestones.push({
 			kind: 'stale',
 			sentence: `Siste veiing var ${formatMilestoneDate(lastDate)}, ${staleDays} dager siden. Rekordene venter på en ferskere måling.`,
+			headline: `Siste veiing var for ${staleDays} dager siden`,
 			tone: 'nøytral',
 			basis: 'atferd'
 		});
 		const goal = goalMilestone(ctx, goalKg);
 		if (goal) milestones.push(goal);
-		return { milestones: sortAndCap(milestones), swings, historyDays, weighIns, enoughHistory };
+		return { ...present(milestones), swings, historyDays, weighIns, enoughHistory };
 	}
 
 	if (enoughHistory) {
@@ -716,7 +750,7 @@ export function buildWeightMilestones(input: WeightMilestoneInput): WeightMilest
 	const goal = goalMilestone(ctx, goalKg);
 	if (goal) milestones.push(goal);
 
-	return { milestones: sortAndCap(milestones), swings, historyDays, weighIns, enoughHistory };
+	return { ...present(milestones), swings, historyDays, weighIns, enoughHistory };
 }
 
 /** Sann når de to rekordene handler om samme periode. */
@@ -729,6 +763,10 @@ function echoesTrendRecord(
 	return Math.abs(daysBetween(raw.sinceDate, trend.sinceDate)) <= MIN_RECORD_SPAN_DAYS;
 }
 
-function sortAndCap(milestones: WeightMilestone[]): WeightMilestone[] {
-	return milestones.slice().sort((a, b) => RANK[a.kind] - RANK[b.kind]).slice(0, MAX_MILESTONES);
+function present(milestones: WeightMilestone[]): {
+	milestones: WeightMilestone[];
+	all: WeightMilestone[];
+} {
+	const all = milestones.slice().sort((a, b) => RANK[a.kind] - RANK[b.kind]);
+	return { milestones: all.slice(0, MAX_MILESTONES), all };
 }
