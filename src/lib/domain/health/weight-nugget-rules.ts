@@ -26,15 +26,33 @@
  * Ren modul — ingen DB, ingen klokke. Kalleren sender inn `today`.
  */
 
-import { dayNumber, buildMetricSeries, type WeightDay } from './weight-series';
+import {
+	dayNumber,
+	daysBetween,
+	buildMetricSeries,
+	type MetricPoint,
+	type WeightDay
+} from './weight-series';
 import {
 	buildWeightMilestones,
+	MIN_RECORD_SPAN_DAYS,
 	type MilestoneKind,
 	type WeightMilestone
 } from './weight-milestones';
-import { formatMonthName, kg } from './weight-text';
+import { currentSwing, type WeightSwing } from './weight-swings';
+import {
+	buildCycleSeries,
+	compareCurrentToPrevious,
+	describeCycleComparison
+} from './cycle-series';
+import { formatMilestoneDate, formatMonthName, formatMonthYear, kg } from './weight-text';
 
-export type WeightNuggetKind = MilestoneKind | 'month-change';
+export type WeightNuggetKind =
+	| MilestoneKind
+	| 'month-change'
+	| 'threshold-crossed'
+	| 'goal-progress'
+	| 'year-over-year';
 
 export interface WeightNugget {
 	kind: WeightNuggetKind;
@@ -117,7 +135,12 @@ function trendNear(trendByDay: Map<number, number>, targetDay: number): number |
  * mellom to nivåer, ikke bevegelsen gjennom måneden. På en jevn nedgang gir
  * snittene omtrent halvparten av det som faktisk skjedde.
  */
-export function monthChangeNugget(days: WeightDay[], today: string): WeightNugget | null {
+export function monthChangeNugget(
+	days: WeightDay[],
+	today: string,
+	/** Trendserien, når kalleren alt har regnet den. Ellers regnes den her. */
+	precomputed?: readonly MetricPoint[]
+): WeightNugget | null {
 	if (Number(today.slice(8, 10)) > MONTH_SUMMARY_WINDOW_DAYS) return null;
 
 	const month = monthsBefore(today.slice(0, 7), 1);
@@ -125,7 +148,7 @@ export function monthChangeNugget(days: WeightDay[], today: string): WeightNugge
 	if (weighIns < MIN_MONTH_WEIGH_INS) return null;
 
 	const trendByDay = new Map<number, number>();
-	for (const point of buildMetricSeries(days, 'weight').points) {
+	for (const point of precomputed ?? buildMetricSeries(days, 'weight').points) {
 		if (point.trend !== null) trendByDay.set(dayNumber(point.date), point.trend);
 	}
 
@@ -152,16 +175,221 @@ export function monthChangeNugget(days: WeightDay[], today: string): WeightNugge
 	};
 }
 
+/* ── Terskler passert ─────────────────────────────────────────────────────── */
+
+/**
+ * Hele kilo. Ikke femmere.
+ *
+ * «Under 95» og «under 94» feires begge; en femmerskala ville gitt to varsler
+ * på to år og latt elleve ekte passeringer gå ubemerket. Og ikke halve kilo:
+ * trenden krysser 94,5 og 94,0 i samme uke, og da er passeringen ikke lenger
+ * en nyhet men en teller.
+ */
+export const THRESHOLD_STEP_KG = 1;
+
+/**
+ * Bare NEDOVER, og det er en beslutning.
+ *
+ * En oppovergående passering er sann og lett å regne, men «Over 96 kg for
+ * første gang siden mars» er en anklage levert i det brukeren stiger av vekta.
+ * Atferdsmilepælene (streak, dekning) er det som skal bære de ukene vekta
+ * stiger — de er sanne uansett retning, og de handler om noe man styrer.
+ */
+export function thresholdCrossedNugget(
+	points: readonly MetricPoint[],
+	enoughHistory: boolean
+): WeightNugget | null {
+	if (!enoughHistory) return null;
+
+	const trend = points.filter(
+		(p): p is MetricPoint & { trend: number } => p.trend !== null
+	);
+	if (trend.length < 2) return null;
+
+	const last = trend[trend.length - 1];
+	const previous = trend[trend.length - 2];
+	if (last.trend >= previous.trend) return null;
+
+	// Heltallene som ligger mellom forrige og dagens trend. Krysses flere i ett
+	// steg, er det LAVESTE den sanne nyheten — «under 94» slår «under 95».
+	const lowest = Math.floor(last.trend) + THRESHOLD_STEP_KG;
+	if (lowest > previous.trend || lowest <= last.trend) return null;
+
+	// Forrige gang trenden lå under den samme terskelen, før dagens passering.
+	let since: string | null = null;
+	for (let i = trend.length - 2; i >= 0; i--) {
+		if (trend[i].trend < lowest) {
+			since = trend[i].date;
+			break;
+		}
+	}
+
+	/**
+	 * En passering som gjentar seg er ikke en passering.
+	 *
+	 * Trenden kan vippe over og under den samme terskelen noen dager på rad. Uten
+	 * denne vakta ville «under 95 kg for første gang siden — for fire dager
+	 * siden» fyrt gjentatte ganger på samme kilo, altså nøyaktig den metningen
+	 * terskelregelen finnes for å bryte.
+	 */
+	if (since !== null && daysBetween(since, last.date) < MIN_RECORD_SPAN_DAYS) return null;
+
+	const label = `Under ${lowest} kg`;
+	if (since === null) {
+		return {
+			kind: 'threshold-crossed',
+			headline: `${label} for første gang`,
+			sentence: `Snittvekta er under ${lowest} kg for første gang i hele historikken.`
+		};
+	}
+
+	return {
+		kind: 'threshold-crossed',
+		headline: `${label} for første gang siden ${formatMonthYear(since)}`,
+		sentence: `Snittvekta er under ${lowest} kg for første gang siden ${formatMilestoneDate(since)}.`
+	};
+}
+
+/* ── Andel av veien til målet ─────────────────────────────────────────────── */
+
+/** Andelene som er verdt et varsel. Fyrer én gang hver, på veien ned. */
+export const GOAL_PROGRESS_MARKS = [0.25, 0.5, 0.75, 0.9] as const;
+
+function progressLabel(mark: number): string {
+	return mark === 0.5 ? 'Halvveis' : `${Math.round(mark * 100)} % av veien`;
+}
+
+/**
+ * «Halvveis til 93 kg.»
+ *
+ * ## Baselinen er periodens topp, og setningen SIER det
+ *
+ * En andel trenger et startpunkt, og målvekta i `metricSettings.weight.goal` er
+ * et bart tall uten et. Startpunktet her er toppen av den pågående nedgangen
+ * (`weight-swings`) — det nærmeste vi kommer «der dette begynte» uten å lese
+ * `sensor_goals`.
+ *
+ * Derfor navngis den i setningen: «Halvveis fra 104,2 kg (april) til 93 kg» kan
+ * etterprøves, mens et bart «halvveis til målet» ville vært en påstand om et
+ * startpunkt brukeren ikke kan se — og et annet startpunkt enn det hen selv
+ * hadde i hodet. Samme regel som at målvekt fra to kilder må navngis.
+ */
+export function goalProgressNugget(
+	points: readonly MetricPoint[],
+	swings: readonly WeightSwing[],
+	goalKg: number | null | undefined
+): WeightNugget | null {
+	if (typeof goalKg !== 'number' || !Number.isFinite(goalKg) || goalKg <= 0) return null;
+
+	const swing = currentSwing(swings);
+	if (!swing || swing.direction !== 'ned') return null;
+
+	const span = swing.startKg - goalKg;
+	// Startet perioden alt under målet, finnes det ingen vei å måle andel av.
+	if (span <= 0) return null;
+
+	const trend = points.filter(
+		(p): p is MetricPoint & { trend: number } => p.trend !== null
+	);
+	if (trend.length < 2) return null;
+
+	const now = (swing.startKg - trend[trend.length - 1].trend) / span;
+	const before = (swing.startKg - trend[trend.length - 2].trend) / span;
+	// Målet selv er `below-goal` sin beskjed, ikke en andel.
+	if (now >= 1) return null;
+
+	const crossed = GOAL_PROGRESS_MARKS.filter((mark) => before < mark && now >= mark);
+	if (crossed.length === 0) return null;
+
+	// Krysses to merker i ett steg, er det høyeste den sanne nyheten.
+	const mark = crossed[crossed.length - 1];
+	return {
+		kind: 'goal-progress',
+		headline: `${progressLabel(mark)} til ${kg(goalKg)} kg`,
+		sentence: `${progressLabel(mark)} fra ${kg(swing.startKg)} kg (${formatMonthYear(swing.startDate)}) til målet på ${kg(goalKg)} kg.`
+	};
+}
+
+/* ── Samme dato i fjor ────────────────────────────────────────────────────── */
+
+/** Under dette er et års forskjell ikke en nyhet. */
+export const YEAR_OVER_YEAR_FLOOR_KG = 1;
+
+/** Hvor mange år sesongmotoren får se. Samme tak som `WeightYearsCard`. */
+const MAX_CYCLE_YEARS = 10;
+
+/**
+ * «2,4 kg under i fjor på samme dato.»
+ *
+ * Motoren er `cycle-series.ts`, den samme `WeightYearsCard` bruker — og den
+ * mates med de samme TRENDverdiene. Rå målinger ville sammenlignet én morgen
+ * mot én morgen for et år siden, altså to væskevekter.
+ *
+ * Ordforrådet er `position`: et nivå har ingen god retning, og «foran i fjor»
+ * ville lagt en dom på tallet.
+ *
+ * Denne er den ene av krydderne som ikke METTER. Sammenligningsdagen flytter
+ * seg hver morgen, så tallet er nytt hver dag — i motsetning til «laveste
+ * snittvekt vi har målt», som står uendret gjennom en hel nedgangsperiode.
+ */
+export function yearOverYearNugget(
+	points: readonly MetricPoint[],
+	today: string
+): WeightNugget | null {
+	const trendDays = points
+		.filter((p) => p.trend !== null)
+		.map((p) => ({ date: p.date, value: p.trend as number }));
+	if (trendDays.length === 0) return null;
+
+	const series = buildCycleSeries(trendDays, {
+		cycle: 'year',
+		mode: 'level',
+		today,
+		maxSeries: MAX_CYCLE_YEARS
+	});
+	const comparison = compareCurrentToPrevious(series);
+	if (!comparison?.previous) return null;
+
+	const diff = comparison.current - comparison.previous.value;
+	if (Math.abs(diff) < YEAR_OVER_YEAR_FLOOR_KG) return null;
+
+	const sentence = describeCycleComparison(comparison, {
+		unit: 'kg',
+		decimals: 1,
+		vocabulary: 'position',
+		previousNoun: 'i fjor'
+	});
+	if (!sentence) return null;
+
+	return {
+		kind: 'year-over-year',
+		headline: `${kg(diff)} kg ${diff < 0 ? 'under' : 'over'} i fjor`,
+		sentence
+	};
+}
+
 /**
  * Rangeringen for en PUSH, som er en annen enn rangeringen for kortet.
  *
  * Kortet svarer på «hvor står jeg» og leses når brukeren selv åpner det, så der
  * vinner den sterkeste rekorden. Et varsel dytter seg på deg i det du stiger av
- * vekta, og da vinner det som er sjeldnest å få høre: månedsoppgjøret fyrer fem
- * dager i måneden, en rekord kan fyre hver morgen i en nedgangsperiode.
+ * vekta, og da vinner det som er sjeldnest å få høre.
  *
- * Måloppnåelse (`below-goal`) er løftet over de øvrige rekordene av samme grunn
- * — den skjer én gang.
+ * ## Metning er problemet rangeringen løser
+ *
+ * «Laveste snittvekt siden [dato]» flytter referansen bakover helt til den
+ * treffer taket, og blir så stående på «Laveste snittvekt vi har målt» —
+ * identisk hver morgen så lenge nedgangen varer. Over et toårsmål er det
+ * flertallet av morgenene. Rekorder er altså ikke sjeldne; de er KONTINUERLIGE.
+ *
+ * Derfor ligger de fire som fyrer ÉN gang øverst: måloppnåelse (én gang),
+ * en passert kilo-terskel (én gang per kilo), et andelsmerke på veien til målet
+ * (fire ganger), og månedsoppgjøret (fem dager i måneden).
+ *
+ * `year-over-year` er plassert rett under den sterkeste rekorden med vilje, og
+ * det er en beslutning om ANDRELINJA: tittelen metter, så den varierende
+ * setningen gjør mest nytte i slot nummer to. Sammenligningsdagen flytter seg
+ * hver morgen, så tallet er nytt hver dag.
  *
  * Avstanden til målet ligger over atferdsmilepælene, motsatt av på kortet. Der
  * er `weigh-in-streak` den ene setningen som er sann uansett hvilken vei vekta
@@ -170,17 +398,20 @@ export function monthChangeNugget(days: WeightDay[], today: string): WeightNugge
  * nettopp veide seg.
  */
 const PUSH_RANK: Record<WeightNuggetKind, number> = {
-	'month-change': 0,
-	'below-goal': 1,
-	'lowest-trend': 2,
-	'current-swing': 3,
-	'largest-drop': 4,
-	'lowest-raw': 5,
-	'goal-distance': 6,
-	'weigh-in-streak': 7,
-	'weigh-in-coverage': 8,
-	'above-nadir': 9,
-	stale: 10
+	'below-goal': 0,
+	'threshold-crossed': 1,
+	'goal-progress': 2,
+	'month-change': 3,
+	'lowest-trend': 4,
+	'year-over-year': 5,
+	'current-swing': 6,
+	'largest-drop': 7,
+	'lowest-raw': 8,
+	'goal-distance': 9,
+	'weigh-in-streak': 10,
+	'weigh-in-coverage': 11,
+	'above-nadir': 12,
+	stale: 13
 };
 
 /**
@@ -192,14 +423,20 @@ const PUSH_RANK: Record<WeightNuggetKind, number> = {
  * fordi den holder også hvis motoren en dag slipper begge gjennom.
  */
 const ECHOES: Partial<Record<WeightNuggetKind, WeightNuggetKind[]>> = {
-	'lowest-trend': ['lowest-raw', 'above-nadir'],
+	'lowest-trend': ['lowest-raw', 'above-nadir', 'threshold-crossed'],
 	'lowest-raw': ['lowest-trend'],
+	// En passert terskel er nesten alltid også en trendrekord: er du under 94 for
+	// første gang siden 2019, er du per definisjon lavest siden 2019. To
+	// setninger om samme hendelse leses som to hendelser.
+	'threshold-crossed': ['lowest-trend', 'lowest-raw'],
 	'current-swing': ['largest-drop', 'above-nadir'],
 	'largest-drop': ['current-swing'],
 	'weigh-in-streak': ['weigh-in-coverage'],
 	'weigh-in-coverage': ['weigh-in-streak'],
-	'below-goal': ['goal-distance'],
-	'goal-distance': ['below-goal']
+	// Alle tre snakker om avstanden til den samme målvekta.
+	'below-goal': ['goal-distance', 'goal-progress'],
+	'goal-progress': ['goal-distance', 'below-goal'],
+	'goal-distance': ['below-goal', 'goal-progress']
 };
 
 export interface WeightNuggetInput {
@@ -215,9 +452,15 @@ function toNugget(milestone: WeightMilestone): WeightNugget {
 	return { kind: milestone.kind, headline: milestone.headline, sentence: milestone.sentence };
 }
 
-/** Alt vi kan si om denne veiingen, sterkest først. */
+/**
+ * Alt vi kan si om denne veiingen, sterkest først.
+ *
+ * Trendserien regnes ÉN gang og deles av reglene. De tre nyeste spør alle om
+ * «hva var trenden i går mot i dag», og tre uavhengige `buildMetricSeries`-kall
+ * over hele historikken ville vært tre ganger jobben for det samme svaret.
+ */
 export function weightNuggets(input: WeightNuggetInput): WeightNugget[] {
-	const { milestones, all } = buildWeightMilestones({
+	const { milestones, all, swings, enoughHistory } = buildWeightMilestones({
 		days: input.days,
 		today: input.today,
 		goalKg: input.goalKg
@@ -225,8 +468,15 @@ export function weightNuggets(input: WeightNuggetInput): WeightNugget[] {
 	// `all` er ukappet; `milestones` er fallbacken hvis feltet en dag forsvinner.
 	const fromMilestones = (all.length > 0 ? all : milestones).map(toNugget);
 
-	const month = monthChangeNugget(input.days, input.today);
-	const nuggets = month ? [month, ...fromMilestones] : fromMilestones;
+	const points = buildMetricSeries(input.days, 'weight').points;
+
+	const nuggets = [
+		monthChangeNugget(input.days, input.today, points),
+		thresholdCrossedNugget(points, enoughHistory),
+		goalProgressNugget(points, swings, input.goalKg),
+		yearOverYearNugget(points, input.today),
+		...fromMilestones
+	].filter((n): n is WeightNugget => n !== null);
 
 	return nuggets.slice().sort((a, b) => PUSH_RANK[a.kind] - PUSH_RANK[b.kind]);
 }

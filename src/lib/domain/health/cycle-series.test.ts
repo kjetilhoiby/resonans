@@ -376,6 +376,40 @@ describe('describeCycleComparison', () => {
 		expect(text).toBe('2,0 kg bak i fjor på samme dato.');
 	});
 
+	describe('posisjons-ordforrådet', () => {
+		// Et NIVÅ har ingen god retning. «foran» ville lagt en dom på tallet.
+		const level = { unit: 'kg', decimals: 1, vocabulary: 'position', previousNoun: 'i fjor' } as const;
+
+		it('sier under når nivået er lavere', () => {
+			expect(describeCycleComparison(cmp(94.2, 96.6), level)).toBe(
+				'2,4 kg under i fjor på samme dato.'
+			);
+		});
+
+		it('sier over når nivået er høyere', () => {
+			expect(describeCycleComparison(cmp(96.6, 94.2), level)).toBe(
+				'2,4 kg over i fjor på samme dato.'
+			);
+		});
+
+		it('sier «samme som», ikke «like langt som»', () => {
+			expect(describeCycleComparison(cmp(94.2, 94.24), level)).toBe(
+				'Samme som i fjor på samme dato.'
+			);
+		});
+
+		it('dømmer ikke retningen — under er under, uansett metrikk', () => {
+			// Ingen `higherIsBetter` i det hele tatt: posisjonen er posisjonen.
+			expect(
+				describeCycleComparison(cmp(120, 150), {
+					unit: 'km',
+					vocabulary: 'position',
+					previousNoun: 'i fjor'
+				})
+			).toBe('30 km under i fjor på samme dato.');
+		});
+	});
+
 	it('sier like langt når forskjellen forsvinner i avrundingen', () => {
 		const text = describeCycleComparison(cmp(150.2, 150), {
 			unit: 'km',

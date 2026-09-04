@@ -337,28 +337,67 @@ export function cycleValueRange(
  * 2 kg mer er ikke det. Uten flagget måtte hver flate funnet sine egne ord, og
  * de to ville før eller siden ment noe ulikt med «bedre».
  */
+/**
+ * Ordparet sammenligningen bruker, valgt av hva verdien ER.
+ *
+ * `progress` («foran»/«bak») forutsetter at det finnes en god retning, og er
+ * riktig når verdien akkumulerer mot noe: løpte kilometer, eller en nedgang
+ * målt fra periodens start. Å ligge foran er da en meningsfull påstand.
+ *
+ * `position` («under»/«over») sier bare hvor du står. Det er riktig for et
+ * NIVÅ, og forskjellen er ikke kosmetisk: «2,4 kg foran i fjor» leser som en
+ * konkurranse mot deg selv, der setningen bare skal si hvor vekta ligger. En
+ * flate som legger en dom på et tall den ikke kan tolke, gjør nøyaktig det vi
+ * lar være andre steder — «over båndet er ikke et helsevarsel».
+ *
+ * Endringsmodus i vektkortet er derfor `progress`, ikke `position`: der er
+ * verdien et delta, og «2,4 kg under i fjor» om en nedgang sier ikke om du har
+ * gått mer eller mindre ned.
+ */
+export type CycleComparisonVocabulary = 'progress' | 'position';
+
+/** Felles for begge ordforrådene. */
+interface CycleComparisonTextBase {
+	unit: string;
+	decimals?: number;
+	/** «i fjor» / «forrige måned» — hva den forrige perioden heter. */
+	previousNoun: string;
+}
+
+/**
+ * Union framfor ett valgfritt felt: `higherIsBetter` er meningsløs for
+ * `position` (en posisjon har ingen god retning), og et felt som ignoreres
+ * stille inviterer til å tro at det virker.
+ */
+export type CycleComparisonTextOptions =
+	| (CycleComparisonTextBase & { vocabulary: 'position' })
+	| (CycleComparisonTextBase & {
+			vocabulary?: 'progress';
+			/** Sann for løpte kilometer, usann for en vektnedgang. */
+			higherIsBetter: boolean;
+	  });
+
 export function describeCycleComparison(
 	comparison: CycleComparison | null,
-	opts: {
-		unit: string;
-		decimals?: number;
-		/** Sann for løpte kilometer, usann for vekt. */
-		higherIsBetter: boolean;
-		/** «i fjor» / «forrige måned» — hva den forrige perioden heter. */
-		previousNoun: string;
-	}
+	opts: CycleComparisonTextOptions
 ): string | null {
 	if (!comparison?.previous) return null;
 
 	const decimals = opts.decimals ?? 0;
 	const diff = comparison.current - comparison.previous.value;
 	const size = Math.abs(diff).toFixed(decimals).replace('.', ',');
+	const position = opts.vocabulary === 'position';
 
 	if (Math.abs(diff) < Math.pow(10, -decimals) / 2) {
-		return `Like langt som ${opts.previousNoun} på samme dato.`;
+		return position
+			? `Samme som ${opts.previousNoun} på samme dato.`
+			: `Like langt som ${opts.previousNoun} på samme dato.`;
+	}
+
+	if (position) {
+		return `${size} ${opts.unit} ${diff < 0 ? 'under' : 'over'} ${opts.previousNoun} på samme dato.`;
 	}
 
 	const ahead = opts.higherIsBetter ? diff > 0 : diff < 0;
-	const direction = ahead ? 'foran' : 'bak';
-	return `${size} ${opts.unit} ${direction} ${opts.previousNoun} på samme dato.`;
+	return `${size} ${opts.unit} ${ahead ? 'foran' : 'bak'} ${opts.previousNoun} på samme dato.`;
 }

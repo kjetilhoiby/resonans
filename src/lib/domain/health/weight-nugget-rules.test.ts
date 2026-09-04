@@ -1,12 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { dailyWeights, type WeightDay, type WeightMeasurement } from './weight-series';
+import { buildMetricSeries } from './weight-series';
+import { findWeightSwings } from './weight-swings';
 import {
 	buildWeightPush,
+	goalProgressNugget,
 	monthChangeNugget,
+	thresholdCrossedNugget,
 	weightNuggets,
+	yearOverYearNugget,
 	MIN_MONTH_WEIGH_INS,
-	MONTH_SUMMARY_WINDOW_DAYS
+	MONTH_SUMMARY_WINDOW_DAYS,
+	YEAR_OVER_YEAR_FLOOR_KG
 } from './weight-nugget-rules';
+
+/** Trendserien reglene tar. */
+function pointsOf(days: WeightDay[]) {
+	return buildMetricSeries(days, 'weight').points;
+}
 
 function iso(day: number): string {
 	return new Date(day * 86_400_000).toISOString().slice(0, 10);
@@ -180,5 +191,149 @@ describe('buildWeightPush', () => {
 			latestKg: null
 		});
 		expect(push.body).toBe('Ny veiing registrert');
+	});
+});
+
+describe('thresholdCrossedNugget', () => {
+	// Nok historikk til at rekorder gjelder (60 dager, 20 veiinger).
+	function crossing(from: number, to: number): WeightDay[] {
+		return series([...ramp(102, from, 200), to], '2026-09-12');
+	}
+
+	it('sier fra når trenden går under et helt kilo', () => {
+		const days = crossing(95.2, 90);
+		const nugget = thresholdCrossedNugget(pointsOf(days), true);
+		expect(nugget?.kind).toBe('threshold-crossed');
+		expect(nugget?.headline).toMatch(/^Under 9\d kg for første gang/);
+	});
+
+	it('tier når trenden stiger', () => {
+		const days = series([...ramp(90, 95, 200), 99], '2026-09-12');
+		expect(thresholdCrossedNugget(pointsOf(days), true)).toBeNull();
+	});
+
+	it('tier uten nok historikk — en rekord trenger noe å være rekord i', () => {
+		expect(thresholdCrossedNugget(pointsOf(crossing(95.2, 90)), false)).toBeNull();
+	});
+
+	it('tier når trenden bare ligger stille under terskelen', () => {
+		// Ingen passering i siste steg: den skjedde for lenge siden.
+		const days = series(flat(94, 200), '2026-09-12');
+		expect(thresholdCrossedNugget(pointsOf(days), true)).toBeNull();
+	});
+
+	it('velger den LAVESTE terskelen når flere krysses i ett steg', () => {
+		const days = crossing(95.4, 80);
+		const nugget = thresholdCrossedNugget(pointsOf(days), true);
+		const value = Number(nugget!.headline.match(/Under (\d+) kg/)![1]);
+		// Trenden faller flere kilo på det siste steget; det laveste passerte
+		// heltallet er nyheten, ikke det første.
+		expect(value).toBeLessThan(95);
+	});
+
+	it('gjentar seg ikke når trenden vipper rundt samme terskel', () => {
+		// Under 95, opp igjen, og under på nytt noen dager senere.
+		const days = series([...ramp(102, 95.3, 200), 94.5, 96, 96, 94.4], '2026-09-12');
+		expect(thresholdCrossedNugget(pointsOf(days), true)).toBeNull();
+	});
+});
+
+describe('goalProgressNugget', () => {
+	function withGoal(values: number[], goal: number | null) {
+		const days = series(values, '2026-09-12');
+		const points = pointsOf(days);
+		return goalProgressNugget(points, findWeightSwings(points), goal);
+	}
+
+	it('sier «halvveis» når trenden krysser midtpunktet', () => {
+		// Fra 100 mot målet 90: halvveis er 95.
+		const nugget = withGoal([...ramp(100, 95.4, 120), 88], 90);
+		expect(nugget?.kind).toBe('goal-progress');
+		expect(nugget?.headline).toMatch(/til 90,0 kg$/);
+	});
+
+	it('navngir baselinen i setningen', () => {
+		const nugget = withGoal([...ramp(100, 95.4, 120), 88], 90);
+		// «fra NN,N kg (måned år) til målet på …» — startpunktet skal kunne
+		// etterprøves, ikke bare påstås.
+		expect(nugget?.sentence).toMatch(/fra \d+,\d kg \(\w+ \d{4}\) til målet på 90,0 kg\./);
+	});
+
+	it('tier uten målvekt', () => {
+		expect(withGoal([...ramp(100, 95.4, 120), 88], null)).toBeNull();
+	});
+
+	it('tier når perioden startet under målet', () => {
+		expect(withGoal([...ramp(88, 85, 120), 80], 90)).toBeNull();
+	});
+
+	it('tier når ingen merker krysses i dette steget', () => {
+		expect(withGoal(ramp(100, 97, 120), 90)).toBeNull();
+	});
+});
+
+describe('yearOverYearNugget', () => {
+	// To år med daglige veiinger: i fjor rundt 97, i år rundt 93.
+	const toAr = series([...flat(97, 365), ...flat(93, 250)], '2026-09-12');
+
+	it('sammenligner mot samme dato i fjor, med posisjonsord', () => {
+		const nugget = yearOverYearNugget(pointsOf(toAr), '2026-09-12');
+		expect(nugget?.kind).toBe('year-over-year');
+		expect(nugget?.headline).toBe('4,0 kg under i fjor');
+		expect(nugget?.sentence).toBe('4,0 kg under i fjor på samme dato.');
+	});
+
+	it('sier «over» når vekta har gått opp', () => {
+		const days = series([...flat(93, 365), ...flat(97, 250)], '2026-09-12');
+		expect(yearOverYearNugget(pointsOf(days), '2026-09-12')?.headline).toBe('4,0 kg over i fjor');
+	});
+
+	it('tier under støygulvet — et halvkilo på et år er ikke en nyhet', () => {
+		const days = series([...flat(93.5, 365), ...flat(93, 250)], '2026-09-12');
+		expect(YEAR_OVER_YEAR_FLOOR_KG).toBe(1);
+		expect(yearOverYearNugget(pointsOf(days), '2026-09-12')).toBeNull();
+	});
+
+	it('tier uten et fjorår å sammenligne med', () => {
+		expect(yearOverYearNugget(pointsOf(series(flat(93, 200), '2026-09-12')), '2026-09-12')).toBeNull();
+	});
+});
+
+describe('rangering og gjenklang', () => {
+	it('lar et andelsmerke slå rekordene', () => {
+		const nuggets = weightNuggets({
+			days: series([...ramp(100, 95.4, 200), 88], '2026-09-12'),
+			today: '2026-09-12',
+			goalKg: 90
+		});
+		expect(['goal-progress', 'threshold-crossed', 'below-goal']).toContain(nuggets[0].kind);
+	});
+
+	it('lar ikke andrelinja gjenta en måltittel med andre ord', () => {
+		// Trenden må faktisk ligge under målet — den er etterslepende, så én
+		// måling under 90 er ikke det samme som å ha nådd 90.
+		const push = buildWeightPush({
+			days: series([...ramp(100, 88, 200), ...flat(88, 14)], '2026-09-12'),
+			today: '2026-09-12',
+			goalKg: 90,
+			latestKg: 88
+		});
+		// Måloppnåelse er øverst i rangeringen, og de to andre målsetningene
+		// snakker om den samme avstanden.
+		expect(push.nugget?.kind).toBe('below-goal');
+		expect(push.secondary?.kind).not.toBe('goal-distance');
+		expect(push.secondary?.kind).not.toBe('goal-progress');
+	});
+
+	it('lar ikke en passert terskel stå ved siden av den samme trendrekorden', () => {
+		const push = buildWeightPush({
+			days: series([...ramp(102, 95.2, 200), 90], '2026-09-12'),
+			today: '2026-09-12',
+			latestKg: 94,
+			goalKg: null
+		});
+		expect(push.nugget?.kind).toBe('threshold-crossed');
+		expect(push.secondary?.kind).not.toBe('lowest-trend');
+		expect(push.secondary?.kind).not.toBe('lowest-raw');
 	});
 });
