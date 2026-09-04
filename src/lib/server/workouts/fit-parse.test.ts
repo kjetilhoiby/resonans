@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { Encoder, Profile } from '@garmin/fitsdk';
-import { FitParseError, parseFit, SEMICIRCLES_TO_DEGREES } from './fit-parse';
+import { describeFitContents, FitParseError, parseFit, SEMICIRCLES_TO_DEGREES } from './fit-parse';
 
 const START = new Date('2019-08-02T06:18:02.000Z');
+
+/** `parseFit` gir nå diagnose ved siden av resultatet; de fleste testene vil økta. */
+function workoutFrom(bytes: Uint8Array) {
+	return parseFit(bytes).workout;
+}
 
 function toSemicircles(degrees: number): number {
 	return Math.round(degrees / SEMICIRCLES_TO_DEGREES);
@@ -50,14 +55,14 @@ describe('parseFit — koordinater', () => {
 			{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
 			{ lat: 59.92, lon: 10.76, afterSeconds: 60 }
 		]);
-		const parsed = parseFit(bytes);
+		const parsed = workoutFrom(bytes);
 		expect(parsed).not.toBeNull();
 		expect(parsed!.trackPoints[0].lat).toBeCloseTo(59.91, 4);
 		expect(parsed!.trackPoints[0].lon).toBeCloseTo(10.75, 4);
 	});
 
 	it('gir IKKE tilbake råverdien i semisirkler', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
 				{ lat: 59.92, lon: 10.76, afterSeconds: 60 }
@@ -69,7 +74,7 @@ describe('parseFit — koordinater', () => {
 	});
 
 	it('hopper over punkter uten posisjon framfor å tegne dem på nullmeridianen', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
 				{ hr: 150, afterSeconds: 30 },
@@ -82,7 +87,7 @@ describe('parseFit — koordinater', () => {
 
 describe('parseFit — puls', () => {
 	it('samler puls uavhengig av posisjon, så en tredemølleøkt får pulskurve', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ hr: 140, afterSeconds: 0 },
 				{ hr: 150, afterSeconds: 60 },
@@ -100,7 +105,7 @@ describe('parseFit — puls', () => {
 		// 230 er over MAX_PLAUSIBLE_HR, men parseren skal RAPPORTERE, ikke
 		// forkaste: forkastingen skjer i analyzeWorkout, som ser hele kurven og
 		// måler ANDELEN artefakter.
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ hr: 230, afterSeconds: 0 },
 				{ hr: 230, afterSeconds: 60 }
@@ -112,7 +117,7 @@ describe('parseFit — puls', () => {
 
 describe('parseFit — varighet og distanse', () => {
 	it('bruker sesjonens ELAPSED, ikke bevegelsestida', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit(
 				[
 					{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
@@ -128,7 +133,7 @@ describe('parseFit — varighet og distanse', () => {
 	});
 
 	it('faller tilbake på sporets tidsspenn når sesjonen mangler', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
 				{ lat: 59.92, lon: 10.76, afterSeconds: 900 }
@@ -138,7 +143,7 @@ describe('parseFit — varighet og distanse', () => {
 	});
 
 	it('faller tilbake på siste kumulative distanse fra punktene', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ lat: 59.91, lon: 10.75, dist: 0, afterSeconds: 0 },
 				{ lat: 59.92, lon: 10.76, dist: 5000, afterSeconds: 600 }
@@ -154,16 +159,76 @@ describe('parseFit — avvisning', () => {
 	});
 
 	it('gir null for en fil uten både spor og puls', () => {
-		expect(parseFit(buildFit([{ afterSeconds: 0 }, { afterSeconds: 60 }]))).toBeNull();
+		expect(workoutFrom(buildFit([{ afterSeconds: 0 }, { afterSeconds: 60 }]))).toBeNull();
 	});
 
 	it('merker kilden som fit', () => {
-		const parsed = parseFit(
+		const parsed = workoutFrom(
 			buildFit([
 				{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
 				{ lat: 59.92, lon: 10.76, afterSeconds: 60 }
 			])
 		);
 		expect(parsed!.sourceFormat).toBe('fit');
+	});
+});
+
+describe('describeFitContents — «ingen brukbart spor» skjulte tre tilstander', () => {
+	it('skiller en fil uten tidsserie fra en med punkter', () => {
+		// Bare et sammendrag: Strava-eksporten hadde fire tredemølleøkter fra
+		// 2026 og to turer fra 2014 i denne sekkeposten, og rapporten kunne
+		// ikke si om det var dataene eller parseren.
+		const bareSession = parseFit(
+			buildFit([], { sport: 'running', totalElapsedTime: 1800, totalDistance: 5000 })
+		);
+		expect(bareSession.workout).toBeNull();
+		expect(bareSession.contents.records).toBe(0);
+		expect(describeFitContents(bareSession.contents)).toBe('bare sammendrag, ingen tidsserie');
+	});
+
+	it('sier «uten posisjon og uten puls» for punkter uten noe av verdi', () => {
+		const result = parseFit(buildFit([{ afterSeconds: 0 }, { afterSeconds: 60 }]));
+		expect(result.workout).toBeNull();
+		expect(result.contents.records).toBe(2);
+		expect(result.contents.withPosition).toBe(0);
+		expect(result.contents.withHeartRate).toBe(0);
+		expect(describeFitContents(result.contents)).toContain('uten posisjon og uten puls');
+	});
+
+	it('teller posisjon og puls hver for seg — en tredemølleøkt har puls, ikke GPS', () => {
+		const result = parseFit(
+			buildFit([
+				{ hr: 140, afterSeconds: 0 },
+				{ hr: 150, afterSeconds: 60 },
+				{ hr: 160, afterSeconds: 120 }
+			])
+		);
+		// Den GIR en økt, nettopp fordi pulsen er verdt å ha uten GPS.
+		expect(result.workout).not.toBeNull();
+		expect(result.contents.withPosition).toBe(0);
+		expect(result.contents.withHeartRate).toBe(3);
+	});
+
+	it('teller bare punkter med GYLDIG posisjon', () => {
+		const result = parseFit(
+			buildFit([
+				{ lat: 59.91, lon: 10.75, afterSeconds: 0 },
+				{ hr: 150, afterSeconds: 30 },
+				{ lat: 59.92, lon: 10.76, afterSeconds: 60 }
+			])
+		);
+		expect(result.contents.records).toBe(3);
+		expect(result.contents.withPosition).toBe(2);
+	});
+
+	it('rapporterer også når fila ga en økt', () => {
+		const result = parseFit(
+			buildFit([
+				{ lat: 59.91, lon: 10.75, hr: 140, afterSeconds: 0 },
+				{ lat: 59.92, lon: 10.76, hr: 150, afterSeconds: 60 }
+			])
+		);
+		expect(result.workout).not.toBeNull();
+		expect(describeFitContents(result.contents)).toBe('2 punkter (2 med posisjon, 2 med puls)');
 	});
 });

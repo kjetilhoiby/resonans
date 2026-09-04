@@ -75,7 +75,7 @@ describe('decodeWorkoutFile — hele stien fra zip', () => {
 		const formats: string[] = [];
 		for (const row of importable) {
 			const bytes = new Uint8Array(await zip.file(row.filePath!)!.async('uint8array'));
-			const parsed = decodeWorkoutFile(row.filePath!, bytes);
+			const { workout: parsed } = decodeWorkoutFile(row.filePath!, bytes);
 			expect(parsed, `${row.filePath} ga ingen spor`).not.toBeNull();
 			expect(parsed!.trackPoints.length).toBeGreaterThan(10);
 			formats.push(parsed!.sourceFormat);
@@ -86,7 +86,7 @@ describe('decodeWorkoutFile — hele stien fra zip', () => {
 	it('gir koordinater innenfor kartet fra en gzippet FIT', async () => {
 		const zip = await buildExportZip();
 		const bytes = new Uint8Array(await zip.file('activities/111.fit.gz')!.async('uint8array'));
-		const parsed = decodeWorkoutFile('activities/111.fit.gz', bytes);
+		const { workout: parsed } = decodeWorkoutFile('activities/111.fit.gz', bytes);
 		// Semisirkler ville gitt 714 754 141 her.
 		expect(parsed!.trackPoints[0].lat).toBeCloseTo(59.91, 3);
 		expect(parsed!.trackPoints[0].lon).toBeCloseTo(10.75, 3);
@@ -97,11 +97,11 @@ describe('decodeWorkoutFile — hele stien fra zip', () => {
 		const gz = decodeWorkoutFile(
 			'activities/222.gpx.gz',
 			new Uint8Array(await zip.file('activities/222.gpx.gz')!.async('uint8array'))
-		);
+		).workout;
 		const bare = decodeWorkoutFile(
 			'activities/333.gpx',
 			new Uint8Array(await zip.file('activities/333.gpx')!.async('uint8array'))
-		);
+		).workout;
 		expect(gz!.trackPoints).toEqual(bare!.trackPoints);
 	});
 
@@ -109,7 +109,7 @@ describe('decodeWorkoutFile — hele stien fra zip', () => {
 		const zip = await buildExportZip();
 		const rows = parseStravaManifest(await zip.file('activities.csv')!.async('string'));
 		const walk = rows.find((r) => r.id === '333')!;
-		const parsed = decodeWorkoutFile(
+		const { workout: parsed } = decodeWorkoutFile(
 			walk.filePath!,
 			new Uint8Array(await zip.file(walk.filePath!)!.async('uint8array'))
 		);
@@ -189,5 +189,41 @@ describe('BLOCK_PACE_RATIO — porten er romsligere enn rapporten', () => {
 		);
 		// Funnet finnes — det er bare ikke blokkerende. Skillet er hele poenget.
 		expect(findings.some((f) => f.axis === 'for-rask')).toBe(true);
+	});
+});
+
+describe('decodeWorkoutFile — grunnen følger med', () => {
+	it('sier hva en GPX uten punkter manglet', () => {
+		const empty = new TextEncoder().encode('<gpx><trk><trkseg></trkseg></trk></gpx>');
+		const { workout, detail } = decodeWorkoutFile('activities/1.gpx', empty);
+		expect(workout).toBeNull();
+		expect(detail).toBe('ingen punkter i fila');
+	});
+
+	it('skiller en tom fil fra en med punkter parseren ikke leste', () => {
+		// Punkter uten lat/lon: fila HAR innhold, men ikke posisjon. Det er en
+		// annen sak enn en tom fil, og skal ikke leses som det samme.
+		const noPos = new TextEncoder().encode(
+			'<gpx><trk><trkseg><trkpt><ele>5</ele></trkpt><trkpt><ele>6</ele></trkpt></trkseg></trk></gpx>'
+		);
+		const { workout, detail } = decodeWorkoutFile('activities/1.gpx', noPos);
+		expect(workout).toBeNull();
+		expect(detail).toContain('2 punkter i fila');
+	});
+
+	it('gir ingen grunn når fila ga en økt', () => {
+		const gpx = `<gpx><trk><trkseg>${Array.from(
+			{ length: 5 },
+			(_, i) =>
+				`<trkpt lat="${59.9 + i * 0.001}" lon="10.7"><time>${new Date(
+					Date.parse('2020-05-01T10:00:00Z') + i * 30_000
+				).toISOString()}</time></trkpt>`
+		).join('')}</trkseg></trk></gpx>`;
+		const { workout, detail } = decodeWorkoutFile(
+			'activities/1.gpx',
+			new TextEncoder().encode(gpx)
+		);
+		expect(workout).not.toBeNull();
+		expect(detail).toBeNull();
 	});
 });

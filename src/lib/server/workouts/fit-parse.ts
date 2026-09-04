@@ -66,13 +66,57 @@ function toFiniteNumber(value: unknown): number | undefined {
 export class FitParseError extends Error {}
 
 /**
+ * Hva fila FAKTISK inneholdt, ved siden av resultatet.
+ *
+ * Finnes fordi «ingen brukbart spor» kollapset tre helt ulike tilstander til
+ * ett ord: en fil uten `record`-meldinger i det hele tatt, en fil med punkter
+ * men uten posisjon (tredemølle), og en fil med punkter uten noe av verdi.
+ * Målt på arkivet 4. september 2026 var seks filer i den sekkeposten — fire
+ * tredemølleøkter fra 2026 og to turer fra 2014 — og rapporten kunne ikke si
+ * om det var dataene eller parseren. En diagnose som ikke skiller årsaker er
+ * ikke en diagnose.
+ */
+export type FitContents = {
+	/** Antall `record`-meldinger fila hadde. 0 = ingen tidsserie. */
+	records: number;
+	/** Hvor mange av dem som hadde gyldig posisjon. */
+	withPosition: number;
+	/** Hvor mange som hadde puls > 0. */
+	withHeartRate: number;
+	/** Hadde fila en `session`-melding (sport, totaler)? */
+	hasSession: boolean;
+};
+
+export type FitParseResult = {
+	/** `null` når fila ikke bar noe manifestet ikke alt har. */
+	workout: ParsedWorkout | null;
+	contents: FitContents;
+};
+
+/** Én setning om hvorfor en fil ikke ga noe. */
+export function describeFitContents(contents: FitContents): string {
+	if (contents.records === 0) {
+		return contents.hasSession
+			? 'bare sammendrag, ingen tidsserie'
+			: 'ingen record-meldinger';
+	}
+	if (contents.withPosition === 0 && contents.withHeartRate === 0) {
+		return `${contents.records} punkter, men uten posisjon og uten puls`;
+	}
+	if (contents.withPosition < 2 && contents.withHeartRate === 0) {
+		return `${contents.records} punkter, bare ${contents.withPosition} med posisjon og ingen puls`;
+	}
+	return `${contents.records} punkter (${contents.withPosition} med posisjon, ${contents.withHeartRate} med puls)`;
+}
+
+/**
  * Dekoder en FIT-fil til sporform.
  *
  * Kaster `FitParseError` når bytene ikke er FIT eller integritetssjekken
  * feiler — en gzip som pakket ut til noe annet enn en øktfil skal si det, ikke
  * gi et tomt spor som ser ut som en økt uten GPS.
  */
-export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
+export function parseFit(bytes: Uint8Array): FitParseResult {
 	const stream = Stream.fromByteArray(bytes);
 	const decoder = new Decoder(stream);
 
@@ -89,6 +133,14 @@ export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
 	const points: TrackPoint[] = [];
 	const hrValues: number[] = [];
 	let lastCumulativeDistance: number | undefined;
+	let withPosition = 0;
+
+	const contents = (): FitContents => ({
+		records: records.length,
+		withPosition,
+		withHeartRate: hrValues.length,
+		hasSession: session != null
+	});
 
 	for (const record of records) {
 		// **Puls samles uavhengig av posisjon.** En innendørsøkt (tredemølle) har
@@ -104,6 +156,7 @@ export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
 		const lat = record.positionLat * SEMICIRCLES_TO_DEGREES;
 		const lon = record.positionLong * SEMICIRCLES_TO_DEGREES;
 		if (!plausibleLat(lat) || !plausibleLon(lon)) continue;
+		withPosition += 1;
 
 		const time = toDate(record.timestamp);
 		points.push({
@@ -116,7 +169,9 @@ export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
 	}
 
 	// En fil uten spor OG uten puls bærer ingenting manifestet ikke alt har.
-	if (points.length < 2 && hrValues.length === 0) return null;
+	if (points.length < 2 && hrValues.length === 0) {
+		return { workout: null, contents: contents() };
+	}
 
 	const startTime =
 		toDate(session?.startTime) ??
@@ -136,7 +191,7 @@ export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
 	// enn den var, og «glemte trackeren»-forslaget kan ikke lenger se feilen.
 	const duration = toFiniteNumber(session?.totalElapsedTime) ?? fromTrack;
 
-	return {
+	const workout: ParsedWorkout = {
 		// Manifestet overstyrer dette. FITs egen sport er fallback for en fil
 		// importert utenfor Strava-flyten.
 		sportType: session?.sport ?? 'workout',
@@ -152,4 +207,6 @@ export function parseFit(bytes: Uint8Array): ParsedWorkout | null {
 		trackPoints: points,
 		sourceFormat: 'fit'
 	};
+
+	return { workout, contents: contents() };
 }
