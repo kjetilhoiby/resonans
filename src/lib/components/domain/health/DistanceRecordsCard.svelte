@@ -10,7 +10,22 @@
 	 */
 	import { formatRecordTime } from '$lib/domain/health/distance-records';
 
-	type Record = { key: string; label: string; seconds: number; date: string };
+	/**
+	 * `activityId` er nøkkelen til å GRANSKE en rekord. Et raskeste-strekk-tall
+	 * kan ikke etterprøves fra lista alene — er 4:00/km over fire kilometer ekte,
+	 * eller en sykkeltur registrert som løping? Svaret ligger i kartet på
+	 * øktsida, og uten lenka er den to navigasjoner og et gjett unna.
+	 *
+	 * Den kan være `null`: en klynge uten evidence-event har ingen side å åpne.
+	 * Raden vises da uten lenke — en lenke som ikke virker er verre enn ingen.
+	 */
+	type Record = {
+		key: string;
+		label: string;
+		seconds: number;
+		activityId: string | null;
+		date: string;
+	};
 
 	let { records }: { records: Record[] } = $props();
 
@@ -32,11 +47,26 @@
 
 		<ul class="dr-list">
 			{#each records as record (record.key)}
-				<li class="dr-row">
-					<span class="dr-distance">{record.label}</span>
-					<span class="dr-time">{formatRecordTime(record.seconds)}</span>
-					<span class="dr-pace">{pace(record)}</span>
-					<span class="dr-date">{dateFmt.format(new Date(record.date))}</span>
+				<li>
+					{#if record.activityId}
+						<a
+							class="dr-row dr-link"
+							href="/aktivitet/{record.activityId}"
+							data-track="distanserekorder:apne-okt"
+						>
+							<span class="dr-distance">{record.label}</span>
+							<span class="dr-time">{formatRecordTime(record.seconds)}</span>
+							<span class="dr-pace">{pace(record)}</span>
+							<span class="dr-date">{dateFmt.format(new Date(record.date))}</span>
+						</a>
+					{:else}
+						<div class="dr-row">
+							<span class="dr-distance">{record.label}</span>
+							<span class="dr-time">{formatRecordTime(record.seconds)}</span>
+							<span class="dr-pace">{pace(record)}</span>
+							<span class="dr-date">{dateFmt.format(new Date(record.date))}</span>
+						</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -46,6 +76,7 @@
 		     forskjellen mellom to forsøk. -->
 		<p class="dr-caveat">
 			Raskeste sammenhengende strekk inni en løpeøkt, målt fra GPS-sporet. Ikke løpstider.
+			Trykk på en rad for å se økta og kartet.
 		</p>
 	</div>
 {/if}
@@ -73,6 +104,9 @@
 		flex-direction: column;
 		gap: 0.35rem;
 	}
+	.dr-list > li {
+		display: block;
+	}
 	.dr-row {
 		display: grid;
 		grid-template-columns: 3.5rem auto 1fr auto;
@@ -96,6 +130,17 @@
 	}
 	.dr-date {
 		text-align: right;
+	}
+	.dr-link {
+		text-decoration: none;
+		color: inherit;
+		border-radius: 8px;
+		margin: -0.15rem -0.35rem;
+		padding: 0.15rem 0.35rem;
+	}
+	.dr-link:hover,
+	.dr-link:focus-visible {
+		background: var(--surface-hover, rgba(255, 255, 255, 0.05));
 	}
 	.dr-caveat {
 		margin: 0;
