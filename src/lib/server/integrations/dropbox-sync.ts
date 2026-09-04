@@ -29,7 +29,7 @@ interface DropboxSensorConfig {
 	[ key: string ]: unknown;
 }
 
-interface TrackPoint {
+export interface TrackPoint {
 	lat: number;
 	lon: number;
 	ele?: number;
@@ -47,7 +47,15 @@ export interface ParsedWorkout {
 	maxHeartRate?: number;
 	minHeartRate?: number;
 	trackPoints: TrackPoint[];
-	sourceFormat: 'gpx' | 'tcx';
+	/**
+	 * Hvilket format økta ble lest fra.
+	 *
+	 * `fit` kom med Strava-importen (september 2026). Nedstrøms leses feltet
+	 * bare som `string | null` (`workout-context.ts`), og `/api/apps/upload`
+	 * skriver alt en filendelse kan si, så unionen er en intern kontrakt —
+	 * ingen leser trenger å endres når den vokser.
+	 */
+	sourceFormat: 'gpx' | 'tcx' | 'fit';
 }
 
 function decodeCredentials(encoded: string): DropboxCredentials {
@@ -102,7 +110,15 @@ function computeDistance(points: TrackPoint[]): number {
 	return total;
 }
 
-function computeElevationGain(points: TrackPoint[]): number {
+/**
+ * Summen av oppstigningene i et spor.
+ *
+ * Eksportert fordi FIT-parseren trenger den samme summeringen, og to
+ * definisjoner av «høydemeter» ville gitt to tall for samme tur. Distansen
+ * deles IKKE på samme måte: FIT bærer kumulativ distanse fra enheten, mens
+ * GPX må summere haversine — og det er sporlengde med GPS-støyen i.
+ */
+export function computeElevationGain(points: TrackPoint[]): number {
 	let gain = 0;
 	for (let i = 1; i < points.length; i += 1) {
 		const prev = points[i - 1].ele;

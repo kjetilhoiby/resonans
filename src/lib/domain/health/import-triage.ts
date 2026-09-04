@@ -46,6 +46,17 @@ export type TriageFinding = {
 	axis: TriageAxis;
 	/** 0..1 — hvor langt utenfor. Rangerer lista; ikke en sannsynlighet. */
 	severity: number;
+	/**
+	 * Hvor mange ganger utenfor terskelen målingen ligger. 1 = på terskelen.
+	 *
+	 * **Feltet finnes fordi `severity` ikke kan skille et grensetilfelle fra et
+	 * grovt avvik på en måte man kan sette en grense på.** Målt på arkivet:
+	 * en økt fire SEKUNDER raskere enn brukerens egen kurve gir severity 0,002,
+	 * og en 18 % raskere gir 0,153 — begge små tall nær null. En port som skal
+	 * slippe den første og stoppe den andre må lese forholdstallet (1,002 mot
+	 * 1,18), som er det tallet regelen faktisk handler om.
+	 */
+	ratio: number;
 	/** Hva som er målt, med tallene i. */
 	reason: string;
 	/** Hva denne raden ødelegger hvis den slipper inn. */
@@ -219,6 +230,7 @@ export function triageCandidate(
 			findings.push({
 				axis: 'for-rask',
 				severity: severityFromRatio(ratio),
+				ratio,
 				reason:
 					`${formatKm(distance)} på ${formatTime(moving)} ` +
 					`(${formatPace((moving / distance) * 1000)}) — ` +
@@ -237,6 +249,7 @@ export function triageCandidate(
 			findings.push({
 				axis: 'for-langsom',
 				severity: severityFromRatio(secPerKm / MAX_RUN_SEC_PER_KM),
+				ratio: secPerKm / MAX_RUN_SEC_PER_KM,
 				reason:
 					`${formatPace(secPerKm)} over ${formatKm(distance)}` +
 					(moving == null ? ' (målt på elapsed — bevegelsestid mangler)' : ''),
@@ -251,6 +264,7 @@ export function triageCandidate(
 		findings.push({
 			axis: 'for-kort',
 			severity: severityFromRatio(floor / distance),
+			ratio: floor / distance,
 			reason: `${formatKm(distance)}, under gulvet på ${formatKm(floor)} for ${family}`,
 			consequence: 'Teller som en økt i streaks og årsmilepæler uten å være en.'
 		});
@@ -259,6 +273,7 @@ export function triageCandidate(
 		findings.push({
 			axis: 'for-kort',
 			severity: severityFromRatio(MIN_ELAPSED_SECONDS / elapsed),
+			ratio: MIN_ELAPSED_SECONDS / elapsed,
 			reason: `${formatTime(elapsed)} totalt`,
 			consequence: 'Teller som en økt i streaks og årsmilepæler uten å være en.'
 		});
@@ -277,6 +292,7 @@ export function triageCandidate(
 			findings.push({
 				axis: 'for-lang',
 				severity: severityFromRatio(share / MAX_STOPPED_SHARE),
+				ratio: share / MAX_STOPPED_SHARE,
 				reason:
 					`${formatTime(dead)} av ${formatTime(elapsed)} uten bevegelse ` +
 					`(${Math.round(share * 100)} %)`,
@@ -288,6 +304,7 @@ export function triageCandidate(
 		findings.push({
 			axis: 'for-lang',
 			severity: severityFromRatio(elapsed / MAX_ELAPSED_SECONDS),
+			ratio: elapsed / MAX_ELAPSED_SECONDS,
 			reason: `${formatTime(elapsed)} totalt — klokka har stått på`,
 			consequence: 'Effort skåres på elapsed, så den døde halen prises som trening.'
 		});
