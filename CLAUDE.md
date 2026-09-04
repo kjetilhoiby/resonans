@@ -957,13 +957,32 @@ Se `docs/changelog/2026-09-04-krydder-paa-veiingen.md`. Reglene rent i
   skal bære de ukene vekta stiger. En passering krever dessuten at forrige gang
   under samme terskel er mer enn `MIN_RECORD_SPAN_DAYS` unna, ellers fyrer den
   gjentatte ganger mens trenden vipper rundt det samme kiloet.
-- **Andelens baseline er periodens topp, og setningen SIER det.**
-  `metricSettings.weight.goal` er et bart tall uten startpunkt, så
-  `goalProgressNugget` bruker toppen av den pågående nedgangen fra
-  `weight-swings` og navngir den: «Halvveis fra 104,2 kg (april 2025) til målet
-  på 93 kg». Et bart «halvveis til målet» ville påstått et startpunkt brukeren
-  ikke kan se. Kjent rest: `goal_tracks.metadata.startValue` er målets EGEN
-  baseline, og samme lesevei ville gitt den estimerte måldatoen (`projectGoal`).
+- **Andelens baseline navngis alltid, uansett hvor den kom fra.** Finnes et
+  aktivt mål i `goals` (`readActiveWeightGoal` i
+  `$lib/server/health/weight-goal-track.ts`), er dets `startValue` den riktige;
+  ellers brukes toppen av den pågående nedgangen fra `weight-swings`. Begge sies
+  i setningen. Et bart «halvveis til målet» ville påstått et startpunkt brukeren
+  ikke kan se. Fallback-baselinen regnes PER MÅL som første måling på eller etter
+  målets startdato — den eldste målingen i historikken er ikke noe måls
+  startpunkt.
+- **`goal-date` sier «På dagens tempo: 90,0 kg i februar 2027», og overskriften
+  er GROVERE enn kortets setning med vilje.** `describeGoalProjection` (samme
+  motor som `/plan/mal`) gir den fulle setningen med eksakt dato og margin mot
+  fristen, og den står i `sentence`. Men et datoestimat flytter seg noen dager
+  med tempoet, og en eksakt dato i en tittel som leses hver morgen ser ut som en
+  presisjon estimatet ikke har. Måned og år står stille i ukevis.
+- **Måldatoen tier når den ikke har noe å si.** Ingen blokkeringsgrunn («vekta
+  går motsatt vei») — det er en anklage på repeat; og ingen «nådd», som er
+  `below-goal` sin beskjed og ellers metning i verste form.
+- **To kilder til målvekt, og `ECHOES` holder dem fra hverandre.**
+  `metricSettings.weight.goal` (`below-goal`, `goal-distance`) og `goals`-raden
+  (`goal-progress`, `goal-date`) er ulike rader ingen holder i sync. Vi velger
+  ikke en vinner — de kan aldri stå ved siden av hverandre, så brukeren ser
+  aldri to måltall i samme varsel.
+- **Nærmeste frist vinner når flere mål finnes**, og frister i fortida hoppes
+  over. Et delmål til jul er det man kan gjøre noe med denne uka; en estimert
+  dato mot en frist som var i fjor er en setning om noe som er avgjort. Et mål
+  UTEN frist faller helt ut — `projectGoal` kan ikke uttale seg om det.
 - **Rekorden faller ikke bort når månedsoppgjøret tar tittelen** — den blir
   andrelinja. `ECHOES` hindrer at andrelinja gjentar tittelen med andre ord.
   **Vekta står alltid først i body-en:** et krydder uten tallet under er en

@@ -45,6 +45,7 @@ import {
 	compareCurrentToPrevious,
 	describeCycleComparison
 } from './cycle-series';
+import { describeGoalProjection, projectGoal } from '../goals/goal-projection';
 import { formatMilestoneDate, formatMonthName, formatMonthYear, kg } from './weight-text';
 
 export type WeightNuggetKind =
@@ -52,7 +53,27 @@ export type WeightNuggetKind =
 	| 'month-change'
 	| 'threshold-crossed'
 	| 'goal-progress'
+	| 'goal-date'
 	| 'year-over-year';
+
+/**
+ * Det aktive vektmålet, slik krydderet trenger det.
+ *
+ * Leses av `readActiveWeightGoal` (`$lib/server/health/weight-goal-track.ts`).
+ * Formen er flat og ren med vilje: modulen skal kunne testes uten en base, og
+ * den skal ikke kjenne til `goals`-radens metadata-format.
+ */
+export interface WeightGoalContext {
+	/** Baselinen målet måles fra — målets EGEN, ikke en utledet periodetopp. */
+	startWeight: number;
+	targetWeight: number;
+	/** `YYYY-MM-DD`. */
+	startDate: string;
+	/** `YYYY-MM-DD`. Fristen. */
+	endDate: string;
+	/** Om baselinen sto på målet, eller ble hentet fra en måling. */
+	startSource: 'oppgitt' | 'maalt';
+}
 
 export interface WeightNugget {
 	kind: WeightNuggetKind;
@@ -274,18 +295,60 @@ function progressLabel(mark: number): string {
  * startpunkt brukeren ikke kan se — og et annet startpunkt enn det hen selv
  * hadde i hodet. Samme regel som at målvekt fra to kilder må navngis.
  */
+interface GoalProgressBase {
+	startKg: number;
+	targetKg: number;
+	/** «april 2025» — når veien begynte. */
+	sinceLabel: string;
+	basis: 'mål' | 'periode';
+}
+
+/** Målets egen baseline når den finnes, ellers periodetoppen. */
+function goalProgressBase(
+	swings: readonly WeightSwing[],
+	goalKg: number | null | undefined,
+	goal?: WeightGoalContext | null
+): GoalProgressBase | null {
+	if (goal) {
+		return {
+			startKg: goal.startWeight,
+			targetKg: goal.targetWeight,
+			sinceLabel: formatMonthYear(goal.startDate),
+			basis: 'mål'
+		};
+	}
+
+	if (typeof goalKg !== 'number' || !Number.isFinite(goalKg) || goalKg <= 0) return null;
+	const swing = currentSwing(swings);
+	if (!swing || swing.direction !== 'ned') return null;
+	return {
+		startKg: swing.startKg,
+		targetKg: goalKg,
+		sinceLabel: formatMonthYear(swing.startDate),
+		basis: 'periode'
+	};
+}
+
 export function goalProgressNugget(
 	points: readonly MetricPoint[],
 	swings: readonly WeightSwing[],
-	goalKg: number | null | undefined
+	goalKg: number | null | undefined,
+	/** Det aktive målet. Når det finnes, er dets EGEN baseline den riktige. */
+	goal?: WeightGoalContext | null
 ): WeightNugget | null {
-	if (typeof goalKg !== 'number' || !Number.isFinite(goalKg) || goalKg <= 0) return null;
+	/**
+	 * Målets egen baseline vinner over periodetoppen.
+	 *
+	 * Periodetoppen er en tilnærming til «der dette begynte»; målets `startValue`
+	 * ER der brukeren sa at det begynte. Er den utledet av en måling framfor
+	 * oppgitt (`startSource: 'maalt'`), er den fortsatt målets startdato — og
+	 * dermed nærmere enn en periodegrense motoren fant selv.
+	 */
+	const base = goalProgressBase(swings, goalKg, goal);
+	if (!base) return null;
 
-	const swing = currentSwing(swings);
-	if (!swing || swing.direction !== 'ned') return null;
-
-	const span = swing.startKg - goalKg;
-	// Startet perioden alt under målet, finnes det ingen vei å måle andel av.
+	const span = base.startKg - base.targetKg;
+	// Startet man alt under målet, finnes det ingen vei å måle andel av.
 	if (span <= 0) return null;
 
 	const trend = points.filter(
@@ -293,8 +356,8 @@ export function goalProgressNugget(
 	);
 	if (trend.length < 2) return null;
 
-	const now = (swing.startKg - trend[trend.length - 1].trend) / span;
-	const before = (swing.startKg - trend[trend.length - 2].trend) / span;
+	const now = (base.startKg - trend[trend.length - 1].trend) / span;
+	const before = (base.startKg - trend[trend.length - 2].trend) / span;
 	// Målet selv er `below-goal` sin beskjed, ikke en andel.
 	if (now >= 1) return null;
 
@@ -303,10 +366,73 @@ export function goalProgressNugget(
 
 	// Krysses to merker i ett steg, er det høyeste den sanne nyheten.
 	const mark = crossed[crossed.length - 1];
+	const from =
+		base.basis === 'mål'
+			? `fra målets startpunkt på ${kg(base.startKg)} kg (${base.sinceLabel})`
+			: `fra ${kg(base.startKg)} kg (${base.sinceLabel})`;
+
 	return {
 		kind: 'goal-progress',
-		headline: `${progressLabel(mark)} til ${kg(goalKg)} kg`,
-		sentence: `${progressLabel(mark)} fra ${kg(swing.startKg)} kg (${formatMonthYear(swing.startDate)}) til målet på ${kg(goalKg)} kg.`
+		headline: `${progressLabel(mark)} til ${kg(base.targetKg)} kg`,
+		sentence: `${progressLabel(mark)} ${from} til målet på ${kg(base.targetKg)} kg.`
+	};
+}
+
+/* ── Estimert måldato ─────────────────────────────────────────────────────── */
+
+/**
+ * «På dagens tempo: 93,0 kg i mars 2027.»
+ *
+ * ## Hvorfor overskriften er grovere enn kortets setning
+ *
+ * `describeGoalProjection` sier «rundt 12. mars 2027 — 3 måneder før fristen»,
+ * og det er ordene `/plan/mal` bruker. De står i `sentence`. MEN en push-tittel
+ * leses hver morgen, og en estimert dato flytter seg noen dager fram og tilbake
+ * med tempoet: en eksakt dato i tittelen ville sett ut som en presisjon
+ * estimatet ikke har, og invitert til å lese støy som framgang. Måned og år
+ * står stille i ukevis. Kortets setning er den fulle, pushens er den grove —
+ * samme tall, ulik oppløsning.
+ *
+ * ## Hva den IKKE sier
+ *
+ * **Ingen blokkeringsgrunn.** Går vekta motsatt vei eller står stille, har
+ * `projectGoal` ingen dato, og kortet forklarer hvorfor. Et varsel som hver
+ * morgen sier «ingen dato: vekta går motsatt vei» er en anklage på repeat.
+ *
+ * **Ingen «nådd».** Er målet passert, er det `below-goal` sin beskjed — og en
+ * «nådd i mars»-tittel hver morgen etterpå er metningen i sin verste form.
+ */
+export function goalDateNugget(
+	points: readonly MetricPoint[],
+	goal: WeightGoalContext | null | undefined,
+	today: string
+): WeightNugget | null {
+	if (!goal) return null;
+
+	const trend = points
+		.filter((p): p is MetricPoint & { trend: number } => p.trend !== null)
+		.map((p) => ({ date: p.date, value: p.trend }));
+	if (trend.length === 0) return null;
+
+	const projection = projectGoal({
+		startDate: goal.startDate,
+		endDate: goal.endDate,
+		startValue: goal.startWeight,
+		targetValue: goal.targetWeight,
+		currentValue: trend[trend.length - 1].value,
+		today,
+		series: trend
+	});
+
+	if (projection.reachedOn || !projection.projectedDate) return null;
+
+	const described = describeGoalProjection(projection, { today, shape: 'state' });
+	if (!described) return null;
+
+	return {
+		kind: 'goal-date',
+		headline: `På dagens tempo: ${kg(goal.targetWeight)} kg i ${formatMonthYear(projection.projectedDate)}`,
+		sentence: described.label
 	};
 }
 
@@ -404,14 +530,17 @@ const PUSH_RANK: Record<WeightNuggetKind, number> = {
 	'month-change': 3,
 	'lowest-trend': 4,
 	'year-over-year': 5,
-	'current-swing': 6,
-	'largest-drop': 7,
-	'lowest-raw': 8,
-	'goal-distance': 9,
-	'weigh-in-streak': 10,
-	'weigh-in-coverage': 11,
-	'above-nadir': 12,
-	stale: 13
+	// Kontinuerlig som de to over, men mer opplysende enn en periodebeskrivelse
+	// når et mål med frist finnes — den svarer på spørsmålet målet stiller.
+	'goal-date': 6,
+	'current-swing': 7,
+	'largest-drop': 8,
+	'lowest-raw': 9,
+	'goal-distance': 10,
+	'weigh-in-streak': 11,
+	'weigh-in-coverage': 12,
+	'above-nadir': 13,
+	stale: 14
 };
 
 /**
@@ -433,10 +562,17 @@ const ECHOES: Partial<Record<WeightNuggetKind, WeightNuggetKind[]>> = {
 	'largest-drop': ['current-swing'],
 	'weigh-in-streak': ['weigh-in-coverage'],
 	'weigh-in-coverage': ['weigh-in-streak'],
-	// Alle tre snakker om avstanden til den samme målvekta.
-	'below-goal': ['goal-distance', 'goal-progress'],
-	'goal-progress': ['goal-distance', 'below-goal'],
-	'goal-distance': ['below-goal', 'goal-progress']
+	/**
+	 * Hele målfamilien snakker om den samme målvekta — og de leser den fra TO
+	 * kilder som ingen holder i sync: `metricSettings.weight.goal` (below-goal,
+	 * goal-distance) og `goals`-raden (goal-progress, goal-date). At de aldri
+	 * står ved siden av hverandre er derfor ikke bare mot gjentakelse: det er
+	 * det som hindrer at et varsel viser to ulike måltall.
+	 */
+	'below-goal': ['goal-distance', 'goal-progress', 'goal-date'],
+	'goal-progress': ['goal-distance', 'below-goal', 'goal-date'],
+	'goal-date': ['goal-distance', 'below-goal', 'goal-progress'],
+	'goal-distance': ['below-goal', 'goal-progress', 'goal-date']
 };
 
 export interface WeightNuggetInput {
@@ -446,6 +582,8 @@ export interface WeightNuggetInput {
 	today: string;
 	/** Målvekt fra Helse-mortemaets `metricSettings.weight.goal`. */
 	goalKg?: number | null;
+	/** Det aktive vektmålet med baseline og frist, når det finnes. */
+	goal?: WeightGoalContext | null;
 }
 
 function toNugget(milestone: WeightMilestone): WeightNugget {
@@ -473,7 +611,8 @@ export function weightNuggets(input: WeightNuggetInput): WeightNugget[] {
 	const nuggets = [
 		monthChangeNugget(input.days, input.today, points),
 		thresholdCrossedNugget(points, enoughHistory),
-		goalProgressNugget(points, swings, input.goalKg),
+		goalProgressNugget(points, swings, input.goalKg, input.goal),
+		goalDateNugget(points, input.goal, input.today),
 		yearOverYearNugget(points, input.today),
 		...fromMilestones
 	].filter((n): n is WeightNugget => n !== null);
