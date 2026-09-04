@@ -8,6 +8,7 @@ import { computeWorkoutNugget } from '$lib/server/workout-nuggets';
 import { getWorkoutAssessment } from '$lib/server/workouts/workout-assessment';
 import { findHealthThemeId, findThemeByName, getHealthThemeIds } from '$lib/server/themes';
 import { getEffortBaseline } from '$lib/server/services/effort-service';
+import { readClusterTrackPoints } from '$lib/server/activity-layer';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const userId = locals.userId;
@@ -26,7 +27,27 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	});
 
 	const eventData = (rawEvent?.data ?? null) as Record<string, unknown> | null;
-	const trackPoints = Array.isArray(eventData?.trackPoints) ? eventData.trackPoints : [];
+	const ownTrackPoints = Array.isArray(eventData?.trackPoints) ? eventData.trackPoints : [];
+
+	// **Sporet kan ligge på en SØSTERRAD i klynga.** Denne siden adresserer én
+	// `sensor_events`-rad, men samme tur skrives av opptil tre kilder og bare én
+	// av dem har GPS — en Withings-økt har ingen. Hvilken rad en lenke bærer er
+	// ikke forutsigbart (evidence sorteres på starttid), så et kart fantes eller
+	// ikke ut fra tilfeldigheter. Fallbacken er per KLYNGE, ikke per lenke:
+	// gamle bokmerker og varsel-URL-er peker på den raden de peker på.
+	// Radens eget spor vinner alltid — `readClusterTrackPoints` returnerer null da.
+	const borrowedTrack =
+		ownTrackPoints.length > 0
+			? null
+			: await readClusterTrackPoints(userId, workoutId).catch((err) => {
+					// Et lånt spor er en forbedring, ikke et krav — siden skal ikke
+					// falle av at klyngeoppslaget feiler. Men den skal SI det:
+					// stille null her og «ingen kart» på flaten er ikke til å skille
+					// fra en økt som faktisk mangler spor.
+					console.warn(`[aktivitet] klyngespor feilet for ${workoutId}:`, err);
+					return null;
+				});
+	const trackPoints = borrowedTrack?.trackPoints ?? ownTrackPoints;
 
 	const [healthThemeId, healthThemeIds, trainingTheme, hrBaseline] = await Promise.all([
 		findHealthThemeId(userId),
@@ -67,6 +88,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		workout,
 		trackPoints,
+		// Flaten skal SI at sporet er lånt fra en annen kilde i klynga. Et kart
+		// som stille tilhører en annen rad enn tallene over det er en påstand
+		// brukeren ikke kan etterprøve.
+		trackSource: borrowedTrack
+			? { borrowed: true as const, provider: borrowedTrack.provider, eventId: borrowedTrack.sourceEventId }
+			: null,
 		assessment,
 		// Chatten på økta får NØYAKTIG samme fakta som vurderingen. Fram til
 		// august 2026 bygde siden sitt eget vedlegg med et halvt dusin tall — og

@@ -19,10 +19,20 @@
 	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, assessment, activityListThemeId } = data;
+	const { workout, trackPoints, trackSource, assessment, activityListThemeId } = data;
 	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
+
+	/** Provider-navnet er en maskinstreng; flaten skal si det brukeren kjenner. */
+	function sourceLabel(provider: string): string {
+		if (provider === 'withings') return 'Withings';
+		if (provider === 'dropbox') return 'GPX-fila i Dropbox';
+		if (provider === 'strava_export') return 'Strava-arkivet';
+		if (provider === 'strava') return 'Strava';
+		if (provider === 'ekko') return 'Ekko';
+		return 'en annen kilde';
+	}
 	let tab = $state<Tab>('detaljer');
 
 	let messagesEl = $state<HTMLElement | null>(null);
@@ -291,6 +301,17 @@
 				<div class="map-wrap">
 					<GpxMap points={trackPoints} height={340} />
 				</div>
+				{#if trackSource?.borrowed}
+					<!--
+						Sporet tilhører en ANNEN rad enn tallene over: samme tur, en
+						annen kilde i klynga. Det skal stå, ikke antas — et kart som
+						stille kommer fra et annet sted enn distansen er en påstand
+						brukeren ikke kan etterprøve.
+					-->
+					<p class="track-borrowed">
+						Sporet er hentet fra {sourceLabel(trackSource.provider)} — samme økt, annen kilde.
+					</p>
+				{/if}
 			{:else}
 				<p class="no-data">Ingen GPS-data for denne økten.</p>
 			{/if}
@@ -667,6 +688,12 @@
 		color: #666;
 		padding: 0 0.2rem;
 		margin-top: 0.3rem;
+	}
+
+	.track-borrowed {
+		margin: 0.5rem 0 0;
+		font-size: 0.78rem;
+		color: var(--text-tertiary, #8a8a8a);
 	}
 
 	.no-data {
