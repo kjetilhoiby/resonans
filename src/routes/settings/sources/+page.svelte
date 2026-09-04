@@ -6,6 +6,7 @@
 		SpondSourceCard,
 		GoogleSheetsSourceCard,
 		StravaSourceCard,
+		StravaImportCard,
 		TeslaSourceCard,
 		EmailRulesCard,
 		EffortReprojectCard,
@@ -112,6 +113,12 @@
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
+		<!--
+			Arkivimporten står MELLOM Strava-kilden og jobbene som rydder etter den:
+			den hører til Strava, men reanalyse og reprojisering er stegene man kjører
+			ETTERPÅ, og rekkefølgen på flaten er den rekkefølgen de skal kjøres i.
+		-->
+		<StravaImportCard />
 		<EffortReprojectCard />
 		<WorkoutReanalyzeCard />
 		<HrTrustCard />

@@ -56,6 +56,13 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
 			// oppslaget er én bestemt rad på id — ikke en telling over flere.
 			'lib/server/workouts/dismiss-workout.ts',
+			// Importdedupen spør «har vi lest denne FILA før», ikke «hvor mange
+			// økter finnes». Oppslaget er ÉN sensor og en kildespesifikk
+			// metadata-nøkkel (`stravaActivityId`) — det dedupliserte laget kan
+			// ikke svare på det, siden det slår klyngen sammen på tvers av
+			// nettopp de kildene importen skal skille seg fra. Klyngingen gjør
+			// jobben sin etterpå, på lesing.
+			'lib/server/workouts/strava-import.ts',
 			// «Hva har jeg skjult?» kan ikke besvares av det dedupliserte laget:
 			// det filtrerer nettopp bort disse radene. Leser per kilde, med vilje.
 			'lib/server/workouts/hidden-workouts.ts',

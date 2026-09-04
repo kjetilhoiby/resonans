@@ -1,0 +1,496 @@
+<script lang="ts">
+	/**
+	 * Importerer en Strava-arkiveksport (zip) — engangsjobben som henter årene
+	 * før Withings-kontoen begynte.
+	 *
+	 * Se `docs/changelog/2026-09-04-strava-arkivimport.md`.
+	 *
+	 * ## Zipen pakkes ut i NETTLESEREN
+	 *
+	 * Den er 38 MB og inneholder 1020 spor. `BODY_SIZE_LIMIT` er hevet til 100M,
+	 * så serveren kunne tatt hele — men da måtte den enten holde alle sporene i
+	 * minnet samtidig, eller få zipen sendt på nytt for hver runde (38 MB × 20).
+	 * Klienten leser den én gang og sender filene i porsjoner. Løkka i klienten
+	 * er samme grep som `WorkoutReanalyzeCard`, og av samme grunn: en
+	 * serverside-løkke ville truffet svartidsgrensa, og en halvferdig jobb uten
+	 * framdriftstall er verre enn en som teller.
+	 *
+	 * ## Tempo-referansen er ikke pynt
+	 *
+	 * Uten den er `for-rask`-aksen AV, og en sykkeltur merket «Run» går rett inn
+	 * i distanserekordene — der den blir stående, siden en rekord er «min over
+	 * alle økter». Feltet har derfor ingen default: et hardkodet tempo arver
+	 * stille feilen i den kroppen det en gang ble satt for.
+	 */
+	import { Button } from '$lib/components/ui';
+	import { extractApiErrorMessage } from '$lib/client/api-error';
+	import {
+		parseStravaManifest,
+		skipReasonFor,
+		type StravaManifestRow
+	} from '$lib/domain/health/strava-export';
+
+	/**
+	 * Aktiviteter per kall.
+	 *
+	 * Et spor er tungt (opptil 2000 lagrede punkter, og råfila kan være
+	 * hundrevis av kB), så batchen er liten med vilje — 20 filer er noen MB, godt
+	 * under grensa, og gir en framdriftslinje som beveger seg.
+	 */
+	const BATCH_SIZE = 20;
+
+	/** Tak på runder, som i reanalyse-kortet: en bug skal ikke gi uendelig kall. */
+	const MAX_ROUNDS = 200;
+
+	let file = $state<File | null>(null);
+	let running = $state(false);
+	let error = $state<string | null>(null);
+	let done = $state(false);
+
+	/** Brukerens egen referanse: distanse i meter og tid i sekunder. */
+	let prDistance = $state('');
+	let prTime = $state('');
+	let dryRun = $state(true);
+
+	/** Manifestet, lest i klienten så vi kan vise hva arkivet inneholder FØR noe sendes. */
+	let manifestCsv = $state<string | null>(null);
+	let rows = $state<StravaManifestRow[]>([]);
+	let filesInZip = $state<Map<string, string>>(new Map());
+
+	let written = $state(0);
+	let existed = $state(0);
+	let skipped = $state(0);
+	let blocked = $state(0);
+	let failed = $state(0);
+	let processed = $state(0);
+	/** Hva triagen holdt ute, med tallene — «8 blokkert» kan ikke handles på. */
+	let blockedDetail = $state<Array<{ id: string; date: string; name: string | null; reason: string }>>([]);
+	let failures = $state<Array<{ id: string; error: string }>>([]);
+
+	const importable = $derived(rows.filter((r) => !skipReasonFor(r)));
+	const total = $derived(importable.length);
+
+	const paceReference = $derived.by(() => {
+		const meters = Number(prDistance);
+		const seconds = Number(prTime);
+		if (!Number.isFinite(meters) || !Number.isFinite(seconds) || meters <= 0 || seconds <= 0) {
+			return null;
+		}
+		return `${Math.round(meters)}:${Math.round(seconds)}`;
+	});
+
+	/**
+	 * Leser zipen og bygger manifestet.
+	 *
+	 * JSZip importeres dynamisk: den er en avhengighet serveren alt har (den
+	 * leser docx/xlsx), men 100 kB i hovedbunten for et kort på en
+	 * innstillingsside er ikke verdt det.
+	 */
+	async function readZip(selected: File) {
+		error = null;
+		done = false;
+		rows = [];
+		manifestCsv = null;
+		filesInZip = new Map();
+
+		const { default: JSZip } = await import('jszip');
+		const zip = await JSZip.loadAsync(selected);
+
+		// Manifestet ligger som `activities.csv` i rota. Navnet er Stravas, og
+		// mangler det, er det ikke en aktivitetseksport — det skal sies, ikke
+		// vises som «0 aktiviteter».
+		const manifestEntry =
+			zip.file('activities.csv') ??
+			zip.file(/(^|\/)activities\.csv$/i)[0] ??
+			null;
+		if (!manifestEntry) {
+			throw new Error(
+				'Fant ikke activities.csv i zipen. Er dette en fullstendig Strava-eksport («Last ned eller slett kontoen din» → «Be om arkiv»)?'
+			);
+		}
+
+		manifestCsv = await manifestEntry.async('string');
+		rows = parseStravaManifest(manifestCsv);
+
+		// Filstien i manifestet er relativ til zip-rota, men eksporten har vært
+		// observert med et mappeledd foran. Vi indekserer derfor på HALEN av
+		// stien, så begge oppsett treffer.
+		const byTail = new Map<string, string>();
+		for (const path of Object.keys(zip.files)) {
+			if (zip.files[path].dir) continue;
+			byTail.set(path.toLowerCase(), path);
+			const tail = path.split('/').slice(-2).join('/').toLowerCase();
+			byTail.set(tail, path);
+		}
+		filesInZip = byTail;
+	}
+
+	async function onPick(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const selected = input.files?.[0] ?? null;
+		file = selected;
+		if (!selected) return;
+		running = true;
+		try {
+			await readZip(selected);
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+			rows = [];
+		} finally {
+			running = false;
+		}
+	}
+
+	function zipPathFor(row: StravaManifestRow): string | null {
+		if (!row.filePath) return null;
+		const wanted = row.filePath.toLowerCase();
+		return filesInZip.get(wanted) ?? filesInZip.get(wanted.split('/').slice(-2).join('/')) ?? null;
+	}
+
+	async function run() {
+		if (!file || !manifestCsv) return;
+		running = true;
+		error = null;
+		done = false;
+		written = 0;
+		existed = 0;
+		skipped = 0;
+		blocked = 0;
+		failed = 0;
+		processed = 0;
+		blockedDetail = [];
+		failures = [];
+
+		try {
+			const { default: JSZip } = await import('jszip');
+			const zip = await JSZip.loadAsync(file);
+			const queue = importable;
+
+			for (let start = 0, round = 0; start < queue.length; start += BATCH_SIZE, round += 1) {
+				if (round >= MAX_ROUNDS) {
+					error = `Stoppet etter ${MAX_ROUNDS} runder. ${processed} av ${queue.length} er behandlet — kjør igjen for resten.`;
+					return;
+				}
+
+				const batch = queue.slice(start, start + BATCH_SIZE);
+				const form = new FormData();
+				form.set('manifest', manifestCsv);
+				form.set('ids', JSON.stringify(batch.map((r) => r.id)));
+				if (paceReference) form.set('pr', paceReference);
+				if (dryRun) form.set('dryRun', 'true');
+
+				for (const row of batch) {
+					const path = zipPathFor(row);
+					if (!path) continue;
+					const blob = await zip.files[path].async('blob');
+					form.set(`file:${row.id}`, new File([blob], row.filePath ?? path));
+				}
+
+				const res = await fetch('/api/sensors/strava-import', { method: 'POST', body: form });
+				if (!res.ok) {
+					error = extractApiErrorMessage(res.status, await res.text());
+					return;
+				}
+				const data = await res.json();
+
+				// Tallene oppdateres per runde, ikke til slutt: 1019 aktiviteter tar
+				// tid, og en knapp som bare spinner ser ut som at den henger.
+				written += data.written ?? 0;
+				existed += data.existed ?? 0;
+				skipped += data.skipped ?? 0;
+				blocked += data.blocked ?? 0;
+				failed += data.failed ?? 0;
+				processed += batch.length;
+
+				for (const outcome of data.outcomes ?? []) {
+					if (outcome.status === 'blocked') {
+						const row = batch.find((r) => r.id === outcome.id);
+						blockedDetail.push({
+							id: outcome.id,
+							date: row?.dateText ?? '',
+							name: row?.name ?? null,
+							reason: outcome.findings?.map((f: { reason: string }) => f.reason).join(' · ') ?? ''
+						});
+					} else if (outcome.status === 'failed') {
+						failures.push({ id: outcome.id, error: outcome.error });
+					}
+				}
+			}
+			done = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			running = false;
+		}
+	}
+</script>
+
+<section class="card">
+	<h2>Importer Strava-arkiv</h2>
+	<p class="meta">
+		Engangsjobb som henter årene før Withings-kontoen begynte. Zipen pakkes ut i nettleseren
+		og sendes i porsjoner — den lastes aldri opp i sin helhet.
+	</p>
+
+	<input
+		type="file"
+		accept=".zip,application/zip"
+		disabled={running}
+		onchange={onPick}
+		data-track="strava-import:velg-zip"
+	/>
+
+	{#if rows.length > 0}
+		<p class="summary">
+			{rows.length} aktiviteter i manifestet, {total} kan importeres.
+			{#if rows.length - total > 0}
+				<span class="muted">
+					{rows.length - total} hoppes over (manuelle økter uten fil, eller ukjent sport).
+				</span>
+			{/if}
+		</p>
+
+		<div class="pr">
+			<p class="meta">
+				<strong>Din egen referanse.</strong> En distanse og en tid du faktisk har løpt. Uten den
+				er kontrollen mot for raske økter AV, og en sykkeltur merket «Run» går rett inn i
+				distanserekordene.
+			</p>
+			<div class="pr-fields">
+				<label>
+					Distanse (m)
+					<input
+						type="number"
+						bind:value={prDistance}
+						placeholder="10000"
+						disabled={running}
+						data-track="strava-import:pr-distanse"
+					/>
+				</label>
+				<label>
+					Tid (sekunder)
+					<input
+						type="number"
+						bind:value={prTime}
+						placeholder="3120"
+						disabled={running}
+						data-track="strava-import:pr-tid"
+					/>
+				</label>
+			</div>
+			{#if !paceReference}
+				<p class="warn">Uten referanse importeres alt uten tempo-kontroll.</p>
+			{/if}
+		</div>
+
+		<label class="dry">
+			<input
+				type="checkbox"
+				bind:checked={dryRun}
+				disabled={running}
+				data-track="strava-import:tørrkjoring"
+			/>
+			Tørrkjøring — dømmer og rapporterer uten å skrive
+		</label>
+
+		<div class="controls">
+			<Button disabled={running || total === 0} onClick={run}>
+				{running
+					? `Jobber… ${processed} av ${total}`
+					: dryRun
+						? 'Tørrkjør'
+						: `Importer ${total} økter`}
+			</Button>
+		</div>
+	{/if}
+
+	{#if error}
+		<p class="err">{error}</p>
+	{/if}
+
+	{#if done || (running && processed > 0)}
+		<p class="summary">
+			{#if dryRun}Tørrkjøring:{/if}
+			{written} skrevet · {existed} fantes fra før · {skipped} uten spor · {blocked} holdt ute
+			{#if failed > 0}
+				· {failed} feilet
+			{/if}
+		</p>
+	{/if}
+
+	{#if blockedDetail.length > 0}
+		<!-- **Blokkerte økter navngis.** «8 holdt ute» kan ikke handles på; datoen
+		     og tallene kan. Dette er øktene som ville blitt distanserekorder. -->
+		<details>
+			<summary>{blockedDetail.length} holdt ute av tempo-kontrollen</summary>
+			<ul class="detail">
+				{#each blockedDetail as item (item.id)}
+					<li>
+						<span class="date">{item.date}</span>
+						{item.name ?? ''}
+						<span class="muted">{item.reason}</span>
+					</li>
+				{/each}
+			</ul>
+			<p class="note">
+				Disse er antakelig feilmerket sport. Åpne dem i Strava, rett sporten der, og be om et
+				nytt arkiv — eller la dem stå ute: de er ikke løpeøkter.
+			</p>
+		</details>
+	{/if}
+
+	{#if failures.length > 0}
+		<details>
+			<summary>{failures.length} feilet</summary>
+			<ul class="detail">
+				{#each failures as item (item.id)}
+					<li><span class="date">{item.id}</span> <span class="muted">{item.error}</span></li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
+
+	{#if done && !dryRun && written > 0}
+		<p class="note">
+			Kjør <strong>Etterfyll øktanalyse</strong> og <strong>Reprojiser effort</strong> etterpå:
+			distanserekorder, sonefordeling og effort regnes av jobber som ikke ser de nye radene av
+			seg selv.
+		</p>
+	{/if}
+</section>
+
+<style>
+	.card {
+		background: var(--card-bg-subtle, #141414);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	h2 {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: var(--text-primary, #eee);
+		margin: 0;
+	}
+
+	.meta {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.5;
+	}
+
+	.summary {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--text-primary, #eee);
+		line-height: 1.5;
+	}
+
+	.muted {
+		color: var(--text-secondary, #aaa);
+	}
+
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.pr {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.6rem;
+		border: 1px solid var(--card-border, #242424);
+		border-radius: 10px;
+	}
+
+	.pr-fields {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+	}
+
+	.pr-fields label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		font-size: 0.78rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	.pr-fields input {
+		width: 8rem;
+		padding: 0.35rem 0.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--card-border, #242424);
+		background: var(--surface, #0e0e0e);
+		color: var(--text-primary, #eee);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.dry {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	details {
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	summary {
+		cursor: pointer;
+		color: var(--text-primary, #eee);
+	}
+
+	.detail {
+		list-style: none;
+		margin: 0.4rem 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		max-height: 18rem;
+		overflow-y: auto;
+	}
+
+	.detail li {
+		line-height: 1.4;
+	}
+
+	.date {
+		font-variant-numeric: tabular-nums;
+		color: var(--text-primary, #eee);
+	}
+
+	.note {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.5;
+	}
+
+	.err {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--danger, #e5484d);
+		line-height: 1.5;
+	}
+
+	.warn {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--warning, #f5a524);
+		line-height: 1.5;
+	}
+</style>

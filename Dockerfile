@@ -63,7 +63,7 @@ ENV PORT=3000
 # adapter-node defaulter til 512 kB. `/api/apps/upload` tar imot GPX-spor og
 # bilder fra Ekko på opptil 20 MB, og en 413 derfra ser i appen ut som at
 # opplastingen «bare feilet».
-ENV BODY_SIZE_LIMIT=25M
+ENV BODY_SIZE_LIMIT=100M
 # Traefik terminerer TLS, så appen ser http. Uten disse tror SvelteKit at
 # origin er http://<container> og avviser form actions med «Cross-site POST».
 ENV PROTOCOL_HEADER=x-forwarded-proto

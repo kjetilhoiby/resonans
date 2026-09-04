@@ -44,6 +44,7 @@
 	},
 	"dependencies": {
 		"@auth/sveltekit": "^1.11.1",
+		"@garmin/fitsdk": "^21.214.0",
 		"@mozilla/readability": "^0.5.0",
 		"@resvg/resvg-js": "^2.6.2",
 		"@types/node-cron": "^3.0.11",
