@@ -884,6 +884,48 @@ ble flyttet ut da det ble et eget fokusområde.
   Sammenligningen skjer på de **gulvede** spennene — uten det dyttes ethvert mål
   ut i en periode der vekta står stille.
 - Kroppssammensetning leses **alltid** gjennom `normalizeBodyComposition`.
+- **Vekthistorikken som dagsverdier leses gjennom `readWeightDays`**
+  (`$lib/server/health/weight-history.ts`). Flaten, milepælene og push-krydderet
+  deler den; skriv ikke en fjerde rå spørring mot vekt-rader.
+
+### Krydderet på veiingen
+
+Se `docs/changelog/2026-09-04-krydder-paa-veiingen.md`. Reglene rent i
+`$lib/domain/health/weight-nugget-rules.ts`, hentingen i
+`$lib/server/health/weight-nugget.ts`.
+
+- **Pushen sa «Veiing registrert / 94,2 kg» fram til september 2026** — tallet
+  brukeren nettopp leste av på vekta, gjentatt. Setningene som gir det mening lå
+  ferdig regnet i `weight-milestones.ts` og nådde aldri varselet.
+- **Ingen rekord regnes på nytt.** Krydderet LESER milepælsmotoren og rangerer
+  den for en push. Milepælene fikk `headline` (kortform, til en push-tittel som
+  iOS ellers kapper midt i tallet) og `all` (ukappet — kappet på
+  `MAX_MILESTONES` er en beslutning om et KORT, ikke om hva som er sant).
+- **Månedsoppgjøret er den ENE nye regelen, og det hører ikke blant milepælene.**
+  Et kort leses når som helst; «august ble ned 1,2 kg» er bare interessant de
+  første dagene etterpå. `MONTH_SUMMARY_WINDOW_DAYS` er 5, ikke «bare den 1.» —
+  en veiing hopper over dager, så en fast dato ville truffet annenhver måned.
+- **Begge ankrene ligger på et månedsSKIFTE**, ikke på den 1. og den 31.:
+  trenden er etterslepende, og måler man mellom to punkter med samme etterslep,
+  kansellerer det. Med den 1. som startanker dekker «august» i praksis
+  25. juli–25. august. Og det er trenden, ikke `weight-monthly.ts` sine snitt —
+  snitt mot snitt er forskjellen mellom to NIVÅER, som på en jevn nedgang gir
+  omtrent halvparten av bevegelsen GJENNOM måneden.
+- **Push-rangeringen er en annen enn kortets** (`PUSH_RANK`). Kortet leses når
+  brukeren åpner det, så der vinner den sterkeste rekorden; et varsel dytter seg
+  på deg, så der vinner det sjeldneste. Månedsoppgjøret fyrer fem dager i
+  måneden, «laveste snittvekt» kan fyre hver morgen i en nedgangsperiode.
+  `below-goal` er løftet av samme grunn — målvekta nås én gang, og
+  `goal-distance` ligger over atferdsmilepælene (motsatt av på kortet: i et
+  varsel OM en veiing sier «1,8 kg til målet» mer enn «27 av 30 dager»).
+- **Rekorden faller ikke bort når månedsoppgjøret tar tittelen** — den blir
+  andrelinja. `ECHOES` hindrer at andrelinja gjentar tittelen med andre ord.
+  **Vekta står alltid først i body-en:** et krydder uten tallet under er en
+  påstand brukeren ikke kan etterprøve mens hen står på badet.
+- Kjent rest: ingen bokføring av hva vi sa sist (økter har
+  `workout_notifications`, vekt har ingen tabell), så en tittel kan gjenta seg
+  gjennom en nedgangsperiode. Manuelle veiinger og HealthKit-backfillen gir
+  ingen push i det hele tatt — varslingen henger på Withings-synken.
 
 ### Slepende volum og sonesammensetning
 

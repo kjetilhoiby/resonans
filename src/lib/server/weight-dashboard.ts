@@ -1,17 +1,10 @@
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { and, asc, eq, gte } from 'drizzle-orm';
 import { osloDayKey } from '$lib/domain/oslo-time';
-import {
-	dailyWeights,
-	dayNumber,
-	type WeightDay
-} from '$lib/domain/health/weight-series';
+import { dayNumber, type WeightDay } from '$lib/domain/health/weight-series';
 import {
 	summarizeCompositionChange,
-	toWeightMeasurements,
 	type CompositionChangeSummary
 } from '$lib/domain/health/weight-measurements';
+import { readWeightDays, WEIGHT_HISTORY_DAYS } from '$lib/server/health/weight-history';
 import { buildWeightMilestones, type WeightMilestone } from '$lib/domain/health/weight-milestones';
 import type { WeightSwing } from '$lib/domain/health/weight-swings';
 import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/metric-settings';
@@ -34,15 +27,10 @@ import { dailyWaist, summarizeWaist, type WaistDay, type WaistStatus } from '$li
  */
 
 /**
- * Leservinduet. Femten år dekker en Withings-konto fra da de første vektene kom.
- *
- * Var ti år, som virket som «praktisk talt alt» — men et tak i årstall er en påstand
- * om når brukeren begynte, og den blir feil. Med backfill til 2014 ville ti år fra
- * 2026 kuttet de tre første årene på nytt, i et annet lag enn det forrige kappet.
- * Femten år er ikke prinsipielt bedre, bare romsligere enn noen konto rekker;
- * kostnaden er en `timestamp >=`-grense som Postgres bruker indeksen på uansett.
+ * Leservinduet. Bor på den delte leseren nå — se `weight-history.ts` for hvorfor
+ * det er femten år. Re-eksporteres her fordi flaten og testene leser det her.
  */
-export const MILESTONE_HISTORY_DAYS = 5475;
+export const MILESTONE_HISTORY_DAYS = WEIGHT_HISTORY_DAYS;
 
 /**
  * Tak på antall punkter grafen får — ikke på hvor langt tilbake den ser.
@@ -105,26 +93,13 @@ export interface WeightDashboardPayload {
 }
 
 export async function loadWeightDashboardData(userId: string): Promise<WeightDashboardPayload> {
-	const since = new Date(Date.now() - MILESTONE_HISTORY_DAYS * 86_400_000);
-
-	const [rows, metricSettings, waistRows, bodyProfile] = await Promise.all([
-		db
-			.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'weight'),
-					gte(sensorEvents.timestamp, since)
-				)
-			)
-			.orderBy(asc(sensorEvents.timestamp)),
+	const [allDays, metricSettings, waistRows, bodyProfile] = await Promise.all([
+		readWeightDays(userId),
 		readHealthMetricSettings(userId),
 		listWaistMeasurements(userId),
 		readBodyProfile(userId)
 	]);
 
-	const allDays = dailyWeights(toWeightMeasurements(rows));
 	const today = osloDayKey(new Date());
 	const goalKg = readMetricNumber(metricSettings, 'weight', 'goal');
 

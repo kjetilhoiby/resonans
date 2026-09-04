@@ -72,3 +72,16 @@ export function kg2(value: number): string {
 	const abs = Math.abs(value);
 	return (abs < 1 ? abs.toFixed(2) : abs.toFixed(1)).replace('.', ',');
 }
+
+/** «mars 2025» — måned og år, til korte overskrifter der hele datoen er for mye. */
+export function formatMonthYear(iso: string): string {
+	const [year, month] = iso.split('-').map(Number);
+	return `${MONTHS[month - 1]} ${year}`;
+}
+
+/** «August» — månedsnavnet alene, med stor forbokstav. Tar `YYYY-MM` eller `YYYY-MM-DD`. */
+export function formatMonthName(iso: string): string {
+	const month = Number(iso.split('-')[1]);
+	const name = MONTHS[month - 1];
+	return name.charAt(0).toUpperCase() + name.slice(1);
+}

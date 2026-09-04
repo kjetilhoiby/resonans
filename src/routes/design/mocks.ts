@@ -1983,6 +1983,7 @@ export const weightMilestones = [
 		kind: 'lowest-trend' as const,
 		sentence:
 			'Snittvekta har ikke vært lavere enn 81,6 kg siden 14. mars 2025 — 1 år og 5 måneder tilbake.',
+		headline: 'Laveste snittvekt siden mars 2025',
 		tone: 'positiv' as const,
 		basis: 'trend' as const,
 		sinceDate: '2025-03-14',
@@ -1991,6 +1992,7 @@ export const weightMilestones = [
 	{
 		kind: 'largest-drop' as const,
 		sentence: 'Ned 2,3 kg på 90 dager — den bratteste 90-dagersperioden vi har målt.',
+		headline: 'Ned 2,3 kg på 90 dager',
 		tone: 'positiv' as const,
 		basis: 'trend' as const,
 		longestGapDays: 4
@@ -1998,6 +2000,7 @@ export const weightMilestones = [
 	{
 		kind: 'weigh-in-streak' as const,
 		sentence: '11 dager på rad med veiing.',
+		headline: '11 dager på rad med veiing',
 		tone: 'positiv' as const,
 		basis: 'atferd' as const
 	}
@@ -2009,6 +2012,7 @@ export const weightMilestonesQualified = [
 		kind: 'largest-drop' as const,
 		sentence:
 			'Ned 1,4 kg på 30 dager — den bratteste 30-dagersperioden siden 2. februar 2026. Men 0,9 av de 1,4 kiloene er muskel.',
+		headline: 'Ned 1,4 kg på 30 dager',
 		tone: 'nøytral' as const,
 		basis: 'trend' as const,
 		sinceDate: '2026-02-02',
@@ -2017,6 +2021,7 @@ export const weightMilestonesQualified = [
 	{
 		kind: 'goal-distance' as const,
 		sentence: '1,6 kg til målet på 80,0 kg.',
+		headline: '1,6 kg til målet på 80,0 kg',
 		tone: 'nøytral' as const,
 		basis: 'trend' as const
 	}
@@ -2028,6 +2033,7 @@ export const weightMilestonesStale = [
 		kind: 'stale' as const,
 		sentence:
 			'Siste veiing var 16. juli 2026, 20 dager siden. Rekordene venter på en ferskere måling.',
+		headline: 'Siste veiing var for 20 dager siden',
 		tone: 'nøytral' as const,
 		basis: 'atferd' as const
 	}
