@@ -15,6 +15,7 @@ import { processFilmContextCollectJob } from '$lib/server/film-context-collector
 import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
+import { describeErrorForStorage } from '$lib/domain/error-text';
 
 export type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
 
@@ -868,7 +869,10 @@ export async function processBackgroundJobById(
 
 		return { claimed: true, completed: true, result };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		// Kappes ved SKRIVING. En drizzle-feil på et bulk-insert bærer hele SQL-en
+		// og hver parameter — 780 KB målt i prod. Se $lib/domain/error-text.
+		const message = describeErrorForStorage(error);
+		const rawErrorLength = error instanceof Error ? error.message.length : String(error).length;
 		const attempts = Number(job.attempts ?? 1);
 		const maxAttempts = Number(job.max_attempts ?? 3);
 		const shouldRetry = attempts < maxAttempts;
@@ -894,6 +898,9 @@ export async function processBackgroundJobById(
 			maxAttempts,
 			willRetry: shouldRetry,
 			error: message,
+			// Den rå lengden hører HER, ikke i den lagrede teksten: et variabelt
+			// kappemerke ville gjort errorFingerprint ubrukelig igjen.
+			rawErrorLength,
 			workerId
 		});
 
@@ -1033,7 +1040,9 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 
 			completed += 1;
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			// Se catch-blokka i processBackgroundJobById: kappes ved skriving.
+			const message = describeErrorForStorage(error);
+			const rawErrorLength = error instanceof Error ? error.message.length : String(error).length;
 			const attempts = Number(job.attempts ?? 1);
 			const maxAttempts = Number(job.max_attempts ?? 3);
 			const shouldRetry = attempts < maxAttempts;
@@ -1073,6 +1082,7 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 				totalDurationMs,
 				willRetry: shouldRetry,
 				error: message,
+				rawErrorLength,
 				workerId
 			});
 		}
