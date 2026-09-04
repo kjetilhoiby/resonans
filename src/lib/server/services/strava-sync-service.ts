@@ -297,7 +297,12 @@ export async function pushSession(input: PushSessionInput): Promise<{ pushed: bo
 /**
  * Løser ut ventende opplastinger ved å polle Strava én gang per rad. Kalles
  * lazy fra status-endepunktet (ekko poller status i Innstillinger), slik at vi
- * slipper å blokkere opplastingssvaret med 30 s polling i en serverless-funksjon.
+ * slipper å blokkere opplastingssvaret med 30 s polling.
+ *
+ * NB: begrunnelsen sto tidligere som «i en serverless-funksjon». Den er
+ * foreldet — vi kjører i en container — men designet er uendret riktig av en
+ * annen grunn: et opplastingssvar skal ikke vente på en tredjepart, og
+ * SIGTERM ved redeploy ville uansett kappet en 30-sekunders polling.
  */
 export async function resolvePendingUploads(userId: string): Promise<void> {
 	const pending = await db.query.stravaUploads.findMany({

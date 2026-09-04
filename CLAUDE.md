@@ -196,6 +196,11 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
   - Svaret sier HVOR man skal se, ikke HVA som sto der. Den uredigerte meldingen
     krever fortsatt legitimasjon, og det er grensa som gjør endepunktet
     forsvarlig å ha åpent.
+  - **Den implisitte «nå» har 5 s slakk oppover** (`NOW_SLACK_MS`). Vinduet
+    beregnes i Node, radene stemples av Postgres — uten slakk faller en rad
+    skrevet et øyeblikk senere utenfor, og «siste time» mangler den ferskeste
+    målingen. Et EKSPLISITT `until` er et historisk spørsmål og respekteres
+    presis. Fanget av en flakete test: 25 skrevne rader ble lest som 24.
 - **`host_samples` måler VERTEN hvert minutt** (`$lib/domain/host-metrics.ts`,
   samplet i cron-dispatcherens tikk, eksponert på `/api/diagnostikk`). Se
   `docs/changelog/2026-09-04-vertsmaaling.md`.
@@ -248,9 +253,27 @@ Søk etter `[500]` i containerloggen — eller over
 `GET /api/admin/logs?grep=[500]`.
 
 **Chat-ytelse:** hver melding logger én `[chat-perf]`-linje (kontekstbyggingen
-fram til første modellkall, tyngste fase først). Kontekstblokkene hentes
-parallelt — se `docs/changelog/2026-09-02-chat-kontekst-parallelt.md` for
-lesenøkkelen (`wall` mot `sum`) før du optimaliserer noe.
+fram til første modellkall, tyngste fase først) OG lagrer en rad i
+`chat_perf_samples`. Kontekstblokkene hentes parallelt — se
+`docs/changelog/2026-09-02-chat-kontekst-parallelt.md` for lesenøkkelen
+(`wall` mot `sum`) før du optimaliserer noe.
+
+- **Aggregatet ligger på `/api/diagnostikk` som `chat`** — persentiler per
+  fase, aldri snitt, med dommen i ord. Se
+  `docs/changelog/2026-09-04-chat-perf-lagret.md`.
+- **Logglinja er for ÉN melding, tabellen for mønsteret.** Ringbufferen tømmes
+  ved hver restart, så linja alene var et vindu på noen timer bak
+  admin-secret — og ble aldri lest.
+- **Median OG maks per fase, fordi de er ulike problemer.** Lav median med høy
+  maks er en utligger å forstå; høy median er arbeid å fjerne. Bare det andre
+  er en cache-kandidat.
+- **`wall / sum` nær 1 betyr at fasene i praksis kjører etter hverandre**, og
+  da er svaret å faktisk starte dem parallelt — ikke å cache. Dommen sier det,
+  så ingen cacher seg forbi et rekkefølgeproblem.
+- Dommen holdes tilbake under 20 målinger: tallene sies, mønsteret ikke.
+- **Kodebasen har ikke én in-process cache.** Det var rasjonelt under
+  serverless (kald invokasjon hver gang) og er den største uutnyttede spaken på
+  en container — men mål før du cacher. Denne tabellen er målingen.
 
 **Loggene kan leses over API** (`GET /api/admin/logs?grep=chat-perf&limit=100`,
 admin-gatet): prosessen holder en ringbuffer over egne logglinjer

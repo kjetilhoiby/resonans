@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_WINDOW_MINUTES,
 	MAX_WINDOW_MINUTES,
+	NOW_SLACK_MS,
 	resolveDiagnosticsWindow,
 	summarizeCronRuns,
 	summarizeJobCounts,
@@ -71,9 +72,25 @@ describe('resolveDiagnosticsWindow', () => {
 	it('default er en time bakover fra nå', () => {
 		const w = resolveDiagnosticsWindow({}, NOW);
 		expect(w.minutes).toBe(DEFAULT_WINDOW_MINUTES);
-		expect(w.toMs).toBe(NOW.getTime());
 		expect(w.fromMs).toBe(NOW.getTime() - 60 * 60_000);
 		expect(w.clamped).toBe(false);
+	});
+
+	// Vinduet beregnes i Node, radene stemples av Postgres. Uten slakk faller
+	// en rad skrevet et øyeblikk senere utenfor, og «siste time» mangler den
+	// ferskeste målingen. Fanget av en flakete test: 25 rader ble lest som 24.
+	it('gir den implisitte «nå» slakk oppover', () => {
+		const w = resolveDiagnosticsWindow({}, NOW);
+		expect(w.toMs).toBe(NOW.getTime() + NOW_SLACK_MS);
+		// Lengden er fortsatt ærlig: 60 minutter fra ankeret, ikke 60 + slakk.
+		expect(w.toMs - w.fromMs).toBe(60 * 60_000 + NOW_SLACK_MS);
+	});
+
+	// Et historisk spørsmål må være reproduserbart, så et oppgitt until
+	// respekteres presis — ingen slakk.
+	it('respekterer et eksplisitt until presis', () => {
+		const w = resolveDiagnosticsWindow({ until: '2026-09-03T13:00:00Z', minutes: '30' }, NOW);
+		expect(new Date(w.toMs).toISOString()).toBe('2026-09-03T13:00:00.000Z');
 	});
 
 	it('until flytter vinduet bakover i tid — «hva skjedde 12:48 i går»', () => {
@@ -96,7 +113,11 @@ describe('resolveDiagnosticsWindow', () => {
 		for (const minutes of ['', 'tjue', '-5', '0', null]) {
 			expect(resolveDiagnosticsWindow({ minutes }, NOW).minutes).toBe(DEFAULT_WINDOW_MINUTES);
 		}
-		expect(resolveDiagnosticsWindow({ until: 'i går' }, NOW).toMs).toBe(NOW.getTime());
+		// Et utolkbart until faller til «nå», altså MED slakk — det er en
+		// implisitt nå-spørring, ikke et historisk spørsmål.
+		expect(resolveDiagnosticsWindow({ until: 'i går' }, NOW).toMs).toBe(
+			NOW.getTime() + NOW_SLACK_MS
+		);
 	});
 
 	it('clamped er false når brukeren ikke ba om for mye', () => {
