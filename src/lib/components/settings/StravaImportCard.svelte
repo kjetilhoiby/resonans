@@ -383,6 +383,16 @@
 							{timeSet ? referencePace : 'Dra for å sette tiden'}
 						</span>
 					</div>
+					<!--
+						Endene og steglengden står OVER slideren, ikke under.
+						Hånda dekker alt under en slider mens man drar — det er
+						nettopp da man trenger å se hva båndet går fra og til.
+					-->
+					<div class="pr-ends">
+						<span>{formatSeconds(sliderRange.min)}</span>
+						<span class="muted">{sliderRange.step} s per steg</span>
+						<span>{formatSeconds(sliderRange.max)}</span>
+					</div>
 					<input
 						type="range"
 						min={sliderRange.min}
@@ -398,11 +408,6 @@
 						}}
 						data-track="strava-import:pr-tid"
 					/>
-					<div class="pr-ends">
-						<span>{formatSeconds(sliderRange.min)}</span>
-						<span class="muted">{sliderRange.step} s per steg</span>
-						<span>{formatSeconds(sliderRange.max)}</span>
-					</div>
 				</div>
 			{/if}
 
@@ -592,11 +597,17 @@
 		gap: 0.6rem;
 	}
 
+	/*
+	 * 0,82rem er `/settings/sources` sin egen konvensjon for en feltlabel
+	 * (`.field label` der). 0,78rem gjorde den til kortets minste tekst, rett
+	 * over kontrollen man må røre først — den målte 7,93:1 mot kortet, altså
+	 * godt innenfor kravet, men lest som mindre viktig enn den er.
+	 */
 	.pr-fields label {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		font-size: 0.78rem;
+		gap: 0.25rem;
+		font-size: 0.82rem;
 		color: var(--text-secondary, #aaa);
 	}
 

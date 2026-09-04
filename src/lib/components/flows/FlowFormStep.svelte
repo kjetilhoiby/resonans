@@ -155,6 +155,14 @@
 						/>
 					</div>
 				{:else}
+				<!--
+					Hjelpeteksten står OVER slideren. Den sier hva verdien BETYR
+					(«elendig» … «frisk» i sykeinnsjekken), og hånda dekker alt under
+					en slider mens man drar — altså nettopp mens den endrer seg.
+				-->
+				{#if field.helperLabels && field.helperLabels[sliderVal] !== undefined}
+					<p class="fs-slider-helper">{field.helperLabels[sliderVal]}</p>
+				{/if}
 				<div class="fs-slider-wrap">
 					<input
 						type="range"
@@ -169,9 +177,6 @@
 					/>
 					<span class="fs-slider-val">{sliderVal}</span>
 				</div>
-				{#if field.helperLabels && field.helperLabels[sliderVal] !== undefined}
-					<p class="fs-slider-helper">{field.helperLabels[sliderVal]}</p>
-				{/if}
 				{/if}
 			{:else if field.type === 'multiselect'}
 				{@const groups = field.optionGroupsFn ? field.optionGroupsFn(flowData) : null}

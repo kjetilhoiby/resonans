@@ -191,6 +191,27 @@
 		/>
 	</div>
 
+	{#if headline}
+		<p class="headline">{headline}</p>
+	{/if}
+
+	<CycleChart
+		{series}
+		cycle="year"
+		accent={WEIGHT_ACCENT}
+		unit="kg"
+		decimals={1}
+		minSpan={mode === 'change' ? 2 : 3}
+		zeroLine={mode === 'change'}
+	/>
+
+	<!--
+		Nullpunkt-slideren står UNDER grafen, ikke over.
+		Grafen er tilbakemeldingen: man drar i nullpunktet og ser kurvene flytte
+		seg. Lå slideren over, dekket hånda nettopp det man drar for å se — og
+		selve verdien («1. oktober») ligger like over slideren, der den er
+		lesbar mens tommelen ligger på.
+	-->
 	{#if mode === 'change'}
 		<div class="anchor">
 			<label class="anchor-row" for="nullpunkt">
@@ -211,20 +232,6 @@
 			/>
 		</div>
 	{/if}
-
-	{#if headline}
-		<p class="headline">{headline}</p>
-	{/if}
-
-	<CycleChart
-		{series}
-		cycle="year"
-		accent={WEIGHT_ACCENT}
-		unit="kg"
-		decimals={1}
-		minSpan={mode === 'change' ? 2 : 3}
-		zeroLine={mode === 'change'}
-	/>
 
 	<p class="note">
 		{#if mode === 'change' && anchorDay > 0}
