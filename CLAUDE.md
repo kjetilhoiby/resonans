@@ -177,8 +177,25 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
     exception-tekst; den andre ser harmløs ut og er verre — SB1-synken legger
     `accountNames` der. Legger du til et felt i tabellen, er standarden at det
     IKKE vises.
-  - Svaret sier HVOR man skal se, ikke HVA som sto der. Meldingen krever fortsatt
-    legitimasjon, og det er grensa som gjør endepunktet forsvarlig å ha åpent.
+  - **Jobbrader er MED** (type, status, forsøk, tidsstempler, `runningForMinutes`,
+    `stuck`). Første utgave ga bare tellinger, og `running: 13` uten å si hvilke
+    eller hvor lenge er en observasjon man ikke kan handle på. Typenavnene er
+    maskinnavn (`sparebank1_historical_sync`, `checklist_autocheck`) og bærer
+    ingen brukerdata. `payload`, `result` og `userId` gjør det, og er ute.
+  - **Feiltekst er som standard bare et FINGERAVTRYKK** (FNV-1a) pluss lengde,
+    som svarer på «samme feil som sist?» uten å røpe noe.
+    `DIAGNOSTICS_OPEN_ERRORS=true` skrur på redigert tekst.
+    **Redaktøren er en denylist, og denylister lekker** — den fanger
+    Postgres-constraintverdier (`Key (email)=(…)`), e-poster, sifferrekker,
+    URL-spørrestrenger og alt etter `DETAIL:`, men et kontonavn i klartekst har
+    ingen form å kjenne igjen. Derfor er gaten AV som standard.
+    Constraint-NAVNET beholdes med vilje: det er nyttig og trygt.
+  - Rå feiltekst kan ikke åpnes, og grunnen er konkret: **Postgres bygger verdien
+    inn i meldingen** ved brudd på en unik constraint, og skjemaet har unike
+    constraints på `email` og på `(userId, domain, fingerprint)`.
+  - Svaret sier HVOR man skal se, ikke HVA som sto der. Den uredigerte meldingen
+    krever fortsatt legitimasjon, og det er grensa som gjør endepunktet
+    forsvarlig å ha åpent.
 - `.github/workflows/watchdog.yml` er det UAVHENGIGE øyet: monitoreringen
   dispatches av cron-klokka den overvåker, så en død dispatcher kan ikke varsle
   om seg selv. Vakthunden leser `clock`-pulsen fra uautentisert `/api/health`

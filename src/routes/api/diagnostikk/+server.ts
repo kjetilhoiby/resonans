@@ -15,17 +15,24 @@ import { loadDiagnostics } from '$lib/server/diagnostics';
  *
  * **Hva den IKKE gir**, og hvorfor grensa går der:
  *
- * - Ingen feiltekst, intet resultatsammendrag. `cron_executions.error` er rå
- *   exception-tekst og `resultSummary` bærer brukerdata (SB1-synken legger
- *   kontonavn der). Utvelgelsen er en HVITELISTE i
- *   `$lib/domain/diagnostics.ts`, testet — ikke en sletting her.
- * - Ingen jobbrader, bare tellinger per status.
+ * - Intet resultatsammendrag, ingen payload. `resultSummary` bærer brukerdata
+ *   (SB1-synken legger kontonavn der) og `background_jobs.payload` har
+ *   kontoreferanser. Utvelgelsen er en HVITELISTE i
+ *   `$lib/domain/diagnostics.ts` og `diagnostics-jobs.ts`, testet — ikke en
+ *   sletting her.
+ * - Feiltekst bare som FINGERAVTRYKK som standard («samme feil som sist?»).
+ *   Redigert tekst krever `DIAGNOSTICS_OPEN_ERRORS=true`: Postgres bygger
+ *   verdien inn i meldingen ved constraint-brudd (`Key (email)=(…)`), og
+ *   redaktøren er en denylist som fanger kjente former, ikke alle.
  * - Ingen logglinjer. `/api/admin/logs` forblir admin-gatet: ringbufferen tar
  *   imot hva som helst, inkludert `[500]`-linjer med brukerinnhold, og et
- *   åpent API over den kan ikke gjøres trygt ved utvelgelse.
+ *   åpent API over den kan ikke gjøres trygt ved utvelgelse — det finnes
+ *   ingen felt å velge mellom.
  *
- * Svaret sier altså HVOR man skal se, ikke HVA som sto der. Det er nok til å
- * finne jobben som spiste maskinen; meldingen krever fortsatt legitimasjon.
+ * Jobbrader er derimot MED (type, status, forsøk, tidsstempler, `stuck`).
+ * Første utgave ga bare tellinger, og `running: 13` uten å si hvilke eller
+ * hvor lenge er en observasjon man ikke kan handle på. Typenavnene er
+ * maskinnavn og bærer ingen brukerdata.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	const window = resolveDiagnosticsWindow({
