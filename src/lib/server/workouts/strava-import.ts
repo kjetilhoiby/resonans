@@ -28,7 +28,7 @@ import {
 	MAX_STORED_TRACK_POINTS,
 	type ParsedWorkout
 } from '$lib/server/integrations/dropbox-sync';
-import { parseFit, FitParseError } from '$lib/server/workouts/fit-parse';
+import { parseFit, describeFitContents, FitParseError } from '$lib/server/workouts/fit-parse';
 import {
 	skipReasonFor,
 	stripGzip,
@@ -84,7 +84,13 @@ export type ImportFile = {
 export type ImportOutcome =
 	| { status: 'written'; id: string; eventId: string; timestamp: Date }
 	| { status: 'existed'; id: string }
-	| { status: 'skipped'; id: string; reason: SkipReason | 'ingen-fil-i-batch' | 'ingen-spor' }
+	| {
+			status: 'skipped';
+			id: string;
+			reason: SkipReason | 'ingen-fil-i-batch' | 'ingen-spor';
+			/** Hva fila inneholdt, når grunnen er `ingen-spor`. */
+			detail?: string;
+	  }
 	| { status: 'blocked'; id: string; findings: TriageFinding[] }
 	| { status: 'failed'; id: string; error: string };
 
@@ -158,15 +164,40 @@ export async function findAlreadyImported(sensorId: string, ids: string[]): Prom
 	return new Set(rows.map((r) => r.strava_id).filter((v): v is string => typeof v === 'string'));
 }
 
+export type DecodedFile = {
+	workout: ParsedWorkout | null;
+	/**
+	 * Hvorfor det ikke ble noe, når `workout` er null.
+	 *
+	 * «ingen brukbart spor» alene kollapset tre ulike tilstander til ett ord, og
+	 * rapporten kunne derfor ikke si om det var dataene eller parseren. Nå sier
+	 * den hva fila FAKTISK inneholdt.
+	 */
+	detail: string | null;
+};
+
 /** Pakker ut `.gz` og velger parser på endelsen under. */
-export function decodeWorkoutFile(filePath: string, bytes: Uint8Array): ParsedWorkout | null {
+export function decodeWorkoutFile(filePath: string, bytes: Uint8Array): DecodedFile {
 	const { path, gzipped } = stripGzip(filePath);
 	const raw = gzipped ? new Uint8Array(gunzipSync(bytes)) : bytes;
 
-	if (path.toLowerCase().endsWith('.fit')) return parseFit(raw);
+	if (path.toLowerCase().endsWith('.fit')) {
+		const { workout, contents } = parseFit(raw);
+		return { workout, detail: workout ? null : describeFitContents(contents) };
+	}
 
 	// GPX og TCX er tekst. `parseWorkoutFile` velger mellom dem på endelsen.
-	return parseWorkoutFile(path, new TextDecoder().decode(raw));
+	const workout = parseWorkoutFile(path, new TextDecoder().decode(raw));
+	if (workout) return { workout, detail: null };
+
+	// GPX/TCX-parserne rapporterer ikke hvorfor, så vi teller punktene selv —
+	// et tall skiller «tom fil» fra «fil med punkter vi ikke leste».
+	const text = new TextDecoder().decode(raw);
+	const points = (text.match(/<trkpt|<Trackpoint/gi) ?? []).length;
+	return {
+		workout: null,
+		detail: points === 0 ? 'ingen punkter i fila' : `${points} punkter i fila, men ingen med posisjon`
+	};
 }
 
 /**
@@ -225,9 +256,14 @@ export async function importStravaBatch(options: {
 		}
 
 		try {
-			const parsed = decodeWorkoutFile(row.filePath!, bytes);
+			const { workout: parsed, detail } = decodeWorkoutFile(row.filePath!, bytes);
 			if (!parsed) {
-				outcomes.push({ status: 'skipped', id: row.id, reason: 'ingen-spor' });
+				outcomes.push({
+					status: 'skipped',
+					id: row.id,
+					reason: 'ingen-spor',
+					detail: detail ?? undefined
+				});
 				continue;
 			}
 

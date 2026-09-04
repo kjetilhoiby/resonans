@@ -92,7 +92,17 @@
 	 */
 	let referenceUsed = $state<{ distanceMeters: number; seconds: number } | null>(null);
 	/** Hva triagen holdt ute, med tallene — «8 blokkert» kan ikke handles på. */
-	let blockedDetail = $state<Array<{ id: string; date: string; name: string | null; reason: string }>>([]);
+	let blockedDetail = $state<
+		Array<{
+			id: string;
+			date: string;
+			name: string | null;
+			/** Funnet som FAKTISK holdt raden ute. */
+			reason: string;
+			/** Øvrige funn på samme rad — kontekst, ikke grunnen. */
+			also: string[];
+		}>
+	>([]);
 	let failures = $state<Array<{ id: string; error: string }>>([]);
 	/**
 	 * Økter som ikke ga et spor, navngitt.
@@ -291,11 +301,19 @@
 				for (const outcome of data.outcomes ?? []) {
 					if (outcome.status === 'blocked') {
 						const row = batch.find((r) => r.id === outcome.id);
+						// **Bare for-rask-funnet er grunnen.** Panelet heter «holdt ute
+						// av tempo-kontrollen», og en rad kan ha flere funn — den ene
+						// i arkivet hadde også 79 % uten bevegelse. Slått sammen med
+						// ' · ' leste det som om begge holdt raden ute, og da kan man
+						// ikke se hvilken regel som faktisk slo til.
+						const findings: Array<{ axis: string; reason: string }> = outcome.findings ?? [];
+						const blocking = findings.filter((f) => f.axis === 'for-rask');
 						blockedDetail.push({
 							id: outcome.id,
 							date: row?.dateText ?? '',
 							name: row?.name ?? null,
-							reason: outcome.findings?.map((f: { reason: string }) => f.reason).join(' · ') ?? ''
+							reason: blocking.map((f) => f.reason).join(' · '),
+							also: findings.filter((f) => f.axis !== 'for-rask').map((f) => `${f.axis}: ${f.reason}`)
 						});
 					} else if (outcome.status === 'failed') {
 						failures.push({ id: outcome.id, error: outcome.error });
@@ -309,7 +327,9 @@
 							date: row?.dateText ?? '',
 							name: row?.name ?? null,
 							file: row?.filePath ?? null,
-							reason: outcome.reason
+							// Detaljen sier hva fila inneholdt. «ingen-spor» alene
+							// kunne ikke skille dataene fra parseren.
+							reason: outcome.detail ?? outcome.reason
 						});
 					}
 				}
@@ -490,6 +510,9 @@
 						<span class="date">{item.date}</span>
 						{item.name ?? ''}
 						<span class="muted">{item.reason}</span>
+						{#if item.also.length > 0}
+							<span class="muted">— også flagget: {item.also.join(' · ')}</span>
+						{/if}
 					</li>
 				{/each}
 			</ul>
