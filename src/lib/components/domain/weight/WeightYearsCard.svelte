@@ -141,14 +141,18 @@
 
 	const comparison = $derived(compareCurrentToPrevious(series));
 	const headline = $derived(
-		describeCycleComparison(comparison, {
-			unit: 'kg',
-			decimals: 1,
-			// Mindre er bedre for vekt. I endringsmodus sammenlignes to nedganger,
-			// og en større nedgang er også «foran» — samme regel dekker begge.
-			higherIsBetter: false,
-			previousNoun: 'i fjor'
-		})
+		describeCycleComparison(
+			comparison,
+			// Ordforrådet følger hva verdien ER, ikke hvilket kort den står på.
+			// Nivåmodus er en POSISJON: «2,4 kg under i fjor» sier hvor vekta
+			// ligger, mens «foran» ville lagt en dom på tallet. Endringsmodus
+			// sammenligner to nedganger, altså framdrift, og der er «foran» det
+			// presise ordet — «under» om et delta sier ikke om du har gått mer
+			// eller mindre ned.
+			mode === 'change'
+				? { unit: 'kg', decimals: 1, higherIsBetter: false, previousNoun: 'i fjor' }
+				: { unit: 'kg', decimals: 1, vocabulary: 'position', previousNoun: 'i fjor' }
+		)
 	);
 
 	const current = $derived(series.find((s) => s.isCurrent) ?? null);
