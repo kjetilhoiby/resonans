@@ -29,6 +29,7 @@
 		skipReasonFor,
 		type StravaManifestRow
 	} from '$lib/domain/health/strava-export';
+	import { describePaceReference } from '$lib/domain/health/import-triage';
 
 	/**
 	 * Aktiviteter per kall.
@@ -63,9 +64,27 @@
 	let blocked = $state(0);
 	let failed = $state(0);
 	let processed = $state(0);
+	/**
+	 * Referansen SERVEREN sier den brukte, ikke den klienten mente å sende.
+	 *
+	 * Feltene over kan se satt ut uten å være det (de gjorde nettopp det), og
+	 * en tempo-kontroll som ikke var på ser identisk ut med en som ikke fant
+	 * noe. Utfallet skal melde seg selv.
+	 */
+	let referenceUsed = $state<{ distanceMeters: number; seconds: number } | null>(null);
 	/** Hva triagen holdt ute, med tallene — «8 blokkert» kan ikke handles på. */
 	let blockedDetail = $state<Array<{ id: string; date: string; name: string | null; reason: string }>>([]);
 	let failures = $state<Array<{ id: string; error: string }>>([]);
+	/**
+	 * Økter som ikke ga et spor, navngitt.
+	 *
+	 * «6 uten spor» kan ikke granskes; datoen og filnavnet kan. Det er dessuten
+	 * den ene kategorien der en PARSER-feil ville skjult seg — en fil vi ikke
+	 * klarer å lese ser identisk ut med en fil som ikke har noe å lese.
+	 */
+	let skippedDetail = $state<
+		Array<{ id: string; date: string; name: string | null; file: string | null; reason: string }>
+	>([]);
 
 	const importable = $derived(rows.filter((r) => !skipReasonFor(r)));
 	const total = $derived(importable.length);
@@ -76,7 +95,7 @@
 		if (!Number.isFinite(meters) || !Number.isFinite(seconds) || meters <= 0 || seconds <= 0) {
 			return null;
 		}
-		return `${Math.round(meters)}:${Math.round(seconds)}`;
+		return { distanceMeters: Math.round(meters), seconds: Math.round(seconds) };
 	});
 
 	/**
@@ -160,6 +179,8 @@
 		processed = 0;
 		blockedDetail = [];
 		failures = [];
+		skippedDetail = [];
+		referenceUsed = null;
 
 		try {
 			const { default: JSZip } = await import('jszip');
@@ -176,7 +197,9 @@
 				const form = new FormData();
 				form.set('manifest', manifestCsv);
 				form.set('ids', JSON.stringify(batch.map((r) => r.id)));
-				if (paceReference) form.set('pr', paceReference);
+				if (paceReference) {
+					form.set('pr', `${paceReference.distanceMeters}:${paceReference.seconds}`);
+				}
 				if (dryRun) form.set('dryRun', 'true');
 
 				for (const row of batch) {
@@ -201,6 +224,7 @@
 				blocked += data.blocked ?? 0;
 				failed += data.failed ?? 0;
 				processed += batch.length;
+				referenceUsed = data.paceReferenceUsed ?? null;
 
 				for (const outcome of data.outcomes ?? []) {
 					if (outcome.status === 'blocked') {
@@ -213,6 +237,18 @@
 						});
 					} else if (outcome.status === 'failed') {
 						failures.push({ id: outcome.id, error: outcome.error });
+					} else if (outcome.status === 'skipped' && outcome.reason !== 'ingen-fil') {
+						// «ingen-fil» er de 100 manuelle øktene — forventet, og alt
+						// oppsummert over. Resten er de som HADDE en fil vi ikke fikk
+						// noe ut av, og bare de er verdt å se på.
+						const row = batch.find((r) => r.id === outcome.id);
+						skippedDetail.push({
+							id: outcome.id,
+							date: row?.dateText ?? '',
+							name: row?.name ?? null,
+							file: row?.filePath ?? null,
+							reason: outcome.reason
+						});
 					}
 				}
 			}
@@ -262,7 +298,7 @@
 					<input
 						type="number"
 						bind:value={prDistance}
-						placeholder="10000"
+						placeholder="meter"
 						disabled={running}
 						data-track="strava-import:pr-distanse"
 					/>
@@ -272,14 +308,31 @@
 					<input
 						type="number"
 						bind:value={prTime}
-						placeholder="3120"
+						placeholder="sekunder"
 						disabled={running}
 						data-track="strava-import:pr-tid"
 					/>
 				</label>
 			</div>
-			{#if !paceReference}
-				<p class="warn">Uten referanse importeres alt uten tempo-kontroll.</p>
+			<!--
+				Tilstanden sies med TALLENE, ikke bare med fravær av et varsel.
+				Placeholderne var «10000» og «3120» — altså nøyaktig verdiene
+				brukeren skal skrive — så tomme felt så utfylte ut, og det orange
+				varselet leste som en feil framfor som en beskrivelse. En
+				tørrkjøring mot hele arkivet ga «0 holdt ute» av den grunn.
+			-->
+			{#if paceReference}
+				<p class="ok">
+					Kontroll aktiv: {describePaceReference(paceReference)}. Økter merkbart raskere enn din
+					egen kurve holdes ute.
+				</p>
+			{:else}
+				<p class="warn">
+					Ingen referanse satt — alt importeres uten tempo-kontroll.
+					{#if prDistance !== '' || prTime !== ''}
+						Begge feltene må fylles.
+					{/if}
+				</p>
 			{/if}
 		</div>
 
@@ -311,9 +364,19 @@
 	{#if done || (running && processed > 0)}
 		<p class="summary">
 			{#if dryRun}Tørrkjøring:{/if}
-			{written} skrevet · {existed} fantes fra før · {skipped} uten spor · {blocked} holdt ute
+			{written}
+			{dryRun ? 'ville blitt skrevet' : 'skrevet'} · {existed} fantes fra før · {skipped} uten
+			spor · {blocked} holdt ute
 			{#if failed > 0}
 				· {failed} feilet
+			{/if}
+		</p>
+		<p class="note">
+			{#if referenceUsed}
+				Tempo-kontroll mot {describePaceReference(referenceUsed)}.
+			{:else}
+				<strong>Uten tempo-kontroll</strong> — «0 holdt ute» betyr her at ingenting ble
+				sjekket, ikke at ingenting var galt.
 			{/if}
 		</p>
 	{/if}
@@ -335,6 +398,25 @@
 			<p class="note">
 				Disse er antakelig feilmerket sport. Åpne dem i Strava, rett sporten der, og be om et
 				nytt arkiv — eller la dem stå ute: de er ikke løpeøkter.
+			</p>
+		</details>
+	{/if}
+
+	{#if skippedDetail.length > 0}
+		<details>
+			<summary>{skippedDetail.length} med fil, men uten brukbart spor</summary>
+			<ul class="detail">
+				{#each skippedDetail as item (item.id)}
+					<li>
+						<span class="date">{item.date}</span>
+						{item.name ?? ''}
+						<span class="muted">{item.file ?? ''} — {item.reason}</span>
+					</li>
+				{/each}
+			</ul>
+			<p class="note">
+				Fila fantes, men ga hverken spor eller pulskurve. Vanligvis en økt registrert uten
+				GPS. Er det mange, og de har GPS i Strava, er det parseren som svikter — ikke dataene.
 			</p>
 		</details>
 	{/if}
@@ -491,6 +573,13 @@
 		margin: 0;
 		font-size: 0.78rem;
 		color: var(--warning, #f5a524);
+		line-height: 1.5;
+	}
+
+	.ok {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--success, #46a758);
 		line-height: 1.5;
 	}
 </style>

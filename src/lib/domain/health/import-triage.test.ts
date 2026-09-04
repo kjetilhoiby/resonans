@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	describePaceReference,
 	MAX_RUN_SEC_PER_KM,
 	MIN_PACE_AXIS_METERS,
 	riegelSeconds,
@@ -210,5 +211,31 @@ describe('triageReport', () => {
 	it('bærer referansen så rapporten kan etterprøves', () => {
 		expect(triageReport([], { paceReference: PR }).paceReference).toEqual(PR);
 		expect(triageReport([]).paceReference).toBeNull();
+	});
+});
+
+describe('describePaceReference', () => {
+	it('sier runde kilometer som km', () => {
+		expect(describePaceReference({ distanceMeters: 10000, seconds: 3120 })).toBe('10 km på 52:00');
+	});
+
+	it('padder sekundene, så 52:05 ikke blir 52:5', () => {
+		expect(describePaceReference({ distanceMeters: 5000, seconds: 25 * 60 + 5 })).toBe(
+			'5 km på 25:05'
+		);
+	});
+
+	it('beholder meter for en distanse som ikke er runde kilometer', () => {
+		expect(describePaceReference({ distanceMeters: 3000, seconds: 900 })).toBe('3 km på 15:00');
+		expect(describePaceReference({ distanceMeters: 400, seconds: 75 })).toBe('400 m på 1:15');
+	});
+
+	it('bærer timer, så en maratonreferanse ikke blir «210:00»', () => {
+		expect(describePaceReference({ distanceMeters: 21097, seconds: 7200 })).toBe(
+			'21097 m på 2:00:00'
+		);
+		expect(describePaceReference({ distanceMeters: 42195, seconds: 3 * 3600 + 30 * 60 })).toBe(
+			'42195 m på 3:30:00'
+		);
 	});
 });
