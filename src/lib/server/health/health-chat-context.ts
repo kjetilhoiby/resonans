@@ -96,7 +96,12 @@ function toBriefingWeight(payload: Awaited<ReturnType<typeof loadWeightDashboard
 			weighIns: trend.coverage.weighIns,
 			firstWeighIn: trend.coverage.firstWeighIn,
 			daysSinceLatest: trend.coverage.daysSinceLatest
-		}
+		},
+		// Hel `WaistStatus` videre, ikke en utplukking: den forrige utgaven plukket
+		// seks felter ut av en payload som ALT bar `waist`, og livvidda falt på
+		// gulvet i oversettelsen. Chatten svarte da «vi har ikke historikk på
+		// livvidde her» og anslo den fra vekta med et populasjonstall.
+		waist: payload.waist
 	};
 }
 

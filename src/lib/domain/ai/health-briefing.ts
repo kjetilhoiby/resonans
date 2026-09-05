@@ -42,6 +42,12 @@ import { streakLabel, type StreakStatus, type StreakUnit } from '$lib/domain/str
 import type { TsbStatus } from '$lib/util/training-load';
 import { describeFramedGoals, type FramedGoal } from '$lib/domain/health/goal-horizon';
 import { formatMilestoneDate, formatShortDate, kg } from '$lib/domain/health/weight-text';
+import {
+	WAIST_NOISE_CM,
+	WAIST_FRESH_DAYS,
+	WHTR_REFERENCE,
+	type WaistStatus
+} from '$lib/domain/health/waist';
 
 /* ── Input: bare det briefingen faktisk leser ────────────────────────────── */
 
@@ -61,6 +67,24 @@ export interface BriefingWeight {
 	currentSentence: string | null;
 	goal: { goalKg: number; remainingKg: number | null; reached: boolean } | null;
 	coverage: { weighIns: number; firstWeighIn: string | null; daysSinceLatest: number | null };
+	/**
+	 * Livvidde — i VEKT-seksjonen, ikke i en egen.
+	 *
+	 * «Vekta står stille mens livvidda faller» er hele grunnen til at livvidde
+	 * måles, og den setningen kan bare formuleres av noen som ser begge tallene
+	 * samtidig. Det er samme begrunnelse som at livvidda tegnes i
+	 * `WeightTrendChart` framfor i sin egen graf: en modell som fikk dem i to
+	 * seksjoner ville lest dem som to saker.
+	 *
+	 * **`WaistStatus` gjenbrukes hel**, i motsetning til vekt og trening som får
+	 * sine egne flate former. De to formene finnes fordi dashboard-payloadene er
+	 * store; `WaistStatus` er alt lite og rent. Og en oversettelse er nettopp der
+	 * feltet ble borte sist: `toBriefingWeight` plukket seks felter ut av en
+	 * payload som også bar `waist`, så livvidda falt på gulvet uten at noe sa fra
+	 * — chatten svarte «vi har ikke historikk på livvidde her» om en bruker som
+	 * hadde flaten full av den.
+	 */
+	waist: WaistStatus | null;
 }
 
 export interface BriefingTraining {
@@ -171,6 +195,11 @@ function num(value: number): string {
 	return Number.isInteger(r) ? String(r) : r.toFixed(1).replace('.', ',');
 }
 
+/** Forholdstall med to desimaler — se `describeWaist` for hvorfor én er for få. */
+function ratio(value: number): string {
+	return value.toFixed(2).replace('.', ',');
+}
+
 /** «−1,2 kg» / «+0,4 kg». Fortegnet er hele poenget, så det skrives alltid. */
 function signedKg(value: number): string {
 	if (Math.abs(value) < 0.05) return '±0 kg';
@@ -243,6 +272,108 @@ export function describeWeight(w: BriefingWeight): string[] {
 		cov.push(`siste for ${w.coverage.daysSinceLatest} dager siden`);
 	}
 	if (cov.length > 0) lines.push(`Dekning: ${cov.join(', ')}`);
+
+	lines.push(...describeWaist(w.waist));
+
+	return lines;
+}
+
+/**
+ * Livvidde-linjene i VEKT-seksjonen.
+ *
+ * ## Hvorfor «ikke logget» får en linje
+ *
+ * Regelen ellers er at tomme rubrikker skal ut: en modell som ser mange
+ * «ukjent» begynner å gjette. Her er fraværet motsatt — det er nettopp fraværet
+ * som utløser gjetningen. Uten livvidde i konteksten svarte coachen «et grovt,
+ * praktisk anslag er ofte 8–12 cm på en sånn vektnedgang», altså et
+ * POPULASJONStall presentert midt i en samtale om brukerens egne kurver, og
+ * anbefalte deretter å begynne å måle — en funksjon appen alt har.
+ *
+ * Linja er derfor ikke en tom rubrikk, den er en fakta med et neste steg. Og
+ * den sier eksplisitt at livvidda ikke skal anslås fra vekta, siden det var
+ * nøyaktig feilen.
+ */
+export function describeWaist(waist: WaistStatus | null): string[] {
+	if (!waist || waist.measurements === 0) {
+		return [
+			'Livvidde: ikke logget. Den logges på Vekt-flaten — ikke anslå den fra vekta; et forholdstall mellom kilo og centimeter er et populasjonstall, ikke brukerens.'
+		];
+	}
+
+	const lines: string[] = [];
+
+	const head: string[] = [];
+	if (waist.trendCm !== null) head.push(`trend ${num(waist.trendCm)} cm`);
+	if (waist.latestCm !== null && waist.latestDate) {
+		// Rå måling ved siden av trenden, av samme grunn som for vekt: det er tallet
+		// brukeren leste av målebåndet.
+		head.push(
+			`siste måling ${num(waist.latestCm)} cm ${formatShortDate(waist.latestDate)}`
+		);
+	}
+	if (head.length > 0) lines.push(`Livvidde: ${head.join(', ')}`);
+
+	if (waist.trendCm === null && waist.measurementsUntilTrend > 0) {
+		lines.push(
+			`Ingen livviddetrend ennå — ${waist.measurementsUntilTrend} måling(er) til innenfor trendvinduet før den kan regnes.`
+		);
+	}
+
+	/**
+	 * Under støygulvet sier vi «uendret», aldri et tall.
+	 *
+	 * Målebåndet spriker 1–2 cm for utrent hånd, altså like mye som to måneders
+	 * framgang. Et tall under gulvet ville blitt lest som en bevegelse.
+	 */
+	const change = waist.change90d;
+	if (change.deltaCm !== null) {
+		if (change.withinNoise) {
+			lines.push(
+				`Livvidda er uendret siste 90 dager — endringen er under målebåndets egen usikkerhet på ${num(WAIST_NOISE_CM)} cm.`
+			);
+		} else {
+			const span = change.spanDays !== null ? `, målt over ${change.spanDays} dager` : '';
+			lines.push(
+				`Livvidde siste 90 dager: ${change.deltaCm < 0 ? '−' : '+'}${num(Math.abs(change.deltaCm))} cm på trenden${span}.`
+			);
+		}
+	}
+
+	/**
+	 * Forbeholdet står I setningen, ikke i en fotnote: vi måler livvidde og høyde,
+	 * og vi diagnostiserer ingenting.
+	 *
+	 * TO desimaler, ikke `num()`s ene. Forholdstallet sammenlignes med 0,5, så
+	 * 0,54 avrundet til «0,5» sletter nøyaktig forskjellen setningen handler om —
+	 * og gjør «over referansen» til «på referansen».
+	 */
+	if (waist.whtr !== null) {
+		lines.push(
+			`Midje/høyde ${ratio(waist.whtr)} — den vanlige tommelfingerregelen er under ${ratio(WHTR_REFERENCE)}. En tommelfingerregel, ikke en vurdering.`
+		);
+	} else if (waist.heightMissing) {
+		lines.push('Midje/høyde kan ikke regnes: høyde mangler i kroppsprofilen.');
+	}
+
+	/**
+	 * Alderen på målingen, og de to tersklene betyr ulike ting.
+	 *
+	 * `stale` sier at TRENDEN ikke beskriver nå; `fresh` sier om TALLET kan kalles
+	 * «nå» i det hele tatt. En livvidde fra i vår er ikke dagens, og en modell som
+	 * ikke får vite det sammenligner den med dagens vekt som om de var samtidige.
+	 */
+	if (waist.daysSinceLast !== null) {
+		if (waist.stale) {
+			lines.push(
+				`Siste livviddemåling er ${waist.daysSinceLast} dager gammel, så trenden beskriver ikke nå.`
+			);
+		} else if (!waist.fresh) {
+			lines.push(
+				`Siste livviddemåling er ${waist.daysSinceLast} dager gammel — eldre enn ${WAIST_FRESH_DAYS} dager, altså ikke et nå-tall.`
+			);
+		}
+	}
 
 	return lines;
 }
