@@ -92,8 +92,11 @@ livvidde og høyde; vi diagnostiserer ingenting.
   historikk («hvordan har livvidda utviklet seg siden april?») kan ikke hentes.
   Et `query_waist` — eller livvidde som en `queryType` på `query_weight` — er
   den naturlige neste veien.
-- **Ernæring er fortsatt ikke i briefingen.** `query_nutrition` finnes og sendes
-  alltid, men ingenting ber modellen om å bruke det i en vektsamtale.
+- ~~**Ernæring er fortsatt ikke i briefingen.** `query_nutrition` finnes og
+  sendes alltid, men ingenting ber modellen om å bruke det i en vektsamtale.~~
+  Rettet i `2026-09-05-ernaering-i-vektsamtalen.md` — verktøyet står nå i
+  verktøyvalget i helse-prompten. Briefingen selv er fortsatt uten ernæring, og
+  det er et bevisst valg (se det dokumentet).
 - Prosjektsjonen mot en målvekt («hvor mye faller livvidda mot 85 kg?») kan
   fortsatt ikke besvares fra data — den krever brukerens egen kg/cm-sammenheng
   over tid, og den finnes først når det er nok målinger.

@@ -721,6 +721,16 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
   `query_sensor_data`-beskrivelsen hva den *ikke* er til, oppdatere `DOMAIN_PROMPTS.health`,
   og sjekke at ordene brukeren faktisk skriver treffer `detectPromptFocusModules`
   («belastning», «pulsfall», «restitusjon» og «effort» gjorde det ikke).
+  **«Oppdatere prompten» betyr lista «Velg riktig verktøy», ikke en setning et sted i
+  den.** `query_nutrition` var nevnt i forbifarten og hadde sin egen blokk lenger nede,
+  men sto ikke i lista modellen skanner når den ruter — så en vektsamtale åpnet aldri
+  ernæringsloggen, og «hvorfor står vekta stille» ble besvart uten den halvdelen
+  brukeren kan gjøre noe med i morgen. Ramm inn punktet rundt MEKANISMEN, ikke rundt
+  emnet: en vektsamtale handler ikke om mat før noen sier det. Utvider du lista, må
+  «ett verktøy er nok»-linja utvides der den står — to instruksjoner mot hverandre
+  avgjøres av den mest konkrete. En vakt i `prompts/index.test.ts` krever at hvert
+  `query_*`-navn i helse-prompten har en modul i `src/lib/ai/tools/`. Se
+  `docs/changelog/2026-09-05-ernaering-i-vektsamtalen.md`.
 - Retningene er motsatte og må stå i beskrivelsen: VO2max og pulsfall oppsummeres av **beste**
   observasjon (begge forutsetter maksimal innsats), søvn/HRV/sovepuls av **siste natt** mot
   brukerens egen baseline. Vektendringer regnes alltid på trenden, aldri på to målinger.
