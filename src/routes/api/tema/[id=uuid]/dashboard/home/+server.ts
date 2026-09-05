@@ -14,7 +14,7 @@ import {
 } from '$lib/server/services/appliance-cycle';
 import { getChoreStats, listPendingChores } from '$lib/server/services/chore-service';
 import { getChildThemes } from '$lib/server/themes';
-import { buildRoomClimateSummaries } from '$lib/domain/home/room-climate';
+import { buildRoomClimateSummaries, buildOutdoorClimateSummary } from '$lib/domain/home/room-climate';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -140,13 +140,17 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				.limit(1500)
 		]);
 
-		climate = buildRoomClimateSummaries(
-			climateEvents.map((e) => ({
-				dataType: e.dataType,
-				timestamp: (e.timestamp as Date).toISOString(),
-				data: (e.data ?? {}) as Record<string, unknown>
-			}))
-		);
+		const mappedClimateEvents = climateEvents.map((e) => ({
+			dataType: e.dataType,
+			timestamp: (e.timestamp as Date).toISOString(),
+			data: (e.data ?? {}) as Record<string, unknown>
+		}));
+		climate = buildRoomClimateSummaries(mappedClimateEvents);
+		// Utetemperaturen er ikke et rom — den følger med Toshiba-avlesninger
+		// uansett hvilket fysisk rom varmepumpa står i. Egen serie, samme kort-
+		// form, så den bare blir enda et kort i grid-en («Ute») uten ny UI.
+		const outdoor = buildOutdoorClimateSummary(mappedClimateEvents);
+		if (outdoor) climate = [...climate, outdoor];
 
 		function mapEvent(e: typeof allEvents[number]) {
 			return {

@@ -52,6 +52,27 @@ endret seg. Én ovn i drift ville skrevet ~1440 rader/døgn. Rettet i
 `resonans-lab` (PR #229) med `reading_changed()` — sender bare når
 temperatur/måltemperatur/varmestatus faktisk er ulik siste SENDTE avlesning.
 
+### Fase 5: Utetemperatur som eget «Ute»-kort
+
+Toshiba-varmepumpa (`resonans-lab/ping/toshiba.py`, satt i drift 5. september
+2026) sender `outdoor_temperature_c` på samme `room_climate`-event som
+innetemperaturen — gratis, siden enheten selv rapporterer den. Uten en
+referanseverdi kan man ikke svare på «holdt rommet seg varmt» — bare på
+«rommet var 22°», som ikke sier noe om hvor kaldt det var ute samtidig.
+
+`buildOutdoorClimateSummary()` (samme fil) skanner ALLE `room_climate`-events
+(uansett rom) for `outdoor_temperature_c` og bygger én global serie — et
+bevisst valg: utetemperaturen er ikke en egenskap ved rommet varmepumpa
+tilfeldigvis henger i, den er en referanse for alle rom. Returnerer samme
+`RoomClimateSummary`-form som `buildRoomClimateSummaries()` (fuktighet, mål og
+varmestatus alltid `null`), så `HomeDashboard.svelte` trengte **ingen
+UI-endring** — «Ute» blir bare enda et kort i den eksisterende
+`{#each climate as c (c.room)}`-grid-en, og malen skjuler feltene som er
+`null` selv. 5 nye tester i `room-climate.test.ts`.
+
+`dashboard/home/+server.ts` bygger nå begge summariene fra samme mappede
+event-liste og slår sammen (`[...rooms, outdoor]`) før responsen sendes.
+
 ## Beslutninger
 
 - **Ingen ny undertema-infrastruktur.** Hjem-dashboardet er én flate der nye
@@ -77,6 +98,9 @@ temperatur/måltemperatur/varmestatus faktisk er ulik siste SENDTE avlesning.
 - `src/lib/server/sensor-event-access.test.ts`: fortsatt grønn — ingen ny rå
   lesing utenfor det eksisterende, begrunnede unntaket for
   `dashboard/home/+server.ts`.
-- Ikke verifisert visuelt mot ekte data i nettleser ennå (krever et deploy og
-  faktiske romklima-rader i prod-basen — Mill-ovnen «Erle» begynte å skrive
-  rader 5. september, så data finnes, men kortet er ikke sett i praksis).
+- **Fase 5 verifisert i prod-skjermbilder samme dag:** Toshiba-integrasjonen
+  overlevde et rate-limit-innslag (se `resonans-lab` PR-ene for `toshiba.py`),
+  og «Stua»/«Erle»-kortene viste ekte, bevegelige serier (22,0° → 23,0° på
+  Stua) før dette kortet ble bygget — dataflyten var alt bekreftet, bare
+  utetemperaturen manglet et sted å vises. `room-climate.test.ts`: 13 tester,
+  alle grønne.
