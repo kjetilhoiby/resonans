@@ -421,6 +421,17 @@ export interface HomeDashboardData {
 			} | null;
 		} | null;
 	}>;
+	climate: Array<{
+		room: string;
+		latest: {
+			timestamp: string;
+			temperatureC: number;
+			humidityPct: number | null;
+			targetTemperatureC: number | null;
+			heating: boolean | null;
+		};
+		series: Array<{ timestamp: string; temperatureC: number }>;
+	}>;
 }
 
 export interface VehicleDashboardData {
