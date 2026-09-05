@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('$lib/server/openai', async () => {
@@ -72,5 +73,35 @@ describe('buildModularSystemPrompt', () => {
 	it('returnerer en string med fornuftig lengde', () => {
 		const prompt = buildModularSystemPrompt(routing({ domains: ['health', 'economics', 'food'] }));
 		expect(prompt.length).toBeGreaterThan(BASE_PROMPT.length);
+	});
+});
+
+/**
+ * Et verktøy som finnes, men ikke er NEVNT i verktøyvalget, blir ikke valgt.
+ *
+ * `query_nutrition` var registrert og ble sendt med på hver melding, men sto ikke
+ * i «Velg riktig verktøy»-lista i helse-prompten — så en vektsamtale åpnet aldri
+ * ernæringsloggen, og «hvorfor står vekta stille» ble besvart uten den halvdelen
+ * av svaret brukeren kan gjøre noe med. Samme feilmodus som livvidde: alt fantes,
+ * ingenting pekte på det.
+ */
+describe('helse-prompten peker på verktøy som finnes', () => {
+	const queryTools = [...new Set(DOMAIN_PROMPTS.health.match(/query_[a-z_]+/g) ?? [])];
+
+	it('nevner query_nutrition i verktøyvalget', () => {
+		expect(queryTools).toContain('query_nutrition');
+	});
+
+	it('nevner alle undertema-verktøyene', () => {
+		for (const name of ['query_training', 'query_weight', 'query_sleep', 'query_egenfrekvens']) {
+			expect(queryTools).toContain(name);
+		}
+	});
+
+	it('nevner ingen query-verktøy som ikke har en modul', () => {
+		const missing = queryTools.filter(
+			(name) => !existsSync(`src/lib/ai/tools/${name.replace(/_/g, '-')}.ts`)
+		);
+		expect(missing).toEqual([]);
 	});
 });
