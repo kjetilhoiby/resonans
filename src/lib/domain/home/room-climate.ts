@@ -98,3 +98,42 @@ export function buildRoomClimateSummaries(events: RawSensorEvent[]): RoomClimate
 	summaries.sort((a, b) => a.room.localeCompare(b.room, 'nb'));
 	return summaries;
 }
+
+const OUTDOOR_LABEL = 'Ute';
+
+/**
+ * Utetemperatur følger med Toshiba-avlesninger (device.ac_outdoor_temperature,
+ * se resonans-lab/ping/toshiba.py) uansett hvilket ROM varmepumpa selv står i
+ * — «holder Stua seg varm» og «hvor kaldt var det ute» er to ulike spørsmål,
+ * og referanseverdien trengs for å vurdere ALLE rom, ikke bare Stua. Derfor en
+ * EGEN, global serie — ikke et felt på romkortet den tilfeldigvis kom inn med.
+ *
+ * Returnerer samme `RoomClimateSummary`-form som `buildRoomClimateSummaries`,
+ * så flaten kan rendre den som et vanlig klimakort («Ute») uten egen UI-kode —
+ * fuktighet/mål/varmer er alltid `null` her, og kortet skjuler dem selv.
+ */
+export function buildOutdoorClimateSummary(events: RawSensorEvent[]): RoomClimateSummary | null {
+	const readings: Array<{ timestamp: string; temperatureC: number }> = [];
+	for (const raw of events) {
+		if (!isRoomClimateEvent(raw)) continue;
+		const outdoorTemperatureC = num(raw.data?.outdoor_temperature_c);
+		if (outdoorTemperatureC === null) continue;
+		readings.push({ timestamp: raw.timestamp, temperatureC: outdoorTemperatureC });
+	}
+	if (readings.length === 0) return null;
+
+	readings.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+	const latest = readings[readings.length - 1];
+
+	return {
+		room: OUTDOOR_LABEL,
+		latest: {
+			timestamp: latest.timestamp,
+			temperatureC: latest.temperatureC,
+			humidityPct: null,
+			targetTemperatureC: null,
+			heating: null
+		},
+		series: readings.slice(-MAX_SERIES_POINTS)
+	};
+}
