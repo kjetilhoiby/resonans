@@ -2425,6 +2425,23 @@ rent i `$lib/domain/health/workout-assessment-context.ts`, hentingen i
 
 Se `docs/changelog/2026-08-07-withings-backfill-og-slettefella.md`.
 
+- **`startdate`/`enddate` i `getmeas` filtrerer på MÅLINGENS dato, ikke på når
+  Withings fikk den.** Den inkrementelle synken satte `startdate = sensor.lastSync`
+  og stemplet `lastSync` på SLUTTEN av hver kjøring, altså hvert femte minutt — så
+  vinduet dekket bare målinger *datert* de siste fem minuttene. En manuell
+  registrering i Health Mate (der man velger tidspunkt selv) og en veiing lastet
+  opp forsinket faller da utenfor hvert framtidige vindu og hentes **aldri**.
+  Symptomet er stumt i alle ledd: synken svarer `success`, ingen `lastError`,
+  ingen rad mangler noe sted man kan se det — vekta står bare stille, og pushen
+  uteblir fordi den henger på at en NY rad ble skrevet. Aktivitet og økter hadde
+  overlappsvinduet fra før; vekt, VO2max og temperatur arvet det aldri.
+  **Bruk `measureSyncWindow`** (`$lib/domain/health/withings-sync-window.ts`):
+  `lastupdate = min(lastSync, nå − 7d)` inkrementelt, `startdate` bare for full
+  sync (gulvet er en påstand om målingens dato) og for backfillens bundne spenn.
+  Gulvet gjør fiksen umulig å tape på — en måling kan ikke være opprettet før den
+  er datert, så alt et `startdate`-overlapp ville gitt, gir `lastupdate` også. Se
+  `docs/changelog/2026-09-05-vektsynkens-vindu.md`.
+
 - **`fullSync = true` sletter Withings-radene, ikke alle radene.** Fram til august 2026
   var det `where(eq(sensorEvents.userId, userId))` — altså også ernæringsloggen,
   sultmeldingene, manuelle søvnlogger, Strava og Tesla, som ikke kan hentes inn igjen.
