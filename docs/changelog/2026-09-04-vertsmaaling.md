@@ -114,12 +114,62 @@ feil størrelse. Egen test.
   gjør spiken ufarlig: forskjellen mellom «treg i et minutt» og «førti minutter
   nede med drepte prosesser».
 
+## Fase 2: ett navn på tidspunktet (5. september 2026)
+
+`latest` og `worst` la tidspunktet på **`at`**, mens radene i `samples` la det
+på **`sampledAt`**. To navn på samme sak i én payload.
+
+Feilen er stum til noen leser feltet. Den ble funnet ved at et leseskript,
+skrevet mot `samples` og deretter pekt på `worst`, kastet
+`KeyError: 'sampledAt'` — altså ikke av en test, men av bruk.
+
+- Begge bygges nå av **`toHostHighlight`** i domenelaget. Formen ligger ett
+  sted framfor i to objekt-literaler, og har en test på seg: at feltet heter
+  `sampledAt`, at `at` IKKE finnes, at dommen er `describeHost`' egen, og at de
+  to har identisk feltsett uansett hvilken rad de får.
+- `latest` og `worst` peker inn i `samples`, så de bærer `memAvailableKb` og
+  `cachedKb` med seg. Dommen kan da veies uten et oppslag i radlista. `latest`
+  gjorde det ikke før — nok en asymmetri mellom to felt som skal leses likt.
+- Regresjonen er verifisert: med `at` tilbake feiler testen.
+
+Ingen konsument utenfor `/api/diagnostikk` leste feltene, så navnebyttet
+brekker ingenting.
+
+## Målt: 07:00-hypotesen holdt ikke (5. september 2026)
+
+Første døgn med data. **Timen gikk uten en skramme.**
+
+- **Ingen hull.** 0 av 17 minutter manglet i 06:50–07:06, og cron gikk 06:50,
+  06:55, 07:00, 07:05 på sekundet. Sammenlign med 3. september, der begge
+  OOM-ene etterlot 10–11 minutters hull i nøyaktig de samme tidsstemplene.
+- **Ett minutt med press, absorbert av swap.** 06:50: page cache falt 0,96 →
+  0,68 GiB og 150 MB gikk ut i swap på ett minutt, load1 1,69. Minuttet etter
+  var swapen tilbake til 567 MB og cachen på 0,79 GiB. Det er mekanismen som
+  forrige uke ikke hadde noe sted å gå.
+- **Lavest tilgjengelig i vinduet var 06:36: 1,77 GiB (47 %)**, med cache på
+  1,35 GiB — altså trangt, ikke kollaps.
+- **Registeret har ingenting på 07:00 UTC** utover de vanlige `0 * * * *` og
+  `*/5`. Peker det seg ut noe der, er det utenfor appen: verts-cron,
+  `unattended-upgrades`, eller Coolifys egne oppgaver.
+
+**Klokkeslettene i `dmesg` er UTC, og det er nå bevist framfor antatt.**
+Cron-tidsstemplene 3. september har hull 12:45→12:56 og 13:10→13:20; dmesg
+melder OOM-drap 12:54:22, 12:56:07 og 13:20:33. De faller sammen på minuttet.
+Konsekvensen er at drapene 4. september kl. 07:00:49 og 07:01:50 var
+**07:00 UTC = 09:00 Oslo** — ikke 07:00 Oslo, som en tidligere lesning her
+kunne invitert til.
+
+Sidefunn i samme vindu, ikke fulgt opp: `/api/cron/background-jobs` brukte
+**327 sekunder** kl. 06:00 og kom tilbake som `partial`. Resten av 06:00-klasen
+lå på 5–13 sekunder.
+
 ## Kjent rest
 
-- **Hva som spiser ~2 GiB forbigående er ikke funnet.** I normal drift bruker
-  containerne 1,2 GiB av 3,7. Kandidatene er rullende oppdatering (to
-  containere à 2 GiB kortvarig) og noe planlagt kl. 07:00 — OOM-en 4. september
-  kom 07:00:49. Målingene som nå samles skal avgjøre det.
+- **Hva som spiser ~2 GiB forbigående er fortsatt ikke funnet.** I normal drift
+  bruker containerne 1,2 GiB av 3,7. 07:00-hypotesen er svekket (se over), så
+  rullende oppdatering — to containere à 2 GiB kortvarig — står igjen som
+  hovedkandidat. Med swap på plass er spiken uansett ufarlig, så dette er nå et
+  spørsmål om forståelse framfor om drift.
 - Over halvparten av containerne har ingen minnegrense (`coolify`,
   `pdpykw3rc…`, sentinel, realtime, db, redis, proxy).
 - Vi sampler ikke CPU (`/proc/stat`), så steal og iowait er fortsatt ukjent.

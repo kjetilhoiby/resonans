@@ -3,6 +3,7 @@ import {
 	CACHE_COLLAPSE_KB,
 	describeHost,
 	parseMeminfo,
+	toHostHighlight,
 	type HostSample
 } from './host-metrics';
 
@@ -105,5 +106,43 @@ describe('describeHost', () => {
 		const v = describeHost(sample({ memTotalKb: 0, swapTotalKb: 0 }));
 		expect(v.availableShare).toBe(0);
 		expect(Number.isNaN(v.availableShare)).toBe(false);
+	});
+});
+
+describe('toHostHighlight', () => {
+	// Dette er hele grunnen til at funksjonen finnes. `latest` og `worst`
+	// pekte på `at` mens radene i `samples` pekte på `sampledAt` — to navn på
+	// samme sak i én payload. Feilen er stum til noen leser feltet, og da er
+	// den en KeyError midt i et skript.
+	it('navngir tidspunktet `sampledAt`, som radene i samples', () => {
+		const h = toHostHighlight('2026-09-05T06:36:00.000Z', sample());
+		expect(h.sampledAt).toBe('2026-09-05T06:36:00.000Z');
+		expect(h).not.toHaveProperty('at');
+	});
+
+	// Poenget med å ta med tallene: leseren skal kunne veie dommen uten å slå
+	// opp raden i `samples` først.
+	it('bærer tallene dommen hviler på', () => {
+		const h = toHostHighlight('2026-09-05T06:36:00.000Z', sample({ cachedKb: 700_000 }));
+		expect(h.memAvailableKb).toBe(1_900_000);
+		expect(h.cachedKb).toBe(700_000);
+	});
+
+	it('er dommen fra describeHost, ikke en egen vurdering', () => {
+		const s = sample({ cachedKb: 1_388 });
+		const h = toHostHighlight('2026-09-04T07:00:00.000Z', s);
+		const dom = describeHost(s);
+		expect(h.summary).toBe(dom.summary);
+		expect(h.cacheCollapsed).toBe(dom.cacheCollapsed);
+		expect(h.availableShare).toBe(dom.availableShare);
+		expect(h.swapUsedShare).toBe(dom.swapUsedShare);
+	});
+
+	// `latest` og `worst` bygges av samme funksjon nettopp for at de skal ha
+	// samme form. Skiller de seg, kan ikke én leser dekke begge.
+	it('gir samme feltsett uansett hvilken rad den får', () => {
+		const a = toHostHighlight('2026-09-05T06:36:00.000Z', sample());
+		const b = toHostHighlight('2026-09-05T07:00:00.000Z', sample({ memAvailableKb: 100_000 }));
+		expect(Object.keys(a).sort()).toEqual(Object.keys(b).sort());
 	});
 });

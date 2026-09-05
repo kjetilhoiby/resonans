@@ -138,3 +138,33 @@ export function describeHost(s: HostSample): HostVerdict {
 
 	return { availableShare, swapUsedShare, cacheCollapsed, summary: parts.join('; ') };
 }
+
+/**
+ * En framhevet måling: raden PLUSS dommen om den.
+ *
+ * `latest` og `worst` i `/api/diagnostikk` er begge dette. De peker inn i
+ * `samples`, så de bærer med seg de to tallene som avgjør «hvor nære var vi»
+ * — tilgjengelig minne og page cache — framfor å tvinge leseren til å slå opp
+ * raden for å forstå dommen.
+ *
+ * **Tidspunktet heter `sampledAt`, samme navn som i `samples`.** Fram til
+ * 5. september 2026 het det `at` på nettopp disse to, altså to navn på samme
+ * sak i én payload. Et skript skrevet mot `samples` kastet «KeyError:
+ * sampledAt» idet det pekte på `worst` — en feil som er stum helt til noen
+ * leser feltet. Derfor bor formen her, med en test på seg, framfor å bli
+ * skrevet to ganger i et objekt-literal.
+ */
+export interface HostHighlight extends HostVerdict {
+	sampledAt: string;
+	memAvailableKb: number;
+	cachedKb: number;
+}
+
+export function toHostHighlight(sampledAt: string, s: HostSample): HostHighlight {
+	return {
+		sampledAt,
+		memAvailableKb: s.memAvailableKb,
+		cachedKb: s.cachedKb,
+		...describeHost(s)
+	};
+}

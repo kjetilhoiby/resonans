@@ -213,6 +213,13 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
     toppen, som er nøyaktig feilen Coolifys graf gjorde: den viste 78 % minne
     under en hendelse der OOM-killeren fyrte tre ganger, og fikk minne
     avskrevet som årsak i to døgn.
+  - **Tidspunktet heter `sampledAt` OVERALT i svaret** — også på `latest` og
+    `worst`, som begge bygges av `toHostHighlight`. Fram til 5. september 2026
+    het det `at` på nettopp de to, altså to navn på samme sak i én payload; et
+    skript skrevet mot `samples` kastet «KeyError: sampledAt» idet det pekte på
+    `worst`. Formen bor derfor i domenelaget med en test på seg, framfor i to
+    objekt-literaler. `latest` og `worst` peker inn i `samples` og bærer
+    `memAvailableKb` og `cachedKb` med seg, så dommen kan veies uten et oppslag.
   - En TABELL, ikke en ringbuffer i minnet: hendelsen den finnes for er den der
     prosessen blir OOM-drept.
   - Samplingen skjer FØR lederlås-sjekken — øyeblikkene som betyr noe er de der
