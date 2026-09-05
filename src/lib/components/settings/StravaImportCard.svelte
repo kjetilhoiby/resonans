@@ -36,6 +36,7 @@
 		sliderMidpoint
 	} from '$lib/domain/health/import-triage';
 	import { formatPace } from '$lib/utils/activity-metrics';
+	import { retryDelayMs, shouldRetryBatch } from '$lib/domain/health/import-retry';
 
 	/**
 	 * Aktiviteter per kall.
@@ -46,13 +47,54 @@
 	 */
 	const BATCH_SIZE = 20;
 
+	/**
+	 * Svaret fra importendepunktet.
+	 *
+	 * Skrevet ut framfor `any`: løkka har nå en gren der `data` kan være null
+	 * (runden ga opp), og da må typesjekken se hva som faktisk leses ut av den.
+	 */
+	type ImportResponse = {
+		written?: number;
+		existed?: number;
+		skipped?: number;
+		blocked?: number;
+		failed?: number;
+		paceReferenceUsed?: { distanceMeters: number; seconds: number } | null;
+		/** Speiler `ImportOutcome` i `strava-import.ts` — en union, ikke ett løst objekt. */
+		outcomes?: Array<
+			| { status: 'written'; id: string }
+			| { status: 'existed'; id: string }
+			| { status: 'skipped'; id: string; reason: string; detail?: string }
+			| { status: 'blocked'; id: string; findings: Array<{ axis: string; reason: string }> }
+			| { status: 'failed'; id: string; error: string }
+		>;
+	};
+
 	/** Tak på runder, som i reanalyse-kortet: en bug skal ikke gi uendelig kall. */
 	const MAX_ROUNDS = 200;
+
+	/**
+	 * Forsøk per runde før den gis opp.
+	 *
+	 * En runde som dør er nesten alltid transport — skjermen slo seg av, wifi
+	 * skiftet, telefonen suspenderte fanen. Serveren er idempotent, så et nytt
+	 * forsøk på den samme batchen kan i verste fall skrive det som alt er
+	 * skrevet, og det svarer den «fantes fra før» på.
+	 */
+	const BATCH_ATTEMPTS = 3;
+	/** Ventetid mellom forsøk. Doblet per runde: 1 s, 2 s. */
+	const RETRY_BASE_MS = 1000;
 
 	let file = $state<File | null>(null);
 	let running = $state(false);
 	let error = $state<string | null>(null);
 	let done = $state(false);
+	/** Økter serveren alt hadde da kjøringen startet — hoppet over uten å sendes. */
+	let resumedFrom = $state(0);
+	/** Runder som ga opp etter alle forsøk. Kjøringen fortsetter forbi dem. */
+	let deadRounds = $state<Array<{ from: number; to: number; error: string }>>([]);
+	/** Skjermlåsen, når nettleseren ga oss en. */
+	let wakeLock: { release: () => Promise<void> } | null = null;
 
 	/** Brukerens egen referanse: distanse i meter og tid i sekunder. */
 	/** Valgt referansedistanse i meter, eller null. */
@@ -83,6 +125,14 @@
 	let blocked = $state(0);
 	let failed = $state(0);
 	let processed = $state(0);
+	/**
+	 * Hvor mange denne kjøringen faktisk skal gjennom.
+	 *
+	 * Ikke `total`: etter et resume er de fleste alt inne, og «Jobber… 20 av
+	 * 1019» ville stått nesten stille gjennom en kjøring som var ferdig på et
+	 * par minutter.
+	 */
+	let queueSize = $state(0);
 	/**
 	 * Referansen SERVEREN sier den brukte, ikke den klienten mente å sende.
 	 *
@@ -238,6 +288,59 @@
 		return filesInZip.get(wanted) ?? filesInZip.get(wanted.split('/').slice(-2).join('/')) ?? null;
 	}
 
+	/**
+	 * Hold skjermen våken mens importen går.
+	 *
+	 * Dette er ÅRSAKEN til at kjøringen 5. september døde: telefonen låste seg
+	 * etter noen minutter, Safari drepte fetchen midt i en runde, og feltet sa
+	 * «Load failed» — nettleserens egen tekst for en avbrutt forespørsel, ikke
+	 * noe serveren sa. En import over tusen filer tar lengre tid enn en
+	 * skjermtidsavbrudd, så låsen er ikke pynt.
+	 *
+	 * Feiler den, går vi videre uten: en manglende skjermlås skal ikke stoppe
+	 * importen, den gjør bare avbrudd mer sannsynlig — og resume dekker det.
+	 */
+	async function keepAwake() {
+		try {
+			const nav = navigator as Navigator & {
+				wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> };
+			};
+			wakeLock = (await nav.wakeLock?.request('screen')) ?? null;
+		} catch {
+			wakeLock = null;
+		}
+	}
+
+	async function releaseWake() {
+		try {
+			await wakeLock?.release();
+		} catch {
+			// Låsen er alt borte — den slippes av seg selv når fanen skjules.
+		}
+		wakeLock = null;
+	}
+
+	/**
+	 * Id-ene serveren alt har. Feiler oppslaget, returneres et tomt sett:
+	 * resume er en OPTIMALISERING, og skrivingen er idempotent uansett — så en
+	 * import som ikke fikk svar her skal gå videre og gjøre jobben på nytt,
+	 * ikke stoppe.
+	 */
+	async function alreadyImported(ids: string[]): Promise<Set<string>> {
+		try {
+			const res = await fetch('/api/sensors/strava-import/status', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids })
+			});
+			if (!res.ok) return new Set();
+			const data = (await res.json()) as { imported?: string[] };
+			return new Set(data.imported ?? []);
+		} catch {
+			return new Set();
+		}
+	}
+
 	async function run() {
 		if (!file || !manifestCsv) return;
 		running = true;
@@ -249,15 +352,31 @@
 		blocked = 0;
 		failed = 0;
 		processed = 0;
+		queueSize = 0;
 		blockedDetail = [];
 		failures = [];
 		skippedDetail = [];
 		referenceUsed = null;
+		resumedFrom = 0;
+		deadRounds = [];
 
 		try {
+			await keepAwake();
 			const { default: JSZip } = await import('jszip');
 			const zip = await JSZip.loadAsync(file);
-			const queue = importable;
+
+			// **Resume: spør serveren FØR vi sender noe.** Et avbrudd skal koste
+			// det som gjenstår, ikke hele arkivet på nytt. Radene som finnes er
+			// fasit — ikke en framdriftsmarkør i klienten, som kan gå ut av takt
+			// med basen uten at noen ser det.
+			const done0 = await alreadyImported(importable.map((r) => r.id));
+			const queue = importable.filter((r) => !done0.has(r.id));
+			resumedFrom = importable.length - queue.length;
+			queueSize = queue.length;
+			if (queue.length === 0) {
+				done = true;
+				return;
+			}
 
 			for (let start = 0, round = 0; start < queue.length; start += BATCH_SIZE, round += 1) {
 				if (round >= MAX_ROUNDS) {
@@ -281,12 +400,43 @@
 					form.set(`file:${row.id}`, new File([blob], row.filePath ?? path));
 				}
 
-				const res = await fetch('/api/sensors/strava-import', { method: 'POST', body: form });
-				if (!res.ok) {
-					error = extractApiErrorMessage(res.status, await res.text());
-					return;
+				// **En død runde river ikke resten.** Før 5. september gjorde et
+				// `return` her at ett avbrutt kall avsluttet hele kjøringen — og
+				// avbruddet kom av at skjermen slo seg av, altså noe som gjentar
+				// seg. Nå: nytt forsøk med voksende pause, og gir den seg, går vi
+				// VIDERE til neste runde og sier hvilke som falt ut. Serveren er
+				// idempotent, så et nytt forsøk koster ingenting galt.
+				let data: ImportResponse | null = null;
+				let lastError = '';
+				for (let attempt = 1; attempt <= BATCH_ATTEMPTS; attempt += 1) {
+					if (attempt > 1) {
+						await new Promise((r) => setTimeout(r, retryDelayMs(attempt, RETRY_BASE_MS)));
+					}
+					let retryable: boolean;
+					try {
+						const res = await fetch('/api/sensors/strava-import', { method: 'POST', body: form });
+						if (res.ok) {
+							data = (await res.json()) as ImportResponse;
+							break;
+						}
+						lastError = extractApiErrorMessage(res.status, await res.text());
+						retryable = shouldRetryBatch({ kind: 'http', status: res.status });
+					} catch (err) {
+						lastError = err instanceof Error ? err.message : String(err);
+						retryable = shouldRetryBatch({ kind: 'transport' });
+					}
+					if (!retryable) break;
 				}
-				const data = await res.json();
+
+				if (!data) {
+					deadRounds.push({
+						from: start + 1,
+						to: start + batch.length,
+						error: lastError || 'Ukjent feil'
+					});
+					processed += batch.length;
+					continue;
+				}
 
 				// Tallene oppdateres per runde, ikke til slutt: 1019 aktiviteter tar
 				// tid, og en knapp som bare spinner ser ut som at den henger.
@@ -335,9 +485,14 @@
 				}
 			}
 			done = true;
+			if (deadRounds.length > 0) {
+				const økter = deadRounds.reduce((n, r) => n + (r.to - r.from + 1), 0);
+				error = `${deadRounds.length} runder (${økter} økter) kom ikke gjennom. Trykk igjen — de som alt er inne hoppes over.`;
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
+			await releaseWake();
 			running = false;
 		}
 	}
@@ -467,7 +622,7 @@
 		<div class="controls">
 			<Button disabled={running || total === 0} onClick={run}>
 				{running
-					? `Jobber… ${processed} av ${total}`
+					? `Jobber… ${processed} av ${queueSize || total}`
 					: dryRun
 						? 'Tørrkjør'
 						: `Importer ${total} økter`}
@@ -477,6 +632,29 @@
 
 	{#if error}
 		<p class="err">{error}</p>
+	{/if}
+
+	{#if resumedFrom > 0}
+		<!--
+			Resume skal SIES. Et tall som plutselig er lavere enn «1019 økter» på
+			knappen ser ut som at noe mangler; setningen gjør det til det den er.
+		-->
+		<p class="resumed">
+			{resumedFrom} økter lå inne fra før og sendes ikke på nytt.
+		</p>
+	{/if}
+
+	{#if deadRounds.length > 0}
+		<details class="dead-rounds">
+			<summary>{deadRounds.length} runder kom ikke gjennom</summary>
+			<ul>
+				{#each deadRounds as round (round.from)}
+					<!-- Nummereringen er posisjon i DENNE kjøringens kø, ikke i
+					     manifestet — etter et resume er de to ulike. -->
+					<li>Nr. {round.from}–{round.to} i denne kjøringen: {round.error}</li>
+				{/each}
+			</ul>
+		</details>
 	{/if}
 
 	{#if done || (running && processed > 0)}
@@ -721,6 +899,22 @@
 		height: 6px;
 		border-radius: 999px;
 		background: var(--card-border, #242424);
+	}
+
+	.resumed {
+		margin: 0.4rem 0 0;
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	.dead-rounds {
+		margin: 0.4rem 0 0;
+		font-size: 0.82rem;
+		color: var(--error-text, #e0806a);
+	}
+	.dead-rounds ul {
+		margin: 0.3rem 0 0;
+		padding-left: 1.1rem;
 	}
 
 	.pr-time input[type='range']::-moz-range-progress {
