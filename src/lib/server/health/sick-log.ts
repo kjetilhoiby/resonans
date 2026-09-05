@@ -14,11 +14,16 @@
  * fordi det ER den samme rigga — bare med en datatype som bærer en periode
  * framfor et tidspunkt.
  *
- * `timestamp` settes til periodens startdag (kl. 12 UTC, altså trygt innenfor
- * Oslo-døgnet uansett sommertid), så radene sorterer kronologisk og `since`-filtre
- * virker. Sannheten om hvilke dager perioden dekker ligger likevel i
- * `data.startDate`/`data.endDate` — aldri i tidsstempelet, som er et
- * registreringstidspunkt og ikke en sykedag.
+ * `timestamp` er REGISTRERINGSTIDSPUNKTET. Sannheten om hvilke dager perioden
+ * dekker ligger i `data.startDate`/`data.endDate` — aldri i tidsstempelet.
+ *
+ * Det sto startdagen der fram til 5. september 2026, og det er samme felle som
+ * felte symptomloggen i prod: `sensor_events_sensor_datatype_timestamp_unique`
+ * er unik på (sensor_id, data_type, timestamp), så et dagsstempel gjør indeksen
+ * til en regel om ÉN rad per dag på tilstand-sensoren. To perioder med samme
+ * startdato er sjeldnere enn to symptomer samme dag, men fullt mulig — den
+ * tilbakedaterte perioden et sykdomsvarsel foreslår lander gjerne på en dag som
+ * alt har en — og utfallet er den samme 500-en, uten en vei rundt.
  *
  * ## Bakoverkompatibilitet
  *
@@ -48,16 +53,17 @@ import {
 export const SICK_PERIOD_DATA_TYPE = 'sick_period';
 const TILSTAND_PROVIDER = 'tilstand_flag';
 
-/** Hvor langt tilbake sykeperioder leses for streak-laget. Samme vindu som streaks. */
+/**
+ * Hvor langt tilbake sykeperioder leses for streak-laget. Samme vindu som streaks.
+ *
+ * Vinduet måles på REGISTRERINGSTIDSPUNKTET, ikke på startdagen — en periode
+ * registrert i etterkant (et sykdomsvarsel som tilbakedaterer) faller derfor
+ * innenfor selv om den startet før vinduet.
+ */
 export const SICK_LOOKBACK_DAYS = 400;
 
 export function todayOsloKey(now: Date = new Date()): string {
 	return osloDayKey(now);
-}
-
-/** Midt på dagen UTC — innenfor Oslo-døgnet både sommer og vinter. */
-function timestampForDay(dayKey: string): Date {
-	return new Date(`${dayKey}T12:00:00Z`);
 }
 
 async function getOrCreateTilstandSensor(userId: string) {
@@ -135,9 +141,12 @@ export async function saveSickPeriod(
 	const data = { startDate, endDate, note };
 
 	if (id) {
+		// Tidsstempelet flyttes IKKE ved retting: en rettet startdato er ikke en ny
+		// registrering, og et stempel som fulgte startdagen kunne flyttet raden
+		// oppå en annen rads plass i unikhetsindeksen.
 		const updated = await db
 			.update(sensorEvents)
-			.set({ data, timestamp: timestampForDay(startDate) })
+			.set({ data })
 			.where(
 				and(
 					eq(sensorEvents.id, id),
@@ -156,7 +165,7 @@ export async function saveSickPeriod(
 		sensorId: sensor.id,
 		eventType: 'measurement',
 		dataType: SICK_PERIOD_DATA_TYPE,
-		timestamp: timestampForDay(startDate),
+		timestamp: now,
 		data,
 		source: 'sick_log'
 	});
