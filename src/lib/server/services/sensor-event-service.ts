@@ -89,8 +89,34 @@ export type SensorEventWriteConflictMode =
 	| 'ignore'
 	| 'upsert_sensor_datatype_timestamp';
 
+/**
+ * Skal projeksjonen kjøres MED EN GANG, eller er det nok at den ligger i kø?
+ *
+ * `inline` er standarden og riktig for én fersk økt: brukeren har nettopp
+ * avsluttet en tur og skal se den i streaks og formkurve uten å vente på cron.
+ *
+ * `queued` er for en IMPORT, og skillet er ikke smaksak. `write` fyrer
+ * projeksjonen per RAD, og `refreshForRange` går over `timestamp − 2t → nå` —
+ * for en økt fra 2012 er det fjorten år med canonical-rader, ~18 sekunder per
+ * kjøring. Debouncen i `enqueueWorkoutProjectionRefresh` skulle slått dem
+ * sammen, men den slår bare sammen jobber som fortsatt står `queued`: den
+ * inline-kjøringen tar jobben ut av `queued` med det samme, så rad nummer to
+ * lager en ny jobb i stedet for å slå seg sammen med den første. Resultatet er
+ * én full-historikk-reprojeksjon per importert økt, kjørende rygg mot rygg,
+ * som spiser tilkoblingspoolen og gjør hver skriving treg — som igjen får det
+ * til å se ut som at parsingen er treg.
+ *
+ * Med `queued` faller bare inline-kjøringen bort. Jobben legges fortsatt i kø,
+ * så ingenting går tapt om importen brytes midtveis, og NÅ virker debouncen
+ * etter hensikten: alle radene som skrives mens den forrige jobben kjører,
+ * slås sammen til én. Importen 5. september 2026 skrev fire jobber på 43
+ * sekunder; med denne rekkefølgen ville de vært én.
+ */
+export type SensorEventProjectionMode = 'inline' | 'queued';
+
 export type SensorEventWriteOptions = {
 	conflictMode?: SensorEventWriteConflictMode;
+	projectionMode?: SensorEventProjectionMode;
 };
 
 export class SensorEventService {
@@ -99,6 +125,7 @@ export class SensorEventService {
 		options: SensorEventWriteOptions = {}
 	): Promise<WriteSensorEventResult> {
 		const conflictMode = options.conflictMode ?? 'error';
+		const projectionMode = options.projectionMode ?? 'inline';
 		const key = eventKey(input.sensorId, input.dataType, input.timestamp);
 		let existedBefore = false;
 		if (conflictMode === 'upsert_sensor_datatype_timestamp') {
@@ -164,11 +191,11 @@ export class SensorEventService {
 				reason: 'on_write'
 			});
 			enqueuedProjectionRefresh = queued.enqueued;
-			runWorkoutProjectionInline(queued.jobId, 'write');
+			if (projectionMode === 'inline') runWorkoutProjectionInline(queued.jobId, 'write');
 		}
 
 		console.log(
-			`[sensor-event-service] write source=${input.source} dataType=${input.dataType} mode=${conflictMode} key=${key} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
+			`[sensor-event-service] write source=${input.source} dataType=${input.dataType} mode=${conflictMode} projection=${projectionMode} key=${key} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
 		);
 
 		return {
@@ -185,6 +212,7 @@ export class SensorEventService {
 	): Promise<WriteSensorEventResult[]> {
 		if (inputs.length === 0) return [];
 		const conflictMode = options.conflictMode ?? 'error';
+		const projectionMode = options.projectionMode ?? 'inline';
 		const inputKeys = new Set(inputs.map((input) => eventKey(input.sensorId, input.dataType, input.timestamp)));
 		const existingKeys = new Set<string>();
 
@@ -284,7 +312,7 @@ export class SensorEventService {
 					reason: 'on_write'
 				});
 				enqueuedProjectionRefresh = enqueuedProjectionRefresh || queued.enqueued;
-				runWorkoutProjectionInline(queued.jobId, 'write_many');
+				if (projectionMode === 'inline') runWorkoutProjectionInline(queued.jobId, 'write_many');
 			}
 		}
 
@@ -299,7 +327,7 @@ export class SensorEventService {
 		}
 
 		console.log(
-			`[sensor-event-service] writeMany size=${inputs.length} mode=${conflictMode} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} dedupedDropped=${dedupedDropped} keyCount=${inputKeys.size} workouts=${workoutEvents.length} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
+			`[sensor-event-service] writeMany size=${inputs.length} mode=${conflictMode} projection=${projectionMode} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} dedupedDropped=${dedupedDropped} keyCount=${inputKeys.size} workouts=${workoutEvents.length} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
 		);
 
 		return events.map((event) => ({
