@@ -1,3 +1,26 @@
+/**
+ * Dagens fire nudger: planlegg dagen, avslutt dagen, morgensjekk i forholdet og
+ * den daglige oversikten. Timebasert cron (`/api/cron/day-planning-nudges`),
+ * gatet på brukerens egen Oslo-klokke.
+ *
+ * Se `docs/changelog/2026-09-05-krydder-paa-dagsoversikten.md`.
+ *
+ * ## Tre ting å vite før du endrer noe her
+ *
+ * 1. **Tidsgaten er et VINDU, ikke et minutt.** En eksakt sammenligning mot
+ *    `hm` forutsetter at cron-tikket lander presist, og det gjorde det ikke før
+ *    den interne dispatcheren tok over. Se `NUDGE_WINDOW_MINUTES`.
+ * 2. **Vinduet krever dedup.** `alreadyNudgedToday` er den andre halvdelen; uten
+ *    den kan et bredere vindu sende det samme varselet to ganger.
+ * 3. **Standardtidene og stillevinduet MÅ være forenlige.** De er defaults satt
+ *    to steder, og da de var uenige vant stillevinduet stille — to av fire
+ *    grener kunne ikke fyre i det hele tatt. Invarianten står som en test i
+ *    `$lib/domain/nudge-schedule.test.ts`.
+ *
+ * Tidsregningen og modusvalget bor rent i `$lib/domain/nudge-schedule.ts`;
+ * teksten i dagsoversikten i `$lib/domain/digest-nugget-rules.ts`. Denne fila
+ * henter og sender.
+ */
 import { and, desc, eq, gte, ilike, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { checklists, conversations, memories, messages, nudgeEvents, sensorEvents, users, webPushSubscriptions } from '$lib/db/schema';
@@ -9,6 +32,18 @@ import {
 	sendGoogleChatMessage
 } from '$lib/server/google-chat';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
+import { describeOpenItems } from '$lib/domain/digest-nugget-rules';
+import { computeDigestPush } from '$lib/server/digest-nugget';
+import { isWithinRecentMinutesWindow } from '$lib/server/nudge-time';
+import {
+	DEFAULT_CLOSE_TIME,
+	DEFAULT_PLANNING_TIME,
+	DEFAULT_RELATIONSHIP_MORNING_TIME,
+	NUDGE_WINDOW_MINUTES,
+	digestTimeFor,
+	resolveNudgeMode,
+	type NudgeProfile
+} from '$lib/domain/nudge-schedule';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import {
 	getGoogleChatWebhooksForRoutes,
@@ -20,16 +55,32 @@ interface NotificationSettings {
 	dayPlanning?: { enabled?: boolean; time?: string };
 	dayClose?: { enabled?: boolean; time?: string };
 	relationshipCheckinMorning?: { enabled?: boolean; time?: string };
-	nudgeProfile?: {
-		weekdayMode?: 'interactive' | 'digest';
-		weekendMode?: 'interactive' | 'digest';
-		quietHours?: { enabled?: boolean; start?: string; end?: string };
-		digestTimeWeekday?: string;
-		digestTimeWeekend?: string;
-	};
+	nudgeProfile?: NudgeProfile;
 }
 
-type DayMode = 'interactive' | 'digest';
+function isDue(nowHm: string, targetHm: string) {
+	return isWithinRecentMinutesWindow(nowHm, targetHm, NUDGE_WINDOW_MINUTES);
+}
+
+/**
+ * Har vi alt sendt denne nudgen i dag?
+ *
+ * Et vindu på en time kan i prinsippet dekke to tikk — en manuell `?due=1`, et
+ * nytt forsøk etter en timeout — og et varsel sendt to ganger er verre enn ett
+ * som kom ti minutter for sent. `nudge_events` bærer alt `dayIso` i konteksten,
+ * så dedupen trenger ingen ny tabell. Samme mønster som `grocery_weekly`.
+ */
+async function alreadyNudgedToday(userId: string, nudgeType: string, dayIso: string) {
+	const existing = await db.query.nudgeEvents.findFirst({
+		where: and(
+			eq(nudgeEvents.userId, userId),
+			eq(nudgeEvents.nudgeType, nudgeType),
+			sql`(${nudgeEvents.context}->>'dayIso') = ${dayIso}`
+		),
+		columns: { id: true }
+	});
+	return Boolean(existing);
+}
 
 function toIsoDateFromParts(parts: Intl.DateTimeFormatPart[]) {
 	const year = parts.find((p) => p.type === 'year')?.value ?? '1970';
@@ -94,17 +145,6 @@ function contextForDay(isoDate: string) {
 
 function isEnabled(value: { enabled?: boolean } | undefined) {
 	return value?.enabled !== false;
-}
-
-function isWeekend(isoDate: string) {
-	const day = new Date(`${isoDate}T00:00:00.000Z`).getUTCDay();
-	return day === 0 || day === 6;
-}
-
-function isTimeInWindow(hm: string, start: string, end: string) {
-	if (start === end) return true;
-	if (start < end) return hm >= start && hm < end;
-	return hm >= start || hm < end;
 }
 
 function withNudgeTracking(appUrl: string, path: string, nudgeTrack: string, nudgeEventId: string | null) {
@@ -180,25 +220,6 @@ async function getNudgeTriage(userId: string) {
 	};
 }
 
-function resolveNudgeMode(settings: NotificationSettings, todayIso: string, hm: string, triage: { forceDigest: boolean }) {
-	if (triage.forceDigest) return 'digest' as DayMode;
-
-	const profile = settings.nudgeProfile;
-	const weekdayMode = profile?.weekdayMode ?? 'interactive';
-	const weekendMode = profile?.weekendMode ?? 'digest';
-	const baseMode: DayMode = isWeekend(todayIso) ? weekendMode : weekdayMode;
-
-	const quietEnabled = profile?.quietHours?.enabled !== false;
-	const quietStart = profile?.quietHours?.start ?? '20:00';
-	const quietEnd = profile?.quietHours?.end ?? '08:00';
-
-	if (quietEnabled && isTimeInWindow(hm, quietStart, quietEnd)) {
-		return 'digest';
-	}
-
-	return baseMode;
-}
-
 async function findChecklistByContext(userId: string, context: string) {
 	return db.query.checklists.findFirst({
 		where: and(eq(checklists.userId, userId), eq(checklists.context, context)),
@@ -208,6 +229,22 @@ async function findChecklistByContext(userId: string, context: string) {
 			}
 		}
 	});
+}
+
+/**
+ * Punktene fra en dag som fortsatt står åpne — navnene, ikke bare antallet.
+ *
+ * Ett oppslag, to svar: `count` er tallet konteksten og chat-kortet bærer,
+ * `titles` er det varselet faktisk sier. Fram til september 2026 fantes bare
+ * tallet, og «Overliggere: 1» tvinger brukeren til å åpne appen for å finne ut
+ * om det ene punktet var verdt å bli varslet om.
+ */
+async function openItemsFromDay(userId: string, dayIso: string) {
+	const context = contextForDay(dayIso);
+	if (!context) return { titles: [] as string[], count: 0 };
+	const checklist = await findChecklistByContext(userId, context);
+	const open = (checklist?.items ?? []).filter((item) => !item.checked);
+	return { titles: open.map((item) => item.text), count: open.length };
 }
 
 async function hasRelationshipCheckinForDay(userId: string, dayIso: string) {
@@ -271,21 +308,25 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 			results.push({ userId: user.id, planningSent: false, closeSent: false, relationshipMorningSent: false, skippedReason: 'triage-error' });
 			continue;
 		}
-		const mode = resolveNudgeMode(settings, todayIso, local.hm, triage);
 		const profile = settings.nudgeProfile;
-		const digestTime = isWeekend(todayIso)
-			? (profile?.digestTimeWeekend ?? '10:00')
-			: (profile?.digestTimeWeekday ?? '09:00');
+		const mode = resolveNudgeMode(profile, todayIso, local.hm, triage);
+		const digestTime = digestTimeFor(profile, todayIso);
 
-		const planningTime = settings.dayPlanning?.time || '07:00';
-		const closeTime = settings.dayClose?.time || '21:00';
-		const relationshipMorningTime = settings.relationshipCheckinMorning?.time || '08:30';
+		const planningTime = settings.dayPlanning?.time || DEFAULT_PLANNING_TIME;
+		const closeTime = settings.dayClose?.time || DEFAULT_CLOSE_TIME;
+		const relationshipMorningTime =
+			settings.relationshipCheckinMorning?.time || DEFAULT_RELATIONSHIP_MORNING_TIME;
 
 		let planningSent = false;
 		let closeSent = false;
 		let relationshipMorningSent = false;
 
-		if (mode === 'interactive' && isEnabled(settings.dayPlanning) && local.hm === planningTime) {
+		if (
+			mode === 'interactive' &&
+			isEnabled(settings.dayPlanning) &&
+			isDue(local.hm, planningTime) &&
+			!(await alreadyNudgedToday(user.id, 'plan_day', todayIso))
+		) {
 			const todayContext = contextForDay(todayIso);
 			if (todayContext) {
 				const todayChecklist = await findChecklistByContext(user.id, todayContext);
@@ -293,13 +334,8 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 
 				// Only nudge planning if day is not already planned.
 				if (todayCount === 0) {
-					const prevIso = addDaysIsoDate(todayIso, -1);
-					const prevContext = contextForDay(prevIso);
-					let carryoverCount = 0;
-					if (prevContext) {
-						const prevChecklist = await findChecklistByContext(user.id, prevContext);
-						carryoverCount = (prevChecklist?.items ?? []).filter((item) => !item.checked).length;
-					}
+					const carryover = await openItemsFromDay(user.id, addDaysIsoDate(todayIso, -1));
+					const carryoverCount = carryover.count;
 
 					const eventId = await createNudgeEvent({
 						userId: user.id,
@@ -309,12 +345,13 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 					});
 					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'plan_day', eventId);
 					if (routeTargetsPwa(dayPlanningRoutes)) {
+						// Navnet på overliggeren, ikke tellingen — samme regel som i
+						// dagsoversikten, og den samme setningsmotoren.
+						const carried = describeOpenItems(carryover.titles, 'fra i går');
 						planningSent = await sendNativeNudgeToUser({
 							userId: user.id,
 							title: 'Planlegg dagen',
-							body: carryoverCount > 0
-								? `Du har ${carryoverCount} åpne punkter fra i går.`
-								: 'Lag en enkel plan for dagen din.',
+							body: carried?.sentence ?? 'Lag en enkel plan for dagen din.',
 							url: pushUrl,
 							tag: `nudge-plan-${todayIso}`
 						});
@@ -339,11 +376,19 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 			}
 		}
 
-		if (mode === 'interactive' && isEnabled(settings.dayClose) && local.hm === closeTime) {
+		if (
+			mode === 'interactive' &&
+			isEnabled(settings.dayClose) &&
+			isDue(local.hm, closeTime) &&
+			!(await alreadyNudgedToday(user.id, 'close_day', todayIso))
+		) {
 			const todayContext = contextForDay(todayIso);
 			if (todayContext) {
 				const todayChecklist = await findChecklistByContext(user.id, todayContext);
-				const openItems = (todayChecklist?.items ?? []).filter((item) => !item.checked).length;
+				const openTitles = (todayChecklist?.items ?? [])
+					.filter((item) => !item.checked)
+					.map((item) => item.text);
+				const openItems = openTitles.length;
 				if (openItems > 0) {
 					const eventId = await createNudgeEvent({
 						userId: user.id,
@@ -353,10 +398,11 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 					});
 					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'close_day', eventId);
 					if (routeTargetsPwa(dayCloseRoutes)) {
+						const open = describeOpenItems(openTitles, 'i dag');
 						closeSent = await sendNativeNudgeToUser({
 							userId: user.id,
 							title: 'Avslutt dagen',
-							body: `Du har ${openItems} åpne punkt igjen i dag.`,
+							body: open?.sentence ?? `Du har ${openItems} åpne punkt igjen i dag.`,
 							url: pushUrl,
 							tag: `nudge-close-${todayIso}`
 						});
@@ -381,22 +427,38 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 			}
 		}
 
-		if (mode === 'digest' && local.hm === digestTime) {
+		if (
+			mode === 'digest' &&
+			isDue(local.hm, digestTime) &&
+			!(await alreadyNudgedToday(user.id, 'digest_day', todayIso))
+		) {
 			const todayContext = contextForDay(todayIso);
 			if (todayContext) {
 				const todayChecklist = await findChecklistByContext(user.id, todayContext);
 				const plannedItems = todayChecklist?.items.length ?? 0;
 				const openItems = (todayChecklist?.items ?? []).filter((item) => !item.checked).length;
+				const carryover = await openItemsFromDay(user.id, addDaysIsoDate(todayIso, -1));
 
-				const prevIso = addDaysIsoDate(todayIso, -1);
-				const prevContext = contextForDay(prevIso);
-				let carryoverCount = 0;
-				if (prevContext) {
-					const prevChecklist = await findChecklistByContext(user.id, prevContext);
-					carryoverCount = (prevChecklist?.items ?? []).filter((item) => !item.checked).length;
-				}
+				/**
+				 * Krydderet avgjør om det sendes i det hele tatt.
+				 *
+				 * Den gamle gaten var `plannedItems === 0 || openItems > 0 ||
+				 * carryoverCount > 0` — altså «send hvis dagen ikke er planlagt»,
+				 * som er sant hver eneste morgen før man har planlagt noe. Et
+				 * varsel med en grunn som alltid finnes blir bakgrunnsstøy, og
+				 * bakgrunnsstøy blir slått av. Nå er stillhet et gyldig svar:
+				 * `computeDigestPush` returnerer null når ingen regel har noe å si.
+				 */
+				const push = await computeDigestPush({
+					userId: user.id,
+					carryover: carryover.titles,
+					now
+				}).catch((err) => {
+					console.error(`❌ computeDigestPush failed for user ${user.id}:`, err);
+					return null;
+				});
 
-				if (plannedItems === 0 || openItems > 0 || carryoverCount > 0) {
+				if (push) {
 					const reason = triage.hasLowNoisePreference
 						? 'rolig-profil fra preferences'
 						: triage.forceDigest
@@ -406,14 +468,25 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 						userId: user.id,
 						nudgeType: 'digest_day',
 						mode,
-						context: { dayIso: todayIso, plannedItems, openItems, carryoverCount, reason, trigger: 'schedule' }
+						context: {
+							dayIso: todayIso,
+							plannedItems,
+							openItems,
+							carryoverCount: carryover.count,
+							reason,
+							// Hvilken regel som vant. Uten den kan man ikke se i
+							// ettertid hvorfor en morgen ble stille og en annen ikke.
+							nugget: push.nugget.kind,
+							secondary: push.secondary?.kind ?? null,
+							trigger: 'schedule'
+						}
 					});
 					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'digest_day', eventId);
 					if (routeTargetsPwa(digestRoutes)) {
 						planningSent = await sendNativeNudgeToUser({
 							userId: user.id,
-							title: 'Daglig oversikt',
-							body: `Planlagt: ${plannedItems} · Åpne: ${openItems} · Overliggere: ${carryoverCount}`,
+							title: push.title,
+							body: push.body,
 							url: pushUrl,
 							tag: `nudge-digest-${todayIso}`
 						});
@@ -426,8 +499,9 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 							dayIso: todayIso,
 							plannedItems,
 							openItems,
-							carryoverCount,
-							reason
+							carryoverCount: carryover.count,
+							reason,
+							highlight: { title: push.title, body: push.body }
 						});
 						for (const webhook of digestWebhooks) {
 							const ok = await sendGoogleChatMessage(webhook, message);
@@ -439,7 +513,11 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 			}
 		}
 
-		if (isEnabled(settings.relationshipCheckinMorning) && local.hm === relationshipMorningTime) {
+		if (
+			isEnabled(settings.relationshipCheckinMorning) &&
+			isDue(local.hm, relationshipMorningTime) &&
+			!(await alreadyNudgedToday(user.id, 'relationship_checkin_morning', todayIso))
+		) {
 			const hasPartner = Boolean(user.partnerUserId && user.partnerConfirmedAt);
 			if (hasPartner) {
 				const alreadySubmitted = await hasRelationshipCheckinForDay(user.id, todayIso);
