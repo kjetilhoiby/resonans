@@ -3,7 +3,7 @@ import { loadavg } from 'node:os';
 import { desc, gte, lte, and, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { hostSamples } from '$lib/db/schema';
-import { describeHost, parseMeminfo, type HostSample } from '$lib/domain/host-metrics';
+import { parseMeminfo, toHostHighlight, type HostSample } from '$lib/domain/host-metrics';
 
 /**
  * Sampling og lesing av vertsmålinger. Tolkningen bor i domenelaget.
@@ -131,18 +131,15 @@ export async function loadHostWindow(fromMs: number, toMs: number) {
 
 	const worstRow = rows.reduce((a, b) => (b.memAvailableKb < a.memAvailableKb ? b : a));
 
+	// Formen på `latest`/`worst` bor i domenelaget, ikke her — se
+	// `toHostHighlight` for hvorfor tidsfeltet heter `sampledAt` begge steder.
+	const highlight = (r: (typeof rows)[number]) =>
+		toHostHighlight(r.sampledAt.toISOString(), toSample(r));
+
 	return {
 		samples: rows.map((r) => ({ ...r, sampledAt: r.sampledAt.toISOString() })),
-		latest: {
-			at: rows[0].sampledAt.toISOString(),
-			...describeHost(toSample(rows[0]))
-		},
-		worst: {
-			at: worstRow.sampledAt.toISOString(),
-			memAvailableKb: worstRow.memAvailableKb,
-			cachedKb: worstRow.cachedKb,
-			...describeHost(toSample(worstRow))
-		},
+		latest: highlight(rows[0]),
+		worst: highlight(worstRow),
 		truncated: rows.length >= MAX_SAMPLES
 	};
 }
