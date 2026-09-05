@@ -1,8 +1,12 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import { isWorkoutSuppressed } from '$lib/domain/health/workout-suppression';
 import { listWorkoutSuppressions } from '$lib/server/workouts/workout-suppressions';
+import {
+	MIN_USABLE_TRACK_POINTS,
+	pickTrackSource
+} from '$lib/domain/health/track-source';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -187,7 +191,15 @@ function normalizeHeartRate(value: unknown): number | null {
 	return value;
 }
 
-function sourcePriority(provider: string, sensorType: string): number {
+/**
+ * Klyngevinduet. Samme tur skrevet av klokka, en fil og appen spriker
+ * minutter i starttid; to timer er slingringsmonnet hele aktivitetslaget
+ * bruker, og sporvalget må bruke NØYAKTIG det samme — et eget tall her ville
+ * gitt et kart fra en klynge lista ikke mener finnes.
+ */
+export const CLUSTER_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+export function sourcePriority(provider: string, sensorType: string): number {
 	if (provider === 'ai_assistant' || sensorType === 'manual_log') return 5;
 	if (sensorType === 'gps_device' || provider === 'dropbox' || sensorType === 'workout_files') return 4;
 	if (provider === 'withings') return 3;
@@ -383,7 +395,7 @@ export async function buildUnifiedWorkoutActivities(
 	// toleransen, ellers slipper en økt i kanten av `since` gjennom.
 	const suppressions = await listWorkoutSuppressions(userId, options.since);
 
-	const clusterWindowMs = 2 * 60 * 60 * 1000;
+	const clusterWindowMs = CLUSTER_WINDOW_MS;
 	const clusters: Array<{ sportFamily: string; startTime: Date; events: WorkoutEvidenceEvent[] }> = [];
 
 	for (const event of normalizedEvents) {
@@ -591,4 +603,123 @@ export async function buildCanonicalActivityFeed(
 	return feed
 		.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 		.slice(0, options.limit ?? 1000);
+}
+/**
+ * Sporet for en økt, hentet fra klynga når radens egen rad ikke har et.
+ *
+ * `/aktivitet/[id]` adresserer ÉN `sensor_events`-rad, og leste `trackPoints`
+ * derfra. Men klyngingen slår Withings-raden og fil-raden av samme tur sammen,
+ * og bare den ene av dem har GPS — så et kart fantes eller ikke ut fra hvilken
+ * id lenka tilfeldigvis bar. Se `pickTrackSource` for hvorfor rekkefølgen er
+ * som den er.
+ *
+ * **To spørringer, aldri én.** Den første henter bare METADATA om søsknene
+ * (punktantall som et tall, ikke sporet), den andre henter sporet til vinneren.
+ * Et `select` over flere `trackPoints`-kolonner ville lastet hvert spor i
+ * klynga for å kaste alle unntatt ett — og et spor er opptil 2000 punkter.
+ *
+ * Returnerer null når raden selv har spor (kalleren bruker sitt eget), og når
+ * ingen søsken har et brukbart.
+ */
+export async function readClusterTrackPoints(
+	userId: string,
+	eventId: string
+): Promise<{ trackPoints: unknown[]; sourceEventId: string; provider: string } | null> {
+	const anchor = await db
+		.select({
+			timestamp: sensorEvents.timestamp,
+			sportType: sql<string | null>`${sensorEvents.data}->>'sportType'`,
+			ownPoints: sql<number>`coalesce(case when jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array'
+				then jsonb_array_length(${sensorEvents.data}->'trackPoints') else 0 end, 0)`
+		})
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId)))
+		.limit(1);
+
+	const row = anchor[0];
+	if (!row) return null;
+	// Radens eget spor vinner alltid. Vi fyller et hull, vi bytter ikke kilde.
+	if (row.ownPoints >= MIN_USABLE_TRACK_POINTS) return null;
+
+	const family = clusterSportFamily(row.sportType ?? 'workout');
+	const from = new Date(row.timestamp.getTime() - CLUSTER_WINDOW_MS);
+	const to = new Date(row.timestamp.getTime() + CLUSTER_WINDOW_MS);
+
+	const siblings = await db
+		.select({
+			id: sensorEvents.id,
+			sensorId: sensorEvents.sensorId,
+			timestamp: sensorEvents.timestamp,
+			sportType: sql<string | null>`${sensorEvents.data}->>'sportType'`,
+			points: sql<number>`case when jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array'
+				then jsonb_array_length(${sensorEvents.data}->'trackPoints') else 0 end`,
+			// **NULL, ikke false, når nøkkelen mangler** — `->>` gir NULL og
+			// `NULL in (…)` er NULL. Målt på Postgres 16. Kallstedet sammenligner
+			// med `=== true`, så det er håndtert; typen skal likevel si det.
+			// Formen godtar både JSON-boolsk `true` og strengen `"true"`, som er
+			// nøyaktig de to `preferredEventFor` godtar — de to lagene skal ikke
+			// være uenige om hvem som eier GPS.
+			preferGps: sql<boolean | null>`${sensorEvents.metadata}->>'preferGps' in ('true', 't', '1')`,
+			sourceRejected: sql<boolean | null>`${sensorEvents.metadata}->>'sourceRejected' in ('true', 't', '1')`
+		})
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'workout'),
+				gte(sensorEvents.timestamp, from),
+				lte(sensorEvents.timestamp, to),
+				ne(sensorEvents.id, eventId),
+				// **`AND` gir ingen garantert evalueringsrekkefølge i Postgres**, så
+				// en typesjekk ved siden av `jsonb_array_length` vokter ingenting:
+				// planleggeren står fritt til å regne lengden av et objekt først og
+				// kaste «cannot get array length of a scalar». `CASE` er den eneste
+				// formen som faktisk beskytter. Et spor lagret i en annen form skal
+				// gi ingen kandidat, ikke en 500 på øktsiden.
+				sql`case when jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array'
+					then jsonb_array_length(${sensorEvents.data}->'trackPoints') else 0 end >= ${MIN_USABLE_TRACK_POINTS}`
+			)
+		);
+
+	const sameFamily = siblings.filter(
+		(sibling) => clusterSportFamily(sibling.sportType ?? 'workout') === family
+	);
+	if (sameFamily.length === 0) return null;
+
+	const sensorRows = await db.query.sensors.findMany({
+		where: inArray(sensors.id, [...new Set(sameFamily.map((s) => s.sensorId))]),
+		columns: { id: true, provider: true, type: true }
+	});
+	const sensorMap = new Map(sensorRows.map((sensor) => [sensor.id, sensor]));
+
+	const winner = pickTrackSource(
+		sameFamily.map((sibling) => {
+			const sensor = sensorMap.get(sibling.sensorId);
+			return {
+				eventId: sibling.id,
+				priority: sourcePriority(sensor?.provider ?? 'unknown', sensor?.type ?? 'unknown'),
+				points: Number(sibling.points) || 0,
+				startOffsetMs: sibling.timestamp.getTime() - row.timestamp.getTime(),
+				preferGps: sibling.preferGps === true,
+				sourceRejected: sibling.sourceRejected === true
+			};
+		})
+	);
+	if (!winner) return null;
+
+	const trackRow = await db
+		.select({ trackPoints: sql<unknown[]>`${sensorEvents.data}->'trackPoints'` })
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.id, winner.eventId), eq(sensorEvents.userId, userId)))
+		.limit(1);
+
+	const trackPoints = trackRow[0]?.trackPoints;
+	if (!Array.isArray(trackPoints) || trackPoints.length < MIN_USABLE_TRACK_POINTS) return null;
+
+	const sensor = sensorMap.get(sameFamily.find((s) => s.id === winner.eventId)!.sensorId);
+	return {
+		trackPoints,
+		sourceEventId: winner.eventId,
+		provider: sensor?.provider ?? 'unknown'
+	};
 }
