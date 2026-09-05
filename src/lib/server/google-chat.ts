@@ -399,6 +399,15 @@ export function buildRelationshipCheckinMorningNudgeMessage(data: {
 	};
 }
 
+/**
+ * Dagsoppsummeringen som kort.
+ *
+ * `highlight` er den samme setningen pushen leder med — bygget av
+ * `$lib/domain/digest-nugget-rules.ts`. Kortet og varselet skal si det samme:
+ * to kanaler med hver sin sannhet om den samme morgenen er nøyaktig feilen
+ * varselet ble bygget om for å slippe. Tellingene står igjen under, der de
+ * hører hjemme — som fotnoter til setningen, ikke som beskjeden.
+ */
 export function buildNudgeDigestMessage(data: {
 	userName?: string | null;
 	dayIso: string;
@@ -406,9 +415,13 @@ export function buildNudgeDigestMessage(data: {
 	openItems: number;
 	carryoverCount: number;
 	reason: string;
+	highlight?: { title: string; body: string } | null;
 }): GoogleChatMessage {
-	const { userName, dayIso, plannedItems, openItems, carryoverCount, reason } = data;
+	const { userName, dayIso, plannedItems, openItems, carryoverCount, reason, highlight } = data;
 	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+	const lead = highlight
+		? `<b>${highlight.title}</b><br>${highlight.body}`
+		: 'Vi holder det rolig nå. Her er status uten oppfordringer.';
 
 	return {
 		cards: [
@@ -422,7 +435,7 @@ export function buildNudgeDigestMessage(data: {
 						widgets: [
 							{
 								textParagraph: {
-									text: `<b>${greeting}</b><br>Vi holder det rolig nå. Her er status uten oppfordringer.`
+									text: `<b>${greeting}</b><br>${lead}`
 								}
 							},
 							{

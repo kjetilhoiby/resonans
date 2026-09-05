@@ -1123,6 +1123,65 @@ Se `docs/changelog/2026-09-04-krydder-paa-veiingen.md`. Reglene rent i
   gjennom en nedgangsperiode. Manuelle veiinger og HealthKit-backfillen gir
   ingen push i det hele tatt — varslingen henger på Withings-synken.
 
+### Dags-nudgene: et VINDU, aldri et minutt
+
+Se `docs/changelog/2026-09-05-krydder-paa-dagsoversikten.md`. Tidsregningen rent i
+`$lib/domain/nudge-schedule.ts`, teksten i `$lib/domain/digest-nugget-rules.ts`,
+henting og sending i `$lib/server/day-planning-nudges.ts`.
+
+- **En eksakt sammenligning mot et klokkeslett er en gate som ikke virker.**
+  `local.hm === digestTime` sto i fire grener fram til september 2026, mot en
+  time-cron. GitHub Actions kom når den kom — målt lørdag 29. august fyrte
+  `/api/cron/day-planning-nudges` 08:07, 08:25, 08:33, 08:41, 08:48 og 08:54
+  UTC, altså aldri på minutt 00 — så helgedigesten (10:00 Oslo) falt gjennom
+  hver eneste lørdag. **Den fyrte første gang 5. september, dagen etter at den
+  interne dispatcheren ble eneste klokke og begynte å tikke 08:00:02.** En
+  punktlig klokke vekker dormante gater; se etter dem framfor å tro at koden er
+  ny.
+- **Vinduet er `NUDGE_WINDOW_MINUTES` (60), like bredt som avstanden mellom to
+  tikk.** Da treffer nøyaktig ett tikk et hvilket som helst konfigurert
+  klokkeslett — også et brukervalgt 07:30, som en eksakt gate mot en time-cron
+  aldri kunne treffe.
+- **Et bredere vindu MÅ dedupliseres.** `alreadyNudgedToday` slår opp
+  `nudge_events` på type + `context->>'dayIso'` (samme mønster som
+  `grocery_weekly`, ingen ny tabell). Den dekker også høstens dobbelte time ved
+  sommertidsskiftet. Bokføringen skjer før utsending, så en tapt push prøves ikke
+  på nytt — bevisst, som ellers.
+- **Standardtider og stillevindu er defaults satt to steder, og de var
+  uenige.** Stillevinduet var `20:00`–`08:00` mens plan-dag sto på 07:00 og
+  avslutt-dag på 21:00 — begge INNI sitt eget vindu, så `resolveNudgeMode` sendte
+  dem til digest hver gang og de to interaktive grenene var strukturelt
+  uoppnåelige. Med defaults kunne fila produsere ett varsel: helgedigesten.
+  Vinduet er nå `22:00`–`07:00`, og invarianten står som en test — **legger du
+  til en standardtid, sjekk at den ikke ligger i stillevinduet.**
+- **Krydderet avgjør om det sendes.** `buildDigestPush` returnerer **null** når
+  ingen regel har noe å si. Den gamle gaten var «send hvis dagen ikke er
+  planlagt», som er sant hver morgen — og et varsel med en grunn som alltid
+  finnes blir bakgrunnsstøy.
+- **Reglene REGNER ingenting; de leser motorene.** `streakLabel`/`dueLabel`,
+  `describeBudgetStanding`, `describeAcuteChronic` og vekttrenden brukes ordrett.
+  Samme grep som krydderet på veiingen, og av samme grunn: et varsel som sier noe
+  annet enn flaten det lenker til er verre enn et varsel uten fakta.
+- **`PUSH_RANK` løser METNING.** Det som fyrer én gang øverst (`streak-due`,
+  `load-high`, `carryover`), det som er sant hver morgen nederst (`week-change`,
+  `week-load`).
+- **`streak-due` og `load-high` er med vilje IKKE et ekko-par.** «Løp i dag» ved
+  siden av «ta en rolig dag» ser motsigende ut, men begge er sanne, og
+  kombinasjonen er det brukeren trenger for å velge selv.
+- **Bare `due_soon`, aldri `overdue`; bare belastningsnivå `høy`.** En brutt
+  rekke er en anklage om noe som alt er avgjort, og `rolig`/`normal` er sanne
+  hver dag. Samme regel som at vektterskler bare feires nedover.
+- **En sykeperiode slår varselet helt av** (`getSickState().active`, som også
+  dekker det gamle nå-flagget). `sick-checkin` eier den morgenen.
+- **`describeOpenItems` er delt av alle tre grenene** — halen («fra i går»,
+  «i dag») er en parameter. Plan-dag og avslutt-dag navngir nå punktene sine, som
+  digesten: «Overliggere: 1» tvinger brukeren til å åpne appen for å finne ut om
+  varselet var verdt å få.
+- Kjent rest: ingen bokføring på tvers av kanaler, så vekt-pushen kl. 07 og
+  dagsoversikten kl. 10 kan begge si noe om vekta samme morgen.
+  `weekly-intensity` er bevisst utelatt — en tolvukersdom flytter seg månedlig og
+  ville stått identisk dag etter dag.
+
 ### Slepende volum og sonesammensetning
 
 Se `docs/changelog/2026-08-31-slepende-volum-og-sammensetning.md`. Motorene i
