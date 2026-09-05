@@ -102,3 +102,98 @@ export function validateBackfillRange(
 		days
 	};
 }
+
+/**
+ * Hvor langt tilbake den inkrementelle synken ser etter målinger som er ENDRET.
+ *
+ * Samme tall som aktivitet og økter alt bruker (`overlapDate.setDate(-7)`), valgt
+ * for å ligne dem framfor fordi sju er riktig.
+ */
+export const MEASURE_SYNC_OVERLAP_DAYS = 7;
+
+const OVERLAP_SECONDS = MEASURE_SYNC_OVERLAP_DAYS * 24 * 60 * 60;
+
+/** Vinduet et `getmeas`-kall skal be om. Udefinerte felter utelates av kallet. */
+export interface MeasureSyncWindow {
+	startdate?: number;
+	enddate?: number;
+	lastupdate?: number;
+}
+
+/**
+ * Vinduet for et `getmeas`-kall — vekt, VO2max og temperatur.
+ *
+ * ## Feilen dette retter
+ *
+ * `startdate`/`enddate` filtrerer på MÅLINGENS dato (`grp.date`), ikke på når
+ * Withings fikk den. Den inkrementelle synken satte `startdate = sensor.lastSync`
+ * og stemplet `lastSync = new Date()` ved slutten av hver kjøring, altså hvert
+ * femte minutt. Vinduet dekket dermed bare målinger DATERT de siste fem
+ * minuttene.
+ *
+ * Alt som når Withings med en eldre dato falt utenfor hvert eneste framtidige
+ * vindu og ble aldri hentet — permanent, uten en feilmelding:
+ *
+ * - En **manuell registrering** i Health Mate, der man selv velger tidspunkt.
+ *   Legger du inn morgenens veiing ved lunsj, er den datert fem timer tilbake.
+ * - En **veiing som lastes opp forsinket** (vekta sto uten nett). Withings
+ *   beholder tidspunktet man sto på vekta, ikke tidspunktet den kom fram.
+ *
+ * Symptomet er stumt i alle ledd: synken svarer `success`, `parsed.length` teller
+ * det den fikk, og ingen rad mangler noe sted man kan se at den mangler. Vekta på
+ * flaten står bare stille, og pushen — som henger på at en NY rad ble skrevet —
+ * kommer ikke.
+ *
+ * Aktivitet og økter hadde overlappsvinduet fra før; vekt, VO2max og temperatur
+ * hadde det aldri.
+ *
+ * ## Hvorfor `lastupdate` framfor et overlappsvindu på `startdate`
+ *
+ * Withings' egen dokumentasjon sier at `lastupdate` er parameteren for
+ * synkronisering: den filtrerer på når målingen ble OPPRETTET eller ENDRET. Et
+ * `startdate`-overlapp på sju dager ville fanget dagens tilfelle, men fortsatt
+ * bommet på en registrering som er tilbakedatert lenger enn sju dager — og det er
+ * nettopp den manuelle registreringen som kan være det.
+ *
+ * Vinduet er likevel gulvet på sju dager (`min`): en måling kan ikke være
+ * opprettet FØR den er datert, så alt `startdate = nå − 7d` ville gitt oss er
+ * også med her. Fiksen kan dermed ikke hente mindre enn overlappsvarianten,
+ * bare mer. Gulvet gjør den også robust mot at `lastSync` stemples ved SLUTTEN
+ * av kjøringen mens hentingen skjer i starten — de to-tre sekundene kjøringen
+ * varer var ellers et lite, permanent hull hver runde.
+ *
+ * ## De to som beholder `startdate`
+ *
+ * `fullSync` sletter og reimporterer fra et gulv, og gulvet er en påstand om
+ * MÅLINGENS dato. Backfill-batchen (`toDate` satt) trenger et bundet spenn for å
+ * kunne gå dag for dag. `lastupdate` kan ikke kombineres med `startdate`/`enddate`.
+ */
+export function measureSyncWindow(opts: {
+	fullSync: boolean;
+	lastSync?: Date | null;
+	toDate?: Date | null;
+	floor?: string | null;
+	now: Date;
+}): MeasureSyncWindow {
+	const enddate = opts.toDate ? Math.floor(opts.toDate.getTime() / 1000) : undefined;
+
+	if (opts.fullSync) {
+		return { startdate: fullSyncFloorSeconds(opts.floor), enddate };
+	}
+
+	// Bundet spenn (backfill dag for dag) må spørre på målingens dato.
+	if (opts.toDate) {
+		return {
+			startdate: opts.lastSync ? Math.floor(opts.lastSync.getTime() / 1000) : undefined,
+			enddate
+		};
+	}
+
+	// Uten `lastSync` har vi aldri synket: hent alt, som før.
+	if (!opts.lastSync) return {};
+
+	const nowSec = Math.floor(opts.now.getTime() / 1000);
+	return {
+		lastupdate: Math.min(Math.floor(opts.lastSync.getTime() / 1000), nowSec - OVERLAP_SECONDS)
+	};
+}

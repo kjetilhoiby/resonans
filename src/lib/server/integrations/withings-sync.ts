@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import {
 	fullSyncFloorSeconds,
+	measureSyncWindow,
 	resolveFullSyncFloor,
 	WITHINGS_FULL_SYNC_DEFAULT_FLOOR
 } from '$lib/domain/health/withings-sync-window';
@@ -146,6 +147,24 @@ function measureValue(grp: any, type: number): number | undefined {
  * nøyaktig som synken gjør. En andre måletype-tabell ville drevet fra denne — det
  * er akkurat feilen batch-prefetchen gjorde da den ba om `meastype: 1` alene.
  */
+/**
+ * Logglinja for et synkvindu. `lastupdate` og `startdate` betyr ulike ting —
+ * «endret siden» mot «datert etter» — og en logg som ikke sier hvilken av dem
+ * som gjaldt kan ikke brukes til å avgjøre hvorfor en måling uteble.
+ */
+function describeMeasureWindow(window: {
+	startdate?: number;
+	enddate?: number;
+	lastupdate?: number;
+}): string {
+	const iso = (sec: number) => new Date(sec * 1000).toISOString().split('T')[0];
+	if (window.lastupdate !== undefined) return `endret siden ${iso(window.lastupdate)}`;
+	if (window.startdate !== undefined) {
+		return `datert fra ${iso(window.startdate)}${window.enddate !== undefined ? ` til ${iso(window.enddate)}` : ''}`;
+	}
+	return 'uten datofilter';
+}
+
 export function parseWeightData(measuregrps: any[]): any[] {
 	return measuregrps
 		.filter((grp) => grp.measures?.some((m: any) => m.type === MEASTYPE.weight))
@@ -448,20 +467,14 @@ export async function syncWeightData(
 	floor?: string | null
 
 ) {
-	const startdate = fullSync
-		? fullSyncFloorSeconds(floor)
-		: lastSync
-			? Math.floor(lastSync.getTime() / 1000)
-			: undefined;
-	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
+	const window = measureSyncWindow({ fullSync, lastSync, toDate, floor, now: new Date() });
 
-	console.log(`   Fetching weight data${startdate ? ` from ${new Date(startdate * 1000).toISOString().split('T')[0]}` : ''}...`);
+	console.log(`   Fetching weight data ${describeMeasureWindow(window)}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
 		meastypes: WITHINGS_BODY_MEASTYPES,
 		category: 1, // Real measurements
-		startdate,
-		enddate
+		...window
 	});
 
 	console.log(`   Parsing ${data.length} weight measurements...`);
@@ -531,19 +544,11 @@ export async function syncVo2maxData(
 	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
 	floor?: string | null
 ): Promise<number> {
-	const startdate = fullSync
-		? fullSyncFloorSeconds(floor)
-		: lastSync
-			? Math.floor(lastSync.getTime() / 1000)
-			: undefined;
-	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
-
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
 		meastype: WITHINGS_MEASTYPE_VO2MAX,
 		category: 1,
-		startdate,
-		enddate
+		...measureSyncWindow({ fullSync, lastSync, toDate, floor, now: new Date() })
 	});
 
 	// Meastype 123 er bekreftet å være Withings' «Treningsnivå»: vår lagrede verdi
@@ -633,19 +638,11 @@ export async function syncTemperatureData(
 	/** Gulv for full sync, `YYYY-MM-DD`. Default `WITHINGS_FULL_SYNC_DEFAULT_FLOOR`. */
 	floor?: string | null
 ): Promise<number> {
-	const startdate = fullSync
-		? fullSyncFloorSeconds(floor)
-		: lastSync
-			? Math.floor(lastSync.getTime() / 1000)
-			: undefined;
-	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
-
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
 		meastypes: WITHINGS_TEMPERATURE_MEASTYPE_LIST,
 		category: 1,
-		startdate,
-		enddate
+		...measureSyncWindow({ fullSync, lastSync, toDate, floor, now: new Date() })
 	});
 
 	if (data.length === 0) {

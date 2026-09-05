@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+	measureSyncWindow,
+	MEASURE_SYNC_OVERLAP_DAYS,
 	resolveFullSyncFloor,
 	fullSyncFloorSeconds,
 	isValidFloor,
@@ -97,5 +99,104 @@ describe('validateBackfillRange', () => {
 
 	it('tier om et spenn på under halvannet år', () => {
 		expect(validateBackfillRange('2025-08-07', '2026-08-07', TODAY).warning).toBeNull();
+	});
+});
+
+describe('measureSyncWindow', () => {
+	const NOW = new Date('2026-09-05T12:00:00Z');
+	const sec = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+
+	it('spør på ENDRET-tidspunkt i den inkrementelle synken, ikke på målingens dato', () => {
+		// Fella: startdate/enddate filtrerer på grp.date. En veiing lastet opp
+		// forsinket, eller lagt inn manuelt med et tidspunkt tilbake i tid, faller
+		// da utenfor hvert framtidige vindu og hentes aldri.
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: new Date('2026-09-05T11:55:00Z'),
+			now: NOW
+		});
+
+		expect(window.lastupdate).toBeDefined();
+		expect(window.startdate).toBeUndefined();
+		expect(window.enddate).toBeUndefined();
+	});
+
+	it('gulver vinduet på sju dager selv om synken kjørte for fem minutter siden', () => {
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: new Date('2026-09-05T11:55:00Z'),
+			now: NOW
+		});
+
+		expect(window.lastupdate).toBe(sec('2026-08-29T12:00:00Z'));
+	});
+
+	it('bruker lastSync når synken har stått lenger enn overlappet', () => {
+		// Har vi vært nede i tre uker, skal vi ikke hente bare sju dager.
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: new Date('2026-08-15T09:00:00Z'),
+			now: NOW
+		});
+
+		expect(window.lastupdate).toBe(sec('2026-08-15T09:00:00Z'));
+	});
+
+	it('gulvet er nøyaktig MEASURE_SYNC_OVERLAP_DAYS døgn', () => {
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: NOW,
+			now: NOW
+		});
+
+		expect(Math.floor(NOW.getTime() / 1000) - window.lastupdate!).toBe(
+			MEASURE_SYNC_OVERLAP_DAYS * 24 * 60 * 60
+		);
+	});
+
+	it('henter alt uten lastSync — en synk som aldri har kjørt har ingen markør', () => {
+		expect(measureSyncWindow({ fullSync: false, now: NOW })).toEqual({});
+	});
+
+	it('full sync spør på målingens dato fra gulvet', () => {
+		// Gulvet er en påstand om NÅR målingen ble tatt, ikke om når den ble endret,
+		// så den stien kan ikke bruke lastupdate.
+		const window = measureSyncWindow({
+			fullSync: true,
+			lastSync: new Date('2026-09-05T11:55:00Z'),
+			floor: '2017-09-01',
+			now: NOW
+		});
+
+		expect(window.startdate).toBe(fullSyncFloorSeconds('2017-09-01'));
+		expect(window.lastupdate).toBeUndefined();
+	});
+
+	it('backfill med til-dato beholder det bundne spennet', () => {
+		// Batchen går dag for dag og trenger begge endene; lastupdate kan ikke
+		// kombineres med startdate/enddate.
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: new Date('2020-01-01T00:00:00Z'),
+			toDate: new Date('2020-12-31T00:00:00Z'),
+			now: NOW
+		});
+
+		expect(window.startdate).toBe(sec('2020-01-01T00:00:00Z'));
+		expect(window.enddate).toBe(sec('2020-12-31T00:00:00Z'));
+		expect(window.lastupdate).toBeUndefined();
+	});
+
+	it('henter aldri mindre enn et startdate-overlapp ville gjort', () => {
+		// En måling kan ikke være opprettet før den er datert, så alt et
+		// startdate-overlapp på sju dager ville fanget, fanges også her.
+		const window = measureSyncWindow({
+			fullSync: false,
+			lastSync: new Date('2026-09-05T11:55:00Z'),
+			now: NOW
+		});
+		const startdateOverlap = Math.floor(NOW.getTime() / 1000) - MEASURE_SYNC_OVERLAP_DAYS * 86_400;
+
+		expect(window.lastupdate).toBeLessThanOrEqual(startdateOverlap);
 	});
 });
