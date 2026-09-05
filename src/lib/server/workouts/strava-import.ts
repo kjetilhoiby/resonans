@@ -108,6 +108,39 @@ export type ImportResult = {
 	outcomes: ImportOutcome[];
 };
 
+/**
+ * Hvilke av disse id-ene er alt importert — uten å sende en eneste fil.
+ *
+ * Skrivingen er idempotent i seg selv (`findAlreadyImported` fanger dem, og
+ * `conflictMode: 'ignore'` gjør resten), så en ny kjøring har ALLTID vært
+ * trygg. Men den var ikke billig: klienten sendte alle 1019 filene på nytt,
+ * serveren pakket ut og parset dem, og kastet resultatet for de som alt lå
+ * inne. Etter et avbrudd — en skjerm som slår seg av midt i en runde — var
+ * prisen for å fortsette den samme som for å begynne forfra.
+ *
+ * **Serveren er fasit, ikke klientens framdrift.** Alternativet var å lagre
+ * hvor langt man kom i `localStorage`, men den kan gå ut av takt med basen på
+ * en måte ingen ser: en rad skrevet i en runde der svaret aldri nådde fram
+ * ville stått som «ikke gjort» for alltid. Et oppslag mot radene som FINNES
+ * kan ikke lyve.
+ *
+ * Returnerer et tomt sett når sensoren ikke finnes ennå — da er ingenting
+ * importert, og en tom sensor skal ikke opprettes av et spørsmål.
+ */
+export async function findImportedIds(userId: string, ids: string[]): Promise<Set<string>> {
+	if (ids.length === 0) return new Set();
+	const sensor = await db.query.sensors.findFirst({
+		where: and(
+			eq(sensors.userId, userId),
+			eq(sensors.provider, 'strava_export'),
+			eq(sensors.type, 'workout_files')
+		),
+		columns: { id: true }
+	});
+	if (!sensor) return new Set();
+	return findAlreadyImported(sensor.id, ids);
+}
+
 async function getOrCreateStravaExportSensor(userId: string) {
 	const existing = await db.query.sensors.findFirst({
 		where: and(
