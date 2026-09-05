@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { themes, tasks, sensorEvents, sensors, checklists, applianceProfiles, checklistItems } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
-import { and, eq, desc, inArray } from 'drizzle-orm';
+import { and, eq, ne, or, isNull, desc, inArray } from 'drizzle-orm';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
 import {
@@ -14,6 +14,7 @@ import {
 } from '$lib/server/services/appliance-cycle';
 import { getChoreStats, listPendingChores } from '$lib/server/services/chore-service';
 import { getChildThemes } from '$lib/server/themes';
+import { buildRoomClimateSummaries } from '$lib/domain/home/room-climate';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -91,9 +92,11 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		vacuum: VacuumState | null;
 	}> = [];
 
+	let climate: ReturnType<typeof buildRoomClimateSummaries> = [];
+
 	if (ownedSensors.length > 0) {
 		const sensorIds = ownedSensors.map((s) => s.id);
-		const [allEvents, allProfiles] = await Promise.all([
+		const [allEvents, allProfiles, climateEvents] = await Promise.all([
 			db
 				.select({
 					id: sensorEvents.id,
@@ -104,11 +107,46 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 					data: sensorEvents.data
 				})
 				.from(sensorEvents)
-				.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
+				// room_climate holdes utenfor denne 300-cappede spørringen med vilje:
+				// Mill-panelovner poller hvert minutt uten debounce (mill.py), så uten
+				// dette ville klimaavlesninger stille presset apparat-events ut av
+				// visningen etter en time eller to.
+				.where(
+					and(
+						eq(sensorEvents.userId, userId),
+						inArray(sensorEvents.sensorId, sensorIds),
+						or(isNull(sensorEvents.dataType), ne(sensorEvents.dataType, 'room_climate'))
+					)
+				)
 				.orderBy(desc(sensorEvents.timestamp))
 				.limit(300),
-			db.select().from(applianceProfiles).where(eq(applianceProfiles.userId, userId))
+			db.select().from(applianceProfiles).where(eq(applianceProfiles.userId, userId)),
+			// Egen, romsligere spørring for romklima — se begrunnelsen over.
+			db
+				.select({
+					dataType: sensorEvents.dataType,
+					timestamp: sensorEvents.timestamp,
+					data: sensorEvents.data
+				})
+				.from(sensorEvents)
+				.where(
+					and(
+						eq(sensorEvents.userId, userId),
+						inArray(sensorEvents.sensorId, sensorIds),
+						eq(sensorEvents.dataType, 'room_climate')
+					)
+				)
+				.orderBy(desc(sensorEvents.timestamp))
+				.limit(1500)
 		]);
+
+		climate = buildRoomClimateSummaries(
+			climateEvents.map((e) => ({
+				dataType: e.dataType,
+				timestamp: (e.timestamp as Date).toISOString(),
+				data: (e.data ?? {}) as Record<string, unknown>
+			}))
+		);
 
 		function mapEvent(e: typeof allEvents[number]) {
 			return {
@@ -217,7 +255,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			emoji: r.emoji,
 			completedAt: r.completedAt
 		})),
-		appliances
+		appliances,
+		climate
 	});
 
 	} catch (err) {

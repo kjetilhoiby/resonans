@@ -79,6 +79,18 @@
 		vacuum?: VacuumState | null;
 	}
 
+	interface RoomClimate {
+		room: string;
+		latest: {
+			timestamp: string;
+			temperatureC: number;
+			humidityPct: number | null;
+			targetTemperatureC: number | null;
+			heating: boolean | null;
+		};
+		series: Array<{ timestamp: string; temperatureC: number }>;
+	}
+
 	interface ProjectTheme {
 		id: string;
 		name: string;
@@ -113,13 +125,14 @@
 		seasonalTasks: SeasonalTask[];
 		routines: RoutineRow[];
 		appliances: Appliance[];
+		climate?: RoomClimate[];
 		chores?: Chores;
 		onOpenProject?: (id: string) => void;
 		onOpenChat?: (prefill: string) => void;
 		onOpenAppliance?: (href: string) => void;
 	}
 
-	let { projectThemes = [], seasonalTasks = [], routines = [], appliances = [], chores, onOpenAppliance }: Props = $props();
+	let { projectThemes = [], seasonalTasks = [], routines = [], appliances = [], climate = [], chores, onOpenAppliance }: Props = $props();
 
 	// Lokal, mutérbar kopi så avkryssing/«ta inn i dag» kan oppdatere optimistisk.
 	let choreItems = $state<ChoreItem[]>([]);
@@ -293,6 +306,33 @@
 		return { label: vacuumStateLabel(v.state), detail: null, state: 'idle' };
 	}
 
+	// Romklima-sparkline: kompakt SVG-polylinje, egen skala per rom (kg/kcal-
+	// lærdommen fra vektflaten gjelder her også — °C har ingen felles skala med
+	// noe annet på siden). MIN_TEMP_SPAN_C er gulvet som hindrer at en stabil
+	// uke tegnes som et stup, samme prinsipp som MIN_WEIGHT_AXIS_SPAN_KG.
+	const SPARK_W = 100;
+	const SPARK_H = 28;
+	const SPARK_PAD = 2;
+	const MIN_TEMP_SPAN_C = 1;
+
+	function climateSparkline(series: Array<{ temperatureC: number }>): string {
+		if (series.length < 2) return '';
+		const values = series.map((p) => p.temperatureC);
+		const min = Math.min(...values);
+		const max = Math.max(...values);
+		const span = Math.max(max - min, MIN_TEMP_SPAN_C);
+		const lo = (max + min) / 2 - span / 2;
+		const usableW = SPARK_W - SPARK_PAD * 2;
+		const usableH = SPARK_H - SPARK_PAD * 2;
+		return values
+			.map((v, i) => {
+				const x = SPARK_PAD + (i / (values.length - 1)) * usableW;
+				const y = SPARK_PAD + usableH - ((v - lo) / span) * usableH;
+				return `${x.toFixed(1)},${y.toFixed(1)}`;
+			})
+			.join(' ');
+	}
+
 	function applianceStatus(a: Appliance): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
 		if (a.vacuum) return vacuumStatus(a.vacuum);
 
@@ -386,6 +426,44 @@
 							<div class="appliance-detail">{status.detail}</div>
 						{/if}
 					</button>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	{#if climate.length > 0}
+		<section>
+			<SectionLabel>🌡️ Romklima</SectionLabel>
+			<div class="climate-grid">
+				{#each climate as c (c.room)}
+					<div class="climate-card">
+						<div class="climate-header">
+							<span class="climate-room">{c.room}</span>
+							{#if c.latest.heating}
+								<span class="climate-heating" title="Varmer nå">🔥</span>
+							{/if}
+						</div>
+						<div class="climate-temp">{c.latest.temperatureC.toFixed(1)}°</div>
+						{#if c.latest.humidityPct != null || c.latest.targetTemperatureC != null}
+							<div class="climate-detail">
+								{#if c.latest.humidityPct != null}<span>{Math.round(c.latest.humidityPct)} % RF</span>{/if}
+								{#if c.latest.targetTemperatureC != null}<span>Mål {c.latest.targetTemperatureC.toFixed(0)}°</span>{/if}
+							</div>
+						{/if}
+						{#if c.series.length > 1}
+							<svg class="climate-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+								<polyline
+									points={climateSparkline(c.series)}
+									fill="none"
+									stroke="var(--accent-primary)"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{/if}
+						<div class="climate-updated">{relativeTime(c.latest.timestamp)}</div>
+					</div>
 				{/each}
 			</div>
 		</section>
@@ -914,6 +992,54 @@
 	}
 	.appliance-detail {
 		font-size: 0.75rem;
+		color: var(--text-tertiary);
+	}
+	.climate-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 0.75rem;
+	}
+	.climate-card {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.climate-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
+	.climate-room {
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+	.climate-heating {
+		font-size: 0.9rem;
+	}
+	.climate-temp {
+		font-size: 1.6rem;
+		font-weight: 600;
+		line-height: 1;
+	}
+	.climate-detail {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.climate-spark {
+		width: 100%;
+		height: 28px;
+		display: block;
+	}
+	.climate-updated {
+		font-size: 0.72rem;
 		color: var(--text-tertiary);
 	}
 	.cycle-estimate {
