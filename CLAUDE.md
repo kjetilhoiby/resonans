@@ -657,8 +657,32 @@ rent i `$lib/domain/ai/health-briefing.ts`, hentes i
   til «month».
 - **Ingen backticks i prompt-tekstene.** `DOMAIN_PROMPTS` er template-literaler;
   en backtick rundt et verktøynavn terminerer strengen og river hele modulen.
-- Kjent rest: ernæring, søvn og kapasitet er ikke i briefingen; den bygges på hver
-  melding i en helsesamtale (ingen caching); Ekko-assistenten har den ikke.
+- **Livvidde ligger i VEKT-seksjonen, ikke i en egen** (`describeWaist`). «Vekta
+  står stille mens livvidda faller» kan bare formuleres av noen som ser begge
+  tallene samtidig — samme begrunnelse som at livvidda tegnes i
+  `WeightTrendChart`. En test vokter at `LIVVIDDE:` ikke blir en egen overskrift.
+  Se `docs/changelog/2026-09-05-livvidde-i-helsebriefingen.md`.
+- **`WaistStatus` sendes HEL inn i `BriefingWeight`**, i motsetning til vekt og
+  trening som får egne flate former (deres payloads er store; denne er alt liten
+  og ren). Fram til september 2026 plukket `toBriefingWeight` seks felter ut av
+  en payload som ALT bar `waist`, og livvidda falt på gulvet i oversettelsen:
+  chatten svarte «vi har ikke historikk på livvidde her» og anslo den fra vekta
+  med et populasjonstall (8–12 cm), til en bruker som hadde flaten full av den.
+  **En utplukking som glemmer et felt sier ikke fra.**
+- **«Ikke logget» får en LINJE her, mot regelen om tomme rubrikker ellers.**
+  Regelen finnes fordi mange «ukjent» får en modell til å gjette; her er det
+  nettopp fraværet som utløser gjetningen. Linja sier eksplisitt at livvidda
+  ikke skal anslås fra vekta.
+- **Forholdstall skrives med TO desimaler** (`ratio`, ikke `num`). Midje/høyde
+  0,54 avrundet til «0,5» sletter forskjellen fra referansen setningen
+  sammenligner med, og gjør «over» til «på».
+- Kjent rest: **det finnes fortsatt ingen livvidde-VERKTØY** — briefingen dekker
+  nå-tilstanden, men historikk («hvordan har livvidda utviklet seg siden april?»)
+  kan ikke hentes; `query_weight` dekker trend, milepæler og kroppssammensetning,
+  ikke livvidde. Ernæring, søvn og kapasitet er ikke i briefingen (`query_nutrition`
+  finnes og sendes alltid, men ingenting ber modellen bruke det i en vektsamtale);
+  den bygges på hver melding i en helsesamtale (ingen caching); Ekko-assistenten
+  har den ikke.
 
 ### Et dashboard uten verktøy er data assistenten ikke har
 

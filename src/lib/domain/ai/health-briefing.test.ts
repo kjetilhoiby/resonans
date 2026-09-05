@@ -3,6 +3,7 @@ import {
 	buildHealthBriefing,
 	describeStreaks,
 	describeTraining,
+	describeWaist,
 	describeWeight,
 	MAX_LISTED_DISCIPLINES,
 	type BriefingStreak,
@@ -10,6 +11,26 @@ import {
 	type BriefingWeight
 } from './health-briefing';
 import type { FramedGoal } from '$lib/domain/health/goal-horizon';
+import type { WaistStatus } from '$lib/domain/health/waist';
+
+/** En livvidde-status som er målt, fersk og har en trend. */
+function waistStatus(over: Partial<WaistStatus> = {}): WaistStatus {
+	return {
+		latestCm: 101,
+		latestDate: '2026-08-22',
+		trendCm: 100.4,
+		change90d: { deltaCm: -2.4, spanDays: 88, withinNoise: false },
+		whtr: 0.54,
+		heightMissing: false,
+		measurements: 12,
+		daysSinceLast: 2,
+		due: false,
+		stale: false,
+		measurementsUntilTrend: 0,
+		fresh: true,
+		...over
+	};
+}
 
 const weight: BriefingWeight = {
 	latest: { date: '2026-08-23', weightKg: 82.9 },
@@ -21,7 +42,8 @@ const weight: BriefingWeight = {
 	],
 	currentSentence: 'Ned 5,8 kg siden 3. april, i snitt 0,29 kg per uke. Perioden pågår.',
 	goal: { goalKg: 78, remainingKg: 4.4, reached: false },
-	coverage: { weighIns: 1204, firstWeighIn: '2017-10-13', daysSinceLatest: 1 }
+	coverage: { weighIns: 1204, firstWeighIn: '2017-10-13', daysSinceLatest: 1 },
+	waist: waistStatus()
 };
 
 const training: BriefingTraining = {
@@ -380,5 +402,88 @@ describe('buildHealthBriefing — symptomer og temperatur', () => {
 		});
 		expect(text).not.toContain('SYKDOM');
 		expect(text).not.toContain('ømt kne');
+	});
+});
+
+describe('describeWaist', () => {
+	it('gir trend og rå måling side om side', () => {
+		const lines = describeWaist(waistStatus());
+		expect(lines[0]).toBe('Livvidde: trend 100,4 cm, siste måling 101 cm 22. aug.');
+	});
+
+	it('sier endringen på trenden, med spennet den er målt over', () => {
+		const text = describeWaist(waistStatus()).join('\n');
+		expect(text).toContain('Livvidde siste 90 dager: −2,4 cm på trenden, målt over 88 dager.');
+	});
+
+	it('sier «uendret» under støygulvet, aldri et tall', () => {
+		const text = describeWaist(
+			waistStatus({ change90d: { deltaCm: -0.4, spanDays: 88, withinNoise: true } })
+		).join('\n');
+		expect(text).toContain('uendret siste 90 dager');
+		// Ingen endringslinje med et tall — «0,4» ville blitt lest som en bevegelse.
+		expect(text).not.toContain('Livvidde siste 90 dager');
+	});
+
+	it('bærer forbeholdet om midje/høyde i selve setningen', () => {
+		const text = describeWaist(waistStatus()).join('\n');
+		expect(text).toContain('En tommelfingerregel, ikke en vurdering.');
+	});
+
+	it('oppgir forholdstallet med TO desimaler', () => {
+		// 0,54 avrundet til «0,5» sletter forskjellen fra referansen setningen
+		// sammenligner med, og gjør «over» til «på».
+		const text = describeWaist(waistStatus({ whtr: 0.54 })).join('\n');
+		expect(text).toContain('Midje/høyde 0,54 — den vanlige tommelfingerregelen er under 0,50.');
+	});
+
+	it('sier hva som mangler når høyden ikke er satt', () => {
+		const text = describeWaist(waistStatus({ whtr: null, heightMissing: true })).join('\n');
+		expect(text).toContain('høyde mangler i kroppsprofilen');
+	});
+
+	it('sier fra når trenden ikke beskriver nå', () => {
+		const text = describeWaist(waistStatus({ stale: true, daysSinceLast: 40 })).join('\n');
+		expect(text).toContain('40 dager gammel, så trenden beskriver ikke nå');
+	});
+
+	it('skiller «gammel måling» fra «gammel trend»', () => {
+		const text = describeWaist(
+			waistStatus({ stale: false, fresh: false, daysSinceLast: 75 })
+		).join('\n');
+		expect(text).toContain('ikke et nå-tall');
+		expect(text).not.toContain('beskriver ikke nå');
+	});
+
+	it('sier hvor mange målinger som mangler før trenden finnes', () => {
+		const text = describeWaist(
+			waistStatus({ trendCm: null, measurementsUntilTrend: 2, change90d: { deltaCm: null, spanDays: null, withinNoise: false } })
+		).join('\n');
+		expect(text).toContain('2 måling(er) til');
+	});
+
+	it('SIER at livvidde ikke er logget, framfor å tie', () => {
+		// Fraværet er det som utløser gjetningen: uten denne linja anslo coachen
+		// «8–12 cm» fra vektnedgangen, altså et populasjonstall.
+		for (const status of [null, waistStatus({ measurements: 0 })]) {
+			const text = describeWaist(status).join('\n');
+			expect(text).toContain('ikke logget');
+			expect(text).toContain('ikke anslå den fra vekta');
+		}
+	});
+
+	it('står i VEKT-seksjonen, ikke i en egen', () => {
+		const text = buildHealthBriefing({
+			weight,
+			training: null,
+			streaks: [],
+			goals: [],
+			sick: null,
+			symptoms: null,
+			temperature: null
+		});
+		const vekt = text.split('VEKT:')[1] ?? '';
+		expect(vekt).toContain('Livvidde:');
+		expect(text).not.toContain('LIVVIDDE:');
 	});
 });
