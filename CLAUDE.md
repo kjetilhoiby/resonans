@@ -1601,6 +1601,10 @@ Se `docs/changelog/2026-09-02-symptomer-temperatur-og-oppfolging.md`. Reglene i
   brukerens journal — noe å sammenligne forløp med og vise en lege — ikke et
   grunnlag for en vurdering vi har dekning for. Ingen diagnose, ingen «normalt
   varer», ingen råd om lege.
+- **Symptomrader stemples med registreringstidspunktet, ikke startdagen.** Flere
+  symptomer samme dag er normalen, og et dagsstempel gjør unikhetsindeksen på
+  `sensor_events` til en regel om ett symptom per dag — se «`sensor_events.timestamp`
+  er en NØKKEL» under Database-konvensjoner. Samme regel gjelder sykeperiodene.
 - Kjent rest: muskel/skjelett-skillet lagres men brukes ikke (et vondt ankel
   betyr «kan sykle», altså en substitusjon — `generateSessionAlternative` er den
   naturlige koblingen), og `MAX_OPEN_SICK_DAYS` (14) er kort for en skade.
@@ -2798,6 +2802,19 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
 - Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
 - Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
 - Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+- **`sensor_events.timestamp` er en NØKKEL, ikke bare et felt.**
+  `sensor_events_sensor_datatype_timestamp_unique` er unik på (`sensor_id`,
+  `data_type`, `timestamp`) for alt som ikke er bank. Stempler du en rad med et
+  DØGN (`${dayKey}T12:00:00Z`), har du dermed innført «én rad per dag per
+  datatype på den sensoren» — en forretningsregel indeksen håndhever med en 500,
+  ikke med en feilmelding flaten kan si noe om. Symptomloggen og sykeperiodene
+  gjorde nettopp det fram til 5. september 2026, og andre symptom samme dag var
+  umulig å registrere: «vondt i halsen» og «slimhoste» starter i samme døgn, så
+  normalen traff kanten. **Bruk registreringstidspunktet** og la dagen bo i
+  `data`, med mindre én-rad-per-dag ER regelen du vil ha. Og **flytt aldri
+  tidsstempelet ved retting** — en rettet dato er ikke en ny registrering, og
+  stemplet kan da lande oppå en annen rads plass. Se
+  `docs/changelog/2026-09-05-ett-symptom-per-dag-var-en-indeks.md`.
 - **En JS-Array er ALDRI en gyldig parameter til rå SQL.** Bruk
   `toPgArrayLiteral` (`$lib/db/pg-array.ts`) og send en ferdig streng til
   `$1::text[]`. postgres-js sin `inferType` gir en Array skalar-OID-en til

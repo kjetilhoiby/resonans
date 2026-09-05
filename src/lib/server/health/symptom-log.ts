@@ -5,9 +5,16 @@
  * `sick-log.ts`, og bevisst så likt: en rad per symptom, `dataType: 'symptom'`,
  * på den eksisterende `tilstand_flag`-sensoren — det er den samme rigga.
  *
- * `timestamp` er symptomets startdag (kl. 12 UTC, trygt innenfor Oslo-døgnet),
- * men sannheten om hvilke dager det dekker ligger i `data.startDate`/`endDate`.
- * Tidsstempelet er et registreringstidspunkt, ikke en symptomdag.
+ * `timestamp` er REGISTRERINGSTIDSPUNKTET, ikke symptomets startdag. Sannheten
+ * om hvilke dager symptomet dekker ligger i `data.startDate`/`endDate`.
+ *
+ * Fram til 5. september 2026 sto startdagen der (kl. 12 UTC), og det var en 500
+ * i prod: `sensor_events_sensor_datatype_timestamp_unique` er unik på
+ * (sensor_id, data_type, timestamp), så et dagsstempel gjør indeksen til en
+ * regel om ETT symptom per dag på tilstand-sensoren. Og flere symptomer samme
+ * dag er ikke kanten — det er normalen: «vondt i halsen» og «slimhoste» starter
+ * i samme døgn. Symptom nummer to feilet med duplikatnøkkel, altså en 500 der
+ * flaten bare kunne si «prøv igjen i morgen».
  */
 
 import { and, desc, eq, gte } from 'drizzle-orm';
@@ -32,12 +39,14 @@ import {
 export const SYMPTOM_DATA_TYPE = 'symptom';
 const TILSTAND_PROVIDER = 'tilstand_flag';
 
-/** Samme vindu som sykeperiodene, så et forløp kan leses i sin helhet. */
+/**
+ * Samme vindu som sykeperiodene, så et forløp kan leses i sin helhet.
+ *
+ * Vinduet måles på REGISTRERINGSTIDSPUNKTET, ikke på startdagen. Et symptom
+ * registrert i etterkant faller derfor innenfor selv om det startet før vinduet
+ * — det motsatte av hva et dagsstempel ga.
+ */
 export const SYMPTOM_LOOKBACK_DAYS = 400;
-
-function timestampForDay(dayKey: string): Date {
-	return new Date(`${dayKey}T12:00:00Z`);
-}
 
 async function getOrCreateTilstandSensor(userId: string) {
 	const existing = await db.query.sensors.findFirst({
@@ -119,9 +128,13 @@ export async function saveSymptom(
 	const data = { ...fields };
 
 	if (id) {
+		// Tidsstempelet flyttes IKKE ved retting. En rettet startdato er ikke en ny
+		// registrering — og et stempel som fulgte startdagen ville dessuten kunne
+		// flytte raden oppå en annen rads plass i unikhetsindeksen, altså den
+		// samme 500-en en gang til, denne gangen ved redigering.
 		const updated = await db
 			.update(sensorEvents)
-			.set({ data, timestamp: timestampForDay(fields.startDate) })
+			.set({ data })
 			.where(
 				and(
 					eq(sensorEvents.id, id),
@@ -140,7 +153,7 @@ export async function saveSymptom(
 		sensorId: sensor.id,
 		eventType: 'measurement',
 		dataType: SYMPTOM_DATA_TYPE,
-		timestamp: timestampForDay(fields.startDate),
+		timestamp: now,
 		data,
 		source: 'symptom_log'
 	});
