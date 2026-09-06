@@ -26,9 +26,17 @@ export const MIN_REPROJECT_WEEKS = 5;
 export const DEFAULT_REPROJECT_WEEKS = 8;
 
 /**
- * Taket per kjøring. `refreshForRange` sletter og skriver rader på nytt i ett
- * spenn, og et for stort spenn risikerer å bli avbrutt mellom slett og skriv.
- * Lengre historikk kjøres i biter — samme regel som `withings_backfill`.
+ * Taket på SPENNET per kjøring — ikke på hvor langt tilbake i tid vinduet kan
+ * ligge, se `until` under.
+ *
+ * **Begrunnelsen er trackPoints, ikke slett/skriv.** Fram til 6. september 2026
+ * sto det at et for stort spenn risikerte å bli avbrutt mellom sletting og
+ * skriving; det er ikke lenger sant — `refreshForRange` sletter og skriver per
+ * side, avgrenset til nøyaktig det siden bygger opp igjen (se
+ * `workout-projection-chunking.ts`). Den grunnen som STÅR er kostnaden:
+ * projeksjonen laster pulskurven for hver løpeøkt i vinduet for å regne
+ * sone- og intensitetsfelt, og ni år med løping i ett kall ville lastet hvert
+ * spor samtidig. Samme grense og samme grunn som reanalyse-endepunktet.
  */
 export const MAX_REPROJECT_WEEKS = 26;
 
@@ -36,15 +44,33 @@ export interface ReprojectWindow {
 	weeks: number;
 	fromDate: Date;
 	toDate: Date;
+	/** Ble sluttpunktet oppgitt, eller er vinduet «siste N uker fram til nå»? */
+	anchoredToNow: boolean;
 }
 
 /**
  * Validerer og bygger vinduet. Kaster med en melding som sier hvorfor grensa
  * finnes — et avvist tall uten begrunnelse ser ut som en vilkårlig begrensning.
+ *
+ * ## `until` — hvorfor vinduet må kunne PEKES bakover
+ *
+ * Fram til 6. september 2026 var `toDate` alltid `now`, så vinduet kunne bare
+ * være «siste N uker». Da er 26 uker samtidig et tak på spennet OG på hvor langt
+ * tilbake man i det hele tatt rekker — og et hull eldre enn det er utenfor
+ * verktøyets rekkevidde. Det traff konkret: en tidligere utgave av
+ * `refreshForRange` slettet rader den ikke bygde opp igjen, og hullet den
+ * etterlot i `canonical_workouts` lå januar–mars 2026. Med tak 26 uker rakk
+ * reberegningen til 8. mars — én uke for kort, og den ENE knappen som kunne
+ * reparert det nådde ikke fram.
+ *
+ * `until` flytter vinduet, den utvider det ikke: spennet er fortsatt
+ * `MAX_REPROJECT_WEEKS`, av hensyn til pulskurvene. Framtida avvises — et vindu
+ * som slutter i morgen sletter og bygger opp igjen et tomrom.
  */
 export function resolveReprojectWindow(
 	weeksInput: unknown,
-	now: Date
+	now: Date,
+	untilInput?: unknown
 ): { window: ReprojectWindow } | { error: string } {
 	const weeks =
 		weeksInput === undefined || weeksInput === null || weeksInput === ''
@@ -61,15 +87,29 @@ export function resolveReprojectWindow(
 	}
 	if (weeks > MAX_REPROJECT_WEEKS) {
 		return {
-			error: `weeks kan være maks ${MAX_REPROJECT_WEEKS} per kjøring. Kjør lengre historikk i biter — reprojeksjonen sletter og skriver rader i ett spenn.`
+			error: `weeks kan være maks ${MAX_REPROJECT_WEEKS} per kjøring — projeksjonen laster pulskurven for hver løpeøkt i vinduet. Kjør lengre historikk i biter, og bruk until for å flytte vinduet bakover.`
 		};
 	}
 
-	const toDate = new Date(now);
-	const fromDate = new Date(now);
+	const hasUntil = untilInput !== undefined && untilInput !== null && untilInput !== '';
+	let toDate = new Date(now);
+	if (hasUntil) {
+		const parsed = new Date(String(untilInput));
+		if (!Number.isFinite(parsed.getTime())) {
+			return { error: 'until må være en dato på formen YYYY-MM-DD.' };
+		}
+		if (parsed.getTime() > now.getTime()) {
+			return {
+				error: 'until kan ikke ligge i framtida — et vindu som slutter etter i dag bygger opp igjen et tomrom.'
+			};
+		}
+		toDate = parsed;
+	}
+
+	const fromDate = new Date(toDate);
 	fromDate.setUTCDate(fromDate.getUTCDate() - weeks * 7);
 
-	return { window: { weeks, fromDate, toDate } };
+	return { window: { weeks, fromDate, toDate, anchoredToNow: !hasUntil } };
 }
 
 export interface WeekEffortRow {

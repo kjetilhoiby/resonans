@@ -2390,9 +2390,37 @@ løkka i `WorkoutProjectionService.refreshForRange`.
   så det traff aldri feilen. Det er hurtigreparasjonen for et hull man ser nå.
 - **Ingen automatisk full-historikk-reparasjon finnes.** Fiksen hindrer NYE hull;
   den leter ikke opp gamle. Andre huller kan ligge lenger tilbake der en tidligere
-  kjøring tilfeldigvis rammet 2000-grensa — ingen verktøy sier hvor, og
-  `/reprojiser` sitt 26-ukerstak er en bevisst grense for en annen jobb
-  (effort-omkalibrering), ikke ment som full-historikk-verktøy.
+  kjøring tilfeldigvis rammet 2000-grensa.
+- **Vinduet kan PEKES bakover, og det var det som manglet.** Se
+  `docs/changelog/2026-09-06-vinduet-maa-kunne-pekes-bakover.md`.
+  `resolveReprojectWindow` satte `toDate = now`, alltid — så
+  `MAX_REPROJECT_WEEKS` (26) var samtidig et tak på SPENNET og på REKKEVIDDEN.
+  Hullet etter den gamle `refreshForRange` lå januar–mars 2026, og 26 uker fra
+  6. september rakk til 8. mars: én uke for kort. Den ENE knappen i produktet som
+  gjør nøyaktig den jobben, kunne ikke pekes på hullet.
+  `POST /api/helse/trening/reprojiser?weeks=26&until=YYYY-MM-DD` flytter vinduet;
+  spennet er uendret. Framtida avvises, og tom `until` betyr «fram til nå».
+- **Spenntaket står, men grunnen er pulskurvene — ikke slett/skriv.** Den gamle
+  kommentaren sa at et for stort spenn kunne bli avbrutt mellom sletting og
+  skriving; chunkingen over gjorde det usant. Det som står er kostnaden:
+  projeksjonen laster sporet for HVER løpeøkt i vinduet. Samme grense og samme
+  grunn som reanalyse-endepunktet.
+- **Tørrkjøringen er hullfinneren.** `?dryRun=true` over et flyttet vindu lister
+  ukene som de står nå, og `EffortReprojectCard` merker uker med **0 økter** og
+  teller dem i sammendraget. Trente du i dem, mangler radene. Fram til
+  6. september 2026 kastet kortet de ukesradene endepunktet alt returnerte, så
+  hullet måtte utledes av en graf.
+- **«Reberegn treningsbelastning» og «Perioder» er TO rørledninger med nesten
+  samme navn på flaten.** Kortet bygger `canonical_workouts` (som «Akkumulert
+  løping» leser). Periodetabellen (`HealthMetricGrid`, kolonnene ⚖️🏃⚡⏰💓) leser
+  `sensor_aggregates.metrics`, som bare skrives av `aggregateAllPeriods`
+  (nattlig cron kl. 03 UTC), av `aggregatePeriodsFrom` ved en fersk øktskriving,
+  eller av `POST /api/sensors/aggregate` (knappene på `/settings/jobs`).
+  **En reprojeksjon gjør derfor INGENTING for periodetabellen**, og en
+  aggregering gjør ingenting for et hull i canonical. Verre: aggregeringen leser
+  canonical (`computeWorkoutSummaryFromCanonical`), så et hull der bakes inn i
+  månedsradene og blir stående til noe aggregerer på nytt ETTER at canonical er
+  reparert. Rekkefølgen er: reparer canonical først, aggreger etterpå.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 

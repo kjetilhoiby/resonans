@@ -8,7 +8,7 @@
 	 * Kortet leder med **hvorfor** framfor med knappen. En knapp som heter «Reberegn»
 	 * uten forklaring blir trykket når noe føles rart, og det er ikke det den er til.
 	 */
-	import { Button, Select } from '$lib/components/ui';
+	import { Button, DateInput, Select } from '$lib/components/ui';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
 
 	interface WeekRow {
@@ -26,10 +26,30 @@
 	}
 
 	let weeks = $state('8');
+	/**
+	 * Sluttpunktet for vinduet. Tomt = fram til i dag.
+	 *
+	 * Finnes fordi kortet er reparasjonsverktøyet når `canonical_workouts`
+	 * mangler rader i en periode, og et hull eldre enn 26 uker ellers ikke kan
+	 * nås herfra — spennet er taket, ikke rekkevidden.
+	 */
+	let until = $state('');
+	// Framtida avvises av endepunktet uansett; `max` gjør det synlig i velgeren
+	// framfor å la den bli en feilmelding etterpå.
+	const todayIso = new Date().toISOString().slice(0, 10);
 	let running = $state(false);
 	let error = $state<string | null>(null);
 	let baseline = $state<Baseline | null>(null);
 	let rows = $state<WeekRow[] | null>(null);
+	/**
+	 * Ukene som de står NÅ, fra en tørrkjøring.
+	 *
+	 * Egen form framfor å gjenbruke `rows`: der er poenget før mot etter, og en
+	 * tørrkjøring har ingen «etter». Å fylle `after` med samme tall ville sett ut
+	 * som «ingenting endret seg» — det motsatte av det tørrkjøringen svarer på.
+	 * Her er spørsmålet hvilke uker som mangler økter.
+	 */
+	let dryRows = $state<{ weekStart: string; effort: number; workouts: number }[] | null>(null);
 	let summary = $state<string | null>(null);
 	let wasDryRun = $state(false);
 
@@ -70,6 +90,7 @@
 		error = null;
 		try {
 			const params = new URLSearchParams({ weeks });
+			if (until) params.set('until', until);
 			if (dryRun) params.set('dryRun', 'true');
 			const res = await fetch(`/api/helse/trening/reprojiser?${params}`, { method: 'POST' });
 
@@ -86,9 +107,17 @@
 
 			if (dryRun) {
 				rows = null;
+				dryRows = data.weeklyEffortBefore ?? [];
 				const økter = data.workoutsInRange ?? 0;
-				summary = `${økter} økter i vinduet. Ingenting er skrevet ennå.`;
+				const tomme = (dryRows ?? []).filter((r) => r.workouts === 0).length;
+				// Antall tomme uker er hele grunnen til å tørrkjøre et flyttet
+				// vindu: det er hullet, tallfestet.
+				summary =
+					tomme > 0
+						? `${økter} økter i vinduet, og ${tomme} ${tomme === 1 ? 'uke' : 'uker'} uten en eneste økt. Trente du i dem, mangler radene — kjør uten tørrkjøring for å bygge dem opp igjen.`
+						: `${økter} økter i vinduet, ingen tomme uker. Ingenting er skrevet ennå.`;
 			} else {
+				dryRows = null;
 				rows = data.weeks ?? [];
 				summary = `${data.canonicalCount} økter reberegnet. Samlet effort ${data.totalEffortBefore} → ${data.totalEffortAfter}.`;
 			}
@@ -109,6 +138,13 @@
 		reberegner vinduet med dagens modell.
 	</p>
 	<p class="meta">Trygg å kjøre om igjen — samme modell gir samme tall.</p>
+	<p class="meta">
+		Den reparerer også hull: mangler <code>canonical_workouts</code> økter i en
+		periode, blir de bygget opp igjen her. Ligger hullet lenger tilbake enn
+		vinduet rekker, sett et sluttpunkt — spennet flyttes, det utvides ikke.
+		«Se hva som skjer» først: uker med 0 økter der du vet du trente, er radene
+		som mangler.
+	</p>
 
 	<div class="controls">
 		<Select bind:value={weeks} ariaLabel="Hvor langt tilbake" dataTrack="reberegn-effort:vindu">
@@ -116,6 +152,15 @@
 			<option value="12">12 uker</option>
 			<option value="26">26 uker</option>
 		</Select>
+		<label class="until">
+			<span>Bakover fra</span>
+			<DateInput
+				bind:value={until}
+				max={todayIso}
+				ariaLabel="Sluttpunkt for vinduet — tomt betyr i dag"
+				dataTrack="reberegn-effort:sluttpunkt"
+			/>
+		</label>
 		<!-- Knappene har beskrivende tekst, så teksten blir label i brukslogginga. -->
 		<Button variant="secondary" disabled={running} onClick={() => run(true)}>Se hva som skjer</Button>
 		<Button disabled={running} onClick={() => run(false)}>
@@ -139,6 +184,25 @@
 
 	{#if summary}
 		<p class="summary" class:dry={wasDryRun}>{summary}</p>
+	{/if}
+
+	{#if dryRows && dryRows.length > 0}
+		<div class="table-scroll">
+			<table>
+				<thead>
+					<tr><th>Uke</th><th>Økter</th><th>Effort</th></tr>
+				</thead>
+				<tbody>
+					{#each dryRows as row (row.weekStart)}
+						<tr class:empty-week={row.workouts === 0}>
+							<td>{row.weekStart}</td>
+							<td class="num">{row.workouts}</td>
+							<td class="num">{row.effort}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{/if}
 
 	{#if rows && rows.length > 0}
@@ -187,6 +251,23 @@
 		font-size: 0.82rem;
 		color: var(--text-secondary, #aaa);
 		line-height: 1.5;
+	}
+
+	/* Tomme uker er funnet, ikke pynt — de skal være det man ser i tabellen. */
+	.empty-week td {
+		color: var(--warn, #d9a13a);
+	}
+
+	.until {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.85rem;
+		color: var(--text-muted, #9a9a95);
+	}
+
+	.until span {
+		white-space: nowrap;
 	}
 
 	.controls {
