@@ -326,6 +326,16 @@ export async function importStravaBatch(options: {
 			// en manuell rad som deler startsekund. Med `error` ble det en
 			// «failed» som ser ut som en ødelagt fil; med `ignore` er det det det
 			// er: raden fantes fra før. Jobben skal kunne kjøres om igjen.
+			//
+			// **`projectionMode: 'queued'`, ikke inline.** Standarden kjører
+			// `refreshForRange` med en gang, per rad, over hele historikken
+			// bakover fra økta — og en økt fra 2012 gir fjorten år. Inline-kallet
+			// tar dessuten jobben ut av `queued`, så debouncen i
+			// `enqueueWorkoutProjectionRefresh` ikke får slått den neste raden
+			// sammen med den forrige: ett arkiv på tusen økter ble tusen
+			// full-historikk-reprojeksjoner rygg mot rygg. Køen står igjen — den
+			// er det som gjør at et avbrudd ikke mister projeksjonen — men
+			// kjøringen overlates til workeren, og da SLÅS radene sammen.
 			const { event, inserted } = await SensorEventService.write({
 				userId,
 				sensorId: sensor!.id,
@@ -358,7 +368,7 @@ export async function importStravaBatch(options: {
 					triageFindings: findings.length > 0 ? findings.map((f) => f.axis) : undefined
 				},
 				source: STRAVA_IMPORT_SOURCE
-			}, { conflictMode: 'ignore' });
+			}, { conflictMode: 'ignore', projectionMode: 'queued' });
 
 			if (!event || !inserted) {
 				outcomes.push({ status: 'existed', id: row.id });
