@@ -1,7 +1,7 @@
 import { db, pgClient } from '$lib/db';
 import { canonicalWorkouts, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
 import { and, eq, gte, inArray, lte, max, sql } from 'drizzle-orm';
-import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { buildUnifiedWorkoutActivitiesPage } from '$lib/server/activity-layer';
 import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-refresh-queue';
 import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
 import { getTrailAttributedEventIds } from '$lib/server/tracks/routes-repository';
@@ -230,7 +230,7 @@ export class WorkoutProjectionService {
 		// pace-intensiteten gulves for disse. Prospektivt — kun taggede økter påvirkes.
 		const trailEventIds = await getTrailAttributedEventIds(userId, startDate).catch(() => new Set<string>());
 
-		// **Vinduet hentes side for side, aldri i ett jafs.** `buildUnifiedWorkoutActivities`
+		// **Vinduet hentes side for side, aldri i ett jafs.** `buildUnifiedWorkoutActivitiesPage`
 		// er `since: cursor, limit: PROJECTION_PAGE_SIZE`, stigende sortert — en side som
 		// FYLLER grensa kan skjule flere aktiviteter vi ikke har sett ennå.
 		// `decideProjectionChunk` er regelen: en full side står bare inne for det den selv
@@ -260,21 +260,25 @@ export class WorkoutProjectionService {
 				);
 			}
 
-			const unified = await buildUnifiedWorkoutActivities(userId, {
+			const page = await buildUnifiedWorkoutActivitiesPage(userId, {
 				since: cursor,
 				limit: this.PROJECTION_PAGE_SIZE
 			});
 
+			// **Enheten er HENDELSER.** `page.activities.length` ligger alltid under
+			// grensa (tre kilder per tur), så den kan ikke svare på om siden ble
+			// avkortet — og et «kilden gikk tom» på feil grunnlag sletter hele
+			// vinduet. Se `workout-projection-chunking.ts`.
 			const decision = decideProjectionChunk({
-				pageLength: unified.length,
-				limit: this.PROJECTION_PAGE_SIZE,
-				lastActivityStartTime: unified.length > 0 ? new Date(unified[unified.length - 1].startTime) : null,
+				eventsRead: page.eventsRead,
+				eventLimit: page.eventLimit,
+				activityStartTimes: page.activities.map((workout) => new Date(workout.startTime)),
 				requestedEndDate: endDate
 			});
 			if (!decision) break;
 
 			const chunkEnd = decision.chunkEndDate;
-			const inRange = unified.filter((workout) => new Date(workout.startTime) <= chunkEnd);
+			const inRange = page.activities.filter((workout) => new Date(workout.startTime) <= chunkEnd);
 
 			// For running workouts: fetch trackPoints fra sensorEvents og kjør analytics.
 			// Activity-layeren stripper trackPoints fra query-pathen, så vi henter dem her.
@@ -405,7 +409,7 @@ export class WorkoutProjectionService {
 			dailyTotal += dailyRows.length;
 
 			console.log(
-				`[workout-projections] refresh ${userId}: side ${chunkCount} [${cursor.toISOString()}–${chunkEnd.toISOString()}] unified=${inRange.length}, canonical=${canonicalRows.length}, daily=${dailyRows.length}`
+				`[workout-projections] refresh ${userId}: side ${chunkCount} [${cursor.toISOString()}–${chunkEnd.toISOString()}] hendelser=${page.eventsRead}/${page.eventLimit}, unified=${inRange.length}, canonical=${canonicalRows.length}, daily=${dailyRows.length}, mer=${decision.hasMore}`
 			);
 
 			if (!decision.hasMore) break;

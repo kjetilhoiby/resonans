@@ -311,11 +311,49 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 	};
 }
 
+/**
+ * Én side av det dedupliserte aktivitetslaget, MED antallet råhendelser siden leste.
+ *
+ * ## Hvorfor sidetallet må ut hit
+ *
+ * `options.limit` er en grense på rader i `sensor_events`, ikke på aktiviteter.
+ * Samme løpetur skrives av opptil tre kilder, så 2000 hendelser blir typisk
+ * 700–900 klynger. En kaller som skal vite om siden ble AVKORTET — altså om det
+ * finnes mer bak grensa — kan derfor ikke se på `activities.length`: den ligger
+ * alltid under grensa, også når kilden har tusenvis av rader igjen.
+ *
+ * Det er ikke en teoretisk fare. `WorkoutProjectionService.refreshForRange`
+ * sammenlignet nettopp antall aktiviteter mot hendelsesgrensa, konkluderte
+ * «kilden gikk tom» hver gang, og slettet derfor `canonical_workouts` for hele
+ * det forespurte vinduet mens den bare skrev tilbake de eldste 2000 hendelsenes
+ * aktiviteter. På et tolvårsvindu fra arkivimporten forsvant alt etter de eldste
+ * ~900 øktene. Se `docs/changelog/2026-09-06-sidetallet-var-i-feil-enhet.md`.
+ *
+ * Bruk denne når avkortingen betyr noe. `buildUnifiedWorkoutActivities` er den
+ * samme jobben for kallere som bare vil ha listen.
+ */
+export interface UnifiedWorkoutPage {
+	activities: UnifiedWorkoutActivity[];
+	/** Antall RÅ `sensor_events`-rader siden leste. */
+	eventsRead: number;
+	/** Hendelsesgrensa siden ble hentet med. `eventsRead === eventLimit` = avkortet. */
+	eventLimit: number;
+}
+
 export async function buildUnifiedWorkoutActivities(
 	userId: string,
 	options: ActivityLayerOptions = {}
 ): Promise<UnifiedWorkoutActivity[]> {
+	const page = await buildUnifiedWorkoutActivitiesPage(userId, options);
+	return page.activities;
+}
+
+export async function buildUnifiedWorkoutActivitiesPage(
+	userId: string,
+	options: ActivityLayerOptions = {}
+): Promise<UnifiedWorkoutPage> {
 	const t0 = performance.now();
+	const eventLimit = options.limit ?? 1000;
 	const conditions = [
 		eq(sensorEvents.userId, userId),
 		eq(sensorEvents.dataType, 'workout')
@@ -359,10 +397,12 @@ export async function buildUnifiedWorkoutActivities(
 		.from(sensorEvents)
 		.where(and(...conditions))
 		.orderBy(asc(sensorEvents.timestamp))
-		.limit(options.limit ?? 1000);
-	console.log(`[activity-layer] sensorEvents query: ${(performance.now() - t0).toFixed(0)}ms → ${workoutEvents.length} rows`);
+		.limit(eventLimit);
+	console.log(`[activity-layer] sensorEvents query: ${(performance.now() - t0).toFixed(0)}ms → ${workoutEvents.length} rows (grense ${eventLimit})`);
 
-	if (workoutEvents.length === 0) return [];
+	if (workoutEvents.length === 0) {
+		return { activities: [], eventsRead: 0, eventLimit };
+	}
 
 	const t1 = performance.now();
 	const sensorIds = [...new Set(workoutEvents.map((event) => event.sensorId))];
@@ -522,8 +562,8 @@ export async function buildUnifiedWorkoutActivities(
 			return true;
 		});
 
-	console.log(`[activity-layer] buildUnifiedWorkoutActivities TOTAL: ${(performance.now() - t0).toFixed(0)}ms → ${unified.length} deduplicated workouts`);
-	return unified;
+	console.log(`[activity-layer] buildUnifiedWorkoutActivities TOTAL: ${(performance.now() - t0).toFixed(0)}ms → ${unified.length} deduplicated workouts fra ${workoutEvents.length} hendelser`);
+	return { activities: unified, eventsRead: workoutEvents.length, eventLimit };
 }
 
 export async function buildCanonicalActivityFeed(
