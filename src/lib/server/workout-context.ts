@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { and, eq } from 'drizzle-orm';
+import { resolveDistanceMeters } from '$lib/domain/health/distance-unit';
 
 export interface WorkoutContextSummary {
 	id: string;
@@ -19,11 +20,6 @@ export interface WorkoutContextSummary {
 	sourceName: string | null;
 	sourceFormat: string | null;
 	chatPrompt: string;
-}
-
-function normalizeDistanceMeters(distance: unknown): number | null {
-	if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0) return null;
-	return distance > 80 ? distance : distance * 1000;
 }
 
 function normalizeDurationSeconds(duration: unknown): number | null {
@@ -111,7 +107,10 @@ export async function getWorkoutContextForUser(
 	if (!workout) return null;
 
 	const sportType = typeof workout.data?.sportType === 'string' ? workout.data.sportType : 'workout';
-	const distanceMeters = normalizeDistanceMeters(workout.data?.distance);
+	// Delt enhetsavgjørelse. Fila hadde en PRIVAT kopi av km-heuristikken — en
+	// tredje — og en økt på 52,9 meter ble derfor 52,9 km også i øktkonteksten
+	// modellen leser.
+	const distanceMeters = resolveDistanceMeters(workout.data?.distance, workout.data?.duration);
 	const durationSeconds = normalizeDurationSeconds(workout.data?.duration);
 	const paceSecondsPerKm = normalizePaceSecondsPerKm(workout.data?.paceSecondsPerKm);
 	const summaryBase = {

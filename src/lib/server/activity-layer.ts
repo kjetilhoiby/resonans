@@ -7,6 +7,7 @@ import {
 	MIN_USABLE_TRACK_POINTS,
 	pickTrackSource
 } from '$lib/domain/health/track-source';
+import { resolveDistanceMeters } from '$lib/domain/health/distance-unit';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -284,8 +285,11 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 					? event.metadata.sourceImageUrl
 					: undefined;
 	const notesValue = typeof event.data.notes === 'string' ? event.data.notes : undefined;
-	const distanceMeters = normalizeDistanceMeters(event.data.distance);
+	// Enheten avgjøres av farten når varigheten finnes — se `distance-unit.ts`.
+	// Her er begge feltene fra SAMME hendelse, altså det mest pålitelige paret
+	// som finnes; klyngen under kan måtte plukke dem fra hver sin kilde.
 	const durationSeconds = normalizeDurationSeconds(event.data.duration);
+	const distanceMeters = resolveDistanceMeters(event.data.distance, durationSeconds);
 	const avgHeartRate =
 		normalizeHeartRate(event.data.avgHeartRate) ??
 		normalizeHeartRate(event.data.heartRate);
@@ -475,7 +479,15 @@ export async function buildUnifiedWorkoutActivitiesPage(
 	const unified = clusters
 		.map((cluster): UnifiedWorkoutActivity => {
 			const events = latestPerSensor(cluster.events);
-			const distanceMeters = pickNumericField(events, (event) => normalizeDistanceMeters(event.data.distance), 'preferGps');
+			// **Enheten avgjøres PER HENDELSE, før valget mellom kildene.**
+			// `pickNumericField` kan ta distansen fra én kilde og varigheten fra
+			// en annen, og et par som ikke hører sammen er ikke en fart. Derfor
+			// leser vi `event.data.duration` inne i utvelgeren.
+			const distanceMeters = pickNumericField(
+				events,
+				(event) => resolveDistanceMeters(event.data.distance, event.data.duration),
+				'preferGps'
+			);
 			const durationSeconds = pickNumericField(events, (event) => normalizeDurationSeconds(event.data.duration), 'preferGps');
 			const paceSecondsPerKm =
 				pickNumericField(events, (event) =>

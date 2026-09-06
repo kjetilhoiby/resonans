@@ -1,7 +1,8 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors, workoutSuppressions } from '$lib/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { clusterSportFamily, normalizeDistanceMeters } from '$lib/server/activity-layer';
+import { clusterSportFamily } from '$lib/server/activity-layer';
+import { resolveDistanceMeters } from '$lib/domain/health/distance-unit';
 import { isWorkoutSuppressed } from '$lib/domain/health/workout-suppression';
 import { refreshAfterDismissChange, setWorkoutDismissed } from '$lib/server/workouts/dismiss-workout';
 
@@ -133,7 +134,9 @@ export async function listHiddenWorkouts(userId: string): Promise<HiddenWorkout[
 			startTime: event.timestamp.toISOString(),
 			sportType,
 			sportFamily,
-			distanceMeters: normalizeDistanceMeters(event.data?.distance),
+			// Samme enhetsavgjørelse som feeden — lista MÅ vise samme tall, og en
+			// egen tolkning her ville gjort en skjult 52,9 m til 52,9 km bare her.
+			distanceMeters: resolveDistanceMeters(event.data?.distance, event.data?.duration),
 			durationSeconds:
 				typeof event.data?.duration === 'number' && event.data.duration > 0 ? event.data.duration : null,
 			providers: [provider],
