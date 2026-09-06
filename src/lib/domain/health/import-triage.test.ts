@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import {
+	isMisreadAsKilometres,
+	KM_HEURISTIC_CEILING_METERS,
 	describePaceReference,
 	MAX_RUN_SEC_PER_KM,
 	MAX_SLIDER_POSITIONS,
@@ -293,5 +296,88 @@ describe('sliderMidpoint', () => {
 			expect(mid).toBeGreaterThanOrEqual(range.min);
 			expect(mid).toBeLessThanOrEqual(range.max);
 		}
+	});
+});
+
+describe('isMisreadAsKilometres', () => {
+	it('taket er det samme tallet som km-heuristikken bruker', async () => {
+		// De to konstantene bor i hvert sitt lag (domenet kan ikke importere
+		// serverlaget), så likheten må voktes framfor antas. Driver de fra
+		// hverandre, slipper igjen fragmenter gjennom som kilometer.
+		const source = await readFile(
+			new URL('../../server/activity-layer.ts', import.meta.url),
+			'utf8'
+		);
+		expect(source).toContain(`value > ${KM_HEURISTIC_CEILING_METERS} ? value : value * 1000`);
+	});
+
+	it('en distanse i tvetydighetsbåndet blir lest som kilometer', () => {
+		expect(isMisreadAsKilometres(50)).toBe(true);
+		expect(isMisreadAsKilometres(80)).toBe(true);
+	});
+
+	it('over taket er meter meter', () => {
+		expect(isMisreadAsKilometres(81)).toBe(false);
+		expect(isMisreadAsKilometres(5000)).toBe(false);
+	});
+
+	it('null, null-distanse og negative tall er ikke et funn', () => {
+		expect(isMisreadAsKilometres(null)).toBe(false);
+		expect(isMisreadAsKilometres(undefined)).toBe(false);
+		expect(isMisreadAsKilometres(0)).toBe(false);
+		expect(isMisreadAsKilometres(-5)).toBe(false);
+	});
+});
+
+describe('for-kort under km-taket', () => {
+	/**
+	 * REGRESJON. En måned i «Akkumulert løping» startet ~50 km oppe i lufta på
+	 * dag 1. Årsaken var ikke grafen: en løpetur på under 80 meter leses som
+	 * kilometer, og importen slapp den inn fordi «en for kort økt kan skjules».
+	 */
+	it('holder raden UTE, ikke bare rapporterer den', () => {
+		const findings = triageCandidate({
+			id: '1',
+			date: '2026-05-01',
+			name: 'Fragment',
+			sportType: 'running',
+			distanceMeters: 50,
+			elapsedSeconds: 600,
+			movingSeconds: 600
+		});
+		const blocking = findings.filter((f) => f.blocksImport === true);
+		expect(blocking).toHaveLength(1);
+		expect(blocking[0].axis).toBe('for-kort');
+		// Konsekvensen må si KILOMETER — «teller som en økt» er den gale
+		// beskrivelsen, og det var den som gjorde at porten ikke ble satt.
+		expect(blocking[0].consequence).toContain('KILOMETER');
+	});
+
+	it('gir ETT for-kort-funn, ikke to for samme distanse', () => {
+		const findings = triageCandidate({
+			id: '1',
+			date: '2026-05-01',
+			name: 'Fragment',
+			sportType: 'running',
+			distanceMeters: 50,
+			elapsedSeconds: 600,
+			movingSeconds: 600
+		});
+		expect(findings.filter((f) => f.axis === 'for-kort' && f.reason.includes('m,'))).toHaveLength(1);
+	});
+
+	it('et fragment OVER taket rapporteres som før, uten å blokkere', () => {
+		const findings = triageCandidate({
+			id: '1',
+			date: '2026-05-01',
+			name: 'Rundt kvartalet',
+			sportType: 'running',
+			distanceMeters: 300,
+			elapsedSeconds: 600,
+			movingSeconds: 600
+		});
+		const short = findings.filter((f) => f.axis === 'for-kort');
+		expect(short.length).toBeGreaterThan(0);
+		expect(short.every((f) => f.blocksImport === undefined)).toBe(true);
 	});
 });

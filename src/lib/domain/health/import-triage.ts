@@ -57,6 +57,18 @@ export type TriageFinding = {
 	 * 1,18), som er det tallet regelen faktisk handler om.
 	 */
 	ratio: number;
+	/**
+	 * Funnet skal HOLDE RADEN UTE, uansett `severity` og `ratio`.
+	 *
+	 * Porten er ellers `for-rask` over en terskel, og begrunnelsen for at de
+	 * tre andre aksene bare rapporteres er at skaden deres er reversibel: en
+	 * for kort økt kan skjules. Det holder ikke for en distanse under
+	 * `KM_HEURISTIC_CEILING_METERS` — se `isMisreadAsKilometres`. Der er ikke
+	 * skaden «én rad for mye i en telling», den er titalls fantomkilometer, og
+	 * den er permanent på samme måte som en gal rekord: den blir stående til
+	 * noen finner den.
+	 */
+	blocksImport?: true;
 	/** Hva som er målt, med tallene i. */
 	reason: string;
 	/** Hva denne raden ødelegger hvis den slipper inn. */
@@ -218,6 +230,40 @@ export const PACE_SUSPECT_RATIO = 1.0;
 export const MAX_RUN_SEC_PER_KM = 720;
 
 /**
+ * Taket i km-heuristikken til `normalizeDistanceMeters`.
+ *
+ * Den funksjonen leser rå `sensor_events.data.distance` og tolker **enhver**
+ * positiv verdi ≤ 80 som KILOMETER, fordi noen kilder sender km i et felt som
+ * heter meter. For en ekte økt er det riktig. For et fragment er det en
+ * katastrofe: 50 meter blir 50 kilometer.
+ *
+ * Tallet er duplisert fra `activity-layer.ts` med vilje — domenelaget kan ikke
+ * importere serverlaget, og en test vokter at de to er like.
+ */
+export const KM_HEURISTIC_CEILING_METERS = 80;
+
+/**
+ * Vil denne distansen bli lest som kilometer i stedet for meter?
+ *
+ * **Dette er den ene «for kort»-en som ikke kan skjules bort.** Resten av
+ * for-kort-aksen koster en rad i en telling; denne koster titalls kilometer i
+ * hver eneste sum som leser løping — månedstotalen, den akkumulerte kurven,
+ * det slepende volumet — og i streak-kalenderen blir den samme raden dagens
+ * raskeste tempo, siden sekundene deles på en distanse som ikke fant sted.
+ *
+ * Målt i prod 6. september 2026: en måned i «Akkumulert løping» startet ~50 km
+ * oppe i lufta på dag 1.
+ */
+export function isMisreadAsKilometres(distanceMeters: number | null | undefined): boolean {
+	return (
+		typeof distanceMeters === 'number' &&
+		Number.isFinite(distanceMeters) &&
+		distanceMeters > 0 &&
+		distanceMeters <= KM_HEURISTIC_CEILING_METERS
+	);
+}
+
+/**
  * Distansegulv per sportsfamilie, i meter.
  *
  * Gulvet er sport-avhengig fordi et fragment er relativt: 800 m på sykkel er en
@@ -356,8 +402,29 @@ export function triageCandidate(
 	}
 
 	// --- for-kort: fragmentet som likevel teller som en økt ----------------
+	//
+	// Under km-heuristikkens tak er dette IKKE bare et fragment: distansen blir
+	// lest som kilometer ved neste lesing, og raden slutter å være liten. Den
+	// står derfor først og bærer `blocksImport`.
+	if (isMisreadAsKilometres(distance)) {
+		findings.push({
+			axis: 'for-kort',
+			severity: 1,
+			ratio: KM_HEURISTIC_CEILING_METERS / (distance as number),
+			blocksImport: true,
+			reason: `${distance} m, under taket på ${KM_HEURISTIC_CEILING_METERS} m i km-heuristikken`,
+			consequence: `Ville blitt lest som ${distance} KILOMETER i hver sum som teller løping.`
+		});
+	}
+
 	const floor = MIN_DISTANCE_METERS_BY_FAMILY[family];
-	if (floor != null && distance != null && distance > 0 && distance < floor) {
+	if (
+		floor != null &&
+		distance != null &&
+		distance > 0 &&
+		distance < floor &&
+		!isMisreadAsKilometres(distance)
+	) {
 		findings.push({
 			axis: 'for-kort',
 			severity: severityFromRatio(floor / distance),

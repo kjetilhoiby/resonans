@@ -54,6 +54,11 @@ export const STRAVA_IMPORT_SOURCE = 'strava_export';
  * for-rask økt blir en distanserekord, og en rekord er «min over alt» — den
  * blir stående til noen finner den. Derfor er den ene aksen en port og de tre
  * andre en rapport.
+ *
+ * **Ett funn er en port uten å være en akse:** `blocksImport`, satt av
+ * `isMisreadAsKilometres`. Begrunnelsen over — «en for kort økt kan skjules» —
+ * holder ikke under 80 meter, for da leses distansen som KILOMETER og raden
+ * slutter å være kort. Se `import-triage.ts`.
  */
 export const BLOCKING_AXES = new Set<TriageFinding['axis']>(['for-rask']);
 
@@ -274,8 +279,11 @@ export async function importStravaBatch(options: {
 
 		// Triagen dømmer MANIFESTETS tall — før fila pakkes ut, og før noe skrives.
 		const findings = triageCandidate(triageCandidateFromRow(row), { paceReference });
+		// To porter, og den andre ser ikke på ratio: et funn som bærer
+		// `blocksImport` er permanent på samme måte som en gal rekord — se
+		// `isMisreadAsKilometres`.
 		const blocking = findings.filter(
-			(f) => BLOCKING_AXES.has(f.axis) && f.ratio >= BLOCK_PACE_RATIO
+			(f) => f.blocksImport === true || (BLOCKING_AXES.has(f.axis) && f.ratio >= BLOCK_PACE_RATIO)
 		);
 		if (blocking.length > 0) {
 			outcomes.push({ status: 'blocked', id: row.id, findings });

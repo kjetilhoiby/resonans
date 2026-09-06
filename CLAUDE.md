@@ -2251,6 +2251,24 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
 - **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
   kilometer. Les den aldri rå fra `data->>'distance'`.
+- **Under 80 meter er heuristikken en felle, og den må stoppes ved SKRIVING.**
+  Se `docs/changelog/2026-09-06-femti-meter-ble-femti-kilometer.md`. En ekte
+  økt på 50 meter blir 50 KILOMETER — i månedstotalen, i den akkumulerte
+  kurven, i det slepende volumet, og i streak-kalenderen som dagens raskeste
+  tempo. Tvetydigheten er uløselig fra tallet alene (50 kan være km fra en
+  km-kilde og m fra en meter-kilde), så porten hører hos skriveren, som VET
+  enheten — ikke i leseren. `isMisreadAsKilometres` +
+  `KM_HEURISTIC_CEILING_METERS` i `import-triage.ts`; taket er duplisert fra
+  `activity-layer.ts` fordi domenelaget ikke kan importere serverlaget, og en
+  test leser kildefila og krever at de er like.
+- **`TriageFinding.blocksImport` er en port uten å være en akse.**
+  `BLOCKING_AXES` er bare `for-rask`, begrunnet med at de tre andre er
+  reversible — «en for kort økt kan skjules». Det er sant for et fragment på
+  300 m og usant under 80, for da er raden ikke kort lenger. Porten leser
+  ikke `ratio`: her finnes ingen grensetilfeller. **Konsekvensteksten på
+  funnet var det som satte regelen** — den sa «teller som en økt i streaks»
+  der den skulle sagt KILOMETER, og på det premisset ble skaden kalt
+  reversibel. En feltbeskrivelse som er premiss for en port må stemme.
 - **Men IKKE på `canonical_workouts`.** Den kolonnen er alt skrevet gjennom
   `normalizeDistanceMeters`, så en ny runde med km-heuristikken gjør en
   søppelrad på 53 meter til 53 kilometer. Bruk `canonicalDistanceMeters`. Feilen
