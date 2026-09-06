@@ -14,6 +14,13 @@
 		max?: string;
 		className?: string;
 		ariaLabel?: string;
+		/**
+		 * Label i brukslogginga. Uten den ender feltet som et anonymt
+		 * `input[date]`, og bruksstatistikken kan ikke leses — se
+		 * brukslogging-reglene i CLAUDE.md. Svelte videresender ikke ukjente
+		 * attributter til komponenter, så dette MÅ være en prop.
+		 */
+		dataTrack?: string;
 		onChange?: (event: Event & { currentTarget: EventTarget & HTMLInputElement }) => void;
 	}
 
@@ -26,6 +33,7 @@
 		max,
 		className = '',
 		ariaLabel,
+		dataTrack,
 		onChange,
 		value = $bindable()
 	}: Props = $props();
@@ -40,6 +48,7 @@
 	{min}
 	{max}
 	aria-label={ariaLabel}
+	data-track={dataTrack}
 	bind:value
 	onchange={onChange}
 	class={`ds-input ds-date-input ${className}`.trim()}

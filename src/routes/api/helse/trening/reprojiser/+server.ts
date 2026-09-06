@@ -16,7 +16,13 @@ import {
 /**
  * Reberegner lagrede `effortScore` fra gjeldende skåringsmodell.
  *
- * `POST /api/helse/trening/reprojiser?weeks=8[&dryRun=true]`
+ * `POST /api/helse/trening/reprojiser?weeks=8[&until=YYYY-MM-DD][&dryRun=true]`
+ *
+ * `until` flytter vinduet bakover — spennet er fortsatt `weeks`. Den finnes fordi
+ * endepunktet også er reparasjonsverktøyet når `canonical_workouts` mangler rader
+ * i en periode, og et hull eldre enn taket var ellers utenfor rekkevidde. En
+ * `dryRun` over et flyttet vindu er samtidig hullfinneren: uker med
+ * `workouts: 0` der du vet du trente, er rader som mangler.
  *
  * ## Hvorfor den ikke ligger under `/api/admin/`
  *
@@ -60,11 +66,18 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	const userId = requested || locals.userId;
 	const dryRun = url.searchParams.get('dryRun') === 'true';
 
-	const resolved = resolveReprojectWindow(url.searchParams.get('weeks') ?? undefined, new Date());
+	// `until` flytter vinduet bakover uten å utvide det. Uten den var 26 uker
+	// samtidig et tak på spennet OG på rekkevidden, og et eldre hull i
+	// `canonical_workouts` kunne ikke repareres herfra i det hele tatt.
+	const resolved = resolveReprojectWindow(
+		url.searchParams.get('weeks') ?? undefined,
+		new Date(),
+		url.searchParams.get('until') ?? undefined
+	);
 	if ('error' in resolved) {
 		return json({ success: false, error: resolved.error }, { status: 400 });
 	}
-	const { weeks, fromDate, toDate } = resolved.window;
+	const { weeks, fromDate, toDate, anchoredToNow } = resolved.window;
 
 	const before = await readWeeklyEffort(userId, fromDate, toDate);
 	// Baselinen rapporteres fordi den ER endringen: `maxHrSource: 'age'` mot
@@ -75,7 +88,8 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	const window = {
 		weeks,
 		fromIso: fromDate.toISOString(),
-		toIso: toDate.toISOString()
+		toIso: toDate.toISOString(),
+		anchoredToNow
 	};
 	const baselineSummary = {
 		restHr: baseline.restHr,
@@ -94,7 +108,7 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 			weeklyEffortBefore: before,
 			workoutsInRange: before.reduce((sum, r) => sum + r.workouts, 0),
 			message:
-				'Ingenting er skrevet. Kjør uten dryRun for å reberegne — og les baseline.maxHrSource: står den på «observed» mens du forventet «age», mangler fødselsåret i kroppsprofilen.'
+				'Ingenting er skrevet. Kjør uten dryRun for å reberegne — og les baseline.maxHrSource: står den på «observed» mens du forventet «age», mangler fødselsåret i kroppsprofilen. Står det uker med workouts: 0 der du vet du trente, mangler radene i canonical_workouts, og en kjøring uten dryRun bygger dem opp igjen.'
 		});
 	}
 
@@ -106,7 +120,7 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	const totalAfter = after.reduce((sum, r) => sum + r.effort, 0);
 
 	console.log(
-		`[reproject] ${userId}: ${weeks} uker, ${result.canonicalCount} økter, effort ${totalBefore.toFixed(0)} → ${totalAfter.toFixed(0)}, maxHr ${baseline.maxHr} (${baseline.maxHrSource})`
+		`[reproject] ${userId}: ${weeks} uker ${fromDate.toISOString().slice(0, 10)}–${toDate.toISOString().slice(0, 10)}, ${result.canonicalCount} økter, effort ${totalBefore.toFixed(0)} → ${totalAfter.toFixed(0)}, maxHr ${baseline.maxHr} (${baseline.maxHrSource})`
 	);
 
 	return json({
