@@ -9,6 +9,7 @@
 		StravaImportCard,
 		TeslaSourceCard,
 		EmailRulesCard,
+		FixTrainingHistoryCard,
 		EffortReprojectCard,
 		WorkoutReanalyzeCard,
 		HrTrustCard,
@@ -119,6 +120,14 @@
 			ETTERPÅ, og rekkefølgen på flaten er den rekkefølgen de skal kjøres i.
 		-->
 		<StravaImportCard />
+		<!--
+			«Fiks treningshistorikk» står FØRST av jobbene, og det er en beslutning om
+			hva man skal trykke på når noe ser galt ut. Den kjører de to rørledningene i
+			riktig rekkefølge fra tidens morgen; kortene under er de samme stegene med
+			håndtaket på — nyttige når man vet hva man ser etter, en felle når man ikke
+			vet det.
+		-->
+		<FixTrainingHistoryCard />
 		<EffortReprojectCard />
 		<WorkoutReanalyzeCard />
 		<HrTrustCard />

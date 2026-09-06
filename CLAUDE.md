@@ -2421,6 +2421,31 @@ løkka i `WorkoutProjectionService.refreshForRange`.
   canonical (`computeWorkoutSummaryFromCanonical`), så et hull der bakes inn i
   månedsradene og blir stående til noe aggregerer på nytt ETTER at canonical er
   reparert. Rekkefølgen er: reparer canonical først, aggreger etterpå.
+- **«Fiks treningshistorikk» er den ENE knappen som gjør rekkefølgen for deg**
+  (`FixTrainingHistoryCard` i `/settings/sources`, planen i
+  `$lib/domain/health/history-repair-plan.ts`, planendepunktet
+  `GET /api/helse/trening/fiks-historikk`). Se
+  `docs/changelog/2026-09-06-fiks-treningshistorikk.md`. Den finnes fordi de tre
+  fellene over til sammen gjør reparasjonen umulig å treffe på egen hånd: hvert
+  steg svarer «ferdig» uten å ha rørt det brukeren ser på, og feilen er stum i
+  alle ledd. **Send folk dit framfor til «Reberegn treningsbelastning»** når noe
+  ser galt ut; det kortet er verktøyet når man vet hva man ser etter (en
+  tørrkjøring i et bestemt vindu, eller de siste ukene etter en modellendring).
+  - **Startdatoen leses fra `sensor_events`, aldri fra `canonical_workouts`.**
+    Canonical er tabellen som kan mangle rader, så en plan som leste
+    startpunktet sitt derfra ville brukt skaden som grense for hva den kan
+    reparere.
+  - **Vinduene overlapper med én dag** (`weeks * 7 − 1` som forskyvning).
+    `until` tolkes som midnatt UTC mens det foregående vinduets startpunkt
+    bærer et klokkeslett — uten overlappen faller et døgn mellom to vinduer, og
+    et hull en reparasjonsjobb selv etterlater er den verste sorten. Første
+    vindu har `until: null` («fram til nå»), ellers står dagens økter igjen.
+  - **Løkka går i KLIENTEN**, som `WorkoutReanalyzeCard`, og av samme to
+    grunner. Ingen ny jobbtype: en `batch:*`-rad uten lås er nettopp klassen
+    jobber som blir stående i `running` når fanen lukkes.
+  - **Uker som gikk fra `before: 0` til `after > 0` er hullene, tallfestet** —
+    den ene observasjonen som skiller «jobben kjørte» fra «jobben gjorde noe».
+    Tallet er et GULV: en uke der alle øktene mangler effort-skår leser 0 → 0.
 
 ### Krydderet telles per aktivitet, aldri på tvers
 
