@@ -2352,6 +2352,48 @@ Se `docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md`. Orkestreringen i
   03 UTC. Kall `aggregatePeriodsFrom` etterpå, slik `runAfterWorkoutWrite` alltid
   har gjort på skrivesiden.
 
+### Refresh sletter aldri mer enn den bygger opp igjen
+
+Se `docs/changelog/2026-09-06-projeksjon-som-sletter-mer-enn-den-bygger.md`. Regelen
+rent i `$lib/domain/health/workout-projection-chunking.ts` (`decideProjectionChunk`),
+løkka i `WorkoutProjectionService.refreshForRange`.
+
+- **`refreshForRange` hentet aktiviteter side for side, men slettet i ett jafs.**
+  `buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 2000 })` er
+  stigende sortert med et hardt tak — en side som FYLLER grensa betyr «det finnes
+  flere, vi vet bare ikke hvor mange». Fram til september 2026 ignorerte
+  funksjonen det: den slettet `canonical_workouts`/`workout_daily_aggregates` for
+  HELE det forespurte vinduet (`startDate`–`endDate`), men skrev bare inn de
+  aktivitetene siden faktisk returnerte — de 2000 ELDSTE. Et vindu åpnet av et
+  arkivimportert 2015-tidsstempel (`2015 → nå`, tolv år) har for en aktiv bruker
+  langt flere enn 2000 aktiviteter i seg: de nyeste ukene ble slettet og ALDRI
+  skrevet tilbake. Ingen feil, ingen loggrad — bare et hull i en graf måneder
+  senere, i «Akkumulert løping» og «Perioder» samtidig, siden begge leser
+  `canonical_workouts`.
+- **Feilen er ikke ny, bare aldri utløst før.** Normal drift ber aldri om et vindu
+  i nærheten av 2000 aktiviteter — en levende skriving ber om
+  `timestamp − 2t → nå`, alltid noen timer. Arkivimporten er den første kilden som
+  noensinne har bedt om et vindu stort nok til å avsløre den.
+- **`decideProjectionChunk` er regelen.** Fylte siden IKKE grensa, dekker den hele
+  resten av vinduet (kilden gikk tom). Fylte den grensa, dekker den bare til den
+  SISTE aktivitetens eget tidspunkt — aldri lenger. `refreshForRange` sletter og
+  skriver nå PER SIDE, avgrenset til nøyaktig det sidens eget spenn (`cursor`–
+  `chunkEnd`), aldri til hele `startDate`–`endDate`. Feiler én side midtveis, står
+  de foregående ved lag — skaden er begrenset til akkurat den sidens vindu.
+- **Innsettingstaket (2000) er urørt, og sidestørrelsen MÅ følge samme tall.** Det
+  finnes av en annen grunn (Postgres-parametergrensa på ett insert, se
+  `describeErrorForStorage`-notatet i `$lib/domain/error-text.ts`) — hev det ene
+  uten det andre, og du er tilbake i akkurat denne feilen.
+- **Reparasjon av et SYNLIG hull:** `POST /api/helse/trening/reprojiser?weeks=26`
+  (kortet «Reberegn treningsbelastning» i `/settings/sources`) var trygt å bruke
+  selv FØR denne fiksen — vinduet er tak 26 uker, milevis under 2000 aktiviteter,
+  så det traff aldri feilen. Det er hurtigreparasjonen for et hull man ser nå.
+- **Ingen automatisk full-historikk-reparasjon finnes.** Fiksen hindrer NYE hull;
+  den leter ikke opp gamle. Andre huller kan ligge lenger tilbake der en tidligere
+  kjøring tilfeldigvis rammet 2000-grensa — ingen verktøy sier hvor, og
+  `/reprojiser` sitt 26-ukerstak er en bevisst grense for en annen jobb
+  (effort-omkalibrering), ikke ment som full-historikk-verktøy.
+
 ### Krydderet telles per aktivitet, aldri på tvers
 
 Se `docs/changelog/2026-08-10-krydder-per-aktivitet.md`. Reglene rent i
