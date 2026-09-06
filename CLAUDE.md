@@ -2251,6 +2251,25 @@ Se `docs/changelog/2026-08-08-widget-loepedistanse-dobbelttelling.md`.
   ikke. Filteret utvides bare fra familienavn — `e_bike` drar ikke inn all sykling.
 - **Distansen normaliseres** (`normalizeDistanceMeters`): verdier ≤ 80 tolkes som
   kilometer. Les den aldri rå fra `data->>'distance'`.
+- **Men bruk `resolveDistanceMeters` (`$lib/domain/health/distance-unit.ts`), som
+  tar VARIGHETEN med.** Se `docs/changelog/2026-09-06-52-9-var-meter.md`. En rå
+  `52.9` fra en blipp på 52,9 meter ble 52,9 KILOMETER, og april 2026 startet
+  53 km oppe i lufta på dag 1 — samme symptom som august-changeloggen beskriver,
+  og **ingen av de to tidligere fiksene traff det**: `canonicalDistanceMeters`
+  fjernet en ANDRE runde med heuristikken (en no-op for 52 900), og
+  import-porten sitter i Strava-triagen mens denne raden kom fra Dropbox og
+  Withings. Tvetydigheten er uløselig fra tallet alene, men ikke fra farten:
+  52,9 km på tre minutter er 1058 km/t. `MAX_PLAUSIBLE_SPEED_MPS` (30) er med
+  vilje langt over det noen holder — vakten avviser det UMULIGE, ikke det
+  uvanlige. Uten varighet gjør vi som før; det er en kjent rest.
+- **Enheten avgjøres PER HENDELSE, før kilden velges.** `pickNumericField` kan ta
+  distansen fra én kilde og varigheten fra en annen, og et par som ikke hører
+  sammen er ikke en fart. Alle fire lesestedene deler nå regelen —
+  `workout-context.ts` hadde en tredje PRIVAT kopi av heuristikken, og
+  `hidden-workouts.ts` må vise samme tall som feeden.
+- **Kortet viste motsigelsen hele tiden:** «52,90 km» ved siden av «62:23 /km»,
+  som er `198 s ÷ 0,0529 km`. To felt utledet av samme rå tall er en gratis
+  konsistenssjekk — les dem mot hverandre før du leter i grafen.
 - **Under 80 meter er heuristikken en felle, og den må stoppes ved SKRIVING.**
   Se `docs/changelog/2026-09-06-femti-meter-ble-femti-kilometer.md`. En ekte
   økt på 50 meter blir 50 KILOMETER — i månedstotalen, i den akkumulerte
