@@ -1,74 +1,117 @@
 /**
- * Hvor langt et projeksjonspass faktisk DEKKER, gitt én side med aktiviteter.
+ * Hvor langt ÉN side av aktivitetslaget faktisk dekker.
  *
- * ## Feilen dette retter
+ * ## Feilen denne modulen finnes for
  *
- * `refreshForRange` henter aktiviteter med `since: startDate, limit: N`, ordnet
- * STIGENDE på tid — så en side som fylles helt opp (`pageLength === limit`) betyr
- * «det finnes flere, vi vet bare ikke hvor mange». Fram til september 2026 ignorerte
- * `refreshForRange` det: den slettet `canonical_workouts`/`workout_daily_aggregates`
- * for HELE det forespurte vinduet (`startDate`–`endDate`), men skrev bare inn de
- * aktivitetene siden FAKTISK returnerte — de N eldste. Ba man om et vindu med flere
- * enn `N` aktiviteter i seg (et arkivimport-skrevet 2015-tidsstempel ber om
- * `2015 → nå`, og det er tolv år), ble de nyeste ukene i vinduet slettet og ALDRI
- * skrevet tilbake. Symptomet var stumt: ingen feil, ingen loggrad — bare et hull i
- * en graf måneder senere. Se `docs/changelog/2026-09-06-projeksjon-som-sletter-mer-enn-den-bygger.md`.
+ * `WorkoutProjectionService.refreshForRange` sletter `canonical_workouts` og
+ * `workout_daily_aggregates` før den skriver dem opp igjen. Aktivitetene hentes
+ * side for side med en grense, så sletting og skriving MÅ dekke det samme
+ * spennet — sletter den mer enn siden bygger opp igjen, blir differansen et hull
+ * uten en feilmelding.
  *
- * ## Regelen
+ * ## Enheten er HENDELSER, ikke aktiviteter — og det var feilen
  *
- * En side som IKKE fylte grensa (`pageLength < limit`) er hele resten av vinduet —
- * kilden gikk tom før taket, så vi kan trygt dekke helt til `requestedEndDate`.
+ * Grensa i `buildUnifiedWorkoutActivitiesPage` gjelder rader i `sensor_events`.
+ * Samme løpetur skrives av opptil tre kilder, så 2000 hendelser blir typisk
+ * 700–900 klynger. Første utgave av denne modulen (6. september 2026) tok inn
+ * `pageLength` — antall AKTIVITETER — og sammenlignet det mot `limit`:
  *
- * En side som FYLTE grensa kan bare stå inne for det den selv dekket: opp til
- * den SISTE aktivitetens eget tidspunkt. Sletter og skriver vi bare DIT — ikke
- * til `requestedEndDate` — er det aldri noe område vi sletter uten å bygge opp
- * igjen. Kalleren må så be om en ny side fra rett etter dette punktet.
+ *     if (page.pageLength < page.limit) → «kilden gikk tom», dekk hele vinduet
  *
- * Ligger den siste aktiviteten i en full side likevel på eller etter
- * `requestedEndDate` (vinduet var mindre enn det den fylte siden dekker), er vi
- * ferdig — resten av siden ligger utenfor det vi ble bedt om.
+ * Den betingelsen er sann nesten alltid, også når kilden har tusenvis av rader
+ * igjen. Resultatet var at fiksen ikke virket i det hele tatt: refreshen slettet
+ * fortsatt hele `startDate`–`endDate` og skrev bare tilbake de eldste 2000
+ * hendelsenes aktiviteter. På et tolvårsvindu — som arkivimportens køede
+ * `workout_projection_refresh`-jobber ber om — forsvant alt etter de eldste ~900
+ * øktene, hver gang en slik jobb kjørte. Målt i prod: den akkumulerte
+ * løpekurven falt fra 421 km til 173 km på fjorten minutter, uten at noen
+ * trykket på noe.
+ *
+ * Derfor bærer feltnavnene nå enheten: `eventsRead` mot `eventLimit`. Et navn
+ * som `pageLength` inviterer til nøyaktig den forvekslingen igjen.
+ *
+ * ## Rekkefølgen på aktivitetene er IKKE til å stole på
+ *
+ * `buildUnifiedWorkoutActivities` sorterer **synkende** (nyeste først), mens
+ * hendelsene hentes stigende. Første utgave leste `unified[length - 1]` som «den
+ * nyeste aktiviteten» og fikk den ELDSTE. Feilen var latent bare fordi
+ * enhetsfeilen over gjorde at grenen aldri ble nådd. Modulen tar derfor imot
+ * alle starttidspunktene og finner ytterpunktet selv.
+ *
+ * Se `docs/changelog/2026-09-06-sidetallet-var-i-feil-enhet.md`.
  */
-export type ProjectionPage = {
-	/** Antall aktiviteter siden faktisk ga tilbake. */
-	pageLength: number;
-	/** Grensa spørringen ble kjørt med (samme tall som `limit` i kallet). */
-	limit: number;
-	/** Starttidspunktet til den SISTE (nyeste) aktiviteten på siden, stigende sortert. `null` når siden er tom. */
-	lastActivityStartTime: Date | null;
-	/** Det opprinnelig forespurte sluttidspunktet for HELE refreshen. */
+
+export interface ProjectionPage {
+	/** Antall RÅ `sensor_events`-rader siden leste. */
+	eventsRead: number;
+	/** Hendelsesgrensa siden ble hentet med. */
+	eventLimit: number;
+	/** Starttidspunktene til aktivitetene siden bygde. Rekkefølge er irrelevant. */
+	activityStartTimes: Date[];
+	/** Sluttpunktet for hele forespørselen. Et kutt kan aldri gå forbi dette. */
 	requestedEndDate: Date;
-};
-
-export type ProjectionChunkDecision = {
-	/** Slett og skriv trygt til og med dette tidspunktet — aldri lenger. */
-	chunkEndDate: Date;
-	/** Er det trolig flere aktiviteter igjen i vinduet etter `chunkEndDate`? */
-	hasMore: boolean;
-};
-
-export function decideProjectionChunk(page: ProjectionPage): ProjectionChunkDecision | null {
-	if (page.pageLength === 0) return null;
-
-	if (page.pageLength < page.limit) {
-		// Kilden gikk tom før taket — dette ER resten av vinduet.
-		return { chunkEndDate: page.requestedEndDate, hasMore: false };
-	}
-
-	// Siden fylte grensa. Vi vet bare om det den faktisk inneholder.
-	const last = page.lastActivityStartTime;
-	if (last === null) {
-		// Uforenlig tilstand (full side uten siste aktivitet) — behandle som tom
-		// framfor å garantere noe vi ikke kan stå inne for.
-		return null;
-	}
-	if (last.getTime() >= page.requestedEndDate.getTime()) {
-		// Siden strekker seg forbi det vi ble bedt om — resten er utenfor vinduet.
-		return { chunkEndDate: page.requestedEndDate, hasMore: false };
-	}
-	return { chunkEndDate: last, hasMore: true };
 }
 
-/** Startpunktet for NESTE side: rett etter forrige sides dekning. */
+export interface ProjectionChunkDecision {
+	/**
+	 * Siste tidspunkt denne siden dekker. Sletting OG skriving avgrenses til
+	 * `cursor`–`chunkEndDate`, aldri videre.
+	 */
+	chunkEndDate: Date;
+	/** Finnes det mer bak grensa? */
+	hasMore: boolean;
+}
+
+/**
+ * Avgjør sidens dekning.
+ *
+ * - **Siden ble ikke avkortet** (`eventsRead < eventLimit`): kilden gikk tom, så
+ *   siden dekker hele resten av vinduet. Ingenting ligger bak.
+ * - **Siden ble avkortet**: den dekker bare fram til FØR den nyeste aktiviteten
+ *   den bygde. Grunnen er klyngingen: den nyeste aktiviteten ligger på
+ *   avkortingsgrensa, og hendelsene som hører til den kan være kuttet bort. Ble
+ *   den skrevet nå, ville neste side lest de gjenstående hendelsene som en NY
+ *   klynge og telt samme tur to ganger. Neste markør er derfor den aktivitetens
+ *   eget starttidspunkt, så hendelsene leses om igjen i sin helhet.
+ * - **Ingen aktiviteter**: `null`. Det finnes ingenting å slette eller skrive,
+ *   og en kaller som slettet «resten av vinduet» her ville fjernet rader den
+ *   aldri hentet.
+ */
+export function decideProjectionChunk(page: ProjectionPage): ProjectionChunkDecision | null {
+	if (page.activityStartTimes.length === 0) return null;
+
+	if (page.eventsRead < page.eventLimit) {
+		return { chunkEndDate: page.requestedEndDate, hasMore: false };
+	}
+
+	const times = page.activityStartTimes.map((date) => date.getTime());
+	const newest = Math.max(...times);
+	const oldest = Math.min(...times);
+
+	// Nådde siden forbi vinduet, er vinduet dekket — det som ligger bak grensa
+	// er utenfor det vi ble spurt om.
+	if (newest >= page.requestedEndDate.getTime()) {
+		return { chunkEndDate: page.requestedEndDate, hasMore: false };
+	}
+
+	// Alt på siden er ÉN klynge (eller ett tidspunkt). Da finnes det ikke noe
+	// «før den nyeste» å kutte ved, og et kutt der ville ikke flyttet markøren:
+	// løkka ville hentet samme side igjen i det uendelige. Vi skriver den og går
+	// videre, og betaler prisen for at klyngen kan mangle bevis bak grensa.
+	if (newest === oldest) {
+		return { chunkEndDate: new Date(newest), hasMore: true };
+	}
+
+	// Kutt FØR den nyeste aktiviteten; neste markør blir dens eget tidspunkt.
+	return { chunkEndDate: new Date(newest - 1), hasMore: true };
+}
+
+/**
+ * Markøren for neste side.
+ *
+ * Ett millisekund etter kuttet: `refreshForRange` sletter og skriver inklusivt i
+ * begge ender, så en markør PÅ kuttet ville behandlet samme tidspunkt to ganger.
+ */
 export function nextProjectionCursor(previousChunkEnd: Date): Date {
 	return new Date(previousChunkEnd.getTime() + 1);
 }

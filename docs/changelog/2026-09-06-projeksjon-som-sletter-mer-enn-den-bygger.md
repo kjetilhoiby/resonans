@@ -3,6 +3,12 @@
 Dato: 2026-09-06
 Status: ferdig
 
+> **RETTELSE (samme dag):** fiksen beskrevet her VIRKET IKKE.
+> `decideProjectionChunk` sammenlignet antall aktiviteter mot en grense som
+> gjelder rå hendelser, så hver side konkluderte «kilden gikk tom» og slettet
+> fortsatt hele vinduet. Analysen under står; løsningen ble en no-op. Se
+> `2026-09-06-sidetallet-var-i-feil-enhet.md`.
+
 ## Kontekst
 
 Etter Strava-arkivimporten viste både «Akkumulert løping» (sesongkurven) og

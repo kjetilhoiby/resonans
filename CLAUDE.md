@@ -2374,12 +2374,31 @@ løkka i `WorkoutProjectionService.refreshForRange`.
   i nærheten av 2000 aktiviteter — en levende skriving ber om
   `timestamp − 2t → nå`, alltid noen timer. Arkivimporten er den første kilden som
   noensinne har bedt om et vindu stort nok til å avsløre den.
-- **`decideProjectionChunk` er regelen.** Fylte siden IKKE grensa, dekker den hele
-  resten av vinduet (kilden gikk tom). Fylte den grensa, dekker den bare til den
-  SISTE aktivitetens eget tidspunkt — aldri lenger. `refreshForRange` sletter og
-  skriver nå PER SIDE, avgrenset til nøyaktig det sidens eget spenn (`cursor`–
-  `chunkEnd`), aldri til hele `startDate`–`endDate`. Feiler én side midtveis, står
-  de foregående ved lag — skaden er begrenset til akkurat den sidens vindu.
+- **`decideProjectionChunk` er regelen, og ENHETEN er hendelser.** Fylte siden
+  ikke hendelsesgrensa, dekker den hele resten av vinduet (kilden gikk tom).
+  Fylte den grensa, kutter den rett FØR den nyeste aktiviteten siden bygde, og
+  neste markør blir dens eget tidspunkt — den ligger på avkortingsgrensa, så
+  hendelsene som hører til den kan være kuttet bort, og en skriving nå ville
+  latt neste side telle samme tur på nytt. `refreshForRange` sletter og skriver
+  PER SIDE, avgrenset til nøyaktig sidens eget spenn (`cursor`–`chunkEnd`),
+  aldri til hele `startDate`–`endDate`.
+- **Grensa gjelder RÅ HENDELSER, ikke aktiviteter — og forvekslingen gjorde
+  fiksen til en no-op.** Se
+  `docs/changelog/2026-09-06-sidetallet-var-i-feil-enhet.md`. Første utgave tok
+  inn `pageLength` (aktiviteter) og sammenlignet mot `limit` (hendelser). Tre
+  kilder per tur gjør 2000 hendelser til ~900 klynger, så «under grensa» var
+  sant nesten alltid: hver side konkluderte «kilden gikk tom» og slettet hele
+  vinduet. Målt i prod 6. september 2026: den akkumulerte løpekurven falt fra
+  421 km til 173 km på fjorten minutter, utløst av arkivimportens køede
+  `workout_projection_refresh`-jobber (vindu `tidsstempel − 2t → nå`, altså
+  tolv år) — uten en brukerhandling, en feil eller en loggrad. Bruk
+  `buildUnifiedWorkoutActivitiesPage`, som returnerer `eventsRead`/`eventLimit`;
+  **avkorting kan ALDRI utledes av `activities.length`.**
+- **Aktivitetslista er sortert SYNKENDE** (nyeste først) mens hendelsene hentes
+  stigende, så `unified[length - 1]` er den ELDSTE. Regelen tar derfor imot alle
+  starttidspunktene og finner ytterpunktet selv. Feilen lå latent bak
+  enhetsfeilen over og ga aldri symptomer — rettes den ene alene, kutter løkka
+  på markøren og løper til `MAX_PROJECTION_CHUNKS` kaster.
 - **Innsettingstaket (2000) er urørt, og sidestørrelsen MÅ følge samme tall.** Det
   finnes av en annen grunn (Postgres-parametergrensa på ett insert, se
   `describeErrorForStorage`-notatet i `$lib/domain/error-text.ts`) — hev det ene
