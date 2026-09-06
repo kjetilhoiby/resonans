@@ -84,6 +84,14 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Gjeld — aggregerer over økter og bør flyttes til den delte leseren.
 			'lib/server/sensor-goal-automation.ts',
 			'routes/api/sensor-summary/+server.ts',
+			// Spør HVOR historikken begynner (`min(timestamp)`), ikke hvor mange økter
+			// det er — og den MÅ spørre det rå laget. Planen for «Fiks
+			// treningshistorikk» kan ikke hente startdatoen sin fra
+			// `canonical_workouts`: det er nettopp tabellen som kan mangle sine
+			// eldste rader, og da ville verktøyet brukt skaden som grense for hva
+			// det kan reparere. Dedupliseringen er irrelevant for et minimum:
+			// tre kilder på samme tur gir samme tidligste tidsstempel.
+			'routes/api/helse/trening/fiks-historikk/+server.ts',
 			// Summerer Withings' egne økt-kalorier som kryssjekk. Bare Withings-rader
 			// har feltet i dag, så det dobbeltteller ikke — men det gjør det den dagen
 			// en annen kilde begynner å sende `calories`.
