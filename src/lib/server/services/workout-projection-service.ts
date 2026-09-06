@@ -7,6 +7,7 @@ import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/ef
 import { getTrailAttributedEventIds } from '$lib/server/tracks/routes-repository';
 import { analyzeWorkout, type TrackPoint, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
 import { workoutSportFamily } from '$lib/domain/health/workout-sport';
+import { decideProjectionChunk, nextProjectionCursor } from '$lib/domain/health/workout-projection-chunking';
 
 export type WorkoutProjectionRefreshResult = {
 	canonicalCount: number;
@@ -202,148 +203,220 @@ export class WorkoutProjectionService {
 		return freshness;
 	}
 
+	/**
+	 * Maks aktiviteter hentet per side. Samme tall som insert-batchstørrelsen
+	 * (se `describeErrorForStorage`-kommentaren i domain/error-text.ts): et
+	 * enkelt insert av 2000 canonical-rader nærmer seg allerede Postgres' grense
+	 * på ~65 535 parametere. IKKE hev dette uten å også dele opp innsettingen.
+	 */
+	private static readonly PROJECTION_PAGE_SIZE = 2000;
+
+	/**
+	 * Et sikkerhetstak på antall sider i ÉN refresh — ikke en reell grense (den
+	 * ville krevd 100 000 aktiviteter i ett vindu), men et gulv mot en evig
+	 * løkke om `decideProjectionChunk` skulle få en logikkfeil.
+	 */
+	private static readonly MAX_PROJECTION_CHUNKS = 50;
+
 	static async refreshForRange(
 		userId: string,
 		startDate: Date,
 		endDate: Date
 	): Promise<WorkoutProjectionRefreshResult> {
 		const t0 = performance.now();
-		const unified = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 2000 });
-		const inRange = unified.filter((workout) => new Date(workout.startTime) <= endDate);
-
 		const baseline = await getEffortBaseline(userId);
-
-		// For running workouts: fetch trackPoints fra sensorEvents og kjør analytics.
-		// Activity-layeren stripper trackPoints fra query-pathen, så vi henter dem her.
-		const analyticsByEventId = await fetchAnalyticsForRunningWorkouts(inRange, baseline);
 
 		// Sti-attribuerte økter (via Ekko-tagget metadata.ekkoRouteId → trail-rute):
 		// pace-intensiteten gulves for disse. Prospektivt — kun taggede økter påvirkes.
 		const trailEventIds = await getTrailAttributedEventIds(userId, startDate).catch(() => new Set<string>());
 
-		const canonicalRows = inRange.map((workout) => {
-			const family = sportFamily(workout.sportType);
-			const isTrail = trailEventIds.size > 0 && workout.evidence.some((e) => trailEventIds.has(e.eventId));
-			const effort = computeWorkoutEffort(
-				{
+		// **Vinduet hentes side for side, aldri i ett jafs.** `buildUnifiedWorkoutActivities`
+		// er `since: cursor, limit: PROJECTION_PAGE_SIZE`, stigende sortert — en side som
+		// FYLLER grensa kan skjule flere aktiviteter vi ikke har sett ennå.
+		// `decideProjectionChunk` er regelen: en full side står bare inne for det den selv
+		// dekker (siste aktivitets eget tidspunkt), IKKE for hele det forespurte vinduet.
+		//
+		// Dette var selve feilen fram til september 2026: slett+skriv kjørte i ETT steg
+		// over `startDate`–`endDate`, mens spørringen bare returnerte de `limit` ELDSTE
+		// aktivitetene i vinduet. Et vindu åpnet av et arkiv-importert 2015-tidsstempel
+		// (`2015 → nå`, tolv år) kunne inneholde langt flere aktiviteter enn grensa — og
+		// resten av vinduet, altså de NYESTE ukene, ble slettet og aldri skrevet tilbake.
+		// Ingen feil, ingen loggrad: bare et hull i en graf måneder senere. Se
+		// `docs/changelog/2026-09-06-projeksjon-som-sletter-mer-enn-den-bygger.md`.
+		//
+		// Nå slettes og skrives HVER side for seg, avgrenset til nøyaktig det den
+		// dekker — feiler én side, står de foregående ved lag, og skaden er begrenset
+		// til akkurat den sidens vindu, ikke alt fra `startDate` og ut.
+		let cursor = startDate;
+		let canonicalTotal = 0;
+		let dailyTotal = 0;
+		let chunkCount = 0;
+
+		while (cursor.getTime() <= endDate.getTime()) {
+			chunkCount += 1;
+			if (chunkCount > this.MAX_PROJECTION_CHUNKS) {
+				throw new Error(
+					`refreshForRange: over ${this.MAX_PROJECTION_CHUNKS} sider for ${userId} (${startDate.toISOString()}–${endDate.toISOString()}) — avbrutt for å ikke løpe i det uendelige.`
+				);
+			}
+
+			const unified = await buildUnifiedWorkoutActivities(userId, {
+				since: cursor,
+				limit: this.PROJECTION_PAGE_SIZE
+			});
+
+			const decision = decideProjectionChunk({
+				pageLength: unified.length,
+				limit: this.PROJECTION_PAGE_SIZE,
+				lastActivityStartTime: unified.length > 0 ? new Date(unified[unified.length - 1].startTime) : null,
+				requestedEndDate: endDate
+			});
+			if (!decision) break;
+
+			const chunkEnd = decision.chunkEndDate;
+			const inRange = unified.filter((workout) => new Date(workout.startTime) <= chunkEnd);
+
+			// For running workouts: fetch trackPoints fra sensorEvents og kjør analytics.
+			// Activity-layeren stripper trackPoints fra query-pathen, så vi henter dem her.
+			const analyticsByEventId = await fetchAnalyticsForRunningWorkouts(inRange, baseline);
+
+			const canonicalRows = inRange.map((workout) => {
+				const family = sportFamily(workout.sportType);
+				const isTrail = trailEventIds.size > 0 && workout.evidence.some((e) => trailEventIds.has(e.eventId));
+				const effort = computeWorkoutEffort(
+					{
+						sportType: workout.sportType,
+						sportFamily: family,
+						durationSeconds: workout.durationSeconds,
+						avgHeartRate: workout.avgHeartRate,
+						// Pace gir intensitets-justert effort for løp uten puls
+						paceSecPerKm:
+							workout.distanceMeters && workout.distanceMeters > 0 && workout.durationSeconds
+								? workout.durationSeconds / (workout.distanceMeters / 1000)
+								: null,
+						isTrail
+					},
+					baseline
+				);
+				// Slå sammen analytics fra hvert evidence-event — typisk bare ett har trackPoints
+				const analytics = mergeAnalyticsForCluster(workout.evidence, analyticsByEventId);
+				return {
+					userId,
+					startTime: new Date(workout.startTime),
 					sportType: workout.sportType,
 					sportFamily: family,
-					durationSeconds: workout.durationSeconds,
-					avgHeartRate: workout.avgHeartRate,
-					// Pace gir intensitets-justert effort for løp uten puls
-					paceSecPerKm:
-						workout.distanceMeters && workout.distanceMeters > 0 && workout.durationSeconds
-							? workout.durationSeconds / (workout.distanceMeters / 1000)
-							: null,
-					isTrail
-				},
-				baseline
+					distanceMeters: workout.distanceMeters !== null ? String(workout.distanceMeters) : null,
+					durationSeconds: workout.durationSeconds !== null ? String(workout.durationSeconds) : null,
+					avgHeartRate: workout.avgHeartRate !== null ? String(workout.avgHeartRate) : null,
+					maxHeartRate: workout.maxHeartRate !== null ? String(workout.maxHeartRate) : null,
+					effortScore: effort ? String(effort.score) : null,
+					effortMethod: effort?.method ?? null,
+					sourceCount: workout.evidenceCount,
+					sourceProviders: workout.sources,
+					evidence: workout.evidence.map((evidence) => ({
+						eventId: evidence.eventId,
+						sensorId: evidence.sensorId,
+						provider: evidence.provider,
+						sensorType: evidence.sensorType,
+						timestamp: evidence.timestamp
+					})),
+					bestEfforts: analytics?.bestEfforts ?? null,
+					gapSecPerKm: analytics?.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
+					hrZoneDistribution: analytics?.hrZoneDistribution ?? null,
+					intensitySplit: analytics?.intensitySplit ?? null,
+					analyticsComputedAt: analytics ? new Date() : null,
+					updatedAt: new Date()
+				};
+			});
+
+			const dailyMap = new Map<string, {
+				date: Date;
+				sportFamily: string;
+				count: number;
+				distanceMetersSum: number;
+				durationSecondsSum: number;
+				avgHeartRateValues: number[];
+				maxHeartRateMax: number;
+			}>();
+
+			for (const row of canonicalRows) {
+				const keyDate = utcDay(row.startTime);
+				const key = `${keyDate.toISOString()}::${row.sportFamily}`;
+				const existing = dailyMap.get(key) ?? {
+					date: keyDate,
+					sportFamily: row.sportFamily,
+					count: 0,
+					distanceMetersSum: 0,
+					durationSecondsSum: 0,
+					avgHeartRateValues: [],
+					maxHeartRateMax: 0
+				};
+				existing.count += 1;
+				existing.distanceMetersSum += row.distanceMeters ? Number(row.distanceMeters) : 0;
+				existing.durationSecondsSum += row.durationSeconds ? Number(row.durationSeconds) : 0;
+				if (row.avgHeartRate) existing.avgHeartRateValues.push(Number(row.avgHeartRate));
+				if (row.maxHeartRate) existing.maxHeartRateMax = Math.max(existing.maxHeartRateMax, Number(row.maxHeartRate));
+				dailyMap.set(key, existing);
+			}
+
+			const dailyRows = Array.from(dailyMap.values()).map((agg) => {
+				const avgHr = agg.avgHeartRateValues.length
+					? agg.avgHeartRateValues.reduce((sum, value) => sum + value, 0) / agg.avgHeartRateValues.length
+					: null;
+				return {
+					userId,
+					date: agg.date,
+					sportFamily: agg.sportFamily,
+					count: agg.count,
+					distanceMetersSum: String(agg.distanceMetersSum),
+					durationSecondsSum: String(agg.durationSecondsSum),
+					avgHeartRateAvg: avgHr === null ? null : String(avgHr),
+					maxHeartRateMax: agg.maxHeartRateMax > 0 ? String(agg.maxHeartRateMax) : null,
+					updatedAt: new Date()
+				};
+			});
+
+			// **Avgrenset til DENNE sidens dekning (`cursor`–`chunkEnd`), aldri til
+			// `startDate`–`endDate`.** Det er hele fiksen: vi sletter aldri mer enn
+			// det vi akkurat har bygget opp igjen.
+			await db.delete(canonicalWorkouts).where(
+				and(
+					eq(canonicalWorkouts.userId, userId),
+					gte(canonicalWorkouts.startTime, cursor),
+					lte(canonicalWorkouts.startTime, chunkEnd)
+				)
 			);
-			// Slå sammen analytics fra hvert evidence-event — typisk bare ett har trackPoints
-			const analytics = mergeAnalyticsForCluster(workout.evidence, analyticsByEventId);
-			return {
-				userId,
-				startTime: new Date(workout.startTime),
-				sportType: workout.sportType,
-				sportFamily: family,
-				distanceMeters: workout.distanceMeters !== null ? String(workout.distanceMeters) : null,
-				durationSeconds: workout.durationSeconds !== null ? String(workout.durationSeconds) : null,
-				avgHeartRate: workout.avgHeartRate !== null ? String(workout.avgHeartRate) : null,
-				maxHeartRate: workout.maxHeartRate !== null ? String(workout.maxHeartRate) : null,
-				effortScore: effort ? String(effort.score) : null,
-				effortMethod: effort?.method ?? null,
-				sourceCount: workout.evidenceCount,
-				sourceProviders: workout.sources,
-				evidence: workout.evidence.map((evidence) => ({
-					eventId: evidence.eventId,
-					sensorId: evidence.sensorId,
-					provider: evidence.provider,
-					sensorType: evidence.sensorType,
-					timestamp: evidence.timestamp
-				})),
-				bestEfforts: analytics?.bestEfforts ?? null,
-				gapSecPerKm: analytics?.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
-				hrZoneDistribution: analytics?.hrZoneDistribution ?? null,
-				intensitySplit: analytics?.intensitySplit ?? null,
-				analyticsComputedAt: analytics ? new Date() : null,
-				updatedAt: new Date()
-			};
-		});
+			await db.delete(workoutDailyAggregates).where(
+				and(
+					eq(workoutDailyAggregates.userId, userId),
+					gte(workoutDailyAggregates.date, utcDay(cursor)),
+					lte(workoutDailyAggregates.date, utcDay(chunkEnd))
+				)
+			);
 
-		const dailyMap = new Map<string, {
-			date: Date;
-			sportFamily: string;
-			count: number;
-			distanceMetersSum: number;
-			durationSecondsSum: number;
-			avgHeartRateValues: number[];
-			maxHeartRateMax: number;
-		}>();
+			if (canonicalRows.length > 0) {
+				await db.insert(canonicalWorkouts).values(canonicalRows);
+			}
+			if (dailyRows.length > 0) {
+				await db.insert(workoutDailyAggregates).values(dailyRows);
+			}
 
-		for (const row of canonicalRows) {
-			const keyDate = utcDay(row.startTime);
-			const key = `${keyDate.toISOString()}::${row.sportFamily}`;
-			const existing = dailyMap.get(key) ?? {
-				date: keyDate,
-				sportFamily: row.sportFamily,
-				count: 0,
-				distanceMetersSum: 0,
-				durationSecondsSum: 0,
-				avgHeartRateValues: [],
-				maxHeartRateMax: 0
-			};
-			existing.count += 1;
-			existing.distanceMetersSum += row.distanceMeters ? Number(row.distanceMeters) : 0;
-			existing.durationSecondsSum += row.durationSeconds ? Number(row.durationSeconds) : 0;
-			if (row.avgHeartRate) existing.avgHeartRateValues.push(Number(row.avgHeartRate));
-			if (row.maxHeartRate) existing.maxHeartRateMax = Math.max(existing.maxHeartRateMax, Number(row.maxHeartRate));
-			dailyMap.set(key, existing);
-		}
+			canonicalTotal += canonicalRows.length;
+			dailyTotal += dailyRows.length;
 
-		const dailyRows = Array.from(dailyMap.values()).map((agg) => {
-			const avgHr = agg.avgHeartRateValues.length
-				? agg.avgHeartRateValues.reduce((sum, value) => sum + value, 0) / agg.avgHeartRateValues.length
-				: null;
-			return {
-				userId,
-				date: agg.date,
-				sportFamily: agg.sportFamily,
-				count: agg.count,
-				distanceMetersSum: String(agg.distanceMetersSum),
-				durationSecondsSum: String(agg.durationSecondsSum),
-				avgHeartRateAvg: avgHr === null ? null : String(avgHr),
-				maxHeartRateMax: agg.maxHeartRateMax > 0 ? String(agg.maxHeartRateMax) : null,
-				updatedAt: new Date()
-			};
-		});
+			console.log(
+				`[workout-projections] refresh ${userId}: side ${chunkCount} [${cursor.toISOString()}–${chunkEnd.toISOString()}] unified=${inRange.length}, canonical=${canonicalRows.length}, daily=${dailyRows.length}`
+			);
 
-		await db.delete(canonicalWorkouts).where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				gte(canonicalWorkouts.startTime, startDate),
-				lte(canonicalWorkouts.startTime, endDate)
-			)
-		);
-		await db.delete(workoutDailyAggregates).where(
-			and(
-				eq(workoutDailyAggregates.userId, userId),
-				gte(workoutDailyAggregates.date, utcDay(startDate)),
-				lte(workoutDailyAggregates.date, utcDay(endDate))
-			)
-		);
-
-		if (canonicalRows.length > 0) {
-			await db.insert(canonicalWorkouts).values(canonicalRows);
-		}
-		if (dailyRows.length > 0) {
-			await db.insert(workoutDailyAggregates).values(dailyRows);
+			if (!decision.hasMore) break;
+			cursor = nextProjectionCursor(chunkEnd);
 		}
 
 		console.log(
-			`[workout-projections] refresh ${userId}: unified=${inRange.length}, canonical=${canonicalRows.length}, daily=${dailyRows.length}, ${(performance.now() - t0).toFixed(0)}ms`
+			`[workout-projections] refresh ${userId} ferdig: ${chunkCount} side(r), canonical=${canonicalTotal}, daily=${dailyTotal}, ${(performance.now() - t0).toFixed(0)}ms`
 		);
 
-		return { canonicalCount: canonicalRows.length, dailyCount: dailyRows.length };
+		return { canonicalCount: canonicalTotal, dailyCount: dailyTotal };
 	}
 
 	static async readRunningDailyKmRowsForRange(
