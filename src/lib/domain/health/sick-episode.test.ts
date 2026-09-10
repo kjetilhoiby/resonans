@@ -7,6 +7,7 @@ import {
 	describeEpisode,
 	describeLevelCourse,
 	episodeAxis,
+	episodeSleepByDay,
 	findRelapse,
 	type EpisodeTrackSpec
 } from './sick-episode';
@@ -416,7 +417,64 @@ describe('episodeAxis', () => {
 		expect(episodeAxis(buildEpisodeTrack(levelSpec, byDay, window))).toEqual({ min: 1, max: 5 });
 	});
 
+	it('gir forløpsmedianen plass i domenet', () => {
+		const byDay = new Map<string, number>([
+			['2026-08-29', 100],
+			['2026-08-30', 100],
+			['2026-08-31', 100],
+			['2026-09-02', 90],
+			['2026-09-03', 90]
+		]);
+		const track = buildEpisodeTrack(weightSpec, byDay, window);
+		const axis = episodeAxis(track);
+
+		expect(track.during).not.toBeNull();
+		expect(axis!.min).toBeLessThanOrEqual(track.during!);
+		expect(axis!.max).toBeGreaterThanOrEqual(track.during!);
+	});
+
 	it('gir null når raden ikke har et eneste punkt', () => {
 		expect(episodeAxis(buildEpisodeTrack(weightSpec, new Map(), window))).toBeNull();
+	});
+});
+
+describe('episodeSleepByDay', () => {
+	it('legger duppen til natta samme døgn', () => {
+		const byDay = episodeSleepByDay([
+			{ date: '2026-09-02', hours: 6.1, isNap: false },
+			{ date: '2026-09-02', hours: 2.4, isNap: true },
+			{ date: '2026-09-03', hours: 7.2, isNap: false }
+		]);
+
+		expect(byDay.get('2026-09-02')).toBe(8.5);
+		expect(byDay.get('2026-09-03')).toBe(7.2);
+	});
+
+	it('teller en dag med bare dupper', () => {
+		// Den som ligger nede sover om dagen. En dag uten nattmåling er ikke en
+		// dag uten søvn, og med dupper ute leste raden 0 der svaret var 3,5.
+		const byDay = episodeSleepByDay([
+			{ date: '2026-09-04', hours: 1.5, isNap: true },
+			{ date: '2026-09-04', hours: 2.0, isNap: true }
+		]);
+
+		expect(byDay.get('2026-09-04')).toBe(3.5);
+	});
+
+	it('runder av så summen ikke får en flyttallshale', () => {
+		const byDay = episodeSleepByDay([
+			{ date: '2026-09-05', hours: 6.7, isNap: false },
+			{ date: '2026-09-05', hours: 0.1, isNap: true }
+		]);
+
+		expect(byDay.get('2026-09-05')).toBe(6.8);
+	});
+
+	it('lar en dag uten måling være fraværende, ikke null', () => {
+		const byDay = episodeSleepByDay([{ date: '2026-09-05', hours: 6.7, isNap: false }]);
+
+		// Hull er hull. `buildEpisodeTrack` gjør fraværet til `null` i punktet;
+		// en 0 her ville blitt lest som «sov ingenting».
+		expect(byDay.has('2026-09-06')).toBe(false);
 	});
 });

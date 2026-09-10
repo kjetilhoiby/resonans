@@ -40,6 +40,7 @@ import {
 	type SickPeriod
 } from './sick-periods';
 import { describeSymptom, type ResolvedSymptom } from './symptoms';
+import type { SleepNightPoint } from './sleep-overview';
 
 /**
  * Hvor mange dager før onset baselinen bygges av.
@@ -317,6 +318,39 @@ export function describeEpisodeTrack(
 export const WEIGHT_CAVEAT =
 	'Vekt målt under et sykdomsforløp er ikke sammenlignbar med vektutviklingen ellers.';
 
+/* ── Søvn: DØGNET, ikke natta ────────────────────────────────────────── */
+
+/**
+ * Søvnen per døgn i et forløp — nattesøvn PLUSS dupper.
+ *
+ * Alle andre lesere av søvn holder dupper utenfor, og har rett i det: en flis
+ * om dagen skal ikke dra nattsnittet opp, og «sov du nok i natt» er et
+ * spørsmål om natta. Her er det motsatt, og grunnen er hva et forløp SPØR om.
+ *
+ * Den som ligger nede sover om dagen. Det er ikke støy i målingen av nattas
+ * søvn — det ER sykdommen, og det er halve svaret på «hvor mye har kroppen
+ * hvilt». Med dupper ute leste raden 4,6 t under et forløp der brukeren sov
+ * 8–12 timer i døgnet, altså det motsatte av det som skjedde.
+ *
+ * Baselinen regnes av de samme reglene, så sammenligningen holder: på friske
+ * dager finnes det knapt dupper, og de fjorten dagene før flytter seg nesten
+ * ikke.
+ *
+ * NB: tallet er `total_sleep_time` fra Withings, altså tid SOVET — ikke tid i
+ * senga. Åtte timer i senga leses derfor normalt som seks–sju. Raden sier
+ * kilden sin, så tallet kan etterprøves framfor å se feil ut.
+ */
+export function episodeSleepByDay(points: readonly SleepNightPoint[]): Map<string, number> {
+	const byDay = new Map<string, number>();
+	for (const point of points) {
+		byDay.set(point.date, (byDay.get(point.date) ?? 0) + point.hours);
+	}
+	// Summen av to avrundede timetall får en hale; rund av til samme oppløsning
+	// som kildene, ellers viser raden 6,800000000000001 t.
+	for (const [day, hours] of byDay) byDay.set(day, Math.round(hours * 100) / 100);
+	return byDay;
+}
+
 /* ── Aksen ───────────────────────────────────────────────────────────── */
 
 /**
@@ -356,16 +390,25 @@ export interface EpisodeAxis {
  * Null når raden ikke har et eneste punkt — kalleren skal da la være å tegne,
  * ikke tegne en tom ramme.
  */
-export function episodeAxis(track: Pick<EpisodeTrack, 'id' | 'points' | 'baseline'>): EpisodeAxis | null {
+export function episodeAxis(
+	track: Pick<EpisodeTrack, 'id' | 'points' | 'baseline' | 'during'>
+): EpisodeAxis | null {
 	const fixed = FIXED_AXES[track.id];
 	if (fixed) return fixed;
 
 	const values = track.points
 		.map((p) => p.value)
 		.filter((v): v is number => v !== null);
-	// Baselinen tegnes som en referanselinje, så den må få plass i domenet —
-	// ellers ligger den utenfor rammen og forsvinner stille.
+	// Begge medianlinjene tegnes som referanser, så begge må få plass i domenet
+	// — ellers ligger en av dem utenfor rammen og forsvinner stille.
+	//
+	// `during` ligger i praksis ALLTID innenfor punktenes eget spenn (den er en
+	// median av dem), så linja under er en no-op i dag. Den står likevel: en
+	// framtidig endring av hvordan `during` regnes ville ellers flyttet en linje
+	// ut av rammen uten at noe sier fra, og det er nøyaktig den klassen feil
+	// resten av modulen er skrevet for å unngå.
 	if (track.baseline !== null) values.push(track.baseline);
+	if (track.during !== null) values.push(track.during);
 	if (values.length === 0) return null;
 
 	const lo = Math.min(...values);

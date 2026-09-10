@@ -12,7 +12,7 @@
 	 */
 	import SectionLabel from '$lib/components/ui/SectionLabel.svelte';
 	import SickEpisodeTrack from './SickEpisodeTrack.svelte';
-	import type { SickEpisode } from '$lib/domain/health/sick-episode';
+	import { BASELINE_DAYS, type SickEpisode } from '$lib/domain/health/sick-episode';
 
 	interface Props {
 		episode: SickEpisode;
@@ -85,6 +85,16 @@
 				</span>
 				<span>{shortDay(days[days.length - 1].day)}</span>
 			</div>
+
+			<!--
+				Tegnforklaringen står ÉN gang, som datoaksen: linjene betyr det
+				samme i hver rad. Per rad ville den samme setningen stått åtte
+				ganger og druknet setningene som faktisk sier noe.
+			-->
+			<p class="tegnforklaring">
+				<span class="prove prove-for"></span> median de {BASELINE_DAYS} dagene før
+				<span class="prove prove-under"></span> median under forløpet
+			</p>
 
 			<div class="rader">
 				{#each episode.tracks as track (track.id)}
@@ -208,6 +218,32 @@
 		position: absolute;
 		transform: translateX(-50%);
 		color: var(--text-tertiary);
+	}
+
+	.tegnforklaring {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 14px;
+		margin: 2px 0 0;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+
+	.prove {
+		display: inline-block;
+		width: 18px;
+		height: 0;
+		margin-right: 2px;
+		vertical-align: middle;
+	}
+
+	.prove-for {
+		border-top: 1px dashed var(--text-muted);
+	}
+
+	.prove-under {
+		border-top: 2px solid var(--text-secondary);
 	}
 
 	.rader {
