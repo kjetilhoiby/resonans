@@ -139,6 +139,8 @@ export type EpisodeTrackId =
 	| 'restingHr'
 	| 'sleepHr'
 	| 'sleep'
+	| 'steps'
+	| 'activeMinutes'
 	| 'coreTemperature'
 	| 'skinTemperature'
 	| 'hrv';
@@ -367,6 +369,11 @@ export const MIN_AXIS_SPAN: Record<EpisodeTrackId, number> = {
 	restingHr: 8,
 	sleepHr: 8,
 	sleep: 1.5,
+	// Skritt spriker tusenvis mellom to helt like dager; uten et romslig gulv
+	// tegnes normal variasjon som et stup. Aktive minutter er et lite tall der
+	// null er en vanlig verdi, så gulvet er det som holder en rolig uke flat.
+	steps: 3000,
+	activeMinutes: 20,
 	coreTemperature: 1,
 	skinTemperature: 1,
 	// SDNN spriker mer enn puls mellom netter; et for lavt gulv gjør normal
@@ -644,8 +651,28 @@ function smallestStep(decimals: number): number {
 	return Math.pow(10, -decimals) / 2;
 }
 
+/**
+ * Tall som de skrives på flaten.
+ *
+ * **Tusenskille under `decimals === 0`, med hardt mellomrom.** Skritt er den
+ * eneste raden som når fire sifre, og «8240» leses ikke som et antall i en
+ * kolonne der naboene er «49» og «6,8». Regelen er knyttet til desimaltallet
+ * framfor til rad-id-en fordi ingen annen heltallsrad kan komme i nærheten:
+ * puls topper på ~200, nivået går til 5.
+ *
+ * Eksportert fordi `SickEpisodeTrack.svelte` skriver de samme tallene ved
+ * siden av setningene herfra — to formatterere ville gitt «8 240 skritt» over
+ * en setning som sa «8240».
+ */
+export function formatEpisodeValue(value: number, decimals: number): string {
+	const text = value.toFixed(decimals).replace('.', ',');
+	if (decimals !== 0) return text;
+	// Hardt mellomrom (U+00A0): et vanlig ville latt tallet brekke midt i to.
+	return text.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
+}
+
 function formatNumber(value: number, decimals: number): string {
-	return value.toFixed(decimals).replace('.', ',');
+	return formatEpisodeValue(value, decimals);
 }
 
 const MONTHS = [

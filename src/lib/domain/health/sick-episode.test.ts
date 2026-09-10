@@ -9,6 +9,7 @@ import {
 	episodeAxis,
 	episodeSleepByDay,
 	findRelapse,
+	formatEpisodeValue,
 	type EpisodeTrackSpec
 } from './sick-episode';
 import { resolveSymptom, type Symptom } from './symptoms';
@@ -435,6 +436,32 @@ describe('episodeAxis', () => {
 
 	it('gir null når raden ikke har et eneste punkt', () => {
 		expect(episodeAxis(buildEpisodeTrack(weightSpec, new Map(), window))).toBeNull();
+	});
+});
+
+describe('formatEpisodeValue', () => {
+	it('setter tusenskille på heltall', () => {
+		// Skritt er den eneste raden som når fire sifre, og «8240» leses ikke som
+		// et antall i en kolonne der naboene er «49» og «6,8».
+		expect(formatEpisodeValue(8240, 0)).toBe('8\u00A0240');
+		expect(formatEpisodeValue(12400, 0)).toBe('12\u00A0400');
+	});
+
+	it('lar tresifrede heltall stå urørt', () => {
+		// Puls topper på ~200 og nivået går til 5 — ingen av dem skal få skille.
+		expect(formatEpisodeValue(49, 0)).toBe('49');
+		expect(formatEpisodeValue(192, 0)).toBe('192');
+	});
+
+	it('grupperer ikke desimaltall', () => {
+		// Regelen henger på decimals, ikke på størrelsen: et desimaltall i denne
+		// modulen er kg, timer eller grader, og de når aldri fire sifre.
+		expect(formatEpisodeValue(6.8, 1)).toBe('6,8');
+		expect(formatEpisodeValue(94.25, 2)).toBe('94,25');
+	});
+
+	it('holder skillet unna minustegnet', () => {
+		expect(formatEpisodeValue(-3100, 0)).toBe('-3\u00A0100');
 	});
 });
 

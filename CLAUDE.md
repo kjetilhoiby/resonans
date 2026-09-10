@@ -1691,10 +1691,28 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   man har når forløpet er over. De stopper ved i dag; en tom kolonne i høyre kant
   leses som et hull i dataene.
 - **Én kilde per rad, navngitt.** Dagpuls leses BARE fra `activity.hr_min`
-  (`readDailyMinHeartRate`). Punktpulsen fra vekta er tatt stående og ligger
+  (`readDailyActivity`). Punktpulsen fra vekta er tatt stående og ligger
   5–15 slag høyere, så en blandet serie ville vist et hopp på veiedagene som ser
   ut som en endring i kroppen. Sovepuls er et annet spørsmål og går fortsatt
   gjennom `loadSleepHeartRate`.
+- **Bevegelse er TO rader, og aktive minutter er `moderate + intense` — aldri
+  `soft`.** Se `docs/changelog/2026-09-10-bevegelse-i-sykdomsforlopet.md`.
+  Withings teller `soft` som «lett aktivitet», og en vanlig kontordag gir
+  timevis av den bare av å gå rundt: tas den med, måler raden omtrent hvor mange
+  timer klokka satt på håndleddet, altså flatt gjennom et forløp der nettopp
+  INTENSITETEN forsvant. Skritt og intensitet er heller ikke to visninger av det
+  samme — en dag i senga med en tur på butikken gir skritt uten intensitet, en
+  spinningtime gir intensitet uten mange skritt. Radene står rett etter Søvn:
+  begge er ATFERD, ikke fysiologi. Alle tre feltene (`hr_min`, `steps`,
+  `moderate`/`intense`) bor i den SAMME `activity`-raden, så
+  `readDailyActivity` er én spørring og tre kart.
+- **Tusenskille under `decimals === 0`** (`formatEpisodeValue`, eksportert og
+  brukt av `SickEpisodeTrack.svelte`). Skritt er den eneste raden som når fire
+  sifre, og «8240» leses ikke som et antall i en kolonne der naboene er «49» og
+  «6,8». Regelen henger på desimaltallet framfor på rad-id-en fordi ingen annen
+  heltallsrad kan komme i nærheten: puls topper på ~200, nivået går til 5.
+  Komponenten skrev sin egen `toFixed` fram til september 2026 — to
+  formatterere ville gitt «8 240 skritt» over en setning som sa «8240».
 - **Hudtemperatur og HRV vises som AVVIK, aldri absolutt.**
   `absoluteIsMeaningless` på radspesifikasjonen er kontrakten mot flaten: uten
   baseline sier raden det framfor å falle tilbake på råtallet. Håndleddstallet
@@ -1729,8 +1747,9 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   HRV-avsnittet over. Den er bygget nå fordi den tenner av seg selv den dagen
   dataene kommer, ikke fordi den viser noe i dag.
 - Kjent rest: **`weight-nugget.ts` vet ikke om sykeperioder** og kan feire en
-  rekord satt under et forløp; bevegelse er ikke en rad; chatten har ikke noe
-  verktøy over `loadSickEpisode`; to forløp kan ikke legges oppå hverandre.
+  rekord satt under et forløp (bevisst latt stå); `canonical_workouts` er ikke
+  en rad — skrittene sier at man var oppe, ikke at man trente; chatten har ikke
+  noe verktøy over `loadSickEpisode`; to forløp kan ikke legges oppå hverandre.
 
 ### Symptomer: egne liv, og ett av dem er grunnen
 

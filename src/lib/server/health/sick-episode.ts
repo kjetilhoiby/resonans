@@ -3,7 +3,7 @@
  *
  * Ingen egne spørringer mot `sensor_events`: hver serie kommer fra den delte
  * leseren som alt eier den (`readWeightDays`, `readNightlyPhysiology`,
- * `readSleepNights`, `loadTemperature`, `readDailyMinHeartRate`,
+ * `readSleepNights`, `loadTemperature`, `readDailyActivity`,
  * `listSickLevels`). Det er hele poenget — en forløpsvisning som leste rått
  * ville svart noe annet enn Vekt-flaten og Søvn-flaten på samme dag, og da er
  * den verre enn ingen visning.
@@ -34,7 +34,12 @@ import { readWeightDays } from './weight-history';
 import { readNightlyPhysiology } from './nightly-physiology';
 import { readSleepNights } from '$lib/server/integrations/sleep-goals';
 import { loadTemperature } from './temperature-log';
-import { DAILY_HR_SOURCE_LABEL, readDailyMinHeartRate } from './daily-heart-rate';
+import {
+	DAILY_ACTIVE_MINUTES_SOURCE_LABEL,
+	DAILY_HR_SOURCE_LABEL,
+	DAILY_STEPS_SOURCE_LABEL,
+	readDailyActivity
+} from './daily-activity';
 import { listSickLevels, listSickPeriods, todayOsloKey } from './sick-log';
 import { listSymptoms } from './symptom-log';
 
@@ -70,7 +75,7 @@ export async function loadSickEpisode(
 	const firstDay = window.days[0]!.day;
 	const lookbackDays = dayNumber(today) - dayNumber(firstDay) + LOOKBACK_SLACK_DAYS;
 
-	const [weightDays, physiology, sleepNights, temperature, dailyHr, levels, symptoms] =
+	const [weightDays, physiology, sleepNights, temperature, daily, levels, symptoms] =
 		await Promise.all([
 			readWeightDays(userId, { now }),
 			readNightlyPhysiology(userId, lookbackDays),
@@ -78,7 +83,11 @@ export async function loadSickEpisode(
 			// Temperatur er sjelden målt. Feiler den, skal ikke resten av
 			// forløpet feile med den.
 			loadTemperature(userId, lookbackDays).catch(() => null),
-			readDailyMinHeartRate(userId, lookbackDays).catch(() => new Map<string, number>()),
+			readDailyActivity(userId, lookbackDays).catch(() => ({
+				hrMin: new Map<string, number>(),
+				steps: new Map<string, number>(),
+				activeMinutes: new Map<string, number>()
+			})),
 			listSickLevels(userId, lookbackDays).catch(() => []),
 			listSymptoms(userId)
 		]);
@@ -152,7 +161,7 @@ export async function loadSickEpisode(
 				decimals: 0,
 				notableDirection: 'up'
 			},
-			dailyHr
+			daily.hrMin
 		],
 		[
 			{
@@ -199,6 +208,29 @@ export async function loadSickEpisode(
 				notableDirection: 'down'
 			},
 			sleepByDay
+		],
+		[
+			{
+				id: 'steps',
+				label: 'Skritt',
+				unit: 'skritt',
+				source: DAILY_STEPS_SOURCE_LABEL,
+				decimals: 0,
+				// Bevegelsen som forsvant er det brukeren selv la merke til først.
+				notableDirection: 'down'
+			},
+			daily.steps
+		],
+		[
+			{
+				id: 'activeMinutes',
+				label: 'Aktive minutter',
+				unit: 'min',
+				source: DAILY_ACTIVE_MINUTES_SOURCE_LABEL,
+				decimals: 0,
+				notableDirection: 'down'
+			},
+			daily.activeMinutes
 		],
 		[
 			{
