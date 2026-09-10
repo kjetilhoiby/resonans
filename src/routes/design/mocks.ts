@@ -2306,12 +2306,12 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: 'av 5',
 				source: 'dine egne innsjekk',
 				decimals: 0,
-				risingIsNotable: false
+				notableDirection: null
 			},
 			sickEpisodeSeries(levels.map((l) => [l.day, l.level] as [string, number]))
 		],
 		[
-			{ id: 'weight', label: 'Vekt', unit: 'kg', source: null, decimals: 1, risingIsNotable: false },
+			{ id: 'weight', label: 'Vekt', unit: 'kg', source: null, decimals: 1, notableDirection: null },
 			sickEpisodeSeries([
 				['2026-08-25', 95.1],
 				['2026-08-26', 94.9],
@@ -2333,7 +2333,7 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: 'slag/min',
 				source: 'laveste målte puls per døgn, fra klokka',
 				decimals: 0,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			sickEpisodeSeries([
 				['2026-08-26', 52],
@@ -2360,7 +2360,7 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: 'slag/min',
 				source: 'laveste puls gjennom natta',
 				decimals: 0,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			sickEpisodeSeries([
 				['2026-08-27', 48],
@@ -2377,7 +2377,31 @@ export const sickEpisodeMock: SickEpisode = (() => {
 			])
 		],
 		[
-			{ id: 'sleep', label: 'Søvn', unit: 't', source: null, decimals: 1, risingIsNotable: false },
+			{
+				id: 'hrv',
+				label: 'HRV',
+				unit: 'ms',
+				source: 'SDNN gjennom natta',
+				decimals: 0,
+				notableDirection: 'down',
+				absoluteIsMeaningless: true
+			},
+			sickEpisodeSeries([
+				['2026-08-27', 46],
+				['2026-08-28', 44],
+				['2026-08-29', 47],
+				['2026-08-31', 45],
+				['2026-09-01', 38],
+				['2026-09-02', 33],
+				['2026-09-03', 35],
+				['2026-09-05', 41],
+				['2026-09-07', 31],
+				['2026-09-08', 30],
+				['2026-09-10', 36]
+			])
+		],
+		[
+			{ id: 'sleep', label: 'Søvn', unit: 't', source: null, decimals: 1, notableDirection: 'down' },
 			sickEpisodeSeries([
 				['2026-08-26', 7.2],
 				['2026-08-27', 6.9],
@@ -2401,7 +2425,7 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: '°C',
 				source: 'termometer',
 				decimals: 1,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			sickEpisodeSeries([
 				['2026-09-02', 38.4],

@@ -1657,10 +1657,22 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   5–15 slag høyere, så en blandet serie ville vist et hopp på veiedagene som ser
   ut som en endring i kroppen. Sovepuls er et annet spørsmål og går fortsatt
   gjennom `loadSleepHeartRate`.
-- **Hudtemperatur vises som AVVIK, aldri absolutt.** `absoluteIsMeaningless` på
-  radspesifikasjonen er kontrakten mot flaten: uten baseline sier raden det
-  framfor å falle tilbake på råtallet. Legger du til en rad der tallet bare gir
-  mening relativt, sett flagget.
+- **Hudtemperatur og HRV vises som AVVIK, aldri absolutt.**
+  `absoluteIsMeaningless` på radspesifikasjonen er kontrakten mot flaten: uten
+  baseline sier raden det framfor å falle tilbake på råtallet. Håndleddstallet
+  har ingen normtabell, og SDNN varierer for mye mellom folk — «vises ALDRI
+  alene» er regelen fra `hrv.ts`, håndhevet mekanisk her. Legger du til en rad
+  der tallet bare gir mening relativt, sett flagget.
+- **`notableDirection` er en RETNING, ikke en boolean.** Feltet het
+  `risingIsNotable` fram til HRV kom inn, og det holdt bare fordi alle radene
+  som skulle markeres pekte samme vei. HRV er den første der FALLET er
+  signalet — og en boolean kunne bare uttrykt det ved å invertere betydningen
+  for én rad, altså den stille inversjonen `computePaceEstimate` gikk på.
+  Nå: dagpuls, sovepuls, temperatur og hudtemperatur `up`; søvn og HRV `down`;
+  nivå og vekt `null`. Vekt markeres ikke fordi raden alt bærer
+  `WEIGHT_CAVEAT` — en farge i tillegg ville lest som en dom om et tall vi
+  nettopp har sagt ikke er sammenlignbart; nivået markeres ikke fordi det ER
+  forløpet, ikke et avvik fra det.
 - **Nivået er ryggraden, ikke en rad blant seks.** Det er det eneste signalet
   ingen sensor kan hente, og dermed det eneste som kan si «jeg ble bedre og så
   dårligere igjen». `RELAPSE_DROP` er **2, ikke 1**: skalaen har fem trinn, og
@@ -1675,6 +1687,9 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
 - **En rad uten en eneste måling filtreres bort**, og dekningen står under hver
   rad som blir igjen. Et tomt spor ser ut som en feil; et snitt uten nevner ser
   like sikkert ut enten det hviler på ni netter eller tre.
+- **HRV-raden er tom inntil synken virker**, og filtreres derfor bort — se
+  HRV-avsnittet over. Den er bygget nå fordi den tenner av seg selv den dagen
+  dataene kommer, ikke fordi den viser noe i dag.
 - Kjent rest: **`weight-nugget.ts` vet ikke om sykeperioder** og kan feire en
   rekord satt under et forløp; bevegelse er ikke en rad; chatten har ikke noe
   verktøy over `loadSickEpisode`; to forløp kan ikke legges oppå hverandre.
@@ -2915,6 +2930,18 @@ Se `docs/changelog/2026-08-03-losetrader.md`. Logikken i `$lib/domain/health/hrv
   som forsvinner ser ut som en funksjon som ikke finnes. `hrvAvailability` i
   søvn-payloaden bærer `sleepNights` og `nightsWithHrv`. **NB: HRV har aldri produsert
   data i prod** (15 netter søvn, 0 med HRV per 4. august); årsaken er ikke funnet.
+- **Men Health Mate VISER en HRV-kurve** (observert 10. september 2026), og det
+  utelukker «enheten måler det ikke» som forklaring — dataene finnes hos
+  Withings. `syncSleepHrv` rapporterer bare `unavailable++`, og derfra ser «vi
+  ba om feil felt» og «enheten leverte ikke» identiske ut.
+  **`GET /api/sensors/withings/debug/hrv?nights=5` er diagnosen**, i samme
+  familie som `debug/coverage` og `debug/probe`. Den rapporterer NØKLENE
+  Withings faktisk sendte per variant — ikke bare verdiene, som er forskjellen
+  på et svar og en gjentakelse av spørsmålet. Første variant er byte-identisk
+  med synken (samme vindu, samme `data_fields`), ellers ville et treff vært et
+  utsagn om vinduet framfor om feltet. `hr` er kontrollen: den VET vi kommer
+  tilbake. Se `docs/changelog/2026-09-10-hrv-i-forlopet-og-hvorfor-den-er-tom.md`
+  for hvordan svaret leses.
 
 ### Sovepuls (hvilepuls i søvn)
 

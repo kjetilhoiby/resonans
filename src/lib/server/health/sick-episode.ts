@@ -89,6 +89,12 @@ export async function loadSickEpisode(
 		if (night.restingBpm !== null) sleepHrByDay.set(night.date, night.restingBpm);
 	}
 
+	// HRV kommer fra samme lesing som sovepulsen. `readNightlyPhysiology` filtrerer
+	// alt bort dupper, som er nødvendig her også: en dupp og natta før deler
+	// nattbøtte, og duppens HRV ville overskrevet nattas.
+	const hrvByDay = new Map<string, number>();
+	for (const night of physiology.hrvNights) hrvByDay.set(night.date, night.sdnnMs);
+
 	const sleepByDay = new Map<string, number>();
 	for (const night of buildSleepNightSeries(sleepNights)) {
 		// Dupper er ikke netter. `buildSleepNightSeries` merker dem; en dupp lagt
@@ -120,7 +126,8 @@ export async function loadSickEpisode(
 				unit: 'av 5',
 				source: 'dine egne innsjekk',
 				decimals: 0,
-				risingIsNotable: false
+				// Nivået ER forløpet, ikke et avvik fra det. Ingen markering.
+				notableDirection: null
 			},
 			levelByDay
 		],
@@ -131,7 +138,9 @@ export async function loadSickEpisode(
 				unit: 'kg',
 				source: null,
 				decimals: 1,
-				risingIsNotable: false
+				// Vektraden bærer forbeholdet sitt; en farge i tillegg ville lest som
+				// en dom om et tall vi nettopp har sagt ikke er sammenlignbart.
+				notableDirection: null
 			},
 			weightByDay
 		],
@@ -142,7 +151,7 @@ export async function loadSickEpisode(
 				unit: 'slag/min',
 				source: DAILY_HR_SOURCE_LABEL,
 				decimals: 0,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			dailyHr
 		],
@@ -153,9 +162,30 @@ export async function loadSickEpisode(
 				unit: 'slag/min',
 				source: 'laveste puls gjennom natta',
 				decimals: 0,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			sleepHrByDay
+		],
+		[
+			{
+				id: 'hrv',
+				label: 'HRV',
+				unit: 'ms',
+				source: 'SDNN gjennom natta',
+				decimals: 0,
+				// Fallet er signalet, ikke stigningen — motsatt av sovepuls.
+				notableDirection: 'down',
+				/**
+				 * SDNN sier ingenting alene.
+				 *
+				 * «Absoluttverdien vises ALDRI alene» er regelen fra `hrv.ts`: tallet
+				 * varierer for mye mellom folk, og det finnes ingen normtabell. Flagget
+				 * håndhever den mekanisk — uten baseline sier raden det, framfor å
+				 * skrive «42 ms» som om det betydde noe i seg selv.
+				 */
+				absoluteIsMeaningless: true
+			},
+			hrvByDay
 		],
 		[
 			{
@@ -164,7 +194,7 @@ export async function loadSickEpisode(
 				unit: 't',
 				source: null,
 				decimals: 1,
-				risingIsNotable: false
+				notableDirection: 'down'
 			},
 			sleepByDay
 		],
@@ -175,7 +205,7 @@ export async function loadSickEpisode(
 				unit: '°C',
 				source: 'termometer',
 				decimals: 1,
-				risingIsNotable: true
+				notableDirection: 'up'
 			},
 			coreByDay
 		],
@@ -186,7 +216,7 @@ export async function loadSickEpisode(
 				unit: '°C',
 				source: 'klokka',
 				decimals: 1,
-				risingIsNotable: true,
+				notableDirection: 'up',
 				// Se flagget: håndleddstallet har ingen normtabell, så raden viser
 				// bare avviket fra dagene før.
 				absoluteIsMeaningless: true

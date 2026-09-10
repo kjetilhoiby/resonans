@@ -68,6 +68,19 @@
 		return value.toFixed(track.decimals).replace('.', ',');
 	}
 
+	/**
+	 * Skal tallet markeres?
+	 *
+	 * Fortegnet på avviket må matche radens egen retning: sovepuls OPP og HRV NED
+	 * er begge «verdt å se på», og en felles «stiger»-regel ville markert den ene
+	 * riktig og den andre motsatt.
+	 */
+	const isNotable = $derived(
+		track.delta !== null &&
+			track.notableDirection !== null &&
+			(track.notableDirection === 'up' ? track.delta > 0 : track.delta < 0)
+	);
+
 	/** Tallet som står ved siden av etiketten. */
 	const headline = $derived.by(() => {
 		if (track.absoluteIsMeaningless) {
@@ -84,7 +97,7 @@
 	<div class="topp">
 		<span class="etikett">{track.label}</span>
 		{#if headline}
-			<span class="tall" class:notabel={track.risingIsNotable && (track.delta ?? 0) > 0}>
+			<span class="tall" class:notabel={isNotable}>
 				{headline}
 			</span>
 		{/if}

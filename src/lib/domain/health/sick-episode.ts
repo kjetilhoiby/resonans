@@ -139,7 +139,8 @@ export type EpisodeTrackId =
 	| 'sleepHr'
 	| 'sleep'
 	| 'coreTemperature'
-	| 'skinTemperature';
+	| 'skinTemperature'
+	| 'hrv';
 
 export interface EpisodeTrackSpec {
 	id: EpisodeTrackId;
@@ -153,13 +154,19 @@ export interface EpisodeTrackSpec {
 	/** Antall desimaler i visning og setning. */
 	decimals: number;
 	/**
-	 * Skal en STIGNING leses som «verdt å se på»?
+	 * Hvilken RETNING er verdt å merke seg på denne raden?
 	 *
-	 * Brukes bare til retningsord og farge, aldri til en dom: sovepuls opp er
-	 * verdt å merke seg, søvnmengde opp er det ikke. Et forløp får ingen
-	 * varselfarge av dette — det er beskrivelse, ikke en vurdering.
+	 * Feltet var `risingIsNotable: boolean` fram til HRV kom inn, og det holdt
+	 * bare fordi alle radene som skulle markeres pekte samme vei. HRV er den
+	 * første der FALLET er signalet — som sovepuls speilvendt — og en boolean
+	 * kan ikke uttrykke det uten å invertere betydningen per rad, som er
+	 * nøyaktig den slags stille inversjon `computePaceEstimate` gikk på.
+	 *
+	 * Brukes bare til farge, aldri til en dom: et forløp får ingen varselfarge
+	 * av dette. `null` betyr at ingen retning skal markeres — vekt og
+	 * selvrapportert nivå er BESKRIVELSEN av forløpet, ikke avvik fra det.
 	 */
-	risingIsNotable: boolean;
+	notableDirection: 'up' | 'down' | null;
 	/**
 	 * Er det ABSOLUTTE tallet meningsløst alene?
 	 *
@@ -327,7 +334,10 @@ export const MIN_AXIS_SPAN: Record<EpisodeTrackId, number> = {
 	sleepHr: 8,
 	sleep: 1.5,
 	coreTemperature: 1,
-	skinTemperature: 1
+	skinTemperature: 1,
+	// SDNN spriker mer enn puls mellom netter; et for lavt gulv gjør normal
+	// nattvariasjon til et stup.
+	hrv: 10
 };
 
 /** Skalaen er skalaen: en 1–5-akse som strekkes gjør ett hakk til et stup. */
