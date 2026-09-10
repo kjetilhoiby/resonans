@@ -57,7 +57,7 @@ describe('isSleepDisturbanceKind', () => {
 
 describe('nightKeyForTime', () => {
 	it('nøkler på datoen du våkner, ikke datoen du la deg', () => {
-		// Konvensjonen fra buildSleepNightSeries: night.end ?? night.start.
+		// Samme konvensjon som buildSleepNightSeries og nightly-physiology.
 		// 23:30 norsk den 3. → natta som ender 4.
 		expect(nightKeyForTime('2026-08-03T21:30:00.000Z')).toBe('2026-08-04');
 		// 03:00 norsk den 4. → samme natt.

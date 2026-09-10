@@ -12,6 +12,8 @@ import {
 	noonAxisToHHMM,
 	type SleepNight
 } from '$lib/domain/sleep-goals';
+import { nightKeyForTime } from '$lib/domain/sleep/disturbance';
+import { osloDayKey } from '$lib/domain/oslo-time';
 
 export interface SleepNightPoint {
 	/** Datoen natten regnes til (morgenen man våkner). */
@@ -29,15 +31,40 @@ export interface SleepRhythm {
 	nightCount: number;
 }
 
-function toDateKey(d: Date): string {
-	return d.toISOString().slice(0, 10);
+/**
+ * Nøkkelen ett segment havner på.
+ *
+ * **En natt nøkles på `nightKeyForTime`, en dupp på Oslo-DAGEN**, og det er to
+ * ulike spørsmål: en natt hører til morgenen du våkner, en dupp til dagen du
+ * tok den. Grensa på 18:00 som gjør det første riktig, ville flyttet en
+ * ettermiddagsdupp kl. 18 over til morgendagen.
+ *
+ * Fram til september 2026 sto det `end.toISOString()` her — altså UTC-datoen
+ * for da segmentet SLUTTET — og det er feil på to måter samtidig:
+ *
+ *  1. **UTC-midnatt ligger kl. 02 om natta i Oslo om sommeren.** Deler Withings
+ *     natta ved en oppvåkning rundt da (og den deler ofte), får den første
+ *     halvdelen gårsdagens dato og den andre dagens. Én natt på åtte timer
+ *     leses som to på fire, og siden `nightKeyForTime` er det sovepuls og HRV
+ *     bruker, står søvnraden på en annen dag enn pulsraden ved siden av seg.
+ *     Målt 10. september 2026: Health Mate sa 8t00 og 13t13 der forløpet viste
+ *     4,5 t.
+ *  2. **`end ?? start` faller tilbake på leggetiden** når `metadata.enddate`
+ *     mangler, og da havner hele natta et døgn for tidlig.
+ *
+ * Kommentaren i `disturbance.ts` påsto at denne funksjonen alt fulgte
+ * konvensjonen. Den gjorde ikke det — nå gjør den det.
+ */
+function segmentKey(night: SleepNight): string {
+	if (night.isNap) return osloDayKey(night.start);
+	return nightKeyForTime(night.start) ?? osloDayKey(night.start);
 }
 
 /**
  * Netter → punktserie, eldste først. Naps merkes, men beholdes i serien slik at
  * dashboardet kan vise dem uten et eget oppslag.
  *
- * Segmenter med samme dato slås sammen, og timene summeres. Withings deler natta
+ * Segmenter på samme natt slås sammen, og timene summeres. Withings deler natta
  * i flere `sleep`-events når man er ute av senga (`out_of_bed_count > 0`), og da
  * er 3 t + 4 t én natt på 7 t — ikke to netter. Uten sammenslåingen fikk
  * SleepDashboard duplikate `{#each}`-nøkler og kastet `each_key_duplicate`, og
@@ -50,7 +77,7 @@ export function buildSleepNightSeries(nights: SleepNight[]): SleepNightPoint[] {
 	const byKey = new Map<string, SleepNightPoint>();
 
 	for (const night of nights) {
-		const date = toDateKey(night.end ?? night.start);
+		const date = segmentKey(night);
 		const hours = Math.round(night.durationH * 100) / 100;
 		const key = `${date}:${night.isNap ? 'nap' : 'natt'}`;
 		const existing = byKey.get(key);

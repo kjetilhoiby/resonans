@@ -147,6 +147,39 @@ describe('buildSleepNightSeries — segmenter samme natt', () => {
 		expect(series[0].hours).toBe(0.7);
 	});
 
+	it('holder natta samlet når Withings deler den ved 02-tida i Oslo', () => {
+		// Dette er feilen som gjorde 8t00 til 4,5 t. Oslo er UTC+2 om sommeren, så
+		// UTC-midnatt ligger kl. 02 om natta — midt i den oppvåkningen Withings
+		// oftest deler på. Første segment sluttet 01:50 Oslo (23:50 UTC dagen
+		// før) og fikk gårsdagens dato med en nøkkel regnet i UTC.
+		const series = buildSleepNightSeries([
+			// 23:34 → 01:50 Oslo
+			night('2026-09-09T21:34:00.000Z', 2.2, false, '2026-09-09T23:50:00.000Z'),
+			// 02:10 → 07:41 Oslo
+			night('2026-09-10T00:10:00.000Z', 5.5, false, '2026-09-10T05:41:00.000Z')
+		]);
+
+		expect(series).toHaveLength(1);
+		expect(series[0].date).toBe('2026-09-10');
+		expect(series[0].hours).toBe(7.7);
+	});
+
+	it('daterer natta selv om segmentet mangler sluttidspunkt', () => {
+		// `end ?? start` falt tilbake på LEGGETIDA, så en natt uten
+		// `metadata.enddate` havnet et helt døgn for tidlig.
+		const series = buildSleepNightSeries([night('2026-09-09T21:34:00.000Z', 8)]);
+
+		expect(series[0].date).toBe('2026-09-10');
+	});
+
+	it('legger en dupp på dagen den ble tatt, ikke på natta som kommer', () => {
+		// 18:00-grensa gjør en natt riktig og en ettermiddagsdupp gal. En dupp
+		// kl. 20 hører til dagen du tok den.
+		const series = buildSleepNightSeries([night('2026-09-09T18:00:00.000Z', 1, true)]);
+
+		expect(series[0].date).toBe('2026-09-09');
+	});
+
 	it('gir unike nøkler for date+isNap i hele serien', () => {
 		const series = buildSleepNightSeries([
 			night('2026-08-02T22:00:00.000Z', 3, false, '2026-08-03T01:00:00.000Z'),
