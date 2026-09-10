@@ -9,6 +9,7 @@
 	 */
 	import {
 		episodeAxis,
+		formatEpisodeValue,
 		type EpisodeDay,
 		type EpisodeTrack
 	} from '$lib/domain/health/sick-episode';
@@ -64,9 +65,9 @@
 	const sickX = $derived(xAt(onsetIndex));
 	const sickW = $derived(Math.max(1, xAt(endIndex) - xAt(onsetIndex)));
 
-	function fmt(value: number): string {
-		return value.toFixed(track.decimals).replace('.', ',');
-	}
+	// Domenelagets formatterer, ikke en egen: setningen under kurven kommer
+	// derfra, og to formatterere ville skrevet samme tall på to måter.
+	const fmt = (value: number) => formatEpisodeValue(value, track.decimals);
 
 	/**
 	 * Skal tallet markeres?
