@@ -159,6 +159,13 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// felter enn nattfysiologien. Se `readMeasuredNights`.
 			'lib/server/sleep-dashboard.ts',
 			'routes/api/admin/debug-sleep/+server.ts',
+			// Diagnosen for «hvorfor har HRV aldri produsert data». Den må sende
+			// NØYAKTIG samme kall som `syncSleepHrv`, ellers er et treff et utsagn
+			// om vinduet framfor om feltet — og da har den flyttet spørsmålet i
+			// stedet for å svare på det. Derfor de samme rå tidsstemplene inn i
+			// `nightFetchWindow`. Reglene den kunne brutt følges likevel:
+			// `nightKeyForTime` for nattbøtta og `isNap`-filteret for dupper.
+			'routes/api/sensors/withings/debug/hrv/+server.ts',
 			'routes/api/tema/[id=uuid]/health-stats/+server.ts'
 		]
 	},

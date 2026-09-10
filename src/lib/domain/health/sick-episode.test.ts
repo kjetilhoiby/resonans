@@ -23,7 +23,7 @@ const weightSpec: EpisodeTrackSpec = {
 	unit: 'kg',
 	source: null,
 	decimals: 1,
-	risingIsNotable: false
+	notableDirection: null
 };
 
 describe('buildEpisodeWindow', () => {
@@ -153,7 +153,7 @@ describe('buildEpisodeTrack', () => {
 			unit: '°C',
 			source: 'klokka',
 			decimals: 1,
-			risingIsNotable: true,
+			notableDirection: 'up',
 			absoluteIsMeaningless: true
 		};
 		const byDay = new Map<string, number>([
@@ -175,7 +175,7 @@ describe('buildEpisodeTrack', () => {
 			unit: '°C',
 			source: 'klokka',
 			decimals: 1,
-			risingIsNotable: true,
+			notableDirection: 'up',
 			absoluteIsMeaningless: true
 		};
 		const byDay = new Map<string, number>([['2026-09-02', 34.8]]);
@@ -195,6 +195,38 @@ describe('buildEpisodeTrack', () => {
 		const track = buildEpisodeTrack(weightSpec, byDay, window);
 
 		expect(track.text).toContain('uendret');
+	});
+});
+
+describe('notableDirection', () => {
+	const window = buildEpisodeWindow(openPeriod, TODAY);
+
+	// Regelen selv bor i flaten (fargen), men fortegnet den leser kommer herfra.
+	// HRV er den første raden der FALLET er signalet, og en «stiger»-boolean
+	// ville markert den motsatt av sovepuls uten at noe sa fra.
+	it('gir et negativt avvik for en rad som faller under forløpet', () => {
+		const hrvSpec: EpisodeTrackSpec = {
+			id: 'hrv',
+			label: 'HRV',
+			unit: 'ms',
+			source: 'SDNN gjennom natta',
+			decimals: 0,
+			notableDirection: 'down',
+			absoluteIsMeaningless: true
+		};
+		const byDay = new Map<string, number>([
+			['2026-08-28', 46],
+			['2026-08-29', 44],
+			['2026-08-31', 45],
+			['2026-09-02', 33],
+			['2026-09-04', 35]
+		]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window);
+
+		expect(track.delta).toBeLessThan(0);
+		expect(track.text).toBe('11 ms under de 14 dagene før.');
+		// Aldri råtallet: SDNN betyr ingenting uten en sammenligning.
+		expect(track.text).not.toContain('33');
 	});
 });
 
@@ -375,7 +407,7 @@ describe('episodeAxis', () => {
 			unit: 'av 5',
 			source: null,
 			decimals: 0,
-			risingIsNotable: false
+			notableDirection: null
 		};
 		const byDay = new Map<string, number>([
 			['2026-09-01', 2],
