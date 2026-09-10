@@ -19,6 +19,7 @@ import {
 	buildSymptomBars,
 	describeEpisode,
 	describeLevelCourse,
+	episodeSleepByDay,
 	findRelapse,
 	WEIGHT_CAVEAT,
 	type EpisodeTrackSpec,
@@ -95,12 +96,10 @@ export async function loadSickEpisode(
 	const hrvByDay = new Map<string, number>();
 	for (const night of physiology.hrvNights) hrvByDay.set(night.date, night.sdnnMs);
 
-	const sleepByDay = new Map<string, number>();
-	for (const night of buildSleepNightSeries(sleepNights)) {
-		// Dupper er ikke netter. `buildSleepNightSeries` merker dem; en dupp lagt
-		// til nattlengden ville gjort en dag i senga til «sov 11 timer».
-		if (!night.isNap) sleepByDay.set(night.date, night.hours);
-	}
+	// Dupper telles MED her, i motsetning til overalt ellers. Se
+	// `episodeSleepByDay` for hvorfor: den som ligger nede sover om dagen, og
+	// det er ikke støy i nattmålingen — det er sykdommen.
+	const sleepByDay = episodeSleepByDay(buildSleepNightSeries(sleepNights));
 
 	const coreByDay = new Map<string, number>();
 	for (const reading of temperature?.core.readings ?? []) {
@@ -192,7 +191,10 @@ export async function loadSickEpisode(
 				id: 'sleep',
 				label: 'Søvn',
 				unit: 't',
-				source: null,
+				// Kilden må navngis her selv om det bare finnes én: tallet er tid
+				// SOVET, ikke tid i senga, og det avviket (en til to timer) ser ut
+				// som en feil hos den som teller timene sine selv.
+				source: 'tid sovet i døgnet, dupper inkludert',
 				decimals: 1,
 				notableDirection: 'down'
 			},

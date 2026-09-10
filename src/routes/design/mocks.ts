@@ -2401,7 +2401,14 @@ export const sickEpisodeMock: SickEpisode = (() => {
 			])
 		],
 		[
-			{ id: 'sleep', label: 'Søvn', unit: 't', source: null, decimals: 1, notableDirection: 'down' },
+			{
+				id: 'sleep',
+				label: 'Søvn',
+				unit: 't',
+				source: 'tid sovet i døgnet, dupper inkludert',
+				decimals: 1,
+				notableDirection: 'down'
+			},
 			sickEpisodeSeries([
 				['2026-08-26', 7.2],
 				['2026-08-27', 6.9],

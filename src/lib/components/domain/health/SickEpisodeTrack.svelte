@@ -107,8 +107,27 @@
 		<svg class="kurve" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
 			<!-- Sykedagene skravert, så man ser hvor forløpet ligger i vinduet. -->
 			<rect x={sickX} y="0" width={sickW} height={H} class="syk" />
+			<!--
+				To referanselinjer, og de er hele poenget med raden: avstanden mellom
+				dem ER tallet setningen under oppgir. Baselinen går over HELE bredden
+				(den er referansen dagene måles mot), forløpsmedianen bare over
+				sykedagene — der den faktisk gjelder.
+
+				Stiplet mot hel, ikke farge mot farge: en farge her ville lest som en
+				dom, og `preserveAspectRatio="none"` strekker dashene vannrett, så
+				to ulike stiplinger hadde vært umulige å skille.
+			-->
 			{#if track.baseline !== null}
 				<line x1="0" x2={W} y1={yAt(track.baseline)} y2={yAt(track.baseline)} class="baseline" />
+			{/if}
+			{#if track.during !== null}
+				<line
+					x1={sickX}
+					x2={sickX + sickW}
+					y1={yAt(track.during)}
+					y2={yAt(track.during)}
+					class="under"
+				/>
 			{/if}
 			{#each segments as segment, s (s)}
 				<polyline
@@ -185,6 +204,12 @@
 		stroke: var(--text-muted);
 		stroke-width: 1;
 		stroke-dasharray: 3 3;
+		vector-effect: non-scaling-stroke;
+	}
+
+	.under {
+		stroke: var(--text-secondary);
+		stroke-width: 1.5;
 		vector-effect: non-scaling-stroke;
 	}
 

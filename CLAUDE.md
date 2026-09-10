@@ -1646,6 +1646,29 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   `days` fra vinduet og sendes ned i hver rad; en rad som regnet sin egen akse
   ville brutt avtalen første gang noen endret en padding. Y-aksene er uavhengige
   fordi kg, slag/min og timer ikke har en felles skala.
+- **BEGGE medianene tegnes, og avstanden mellom dem er tallet setningen
+  oppgir.** Se `docs/changelog/2026-09-10-to-medianlinjer-og-sovnen-i-dognet.md`.
+  Fram til 10. september 2026 sto bare baselinen i grafen, mens setningen under
+  sa to nivåer — sammenligningen var ikke å se noe sted. Baselinen går stiplet
+  over HELE bredden (også etterdagene, der spørsmålet er «kom det tilbake?»),
+  forløpsmedianen heltrukket over BARE sykedagene. **Stiplet mot heltrukket,
+  ikke farge mot farge:** en farge ville lest som en dom, og
+  `preserveAspectRatio="none"` strekker dashene vannrett, så to stiplinger er
+  ikke til å skille. Tegnforklaringen står ÉN gang, under datoaksen — per rad
+  ville den samme setningen stått åtte ganger.
+- **Søvnraden teller DØGNET, dupper inkludert** (`episodeSleepByDay`) — motsatt
+  av hver eneste andre søvnleser, og det er en beslutning. Den som ligger nede
+  sover om dagen; det er ikke støy i nattmålingen, det ER sykdommen. Med dupper
+  ute leste raden **4,6 t** under et forløp der brukeren sov 8–12 timer i
+  døgnet. Baselinen regnes av samme regel, så sammenligningen holder (friske
+  dager har knapt dupper). Rør ikke `isNap`-inferensen for å få til dette — en
+  sykeperiode med egen dupp-definisjon ville gitt raden en annen målestokk enn
+  baselinen sin.
+- **`sleepDuration` er `total_sleep_time`, altså tid SOVET — ikke tid i senga.**
+  Åtte timer i senga leses normalt som seks–sju. Derfor navngis kilden på raden
+  selv om det bare finnes én av dem: regel 3 sier «navngi kilden der flere
+  finnes», og lærdommen her er at den også må navngis der tallet MÅLER noe annet
+  enn ordet på etiketten.
 - **Baselinen er de fjorten dagene FØR, ikke historikken.** Et forløp spør «hvor
   mye flyttet dette seg». Under `MIN_BASELINE_SAMPLES` (3) oppgis INGEN avvik —
   et avvik fra to målinger er et avvik fra støy.
