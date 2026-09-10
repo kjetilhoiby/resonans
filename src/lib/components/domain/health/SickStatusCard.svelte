@@ -242,6 +242,19 @@
 		{/if}
 	</div>
 
+	{#if active}
+		<!--
+			Forløpet er en egen flate fordi det svarer på et annet spørsmål enn
+			kortet: kortet sier «er jeg syk nå», forløpet sier «hva har skjedd med
+			vekta, pulsen og søvnen siden det begynte».
+		-->
+		<a
+			class="sick-link sick-forlop"
+			href="/helse/sykdom/{active.id}"
+			data-track="helse-syk:se-forlop">Se forløpet →</a
+		>
+	{/if}
+
 	{#if error}
 		<p class="sick-error" role="alert">{error}</p>
 	{/if}
@@ -432,6 +445,7 @@
 					<span class="sick-row-text" class:is-stale={p.staleOpen}>
 						{p.text}{#if p.note}<span class="sick-row-note">{p.note}</span>{/if}
 					</span>
+					<a class="sick-link" href="/helse/sykdom/{p.id}" aria-label="Forløpet for {p.text}" data-track="helse-syk:se-forlop-historikk">Forløp</a>
 					<button class="sick-link" type="button" aria-label="Rett {p.text}" onclick={() => startEdit(p)}>Rett</button>
 					<button class="sick-link sick-link--danger" type="button" disabled={busy} aria-label="Slett {p.text}" onclick={() => void remove(p.id)}>Slett</button>
 				{/if}
@@ -565,6 +579,11 @@
 		text-decoration: underline;
 	}
 	.sick-link:hover:not(:disabled) { color: var(--text-primary); }
+	.sick-forlop {
+		display: inline-block;
+		align-self: flex-start;
+		color: var(--accent-light);
+	}
 	.sick-link--danger:hover:not(:disabled) { color: var(--accent-danger, #d9534f); }
 	.sick-link:disabled { opacity: 0.5; cursor: default; }
 

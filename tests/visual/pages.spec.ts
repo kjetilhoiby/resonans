@@ -94,7 +94,7 @@ const komponentSections = [
 	'lab'
 ];
 
-const flateSections = ['ukeplan', 'kavalkade', 'hjem', 'boker', 'reise'];
+const flateSections = ['ukeplan', 'kavalkade', 'hjem', 'boker', 'reise', 'sykdomsforlop'];
 
 test.describe('Design-system', () => {
 	test('komponent-seksjoner rendres', async ({ page }) => {

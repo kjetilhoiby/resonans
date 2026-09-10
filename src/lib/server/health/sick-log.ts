@@ -34,7 +34,7 @@
  * ville sett ut som data uten å være det.
  */
 
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
@@ -373,4 +373,45 @@ export async function lastSickLevel(
 		return { day, level };
 	}
 	return null;
+}
+
+/**
+ * Alle nivåmålinger i et vindu, én per dag.
+ *
+ * Til forløpsvisningen, der nivået er ryggraden: det er det eneste signalet
+ * ingen sensor kan hente, og dermed det eneste som kan si «jeg ble bedre og så
+ * dårligere igjen».
+ *
+ * Sjekker man inn to ganger på én dag, vinner den SENESTE — den andre er en
+ * retting, ikke en ny observasjon. Samme regel som `lastSickLevel`, og grunnen
+ * til at nøkkelen er `data.day` og ikke tidsstempelet: en innsjekk kan gjelde en
+ * annen dag enn den ble registrert.
+ */
+export async function listSickLevels(
+	userId: string,
+	sinceDays: number = SICK_LOOKBACK_DAYS
+): Promise<{ day: string; level: number }[]> {
+	const since = new Date(Date.now() - sinceDays * 86_400_000);
+	const rows = await db
+		.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, SICK_LEVEL_DATA_TYPE),
+				gte(sensorEvents.timestamp, since)
+			)
+		)
+		// Stigende, så den siste skrivingen på en dag overskriver de før den.
+		.orderBy(asc(sensorEvents.timestamp));
+
+	const byDay = new Map<string, number>();
+	for (const row of rows) {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		if (!isDayKey(data.day) || typeof data.level !== 'number') continue;
+		byDay.set(data.day, data.level);
+	}
+	return [...byDay.entries()]
+		.map(([day, level]) => ({ day, level }))
+		.sort((a, b) => (a.day < b.day ? -1 : 1));
 }

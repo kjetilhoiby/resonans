@@ -8,6 +8,7 @@
 	import Boker from '../sections/boker.svelte';
 	import Reise from '../sections/reise.svelte';
 	import Mat from '../sections/mat.svelte';
+	import Sykdomsforlop from '../sections/sykdomsforlop.svelte';
 
 	const sections = [
 		{ id: 'ukeplan', label: 'Ukeplan' },
@@ -15,7 +16,8 @@
 		{ id: 'hjem', label: 'Hjemskjerm-elementer' },
 		{ id: 'boker', label: 'Bøker' },
 		{ id: 'reise', label: 'Reise' },
-		{ id: 'mat', label: 'Mat & matplan' }
+		{ id: 'mat', label: 'Mat & matplan' },
+		{ id: 'sykdomsforlop', label: 'Sykdomsforløp' }
 	] as const;
 </script>
 
@@ -51,6 +53,7 @@
 		<Boker />
 		<Reise />
 		<Mat />
+		<Sykdomsforlop />
 
 	</main>
 	</div>

@@ -1630,6 +1630,55 @@ Se `docs/changelog/2026-09-02-sykeperioder.md`. Reglene rent i
   øvrige nudgene maser videre, målprogresjon vet ingenting, og `crunch` er
   fortsatt bare et nå-flagg på programsida.
 
+### Sykdomsforløpet: én flate, én tidsakse
+
+Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
+`$lib/domain/health/sick-episode.ts`, hentingen i
+`$lib/server/health/sick-episode.ts`, flaten `/helse/sykdom/[id=uuid]`.
+
+- **Formen er en ferie eller en tur** (`TripHealthStats`): helsedata samlet over
+  en avgrenset periode. Kortet på Helse svarer på «er jeg syk nå»; forløpet
+  svarer på «hva har skjedd med kroppen siden det begynte», og det er et annet
+  spørsmål med et annet vindu.
+- **Radene deler x-akse, y-aksene er separate.** «Vekta stupte samtidig som
+  sovepulsen steg» kan bare LESES når samme dato ligger på samme piksel — samme
+  begrunnelse som at livvidde tegnes inni `WeightTrendChart`. Derfor kommer
+  `days` fra vinduet og sendes ned i hver rad; en rad som regnet sin egen akse
+  ville brutt avtalen første gang noen endret en padding. Y-aksene er uavhengige
+  fordi kg, slag/min og timer ikke har en felles skala.
+- **Baselinen er de fjorten dagene FØR, ikke historikken.** Et forløp spør «hvor
+  mye flyttet dette seg». Under `MIN_BASELINE_SAMPLES` (3) oppgis INGEN avvik —
+  et avvik fra to målinger er et avvik fra støy.
+- **Dagene ETTER perioden er med i vinduet.** «Kom vekta tilbake?» er spørsmålet
+  man har når forløpet er over. De stopper ved i dag; en tom kolonne i høyre kant
+  leses som et hull i dataene.
+- **Én kilde per rad, navngitt.** Dagpuls leses BARE fra `activity.hr_min`
+  (`readDailyMinHeartRate`). Punktpulsen fra vekta er tatt stående og ligger
+  5–15 slag høyere, så en blandet serie ville vist et hopp på veiedagene som ser
+  ut som en endring i kroppen. Sovepuls er et annet spørsmål og går fortsatt
+  gjennom `loadSleepHeartRate`.
+- **Hudtemperatur vises som AVVIK, aldri absolutt.** `absoluteIsMeaningless` på
+  radspesifikasjonen er kontrakten mot flaten: uten baseline sier raden det
+  framfor å falle tilbake på råtallet. Legger du til en rad der tallet bare gir
+  mening relativt, sett flagget.
+- **Nivået er ryggraden, ikke en rad blant seks.** Det er det eneste signalet
+  ingen sensor kan hente, og dermed det eneste som kan si «jeg ble bedre og så
+  dårligere igjen». `RELAPSE_DROP` er **2, ikke 1**: skalaen har fem trinn, og
+  3 → 4 → 3 er vingling, ikke en vending. Toppen må dessuten ha ligget over et
+  tidligere lavpunkt — ellers er hver periode som begynner høyt et
+  «tilbakefall», og det er bare å bli syk.
+- **Ingen dom.** `risingIsNotable` gir en dempet gulfarge på tallet, aldri
+  varselfarge. Akutt/kronisk er fortsatt det eneste signalet som får uttale seg
+  om kroppen, og forløpet forklarer aldri HVORFOR et tall flyttet seg.
+- **Vektraden bærer `WEIGHT_CAVEAT` på seg selv**, ikke i en hjelpetekst: et tall
+  man ikke skal sammenligne ser nøyaktig ut som et tall man skal sammenligne.
+- **En rad uten en eneste måling filtreres bort**, og dekningen står under hver
+  rad som blir igjen. Et tomt spor ser ut som en feil; et snitt uten nevner ser
+  like sikkert ut enten det hviler på ni netter eller tre.
+- Kjent rest: **`weight-nugget.ts` vet ikke om sykeperioder** og kan feire en
+  rekord satt under et forløp; bevegelse er ikke en rad; chatten har ikke noe
+  verktøy over `loadSickEpisode`; to forløp kan ikke legges oppå hverandre.
+
 ### Symptomer: egne liv, og ett av dem er grunnen
 
 Se `docs/changelog/2026-09-02-symptomer-temperatur-og-oppfolging.md`. Reglene i
