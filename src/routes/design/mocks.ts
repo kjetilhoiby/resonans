@@ -14,6 +14,20 @@ import { countByDay } from '$lib/domain/streak-history';
 import { buildDayScale, type WorkoutDayMetrics } from '$lib/domain/health/workout-day-scale';
 import { computeStreak } from '$lib/domain/streaks';
 import { findWeightSwings } from '$lib/domain/health/weight-swings';
+import {
+	buildEpisodeTrack,
+	buildEpisodeWindow,
+	buildSymptomBars,
+	describeEpisode,
+	describeLevelCourse,
+	findRelapse,
+	WEIGHT_CAVEAT,
+	type EpisodeTrackSpec,
+	type LevelObservation,
+	type SickEpisode
+} from '$lib/domain/health/sick-episode';
+import { describeSickPeriod, resolveSickPeriod } from '$lib/domain/health/sick-periods';
+import { resolveSymptom, type Symptom } from '$lib/domain/health/symptoms';
 import type { Checklist } from '$lib/components/composed/ChecklistWidget.svelte';
 import type { ChecklistItemLike } from '$lib/types/checklist';
 import type { WidgetData } from '$lib/client/widget-data-cache';
@@ -2249,3 +2263,211 @@ export const goalWeightInProgress = {
 		};
 	})
 };
+
+/* ── Sykdomsforløp ─────────────────────────────────────────────────────── */
+
+/**
+ * Ett forløp med tilbakefall, bygget med de EKTE domenefunksjonene.
+ *
+ * Mocken skriver ikke payloaden fritt: den mater `buildEpisodeTrack` og
+ * vennene med faste dagsverdier, akkurat som `loadSickEpisode` gjør. Et
+ * håndskrevet objekt ville drevet fra det ekte svaret uten at noe sa fra — og
+ * demoen er nettopp der man ville trodd at flaten virker.
+ */
+const sickEpisodeToday = '2026-09-10';
+const sickEpisodePeriod = {
+	id: '11111111-1111-4111-8111-111111111111',
+	startDate: '2026-09-01',
+	endDate: null,
+	note: 'holdt senga'
+};
+
+function sickEpisodeSeries(
+	entries: [string, number][]
+): Map<string, number> {
+	return new Map(entries);
+}
+
+export const sickEpisodeMock: SickEpisode = (() => {
+	const window = buildEpisodeWindow(sickEpisodePeriod, sickEpisodeToday);
+
+	const levels: LevelObservation[] = [
+		{ day: '2026-09-02', level: 2 },
+		{ day: '2026-09-05', level: 4 },
+		{ day: '2026-09-08', level: 2 },
+		{ day: '2026-09-10', level: 3 }
+	];
+
+	const specs: [EpisodeTrackSpec, Map<string, number>][] = [
+		[
+			{
+				id: 'level',
+				label: 'Hvordan det står til',
+				unit: 'av 5',
+				source: 'dine egne innsjekk',
+				decimals: 0,
+				risingIsNotable: false
+			},
+			sickEpisodeSeries(levels.map((l) => [l.day, l.level] as [string, number]))
+		],
+		[
+			{ id: 'weight', label: 'Vekt', unit: 'kg', source: null, decimals: 1, risingIsNotable: false },
+			sickEpisodeSeries([
+				['2026-08-25', 95.1],
+				['2026-08-26', 94.9],
+				['2026-08-28', 95.2],
+				['2026-08-29', 95.0],
+				['2026-08-31', 95.1],
+				['2026-09-01', 94.8],
+				['2026-09-03', 94.1],
+				['2026-09-05', 93.6],
+				['2026-09-07', 93.4],
+				['2026-09-09', 93.5],
+				['2026-09-10', 93.7]
+			])
+		],
+		[
+			{
+				id: 'restingHr',
+				label: 'Dagpuls',
+				unit: 'slag/min',
+				source: 'laveste målte puls per døgn, fra klokka',
+				decimals: 0,
+				risingIsNotable: true
+			},
+			sickEpisodeSeries([
+				['2026-08-26', 52],
+				['2026-08-27', 51],
+				['2026-08-28', 53],
+				['2026-08-30', 52],
+				['2026-08-31', 51],
+				['2026-09-01', 56],
+				['2026-09-02', 59],
+				['2026-09-03', 58],
+				['2026-09-04', 55],
+				['2026-09-05', 53],
+				['2026-09-06', 57],
+				['2026-09-07', 60],
+				['2026-09-08', 61],
+				['2026-09-09', 58],
+				['2026-09-10', 56]
+			])
+		],
+		[
+			{
+				id: 'sleepHr',
+				label: 'Sovepuls',
+				unit: 'slag/min',
+				source: 'laveste puls gjennom natta',
+				decimals: 0,
+				risingIsNotable: true
+			},
+			sickEpisodeSeries([
+				['2026-08-27', 48],
+				['2026-08-28', 47],
+				['2026-08-29', 49],
+				['2026-08-31', 48],
+				['2026-09-01', 52],
+				['2026-09-02', 55],
+				['2026-09-03', 54],
+				['2026-09-05', 50],
+				['2026-09-07', 56],
+				['2026-09-08', 57],
+				['2026-09-10', 53]
+			])
+		],
+		[
+			{ id: 'sleep', label: 'Søvn', unit: 't', source: null, decimals: 1, risingIsNotable: false },
+			sickEpisodeSeries([
+				['2026-08-26', 7.2],
+				['2026-08-27', 6.9],
+				['2026-08-28', 7.4],
+				['2026-08-30', 7.1],
+				['2026-08-31', 7.0],
+				['2026-09-01', 6.2],
+				['2026-09-02', 5.8],
+				['2026-09-03', 6.4],
+				['2026-09-04', 7.8],
+				['2026-09-05', 8.1],
+				['2026-09-07', 5.9],
+				['2026-09-08', 6.1],
+				['2026-09-10', 7.3]
+			])
+		],
+		[
+			{
+				id: 'coreTemperature',
+				label: 'Temperatur',
+				unit: '°C',
+				source: 'termometer',
+				decimals: 1,
+				risingIsNotable: true
+			},
+			sickEpisodeSeries([
+				['2026-09-02', 38.4],
+				['2026-09-03', 38.1],
+				['2026-09-08', 37.9]
+			])
+		]
+	];
+
+	const symptoms: Symptom[] = [
+		{
+			id: 'sym-hals',
+			label: 'vondt i halsen',
+			kind: 'luftveier',
+			severity: 'mye',
+			startDate: '2026-09-01',
+			endDate: '2026-09-06',
+			limiting: true,
+			note: null
+		},
+		{
+			id: 'sym-hoste',
+			label: 'slimhoste',
+			kind: 'luftveier',
+			severity: 'merkbart',
+			startDate: '2026-09-02',
+			endDate: null,
+			limiting: false,
+			note: null
+		},
+		{
+			id: 'sym-bihuler',
+			label: 'trykk i bihulene',
+			kind: 'luftveier',
+			severity: 'mye',
+			startDate: '2026-09-07',
+			endDate: null,
+			limiting: true,
+			note: null
+		},
+		{
+			id: 'sym-kne',
+			label: 'ømt kne',
+			kind: 'muskel_skjelett',
+			severity: 'litt',
+			startDate: '2026-07-20',
+			endDate: null,
+			limiting: false,
+			note: null
+		}
+	];
+
+	const resolvedPeriod = resolveSickPeriod(sickEpisodePeriod, sickEpisodeToday);
+
+	return {
+		period: { ...resolvedPeriod, text: describeSickPeriod(resolvedPeriod) },
+		window,
+		headline: describeEpisode(window, sickEpisodePeriod.startDate),
+		tracks: specs.map(([spec, byDay]) => buildEpisodeTrack(spec, byDay, window)),
+		symptoms: buildSymptomBars(
+			symptoms.map((s) => resolveSymptom(s, sickEpisodeToday)),
+			window
+		),
+		levels,
+		levelText: describeLevelCourse(levels),
+		relapse: findRelapse(levels),
+		weightCaveat: WEIGHT_CAVEAT
+	};
+})();
