@@ -1664,6 +1664,21 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   dager har knapt dupper). Rør ikke `isNap`-inferensen for å få til dette — en
   sykeperiode med egen dupp-definisjon ville gitt raden en annen målestokk enn
   baselinen sin.
+- **En natt nøkles på `nightKeyForTime`, en dupp på Oslo-DAGEN**
+  (`segmentKey` i `sleep-overview.ts`). Se
+  `docs/changelog/2026-09-10-natta-som-ble-delt-av-utc-midnatt.md`. Fram til
+  september 2026 sto det `end.toISOString()` der, og **UTC-midnatt ligger
+  kl. 02 om natta i Oslo om sommeren** — midt i den oppvåkningen Withings
+  oftest deler natta på. Én natt på åtte timer ble da to på fire. Feilen er
+  verst der den gjør mest skade: en natt uten oppvåkninger har ingenting å dele
+  på, så baselinen så sunn ut (6,8 t mot Health Mates 6t19/6t49) mens de lange,
+  oppstykkede sykenettene kollapset (4,5 t mot 8t00). `end ?? start` falt i
+  tillegg tilbake på LEGGETIDA uten `metadata.enddate`, altså et helt døgn for
+  tidlig. **Nøkkelen tas av STARTtidspunktet**, som `readNightlyPhysiology`
+  gjør — søvnraden og pulsraden deler x-akse, og to nøkler ville lagt samme
+  natt på ulike piksler i to rader rett over hverandre. Duppen er unntaket:
+  18:00-grensa som gjør natta riktig, ville flyttet en ettermiddagsdupp kl. 18
+  over til morgendagen.
 - **`sleepDuration` er `total_sleep_time`, altså tid SOVET — ikke tid i senga.**
   Åtte timer i senga leses normalt som seks–sju. Derfor navngis kilden på raden
   selv om det bare finnes én av dem: regel 3 sier «navngi kilden der flere

@@ -81,10 +81,14 @@ function osloParts(timestamp: string | Date): { year: number; month: number; day
 /**
  * Natta en forstyrrelse hører til, som ISO-dato.
  *
- * Nøkkelen er datoen du *våkner*, ikke datoen du la deg. Det er konvensjonen
- * `buildSleepNightSeries` alt bruker (`night.end ?? night.start`), og
- * forstyrrelsene må ligge på samme nøkkel for å kunne stilles ved siden av
- * nattlengden.
+ * Nøkkelen er datoen du *våkner*, ikke datoen du la deg. Forstyrrelsene må
+ * ligge på samme nøkkel som nattlengden for å kunne stilles ved siden av den —
+ * og som sovepulsen og HRV-en, som begge nøkles her.
+ *
+ * NB: `buildSleepNightSeries` gjorde det IKKE fram til september 2026, selv om
+ * denne kommentaren påsto det. Den brukte UTC-datoen for da segmentet sluttet,
+ * og UTC-midnatt ligger kl. 02 om natta i Oslo om sommeren — altså midt i den
+ * oppvåkningen Withings oftest deler natta på. Den bruker nå denne.
  *
  * Så: «fikk ikke sove» kl. 23:30 den 3. og «våknet» kl. 03:00 den 4. hører
  * begge til natta `2026-08-04`.
