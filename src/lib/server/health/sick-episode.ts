@@ -217,7 +217,9 @@ export async function loadSickEpisode(
 				source: DAILY_STEPS_SOURCE_LABEL,
 				decimals: 0,
 				// Bevegelsen som forsvant er det brukeren selv la merke til først.
-				notableDirection: 'down'
+				notableDirection: 'down',
+				// Telleren går fortsatt i dag. Se `accumulates`.
+				accumulates: true
 			},
 			daily.steps
 		],
@@ -228,7 +230,8 @@ export async function loadSickEpisode(
 				unit: 'min',
 				source: DAILY_ACTIVE_MINUTES_SOURCE_LABEL,
 				decimals: 0,
-				notableDirection: 'down'
+				notableDirection: 'down',
+				accumulates: true
 			},
 			daily.activeMinutes
 		],

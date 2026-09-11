@@ -105,7 +105,17 @@
 	</div>
 
 	{#if axis}
-		<svg class="kurve" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
+		<!--
+			Y-spennet skrives PÅ kurven. Uten det er «−17 ms» et tall uten skala:
+			en linje som dupper halve rammen sier ingenting om rammen er ti eller
+			hundre enheter høy. Labelene er HTML, ikke SVG-tekst —
+			`preserveAspectRatio="none"` strekker alt inni svg-en vannrett, og en
+			strukket skrift ser ut som en feil.
+		-->
+		<div class="kurveboks">
+			<span class="akse-topp">{fmt(axis.max)}</span>
+			<span class="akse-bunn">{fmt(axis.min)}</span>
+			<svg class="kurve" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
 			<!-- Sykedagene skravert, så man ser hvor forløpet ligger i vinduet. -->
 			<rect x={sickX} y="0" width={sickW} height={H} class="syk" />
 			<!--
@@ -139,7 +149,8 @@
 			{#each dots as dot (dot.i)}
 				<circle cx={xAt(dot.i)} cy={yAt(dot.value)} r="2.5" class="punkt" />
 			{/each}
-		</svg>
+			</svg>
+		</div>
 	{/if}
 
 	{#if track.text}
@@ -152,6 +163,10 @@
 			>{track.measuredSickDays} av {track.sickDays}
 			{track.sickDays === 1 ? 'sykedag' : 'sykedager'} målt</span
 		>
+		{#if track.todayExcluded}
+			<!-- Uten denne ser dagens fravær ut som en manglende måling. -->
+			<span>i dag teller ikke før døgnet er omme</span>
+		{/if}
 	</p>
 </div>
 
@@ -189,12 +204,38 @@
 		color: var(--warning-text);
 	}
 
+	.kurveboks {
+		position: relative;
+		margin: 8px 0 6px;
+	}
+
 	.kurve {
 		display: block;
 		width: 100%;
 		height: 44px;
-		margin: 8px 0 6px;
 		overflow: visible;
+	}
+
+	/*
+	 * Aksetallene ligger OVER kurven, ikke ved siden av: en egen kolonne ville
+	 * kostet bredde på alle ti radene for to tall man leser én gang.
+	 */
+	.akse-topp,
+	.akse-bunn {
+		position: absolute;
+		right: 0;
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted);
+		pointer-events: none;
+	}
+
+	.akse-topp {
+		top: -2px;
+	}
+
+	.akse-bunn {
+		bottom: -2px;
 	}
 
 	.syk {

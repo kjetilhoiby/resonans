@@ -95,6 +95,16 @@
 				<span class="prove prove-for"></span> median de {BASELINE_DAYS} dagene før
 				<span class="prove prove-under"></span> median under forløpet
 			</p>
+			<!--
+				Hva et uthevet tall BETYR, sagt én gang. Fargen sto uforklart, og
+				da er den verre enn ingen farge: den ser ut som en dom uten å
+				være det. Setningen sier hvorfor vi trakk oppmerksomhet dit —
+				ikke at tallet er godt eller dårlig. Vi måler ikke kroppen.
+			-->
+			<p class="tegnforklaring merknad">
+				Uthevet tall = flyttet seg den veien et forløp pleier å flytte den. Det er en
+				observasjon, ikke en vurdering.
+			</p>
 
 			<div class="rader">
 				{#each episode.tracks as track (track.id)}
@@ -228,6 +238,11 @@
 		margin: 2px 0 0;
 		font-size: 11px;
 		color: var(--text-muted);
+	}
+
+	.tegnforklaring.merknad {
+		display: block;
+		line-height: 1.45;
 	}
 
 	.prove {

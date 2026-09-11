@@ -81,6 +81,8 @@ export interface EpisodeWindow {
 	endIndex: number;
 	baselineKeys: string[];
 	sickKeys: string[];
+	/** Dagsnøkkelen for i dag, Oslo. Dagen som ikke er omme ennå. */
+	today: string;
 	/** Hvor mange dager forløpet har vart så langt. */
 	length: number;
 	open: boolean;
@@ -123,6 +125,7 @@ export function buildEpisodeWindow(
 
 	return {
 		days,
+		today: todayKey,
 		onsetIndex: start - from,
 		endIndex: end - from,
 		baselineKeys: days.filter((d) => !d.sick && d.day < resolved.startDate).map((d) => d.day),
@@ -181,6 +184,26 @@ export interface EpisodeTrackSpec {
 	 * `point.value` rått for en slik rad.
 	 */
 	absoluteIsMeaningless?: boolean;
+	/**
+	 * AKKUMULERER verdien gjennom døgnet?
+	 *
+	 * Skritt og aktive minutter gjør det: de teller oppover fra midnatt, så
+	 * dagens tall er «så langt», ikke et døgn. Vekt, puls, søvn og temperatur
+	 * gjør det ikke — en veiing er et punkt, og natta er ferdig i det du
+	 * våkner.
+	 *
+	 * Forskjellen er ikke akademisk. Kl. 08:01 leste skrittraden **0 skritt**
+	 * som overskrift, ved siden av en setning som sa 1 950 under forløpet:
+	 * `latest` var dagens uferdige teller. Samme feil som «Underskudd» på en
+	 * dag som ikke er omme (`frameDay`), og samme løsning som
+	 * `buildDailyBalances`, der dager uten forbrukstall DROPPES framfor å telle
+	 * som 0 — en null som ikke er en måling drar både medianen og
+	 * overskriften feil vei.
+	 *
+	 * Er flagget satt, holdes DAGENS dag utenfor raden i sin helhet: ikke i
+	 * punktene, ikke i medianen, ikke i dekningen. `todayExcluded` sier fra.
+	 */
+	accumulates?: boolean;
 }
 
 export interface EpisodePoint {
@@ -205,6 +228,8 @@ export interface EpisodeTrack extends EpisodeTrackSpec {
 	coverage: number;
 	measuredSickDays: number;
 	sickDays: number;
+	/** Ble dagens uferdige teller holdt utenfor? Se `accumulates`. */
+	todayExcluded: boolean;
 	/** Setningen flaten og chatten skal si. Null når det ikke er noe å si. */
 	text: string | null;
 }
@@ -220,17 +245,28 @@ export function buildEpisodeTrack(
 	byDay: ReadonlyMap<string, number>,
 	window: EpisodeWindow
 ): EpisodeTrack {
+	// Dagen som ikke er omme kan ikke rapporteres av en teller som fortsatt
+	// går. Se `accumulates` — den droppes i sin helhet, ikke bare i medianen,
+	// for et punkt på 0 kl. 08 er en falsk bunn i kurven også.
+	const skipToday = spec.accumulates === true;
+	const usable = (day: string) => !(skipToday && day === window.today);
+
 	const points: EpisodePoint[] = window.days.map((d) => ({
 		day: d.day,
-		value: byDay.get(d.day) ?? null
+		value: usable(d.day) ? (byDay.get(d.day) ?? null) : null
 	}));
 
 	const baselineValues = window.baselineKeys
+		.filter(usable)
 		.map((k) => byDay.get(k))
 		.filter((v): v is number => typeof v === 'number');
-	const sickValues = window.sickKeys
+	const sickKeys = window.sickKeys.filter(usable);
+	const sickValues = sickKeys
 		.map((k) => byDay.get(k))
 		.filter((v): v is number => typeof v === 'number');
+	// Nevneren følger med: «10 av 11 målt» der den ellevte er i dag ville sagt
+	// at en måling mangler, og det er ikke det som skjedde.
+	const todayExcluded = skipToday && window.sickKeys.length !== sickKeys.length;
 
 	const baseline = baselineValues.length >= MIN_BASELINE_SAMPLES ? median(baselineValues) : null;
 	const during = sickValues.length > 0 ? median(sickValues) : null;
@@ -244,7 +280,7 @@ export function buildEpisodeTrack(
 		}
 	}
 
-	const sickDays = window.sickKeys.length;
+	const sickDays = sickKeys.length;
 	const track: EpisodeTrack = {
 		...spec,
 		points,
@@ -257,6 +293,7 @@ export function buildEpisodeTrack(
 		coverage: sickDays === 0 ? 0 : sickValues.length / sickDays,
 		measuredSickDays: sickValues.length,
 		sickDays,
+		todayExcluded,
 		text: null
 	};
 
@@ -300,7 +337,12 @@ export function describeEpisodeTrack(
 
 	const direction = track.delta > 0 ? 'over' : 'under';
 	if (track.absoluteIsMeaningless) {
-		return `${n(diff)} ${track.unit} ${direction} de ${BASELINE_DAYS} dagene før.`;
+		// Baselinen SKAL med, og det er ikke i strid med «absoluttverdien vises
+		// aldri alene» — det er den regelen innfridd. «−17 ms» uten et tall å
+		// måle mot er ikke noe. Er baselinen 61, er 17 en fjerdedel; er den 28,
+		// er den mer enn halvparten. Det er `hvor mye` spørsmålet handler om,
+		// og eneste ærlige referanse er brukerens egen.
+		return `${n(diff)} ${track.unit} ${direction} de ${BASELINE_DAYS} dagene før (${n(track.baseline)}).`;
 	}
 	return `${n(track.during)} ${track.unit} under forløpet, ${n(diff)} ${track.unit} ${direction} de ${BASELINE_DAYS} dagene før (${n(track.baseline)}).`;
 }

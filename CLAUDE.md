@@ -1719,6 +1719,24 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   har ingen normtabell, og SDNN varierer for mye mellom folk — «vises ALDRI
   alene» er regelen fra `hrv.ts`, håndhevet mekanisk her. Legger du til en rad
   der tallet bare gir mening relativt, sett flagget.
+- **Men BASELINEN navngis, og det er regelen innfridd — ikke brutt.** Se
+  `docs/changelog/2026-09-11-dagen-som-ikke-er-omme-og-tallet-uten-skala.md`.
+  Fram til 11. september 2026 sto det «17 ms under de 14 dagene før.» og ikke
+  mer; brukeren leste det og sa «vanskelig å vite hva −17 er når det ikke er
+  skalaer eller referanseverdier noe sted». Mot 61 er 17 en fjerdedel, mot 28
+  mer enn halvparten. Baselinen er den eneste ærlige referansen — det er den
+  TENKTE normtabellen regelen finnes for å hindre. **Forløpets egen verdi står
+  fortsatt ikke**, og en test vokter det. Y-spennet skrives dessuten på kurven
+  (HTML, ikke SVG-tekst: `preserveAspectRatio="none"` strekker skrift vannrett).
+- **En teller som fortsatt går er ikke et døgn** (`accumulates`). Skritt og
+  aktive minutter akkumulerer fra midnatt, så kl. 08:01 leste skrittraden
+  **«0 skritt»** som overskrift ved siden av en setning som sa 1 950 under
+  forløpet — `latest` var dagens uferdige teller. Er flagget satt, holdes
+  DAGENS dag utenfor raden i sin helhet: ikke i punktene (en 0 er en falsk bunn
+  i kurven også), ikke i medianen, ikke i nevneren. `todayExcluded` gir
+  fotnoten. Vekt, puls, søvn og temperatur akkumulerer IKKE — en veiing er et
+  punkt, natta er ferdig når du våkner. Samme feil som «Underskudd» på en dag
+  som ikke er omme (`frameDay`), samme løsning som `buildDailyBalances`.
 - **`notableDirection` er en RETNING, ikke en boolean.** Feltet het
   `risingIsNotable` fram til HRV kom inn, og det holdt bare fordi alle radene
   som skulle markeres pekte samme vei. HRV er den første der FALLET er
@@ -1735,9 +1753,15 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   3 → 4 → 3 er vingling, ikke en vending. Toppen må dessuten ha ligget over et
   tidligere lavpunkt — ellers er hver periode som begynner høyt et
   «tilbakefall», og det er bare å bli syk.
-- **Ingen dom.** `risingIsNotable` gir en dempet gulfarge på tallet, aldri
-  varselfarge. Akutt/kronisk er fortsatt det eneste signalet som får uttale seg
-  om kroppen, og forløpet forklarer aldri HVORFOR et tall flyttet seg.
+- **Ingen dom — men fargen MÅ forklare seg selv.** `notableDirection` gir en
+  dempet gulfarge på tallet, aldri varselfarge. Akutt/kronisk er fortsatt det
+  eneste signalet som får uttale seg om kroppen, og forløpet forklarer aldri
+  HVORFOR et tall flyttet seg. Fram til 11. september 2026 sto fargen likevel
+  UFORKLART, og da er den verre enn ingen farge: «vet ikke hva som er bra og
+  hva som er bekymringsfullt» var brukerens egen lesning. Én setning under
+  tegnforklaringen sier nå hva utheving betyr — at tallet flyttet seg den veien
+  et forløp pleier å flytte den, som en observasjon. Det er ikke en dom, og det
+  er heller ikke noe som kan utelates.
 - **Vektraden bærer `WEIGHT_CAVEAT` på seg selv**, ikke i en hjelpetekst: et tall
   man ikke skal sammenligne ser nøyaktig ut som et tall man skal sammenligne.
 - **En rad uten en eneste måling filtreres bort**, og dekningen står under hver

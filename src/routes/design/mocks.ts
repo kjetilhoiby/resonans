@@ -2432,7 +2432,8 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: 'skritt',
 				source: 'fra klokka',
 				decimals: 0,
-				notableDirection: 'down'
+				notableDirection: 'down',
+				accumulates: true
 			},
 			sickEpisodeSeries([
 				['2026-08-26', 9120],
@@ -2460,7 +2461,8 @@ export const sickEpisodeMock: SickEpisode = (() => {
 				unit: 'min',
 				source: 'moderat + intens aktivitet, fra klokka',
 				decimals: 0,
-				notableDirection: 'down'
+				notableDirection: 'down',
+				accumulates: true
 			},
 			sickEpisodeSeries([
 				['2026-08-26', 42],
