@@ -1753,6 +1753,37 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   3 → 4 → 3 er vingling, ikke en vending. Toppen må dessuten ha ligget over et
   tidligere lavpunkt — ellers er hver periode som begynner høyt et
   «tilbakefall», og det er bare å bli syk.
+- **Normen er BRUKERENS EGEN, og den har en BREDDE** (`normal-band.ts`). Se
+  `docs/changelog/2026-09-11-normen-er-din-og-den-har-en-bredde.md`. Baselinen
+  gir avviket et NIVÅ å måle fra, men ikke en SKALA å måle i: 17 ms er mye om
+  du normalt svinger 4 ms fra natt til natt, og støy om du svinger 20. Båndet
+  er **p10–p90 av friske dager siste 180**, altså «ni av ti friske dager ligger
+  her», og persentilen («lavere enn 96 % av dem») trenger ingen skala ved siden
+  av seg. **Sykedagene er UTE av normen, og de sju dagene etter også** — ellers
+  måler forløpet seg mot et normalområde det selv har utvidet, og jo oftere man
+  er syk, desto mindre unormalt ser sykdom ut.
+  - **Persentiler, ikke snitt ± standardavvik.** Standardavviket forutsetter en
+    fordelingsform vi ikke har sjekket, og én natt med dårlig sensorfeste
+    blåser det opp. En test måler det: en utligger på 400 flytter p90 under to
+    enheter.
+  - **Retningen måles i AVSTAND TIL BÅNDET, aldri i verdi.** En HRV som stiger
+    nedenfra og en sovepuls som faller ovenfra nærmer seg begge normalen;
+    retningen i VERDI er motsatt. Terskelen er en ANDEL av båndets bredde
+    (15 %), så den er den samme i ms, slag og timer uten tre konstanter.
+  - **Persentilen sies bare UTENFOR båndet** — «høyere enn 43 % av dem» betyr
+    «midt i normalen», en presisjon uten innhold.
+  - **Båndet tegnes kromafritt.** Med en kulør ville det konkurrert med kurven
+    og lest som en dom om hvilken sone som er riktig.
+  - **`describeReturnSummary` er det nærmeste flaten kommer «trygt å trene
+    igjen», og den sier i SAMME setning at den ikke svarer på det** — en test
+    krever den setningen i hver variant. Ingen av disse målingene skiller en
+    kropp som tåler belastning fra en som ikke gjør det, og et tall som leses
+    som en klarering er verre enn intet tall.
+  - Kjent rest: **ingen utstyrslogg for søvnsensorene**, så 180 dager er en
+    antakelse om at ingenting byttet — ikke en sjekk. Og **forløp sammenlignes
+    ikke med hverandre**: «hvor mange dager tok HRV på å komme tilbake sist» er
+    det eneste som kan svare på hvilken form gjenopprettingen har for nettopp
+    denne brukeren, og det kan ikke leses av litteratur.
 - **Ingen dom — men fargen MÅ forklare seg selv.** `notableDirection` gir en
   dempet gulfarge på tallet, aldri varselfarge. Akutt/kronisk er fortsatt det
   eneste signalet som får uttale seg om kroppen, og forløpet forklarer aldri

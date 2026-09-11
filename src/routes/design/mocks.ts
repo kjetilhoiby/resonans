@@ -20,6 +20,7 @@ import {
 	buildSymptomBars,
 	describeEpisode,
 	describeLevelCourse,
+	describeReturnSummary,
 	findRelapse,
 	WEIGHT_CAVEAT,
 	type EpisodeTrackSpec,
@@ -2545,11 +2546,43 @@ export const sickEpisodeMock: SickEpisode = (() => {
 
 	const resolvedPeriod = resolveSickPeriod(sickEpisodePeriod, sickEpisodeToday);
 
+	/**
+	 * Friske dager til normalområdet, syntetisk men realistisk formet.
+	 *
+	 * Båndet krever `MIN_NORM_SAMPLES` (30), så en håndskrevet håndfull ville
+	 * gitt `normal: null` og en demo der halve raden mangler. Verdiene svinger
+	 * rundt radens egen baseline med en bredde som ligner kildens egen støy.
+	 */
+	const healthyFor = (spec: EpisodeTrackSpec): number[] => {
+		const centre: Partial<Record<string, [number, number]>> = {
+			weight: [94.4, 0.5],
+			restingHr: [48, 3],
+			sleepHr: [44, 3],
+			hrv: [61, 7],
+			sleep: [6.8, 0.8],
+			steps: [10274, 2600],
+			activeMinutes: [86, 28],
+			coreTemperature: [36.7, 0.25]
+		};
+		const conf = centre[spec.id];
+		if (!conf) return [];
+		const [mid, spread] = conf;
+		// Deterministisk pseudostøy: demoen skal se lik ut i hver piksel-diff.
+		return Array.from({ length: 120 }, (_, i) => {
+			const wobble = Math.sin(i * 1.7) * 0.6 + Math.sin(i * 0.41) * 0.4;
+			return Math.round((mid + wobble * spread) * 100) / 100;
+		});
+	};
+
+	const tracks = specs.map(([spec, byDay]) =>
+		buildEpisodeTrack(spec, byDay, window, healthyFor(spec))
+	);
+
 	return {
 		period: { ...resolvedPeriod, text: describeSickPeriod(resolvedPeriod) },
 		window,
 		headline: describeEpisode(window, sickEpisodePeriod.startDate),
-		tracks: specs.map(([spec, byDay]) => buildEpisodeTrack(spec, byDay, window)),
+		tracks,
 		symptoms: buildSymptomBars(
 			symptoms.map((s) => resolveSymptom(s, sickEpisodeToday)),
 			window
@@ -2557,6 +2590,7 @@ export const sickEpisodeMock: SickEpisode = (() => {
 		levels,
 		levelText: describeLevelCourse(levels),
 		relapse: findRelapse(levels),
+		returnSummary: describeReturnSummary(tracks),
 		weightCaveat: WEIGHT_CAVEAT
 	};
 })();

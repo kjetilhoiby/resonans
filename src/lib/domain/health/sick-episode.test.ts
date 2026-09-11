@@ -7,6 +7,9 @@ import {
 	describeEpisode,
 	describeLevelCourse,
 	episodeAxis,
+	describeNormalStanding,
+	describeReturn,
+	describeReturnSummary,
 	episodeSleepByDay,
 	findRelapse,
 	formatEpisodeValue,
@@ -509,6 +512,148 @@ describe('accumulates — dagen som ikke er omme', () => {
 		expect(track.latest).toBe(0);
 		expect(track.todayExcluded).toBe(false);
 		expect(track.sickDays).toBe(window.sickKeys.length);
+	});
+});
+
+describe('normalområdet i raden', () => {
+	const window = buildEpisodeWindow(openPeriod, TODAY);
+
+	const hrvSpec: EpisodeTrackSpec = {
+		id: 'hrv',
+		label: 'HRV',
+		unit: 'ms',
+		source: 'SDNN gjennom natta',
+		decimals: 0,
+		notableDirection: 'down',
+		absoluteIsMeaningless: true
+	};
+
+	/** 60 friske netter rundt 61 ms, bånd omtrent 53–69. */
+	const friske = Array.from({ length: 60 }, (_, i) => 61 + Math.sin(i * 1.7) * 8);
+
+	it('sier hvor langt utenfor forløpet ligger, i brukerens egen skala', () => {
+		const byDay = new Map<string, number>([
+			['2026-08-29', 60],
+			['2026-08-30', 62],
+			['2026-08-31', 61],
+			['2026-09-02', 44],
+			['2026-09-04', 43]
+		]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window, friske);
+
+		expect(track.normal).not.toBeNull();
+		expect(track.normal!.duringInside).toBe(false);
+		// Persentilen er poenget: «lavere enn N %» trenger ingen skala ved
+		// siden av seg for å leses.
+		expect(track.normalText).toContain('Utenfor ditt vanlige');
+		expect(track.normalText).toMatch(/lavere enn \d+ % av dem/);
+	});
+
+	it('sier «innenfor» uten å oppgi en persentil', () => {
+		// «Høyere enn 43 % av» betyr «midt i normalen» — en presisjon uten
+		// innhold.
+		const byDay = new Map<string, number>([
+			['2026-08-29', 60],
+			['2026-08-30', 62],
+			['2026-08-31', 61],
+			['2026-09-02', 60],
+			['2026-09-04', 62]
+		]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window, friske);
+
+		expect(track.normal!.duringInside).toBe(true);
+		expect(track.normalText).toContain('Innenfor ditt vanlige');
+		expect(track.normalText).not.toMatch(/% av dem/);
+	});
+
+	it('tier helt uten nok friske dager', () => {
+		const byDay = new Map<string, number>([['2026-09-02', 44]]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window, [61, 62, 60]);
+
+		expect(track.normal).toBeNull();
+		expect(track.normalText).toBeNull();
+		expect(track.returnText).toBeNull();
+	});
+
+	it('sier fra når de ferskeste målingene er tilbake', () => {
+		const byDay = new Map<string, number>([
+			['2026-09-01', 44],
+			['2026-09-02', 43],
+			['2026-09-08', 60],
+			['2026-09-09', 61],
+			['2026-09-10', 62]
+		]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window, friske);
+
+		expect(track.normal!.recentInside).toBe(true);
+		expect(track.returnText).toBe('Siste målinger er tilbake i ditt vanlige.');
+	});
+
+	it('skiller «på vei mot» fra «fortsatt utenfor»', () => {
+		// Forløpsmedianen dekker HELE perioden, så de bedrede dagene må være få
+		// nok til at medianen fortsatt ligger lavt — ellers sammenligner
+		// retningen halen med seg selv.
+		const byDay = new Map<string, number>([
+			['2026-09-01', 40],
+			['2026-09-02', 41],
+			['2026-09-03', 40],
+			['2026-09-04', 42],
+			['2026-09-05', 41],
+			['2026-09-06', 40],
+			['2026-09-09', 50],
+			['2026-09-10', 51]
+		]);
+		const track = buildEpisodeTrack(hrvSpec, byDay, window, friske);
+
+		expect(track.normal!.recentInside).toBe(false);
+		expect(track.returnText).toBe('Fortsatt utenfor, men på vei mot.');
+	});
+});
+
+describe('describeReturnSummary', () => {
+	const band = { low: 50, high: 70, median: 60, samples: 60, duringInside: false, duringRank: 0 };
+
+	const rad = (label: string, inside: boolean | null, dir: 'up' | 'down' | null = 'down') => ({
+		label,
+		notableDirection: dir,
+		normal: { ...band, recentInside: inside, direction: null }
+	});
+
+	it('teller bare rader med en retning', () => {
+		// Nivå og vekt har ingen — nivået ER forløpet, og vekt bærer sitt eget
+		// forbehold.
+		const text = describeReturnSummary([
+			rad('HRV', true),
+			rad('Sovepuls', false),
+			rad('Vekt', false, null)
+		]);
+
+		expect(text).toContain('1 av 2');
+		expect(text).not.toContain('vekt');
+	});
+
+	it('navngir hva som fortsatt er utenfor', () => {
+		const text = describeReturnSummary([rad('HRV', false), rad('Søvn', true)]);
+
+		expect(text).toContain('Utenfor: hrv');
+	});
+
+	it('sier alltid at tallene ikke er en klarering', () => {
+		// Den ene setningen som ikke får falle bort: et tall som leses som en
+		// klarering er verre enn intet tall.
+		for (const t of [
+			describeReturnSummary([rad('HRV', true)]),
+			describeReturnSummary([rad('HRV', false)]),
+			describeReturnSummary([rad('HRV', true), rad('Søvn', false)])
+		]) {
+			expect(t).toContain('om kroppen tåler belastning');
+		}
+	});
+
+	it('gir null når ingen rad har et normalområde', () => {
+		expect(
+			describeReturnSummary([{ label: 'HRV', notableDirection: 'down', normal: null }])
+		).toBeNull();
 	});
 });
 

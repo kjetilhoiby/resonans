@@ -19,6 +19,7 @@ import {
 	buildSymptomBars,
 	describeEpisode,
 	describeLevelCourse,
+	describeReturnSummary,
 	episodeSleepByDay,
 	findRelapse,
 	WEIGHT_CAVEAT,
@@ -26,6 +27,11 @@ import {
 	type SickEpisode
 } from '$lib/domain/health/sick-episode';
 import { describeSickPeriod, resolveSickPeriod } from '$lib/domain/health/sick-periods';
+import {
+	NORM_EXCLUDE_AFTER_DAYS,
+	NORM_WINDOW_DAYS
+} from '$lib/domain/health/normal-band';
+import { dayKeyFromNumber } from '$lib/domain/streaks';
 import { resolveSymptom } from '$lib/domain/health/symptoms';
 import { buildSleepHeartRateNights } from '$lib/domain/health/sleep-heart-rate';
 import { buildSleepNightSeries } from '$lib/domain/health/sleep-overview';
@@ -73,7 +79,11 @@ export async function loadSickEpisode(
 
 	// Ett vindu for alle leserne, så ingen serie er kortere enn aksen.
 	const firstDay = window.days[0]!.day;
-	const lookbackDays = dayNumber(today) - dayNumber(firstDay) + LOOKBACK_SLACK_DAYS;
+	const windowDays = dayNumber(today) - dayNumber(firstDay) + LOOKBACK_SLACK_DAYS;
+	// Normalområdet krever et halvår bak seg (`NORM_WINDOW_DAYS`), altså
+	// vesentlig mer enn selve forløpet. Vi leser ÉN gang, på det lengste av de
+	// to: to lesninger av de samme radene ville kostet dobbelt for ingenting.
+	const lookbackDays = Math.max(windowDays, NORM_WINDOW_DAYS + LOOKBACK_SLACK_DAYS);
 
 	const [weightDays, physiology, sleepNights, temperature, daily, levels, symptoms] =
 		await Promise.all([
@@ -125,6 +135,35 @@ export async function loadSickEpisode(
 	);
 
 	const levelByDay = new Map(levels.map((l) => [l.day, l.level]));
+
+	/**
+	 * Dagene normalområdet IKKE skal bygges av.
+	 *
+	 * Alle sykeperioder brukeren har registrert, pluss halen etter hver av dem
+	 * (`NORM_EXCLUDE_AFTER_DAYS`). Uten dette måler forløpet seg mot et
+	 * normalområde det selv har vært med på å utvide — og jo oftere man er syk,
+	 * desto mindre unormalt ser sykdom ut.
+	 */
+	const excluded = new Set<string>();
+	for (const p of periods) {
+		const resolved = resolveSickPeriod(p, today);
+		const from = dayNumber(resolved.startDate);
+		const to = dayNumber(resolved.effectiveEnd) + NORM_EXCLUDE_AFTER_DAYS;
+		for (let d = from; d <= to; d++) excluded.add(dayKeyFromNumber(d));
+	}
+
+	const normFrom = dayNumber(today) - NORM_WINDOW_DAYS;
+	/** Friske verdier for én rad: i normvinduet, utenfor enhver sykeperiode. */
+	const healthy = (byDay: ReadonlyMap<string, number>): number[] => {
+		const out: number[] = [];
+		for (const [day, value] of byDay) {
+			if (excluded.has(day)) continue;
+			const n = dayNumber(day);
+			if (n < normFrom || n > dayNumber(today)) continue;
+			out.push(value);
+		}
+		return out;
+	};
 
 	const specs: [EpisodeTrackSpec, Map<string, number>][] = [
 		[
@@ -263,7 +302,7 @@ export async function loadSickEpisode(
 	];
 
 	const tracks = specs
-		.map(([spec, byDay]) => buildEpisodeTrack(spec, byDay, window))
+		.map(([spec, byDay]) => buildEpisodeTrack(spec, byDay, window, healthy(byDay)))
 		// En rad uten en eneste måling i forløpet er ikke et hull å forklare —
 		// den er en sensor brukeren ikke har. Et tomt spor ser ut som en feil.
 		.filter((track) => track.measuredSickDays > 0 || track.baselineSamples > 0);
@@ -283,6 +322,7 @@ export async function loadSickEpisode(
 		levels: levelsInWindow,
 		levelText: describeLevelCourse(levelsInWindow),
 		relapse: findRelapse(levelsInWindow),
+		returnSummary: describeReturnSummary(tracks),
 		weightCaveat: WEIGHT_CAVEAT
 	};
 }

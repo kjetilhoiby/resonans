@@ -41,6 +41,7 @@ import {
 } from './sick-periods';
 import { describeSymptom, type ResolvedSymptom } from './symptoms';
 import type { SleepNightPoint } from './sleep-overview';
+import { buildNormalBand, placeInNormal, type NormalStanding } from './normal-band';
 
 /**
  * Hvor mange dager før onset baselinen bygges av.
@@ -230,6 +231,15 @@ export interface EpisodeTrack extends EpisodeTrackSpec {
 	sickDays: number;
 	/** Ble dagens uferdige teller holdt utenfor? Se `accumulates`. */
 	todayExcluded: boolean;
+	/**
+	 * Hvor forløpet ligger i brukerens EGET normalområde, og om det er på vei
+	 * tilbake. Null når det ikke finnes nok friske dager til et bånd.
+	 */
+	normal: NormalStanding | null;
+	/** Setningen om normalområdet. */
+	normalText: string | null;
+	/** «Tilbake innenfor» / «fortsatt utenfor». */
+	returnText: string | null;
 	/** Setningen flaten og chatten skal si. Null når det ikke er noe å si. */
 	text: string | null;
 }
@@ -243,7 +253,12 @@ export interface EpisodeTrack extends EpisodeTrackSpec {
 export function buildEpisodeTrack(
 	spec: EpisodeTrackSpec,
 	byDay: ReadonlyMap<string, number>,
-	window: EpisodeWindow
+	window: EpisodeWindow,
+	/**
+	 * Brukerens FRISKE dager for denne raden, til normalområdet. Kalleren har
+	 * luket ut sykedagene og halen etter dem — se `normal-band.ts` regel 2.
+	 */
+	healthyValues: readonly number[] = []
 ): EpisodeTrack {
 	// Dagen som ikke er omme kan ikke rapporteres av en teller som fortsatt
 	// går. Se `accumulates` — den droppes i sin helhet, ikke bare i medianen,
@@ -281,6 +296,13 @@ export function buildEpisodeTrack(
 	}
 
 	const sickDays = sickKeys.length;
+
+	// Normalområdet bygges av friske dager; forløpet plasseres i det. `measured`
+	// er vinduets egen rekkefølge, altså eldst først — retningen leses av halen.
+	const band = buildNormalBand(healthyValues);
+	const measured = points.map((p) => p.value).filter((v): v is number => v !== null);
+	const normal = band !== null && during !== null ? placeInNormal(band, during, measured) : null;
+
 	const track: EpisodeTrack = {
 		...spec,
 		points,
@@ -294,10 +316,18 @@ export function buildEpisodeTrack(
 		measuredSickDays: sickValues.length,
 		sickDays,
 		todayExcluded,
+		normal,
+		normalText: null,
+		returnText: null,
 		text: null
 	};
 
-	return { ...track, text: describeEpisodeTrack(track) };
+	return {
+		...track,
+		text: describeEpisodeTrack(track),
+		normalText: describeNormalStanding(track),
+		returnText: describeReturn(track)
+	};
 }
 
 /**
@@ -345,6 +375,96 @@ export function describeEpisodeTrack(
 		return `${n(diff)} ${track.unit} ${direction} de ${BASELINE_DAYS} dagene før (${n(track.baseline)}).`;
 	}
 	return `${n(track.during)} ${track.unit} under forløpet, ${n(diff)} ${track.unit} ${direction} de ${BASELINE_DAYS} dagene før (${n(track.baseline)}).`;
+}
+
+/**
+ * Hvor langt fra NORMEN, i brukerens egen skala.
+ *
+ * Baselinen gir avviket et nivå å måle fra; båndet gir det en skala å måle i.
+ * 17 ms er mye om du normalt svinger 4 ms fra natt til natt og støy om du
+ * svinger 20 — og bare din egen historikk vet hvilken av delene det er.
+ *
+ * Persentilen står fordi den ikke trenger en forklaring ved siden av seg:
+ * «lavere enn 96 % av dine friske netter» er lesbart uten å vite hva SDNN er.
+ * Den sies BARE når verdien ligger utenfor båndet — inni er rangeringen en
+ * presisjon uten innhold («høyere enn 43 % av» betyr «midt i normalen»).
+ */
+export function describeNormalStanding(
+	track: Pick<EpisodeTrack, 'normal' | 'unit' | 'decimals' | 'during'>
+): string | null {
+	const n = track.normal;
+	if (!n || track.during === null) return null;
+
+	const num = (v: number) => formatNumber(v, track.decimals);
+	const band = `${num(n.low)}–${num(n.high)} ${track.unit}`;
+	const basis = `${n.samples} friske dager`;
+
+	if (n.duringInside) {
+		return `Innenfor ditt vanlige (${band}, ni av ti av ${basis}).`;
+	}
+
+	const side = track.during < n.low ? 'Lavere' : 'Høyere';
+	const share = Math.round((track.during < n.low ? 1 - n.duringRank : n.duringRank) * 100);
+	return `Utenfor ditt vanlige (${band}, ni av ti av ${basis}) — ${side.toLowerCase()} enn ${share} % av dem.`;
+}
+
+/**
+ * Er det på vei tilbake?
+ *
+ * Spørsmålet brukeren faktisk sitter med under et forløp, og det eneste av dem
+ * flaten kan svare ærlig på: «ligger de ferskeste målingene innenfor det du
+ * pleier å ligge på?». Det er en observasjon om tall, ikke en klarering — se
+ * `describeReturnSummary`.
+ *
+ * Retningen sies bare mens man er UTENFOR. Er man tilbake, er en retning enten
+ * overflødig eller en ny bekymring om normal variasjon.
+ */
+export function describeReturn(
+	track: Pick<EpisodeTrack, 'normal' | 'unit' | 'decimals'>
+): string | null {
+	const n = track.normal;
+	if (!n || n.recentInside === null) return null;
+
+	if (n.recentInside) return 'Siste målinger er tilbake i ditt vanlige.';
+	if (n.direction === 'mot') return 'Fortsatt utenfor, men på vei mot.';
+	if (n.direction === 'fra') return 'Fortsatt utenfor, og på vei bort fra.';
+	return 'Fortsatt utenfor.';
+}
+
+/**
+ * «Hvor mange av signalene er tilbake?» — én linje øverst.
+ *
+ * Dette er det nærmeste flaten kommer spørsmålet «er det trygt å gå tilbake
+ * til vanlig aktivitet», og setningen sier eksplisitt at den IKKE svarer på
+ * det. Grunnen er ikke forsiktighet for forsiktighetens skyld: ingen av disse
+ * målingene skiller en kropp som tåler belastning fra en som ikke gjør det,
+ * og et tall som leses som en klarering er verre enn intet tall.
+ *
+ * Bare rader med en RETNING telles (`notableDirection`). Nivå og vekt har
+ * ingen — nivået ER forløpet, og vekt målt under sykdom bærer alt sitt eget
+ * forbehold.
+ */
+export function describeReturnSummary(
+	tracks: readonly Pick<EpisodeTrack, 'normal' | 'notableDirection' | 'label'>[]
+): string | null {
+	const relevant = tracks.filter((t) => t.notableDirection !== null && t.normal !== null);
+	if (relevant.length === 0) return null;
+
+	const back = relevant.filter((t) => t.normal!.recentInside === true);
+	const tail =
+		' Tallene sier hvor du ligger mot deg selv — de sier ikke om kroppen tåler belastning.';
+
+	if (back.length === relevant.length) {
+		return `Alle ${relevant.length} signalene er tilbake i ditt vanlige.${tail}`;
+	}
+	if (back.length === 0) {
+		return `Ingen av de ${relevant.length} signalene er tilbake i ditt vanlige ennå.${tail}`;
+	}
+	const names = relevant
+		.filter((t) => t.normal!.recentInside !== true)
+		.map((t) => t.label.toLowerCase())
+		.join(', ');
+	return `${back.length} av ${relevant.length} signaler er tilbake i ditt vanlige. Utenfor: ${names}.${tail}`;
 }
 
 /**
@@ -677,6 +797,11 @@ export interface SickEpisode {
 	levelText: string | null;
 	relapse: Relapse | null;
 	/** Forbeholdet som hører PÅ vektraden. */
+	/**
+	 * «Hvor mange signaler er tilbake i ditt vanlige?» — én linje øverst, med
+	 * forbeholdet innbakt. Null når ingen rad har et normalområde.
+	 */
+	returnSummary: string | null;
 	weightCaveat: string;
 }
 

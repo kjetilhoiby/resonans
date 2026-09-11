@@ -68,6 +68,15 @@
 		</p>
 	{/if}
 
+	{#if episode.returnSummary}
+		<!--
+			Det nærmeste flaten kommer «er det trygt å trene igjen», og setningen
+			sier selv at den ikke svarer på det. Den står øverst fordi det er
+			spørsmålet man åpner flaten med underveis i et forløp.
+		-->
+		<p class="retur-sammendrag">{episode.returnSummary}</p>
+	{/if}
+
 	<section class="blokk">
 		<SectionLabel>Signaler gjennom forløpet</SectionLabel>
 
@@ -102,8 +111,9 @@
 				ikke at tallet er godt eller dårlig. Vi måler ikke kroppen.
 			-->
 			<p class="tegnforklaring merknad">
-				Uthevet tall = flyttet seg den veien et forløp pleier å flytte den. Det er en
-				observasjon, ikke en vurdering.
+				Uthevet tall = flyttet seg den veien et forløp pleier å flytte den. Det skraverte
+				feltet er ditt vanlige — ni av ti friske dager ligger der. Begge er
+				observasjoner, ikke vurderinger.
 			</p>
 
 			<div class="rader">
@@ -208,6 +218,17 @@
 		font-size: 14px;
 		line-height: 1.5;
 		color: var(--text-primary);
+	}
+
+	.retur-sammendrag {
+		margin: 0;
+		padding: 12px 14px;
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-md);
+		background: var(--bg-card);
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--text-secondary);
 	}
 
 	.blokk {
