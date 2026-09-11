@@ -68,6 +68,15 @@
 		</p>
 	{/if}
 
+	{#if episode.returnSummary}
+		<!--
+			Det nærmeste flaten kommer «er det trygt å trene igjen», og setningen
+			sier selv at den ikke svarer på det. Den står øverst fordi det er
+			spørsmålet man åpner flaten med underveis i et forløp.
+		-->
+		<p class="retur-sammendrag">{episode.returnSummary}</p>
+	{/if}
+
 	<section class="blokk">
 		<SectionLabel>Signaler gjennom forløpet</SectionLabel>
 
@@ -94,6 +103,17 @@
 			<p class="tegnforklaring">
 				<span class="prove prove-for"></span> median de {BASELINE_DAYS} dagene før
 				<span class="prove prove-under"></span> median under forløpet
+			</p>
+			<!--
+				Hva et uthevet tall BETYR, sagt én gang. Fargen sto uforklart, og
+				da er den verre enn ingen farge: den ser ut som en dom uten å
+				være det. Setningen sier hvorfor vi trakk oppmerksomhet dit —
+				ikke at tallet er godt eller dårlig. Vi måler ikke kroppen.
+			-->
+			<p class="tegnforklaring merknad">
+				Uthevet tall = flyttet seg den veien et forløp pleier å flytte den. Det skraverte
+				feltet er ditt vanlige — ni av ti friske dager ligger der. Begge er
+				observasjoner, ikke vurderinger.
 			</p>
 
 			<div class="rader">
@@ -200,6 +220,17 @@
 		color: var(--text-primary);
 	}
 
+	.retur-sammendrag {
+		margin: 0;
+		padding: 12px 14px;
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-md);
+		background: var(--bg-card);
+		font-size: 14px;
+		line-height: 1.5;
+		color: var(--text-secondary);
+	}
+
 	.blokk {
 		display: flex;
 		flex-direction: column;
@@ -228,6 +259,11 @@
 		margin: 2px 0 0;
 		font-size: 11px;
 		color: var(--text-muted);
+	}
+
+	.tegnforklaring.merknad {
+		display: block;
+		line-height: 1.45;
 	}
 
 	.prove {

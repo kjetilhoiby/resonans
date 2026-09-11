@@ -1719,6 +1719,24 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   har ingen normtabell, og SDNN varierer for mye mellom folk — «vises ALDRI
   alene» er regelen fra `hrv.ts`, håndhevet mekanisk her. Legger du til en rad
   der tallet bare gir mening relativt, sett flagget.
+- **Men BASELINEN navngis, og det er regelen innfridd — ikke brutt.** Se
+  `docs/changelog/2026-09-11-dagen-som-ikke-er-omme-og-tallet-uten-skala.md`.
+  Fram til 11. september 2026 sto det «17 ms under de 14 dagene før.» og ikke
+  mer; brukeren leste det og sa «vanskelig å vite hva −17 er når det ikke er
+  skalaer eller referanseverdier noe sted». Mot 61 er 17 en fjerdedel, mot 28
+  mer enn halvparten. Baselinen er den eneste ærlige referansen — det er den
+  TENKTE normtabellen regelen finnes for å hindre. **Forløpets egen verdi står
+  fortsatt ikke**, og en test vokter det. Y-spennet skrives dessuten på kurven
+  (HTML, ikke SVG-tekst: `preserveAspectRatio="none"` strekker skrift vannrett).
+- **En teller som fortsatt går er ikke et døgn** (`accumulates`). Skritt og
+  aktive minutter akkumulerer fra midnatt, så kl. 08:01 leste skrittraden
+  **«0 skritt»** som overskrift ved siden av en setning som sa 1 950 under
+  forløpet — `latest` var dagens uferdige teller. Er flagget satt, holdes
+  DAGENS dag utenfor raden i sin helhet: ikke i punktene (en 0 er en falsk bunn
+  i kurven også), ikke i medianen, ikke i nevneren. `todayExcluded` gir
+  fotnoten. Vekt, puls, søvn og temperatur akkumulerer IKKE — en veiing er et
+  punkt, natta er ferdig når du våkner. Samme feil som «Underskudd» på en dag
+  som ikke er omme (`frameDay`), samme løsning som `buildDailyBalances`.
 - **`notableDirection` er en RETNING, ikke en boolean.** Feltet het
   `risingIsNotable` fram til HRV kom inn, og det holdt bare fordi alle radene
   som skulle markeres pekte samme vei. HRV er den første der FALLET er
@@ -1735,9 +1753,46 @@ Se `docs/changelog/2026-09-10-sykdomsforlop-som-flate.md`. Reglene rent i
   3 → 4 → 3 er vingling, ikke en vending. Toppen må dessuten ha ligget over et
   tidligere lavpunkt — ellers er hver periode som begynner høyt et
   «tilbakefall», og det er bare å bli syk.
-- **Ingen dom.** `risingIsNotable` gir en dempet gulfarge på tallet, aldri
-  varselfarge. Akutt/kronisk er fortsatt det eneste signalet som får uttale seg
-  om kroppen, og forløpet forklarer aldri HVORFOR et tall flyttet seg.
+- **Normen er BRUKERENS EGEN, og den har en BREDDE** (`normal-band.ts`). Se
+  `docs/changelog/2026-09-11-normen-er-din-og-den-har-en-bredde.md`. Baselinen
+  gir avviket et NIVÅ å måle fra, men ikke en SKALA å måle i: 17 ms er mye om
+  du normalt svinger 4 ms fra natt til natt, og støy om du svinger 20. Båndet
+  er **p10–p90 av friske dager siste 180**, altså «ni av ti friske dager ligger
+  her», og persentilen («lavere enn 96 % av dem») trenger ingen skala ved siden
+  av seg. **Sykedagene er UTE av normen, og de sju dagene etter også** — ellers
+  måler forløpet seg mot et normalområde det selv har utvidet, og jo oftere man
+  er syk, desto mindre unormalt ser sykdom ut.
+  - **Persentiler, ikke snitt ± standardavvik.** Standardavviket forutsetter en
+    fordelingsform vi ikke har sjekket, og én natt med dårlig sensorfeste
+    blåser det opp. En test måler det: en utligger på 400 flytter p90 under to
+    enheter.
+  - **Retningen måles i AVSTAND TIL BÅNDET, aldri i verdi.** En HRV som stiger
+    nedenfra og en sovepuls som faller ovenfra nærmer seg begge normalen;
+    retningen i VERDI er motsatt. Terskelen er en ANDEL av båndets bredde
+    (15 %), så den er den samme i ms, slag og timer uten tre konstanter.
+  - **Persentilen sies bare UTENFOR båndet** — «høyere enn 43 % av dem» betyr
+    «midt i normalen», en presisjon uten innhold.
+  - **Båndet tegnes kromafritt.** Med en kulør ville det konkurrert med kurven
+    og lest som en dom om hvilken sone som er riktig.
+  - **`describeReturnSummary` er det nærmeste flaten kommer «trygt å trene
+    igjen», og den sier i SAMME setning at den ikke svarer på det** — en test
+    krever den setningen i hver variant. Ingen av disse målingene skiller en
+    kropp som tåler belastning fra en som ikke gjør det, og et tall som leses
+    som en klarering er verre enn intet tall.
+  - Kjent rest: **ingen utstyrslogg for søvnsensorene**, så 180 dager er en
+    antakelse om at ingenting byttet — ikke en sjekk. Og **forløp sammenlignes
+    ikke med hverandre**: «hvor mange dager tok HRV på å komme tilbake sist» er
+    det eneste som kan svare på hvilken form gjenopprettingen har for nettopp
+    denne brukeren, og det kan ikke leses av litteratur.
+- **Ingen dom — men fargen MÅ forklare seg selv.** `notableDirection` gir en
+  dempet gulfarge på tallet, aldri varselfarge. Akutt/kronisk er fortsatt det
+  eneste signalet som får uttale seg om kroppen, og forløpet forklarer aldri
+  HVORFOR et tall flyttet seg. Fram til 11. september 2026 sto fargen likevel
+  UFORKLART, og da er den verre enn ingen farge: «vet ikke hva som er bra og
+  hva som er bekymringsfullt» var brukerens egen lesning. Én setning under
+  tegnforklaringen sier nå hva utheving betyr — at tallet flyttet seg den veien
+  et forløp pleier å flytte den, som en observasjon. Det er ikke en dom, og det
+  er heller ikke noe som kan utelates.
 - **Vektraden bærer `WEIGHT_CAVEAT` på seg selv**, ikke i en hjelpetekst: et tall
   man ikke skal sammenligne ser nøyaktig ut som et tall man skal sammenligne.
 - **En rad uten en eneste måling filtreres bort**, og dekningen står under hver

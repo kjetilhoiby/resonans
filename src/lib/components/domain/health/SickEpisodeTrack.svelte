@@ -62,6 +62,21 @@
 		return out;
 	});
 
+	/**
+	 * Normalområdet som en boks i kurvens koordinater.
+	 *
+	 * Null når raden ikke har et bånd, eller når båndet ligger helt utenfor
+	 * aksen — da ville en rektangelkant i toppen lest som en måling.
+	 */
+	const normalBand = $derived.by(() => {
+		if (!axis || !track.normal) return null;
+		const top = yAt(track.normal.high);
+		const bottom = yAt(track.normal.low);
+		const height = bottom - top;
+		if (height <= 0) return null;
+		return { y: top, height };
+	});
+
 	const sickX = $derived(xAt(onsetIndex));
 	const sickW = $derived(Math.max(1, xAt(endIndex) - xAt(onsetIndex)));
 
@@ -105,9 +120,33 @@
 	</div>
 
 	{#if axis}
-		<svg class="kurve" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
+		<!--
+			Y-spennet skrives PÅ kurven. Uten det er «−17 ms» et tall uten skala:
+			en linje som dupper halve rammen sier ingenting om rammen er ti eller
+			hundre enheter høy. Labelene er HTML, ikke SVG-tekst —
+			`preserveAspectRatio="none"` strekker alt inni svg-en vannrett, og en
+			strukket skrift ser ut som en feil.
+		-->
+		<div class="kurveboks">
+			<span class="akse-topp">{fmt(axis.max)}</span>
+			<span class="akse-bunn">{fmt(axis.min)}</span>
+			<svg class="kurve" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
 			<!-- Sykedagene skravert, så man ser hvor forløpet ligger i vinduet. -->
 			<rect x={sickX} y="0" width={sickW} height={H} class="syk" />
+			<!--
+				Normalområdet som et bånd i bakgrunnen: «hvor langt fra det vanlige»
+				blir da noe man SER, ikke noe man regner ut av to tall. Det tegnes
+				først, under alt annet — det er bakgrunn, ikke en måling.
+			-->
+			{#if normalBand}
+				<rect
+					x="0"
+					y={normalBand.y}
+					width={W}
+					height={normalBand.height}
+					class="normalbaand"
+				/>
+			{/if}
 			<!--
 				To referanselinjer, og de er hele poenget med raden: avstanden mellom
 				dem ER tallet setningen under oppgir. Baselinen går over HELE bredden
@@ -139,11 +178,26 @@
 			{#each dots as dot (dot.i)}
 				<circle cx={xAt(dot.i)} cy={yAt(dot.value)} r="2.5" class="punkt" />
 			{/each}
-		</svg>
+			</svg>
+		</div>
 	{/if}
 
 	{#if track.text}
 		<p class="setning">{track.text}</p>
+	{/if}
+
+	{#if track.normalText}
+		<p class="setning normal">{track.normalText}</p>
+	{/if}
+
+	{#if track.returnText}
+		<!--
+			«Er det på vei tilbake» er spørsmålet man sitter med underveis, så det
+			står for seg og ikke i en hale på setningen over.
+		-->
+		<p class="setning retur" class:tilbake={track.normal?.recentInside === true}>
+			{track.returnText}
+		</p>
 	{/if}
 
 	<p class="fot">
@@ -152,6 +206,10 @@
 			>{track.measuredSickDays} av {track.sickDays}
 			{track.sickDays === 1 ? 'sykedag' : 'sykedager'} målt</span
 		>
+		{#if track.todayExcluded}
+			<!-- Uten denne ser dagens fravær ut som en manglende måling. -->
+			<span>i dag teller ikke før døgnet er omme</span>
+		{/if}
 	</p>
 </div>
 
@@ -189,16 +247,51 @@
 		color: var(--warning-text);
 	}
 
+	.kurveboks {
+		position: relative;
+		margin: 8px 0 6px;
+	}
+
 	.kurve {
 		display: block;
 		width: 100%;
 		height: 44px;
-		margin: 8px 0 6px;
 		overflow: visible;
+	}
+
+	/*
+	 * Aksetallene ligger OVER kurven, ikke ved siden av: en egen kolonne ville
+	 * kostet bredde på alle ti radene for to tall man leser én gang.
+	 */
+	.akse-topp,
+	.akse-bunn {
+		position: absolute;
+		right: 0;
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted);
+		pointer-events: none;
+	}
+
+	.akse-topp {
+		top: -2px;
+	}
+
+	.akse-bunn {
+		bottom: -2px;
 	}
 
 	.syk {
 		fill: rgba(255, 255, 255, 0.045);
+	}
+
+	/*
+	 * Kromafritt og svakt: båndet er konteksten linja leses i, ikke en av
+	 * seriene. Fikk det en kulør, ville det konkurrert med kurven og lest som
+	 * en dom om hva som er riktig sone å ligge i.
+	 */
+	.normalbaand {
+		fill: rgba(160, 170, 190, 0.1);
 	}
 
 	.baseline {
@@ -231,6 +324,25 @@
 		font-size: 13px;
 		line-height: 1.45;
 		color: var(--text-secondary);
+	}
+
+	.setning.normal {
+		margin-top: 2px;
+		color: var(--text-tertiary);
+	}
+
+	.setning.retur {
+		margin-top: 2px;
+		font-weight: 500;
+	}
+
+	/*
+	 * Tilbake i det vanlige er den ene tilstanden brukeren leter etter, så den
+	 * får en farge. Grønt, ikke som en klarering — se `describeReturnSummary`,
+	 * som sier i klartekst at tallene ikke uttaler seg om belastning.
+	 */
+	.setning.retur.tilbake {
+		color: var(--success-text);
 	}
 
 	.fot {
