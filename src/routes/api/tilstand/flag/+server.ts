@@ -80,7 +80,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				id: current.period.id,
 				startDate: current.period.startDate,
 				endDate: sickUntil,
-				note: note ?? current.period.note
+				note: note ?? current.period.note,
+				// `data` skrives i sin helhet, så livstegnet må løftes tilbake — ellers
+				// nullstiller en bryter på readiness-stripa taket på perioden.
+				confirmedOn: current.period.confirmedOn
 			});
 			if (!moved.ok) return json({ error: moved.error }, { status: 400 });
 		} else {
