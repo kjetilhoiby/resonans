@@ -92,8 +92,42 @@ function toPeriod(row: { id: string; data: unknown }): SickPeriod | null {
 		id: row.id,
 		startDate: data.startDate,
 		endDate: isDayKey(data.endDate) ? data.endDate : null,
-		note: typeof data.note === 'string' && data.note.trim() ? data.note.trim() : null
+		note: typeof data.note === 'string' && data.note.trim() ? data.note.trim() : null,
+		confirmedOn: isDayKey(data.confirmedOn) ? data.confirmedOn : null
 	};
+}
+
+/**
+ * Siste sykeinnsjekk datert inne i hver åpne periode.
+ *
+ * En innsjekk ER en bekreftelse, og et sterkere livstegn enn knappen: brukeren
+ * har svart på «hvordan går det?» framfor å bekrefte at en registrering
+ * stemmer. Den som svarer på innsjekkene treffer derfor aldri taket.
+ *
+ * Bare ÅPNE perioder trenger oppslaget — en lukket periode har en sluttdato, og
+ * taket gjelder ikke den. Er ingen åpen, røres ikke basen.
+ */
+async function confirmationsFromCheckins(
+	userId: string,
+	periods: readonly SickPeriod[],
+	today: string
+): Promise<Map<string, string>> {
+	const open = periods.filter((p) => p.endDate === null);
+	if (open.length === 0) return new Map();
+
+	const earliest = open.reduce((min, p) => (p.startDate < min ? p.startDate : min), today);
+	const levels = await listSickLevels(userId);
+
+	const byPeriod = new Map<string, string>();
+	for (const { day } of levels) {
+		if (day < earliest || day > today) continue;
+		for (const p of open) {
+			if (day < p.startDate) continue;
+			const current = byPeriod.get(p.id);
+			if (!current || day > current) byPeriod.set(p.id, day);
+		}
+	}
+	return byPeriod;
 }
 
 /** Alle registrerte sykeperioder, nyeste først. */
@@ -114,10 +148,24 @@ export async function listSickPeriods(
 		)
 		.orderBy(desc(sensorEvents.timestamp));
 
-	return rows
+	const periods = rows
 		.map(toPeriod)
 		.filter((p): p is SickPeriod => p !== null)
 		.sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+
+	// Sammenslåingen skjer HER, i den ene leseveien, så hver leser får det samme
+	// svaret. Gjorde kallstedene det selv, ville en periode vært foreldet ett sted
+	// og levende et annet — nøyaktig de to sannhetene om «er jeg syk» som gjorde
+	// den gamle rigga ubrukelig.
+	const fromCheckins = await confirmationsFromCheckins(userId, periods, todayOsloKey());
+	if (fromCheckins.size === 0) return periods;
+
+	return periods.map((p) => {
+		const checkin = fromCheckins.get(p.id);
+		if (!checkin) return p;
+		const confirmedOn = p.confirmedOn && p.confirmedOn > checkin ? p.confirmedOn : checkin;
+		return { ...p, confirmedOn };
+	});
 }
 
 export type SaveSickPeriodResult =
@@ -136,9 +184,9 @@ export async function saveSickPeriod(
 ): Promise<SaveSickPeriodResult> {
 	const validation = validateSickPeriod(input, todayOsloKey(now));
 	if (!validation.ok) return validation;
-	const { id, startDate, endDate, note } = validation.value;
+	const { id, startDate, endDate, note, confirmedOn } = validation.value;
 
-	const data = { startDate, endDate, note };
+	const data = { startDate, endDate, note, confirmedOn };
 
 	if (id) {
 		// Tidsstempelet flyttes IKKE ved retting: en rettet startdato er ikke en ny
@@ -156,7 +204,7 @@ export async function saveSickPeriod(
 			)
 			.returning({ id: sensorEvents.id });
 		if (updated.length === 0) return { ok: false, error: 'Fant ikke sykeperioden.' };
-		return { ok: true, period: { id, startDate, endDate, note } };
+		return { ok: true, period: { id, startDate, endDate, note, confirmedOn } };
 	}
 
 	const sensor = await getOrCreateTilstandSensor(userId);
@@ -171,7 +219,33 @@ export async function saveSickPeriod(
 	});
 	const eventId = written.event?.id;
 	if (!eventId) return { ok: false, error: 'Klarte ikke å lagre sykeperioden.' };
-	return { ok: true, period: { id: eventId, startDate, endDate, note } };
+	return { ok: true, period: { id: eventId, startDate, endDate, note, confirmedOn } };
+}
+
+/**
+ * «Jeg er fortsatt syk» — flytt livstegnet til i dag.
+ *
+ * Motstykket til `endSickPeriod`, og den handlingen som manglet: fram til
+ * 16. september 2026 tilbød flaten bare «Sett sluttdato» når taket røk, altså
+ * bare utgangen. Perioden røres ellers ikke — startdato, sluttdato og notat
+ * står som de var.
+ *
+ * Skriver gjennom `saveSickPeriod` som alt annet. Feltene leses fra den lagrede
+ * raden og sendes med på nytt, fordi `data` skrives i sin helhet: en utplukking
+ * som glemmer et felt sier ikke fra.
+ */
+export async function confirmSickPeriod(
+	userId: string,
+	id: string,
+	now: Date = new Date()
+): Promise<SaveSickPeriodResult> {
+	const periods = await listSickPeriods(userId);
+	const period = periods.find((p) => p.id === id);
+	if (!period) return { ok: false, error: 'Fant ikke sykeperioden.' };
+	if (period.endDate !== null) {
+		return { ok: false, error: 'Perioden har en sluttdato — fjern den for å melde deg syk videre.' };
+	}
+	return saveSickPeriod(userId, { ...period, confirmedOn: todayOsloKey(now) }, now);
 }
 
 /**

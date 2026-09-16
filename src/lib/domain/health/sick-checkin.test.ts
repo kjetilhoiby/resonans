@@ -11,10 +11,12 @@ import {
 	CHECKIN_EARLIEST_HOUR,
 	CHECKIN_LATEST_HOUR,
 	MAX_CHECKIN_SYMPTOMS,
+	CHECKIN_CADENCE,
 	cadenceForDay,
 	decideSickCheckin,
 	type SickCheckinInput
 } from './sick-checkin';
+import { MAX_OPEN_SICK_DAYS } from './sick-periods';
 import type { Symptom } from './symptoms';
 
 const sym = (over: Partial<Symptom> = {}): Symptom => ({
@@ -224,5 +226,24 @@ describe('nivåskalaen', () => {
 		// Sier du «frisk», er innsjekken stedet forløpet ender — ikke et kort
 		// du må finne på Helse.
 		expect(SICK_LEVEL_RECOVERED).toBe(SICK_LEVEL_MAX);
+	});
+});
+
+describe('kadensen mot taket på åpne perioder', () => {
+	it('spør oftere enn perioden rekker å bli foreldet', () => {
+		/*
+		 * To tall i to moduler som må henge sammen: et svar på innsjekken er et
+		 * livstegn som flytter `MAX_OPEN_SICK_DAYS`-taket (`confirmSickPeriod` og
+		 * sammenslåingen i `sick-log.ts`). Blir det lengre mellom to spørsmål enn
+		 * taket tåler, sulter en periode i hjel MELLOM to innsjekker — og den som
+		 * trofast svarer hver gang blir likevel bedt om å bekrefte manuelt.
+		 *
+		 * Samme form som invarianten om at en standardtid ikke får ligge i
+		 * stillevinduet: to defaults satt hver for seg, uenige i praksis.
+		 *
+		 * Senker du taket eller strekker kadensen, feiler denne.
+		 */
+		const slowest = Math.max(...CHECKIN_CADENCE.map((s) => s.everyDays));
+		expect(slowest).toBeLessThan(MAX_OPEN_SICK_DAYS);
 	});
 });

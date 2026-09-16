@@ -34,6 +34,7 @@
 
 import { dayKeyFromNumber, dayNumber } from '$lib/domain/streaks';
 import {
+	MAX_OPEN_SICK_DAYS,
 	isDayKey,
 	resolveSickPeriod,
 	type ResolvedSickPeriod,
@@ -767,7 +768,9 @@ export function buildSymptomBars(
 export function describeEpisode(window: EpisodeWindow, startDate: string): string {
 	const day = formatDay(startDate);
 	if (window.staleOpen) {
-		return `Startet ${day}. Perioden står åpen uten sluttdato — sett et sluttpunkt for at tallene skal bety noe.`;
+		// Begge veiene ut, ikke bare sluttpunktet: den som fortsatt er syk skal
+		// ikke måtte lukke forløpet for at flaten skal slutte å mase.
+		return `Startet ${day}. Perioden står åpen uten et livstegn på ${MAX_OPEN_SICK_DAYS} dager — bekreft at du fortsatt er syk, eller sett et sluttpunkt.`;
 	}
 	if (window.open) {
 		return `Dag ${window.length} av forløpet, som startet ${day}. Tallene er så langt.`;

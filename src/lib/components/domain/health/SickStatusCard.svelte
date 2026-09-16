@@ -21,6 +21,10 @@
 		effectiveEnd: string;
 		open: boolean;
 		staleOpen: boolean;
+		confirmedOn: string | null;
+		countsFrom: string;
+		daysLeft: number;
+		needsConfirmation: boolean;
 		activeToday: boolean;
 		days: number;
 		text: string;
@@ -76,6 +80,7 @@
 
 	const active = $derived(data?.periods.find((p) => p.id === data?.activePeriodId) ?? null);
 	const stale = $derived(data?.periods.find((p) => p.staleOpen) ?? null);
+	const expiring = $derived(data?.periods.find((p) => p.needsConfirmation) ?? null);
 	const past = $derived(data?.periods.filter((p) => p.id !== data?.activePeriodId) ?? []);
 	const ongoingSymptoms = $derived(data?.symptoms.filter((s) => s.ongoing) ?? []);
 	const pastSymptoms = $derived(data?.symptoms.filter((s) => !s.ongoing) ?? []);
@@ -133,6 +138,15 @@
 
 	const recover = (id: string) =>
 		call(`/api/helse/syk/${id}`, { method: 'PATCH', body: JSON.stringify({ action: 'end' }) });
+
+	/**
+	 * «Fortsatt syk» — flytter livstegnet til i dag.
+	 *
+	 * Motstykket til friskmeldingen, og den handlingen som manglet: da taket røk,
+	 * sto «Sett sluttdato» alene, altså bare utgangen.
+	 */
+	const confirmStillSick = (id: string) =>
+		call(`/api/helse/syk/${id}`, { method: 'PATCH', body: JSON.stringify({ action: 'confirm' }) });
 
 	const remove = (id: string) => call(`/api/helse/syk/${id}`, { method: 'DELETE' });
 
@@ -218,6 +232,8 @@
 			<p class="sick-sub">
 				{#if active}
 					Streaks pauses, ukas plan er senket, og coachen vet det.
+				{:else if stale}
+					Perioden under venter på et svar.
 				{:else}
 					Meld deg syk, så pauses streaks og ukeplanen slutter å telle dagene mot deg.
 				{/if}
@@ -231,7 +247,13 @@
 				data-track="helse-syk:friskmeld"
 				onclick={() => void recover(active.id)}
 			>Frisk igjen</button>
-		{:else}
+		{:else if !stale}
+			<!--
+				Ingen «Jeg er syk» så lenge en foreldet åpen periode står: knappen ville
+				opprettet en ANDRE periode fra i dag og latt den gamle ligge åpen. Svaret
+				er «Fortsatt syk» i banneret under, som flytter livstegnet på perioden
+				som alt finnes.
+			-->
 			<button
 				class="sick-btn"
 				type="button"
@@ -259,11 +281,37 @@
 		<p class="sick-error" role="alert">{error}</p>
 	{/if}
 
+	{#if expiring}
+		<!-- Forvarselet. En vakt som slår til uten et ord først er ikke til å skille
+		     fra en feil, og svaret på «er du fortsatt syk» er ett trykk unna. -->
+		<p class="sick-warn">
+			{expiring.text}
+			<button
+				class="sick-btn sick-btn--primary sick-warn-btn"
+				type="button"
+				disabled={busy}
+				data-track="helse-syk:fortsatt-syk"
+				onclick={() => void confirmStillSick(expiring.id)}
+			>Fortsatt syk</button>
+		</p>
+	{/if}
+
 	{#if stale}
-		<!-- En åpen periode som passerte taket. Den unnskylder ingenting lenger, og
-		     det skal sies — ikke oppdages ved at streaks plutselig ryker. -->
+		<!-- En åpen periode som passerte taket uten et livstegn. Den unnskylder
+		     ingen NYE dager, og det skal sies — ikke oppdages ved at streaks
+		     plutselig ryker. Dagene den alt rakk står, og setningen sier det.
+
+		     «Fortsatt syk» står FØRST, fordi den er svaret til den som er syk. Fram
+		     til september 2026 sto «Sett sluttdato» alene her, altså bare utgangen. -->
 		<p class="sick-warn">
 			{stale.text}
+			<button
+				class="sick-btn sick-btn--primary sick-warn-btn"
+				type="button"
+				disabled={busy}
+				data-track="helse-syk:fortsatt-syk-foreldet"
+				onclick={() => void confirmStillSick(stale.id)}
+			>Fortsatt syk</button>
 			<button class="sick-link" type="button" onclick={() => startEdit(stale)}>Sett sluttdato</button>
 		</p>
 	{/if}
@@ -473,7 +521,8 @@
 				data-track="helse-syk:legg-til-periode"
 				onclick={() => startEdit({
 					id: 'new', startDate: data?.today ?? '', endDate: null, note: null,
-					effectiveEnd: '', open: true, staleOpen: false, activeToday: false, days: 0, text: ''
+					effectiveEnd: '', open: true, staleOpen: false, confirmedOn: null, countsFrom: '',
+					daysLeft: 0, needsConfirmation: false, activeToday: false, days: 0, text: ''
 				})}
 			>+ Legg til en periode</button>
 		{/if}
@@ -568,6 +617,8 @@
 	}
 	.sick-row-text { flex: 1; min-width: 0; color: var(--text-secondary); }
 	.sick-row-text.is-stale { color: var(--accent-warning, #d8a24a); }
+	/* Knappen står inne i en <p>, så den må ikke arve varselfargen fra linja. */
+	.sick-warn-btn { margin-left: 0.5rem; vertical-align: middle; }
 
 	.sick-link {
 		background: none;

@@ -1608,9 +1608,36 @@ Se `docs/changelog/2026-09-02-sykeperioder.md`. Reglene rent i
   sykedag krever fortsatt 2, to krever 1, seks krever 0. Avrundingen er `round` —
   `floor` ville halvert kravet på den første sykedagen.
 - **En åpen periode (`endDate: null`) slutter å unnskylde etter
-  `MAX_OPEN_SICK_DAYS` (14).** «Inntil videre» er den ærlige defaulten, men en
-  glemt bryter ville unnskyldt alt for alltid. Vi lukker den ikke selv — det ville
-  vært en påstand; `staleOpen` sier fra, og flaten ber om et sluttpunkt.
+  `MAX_OPEN_SICK_DAYS` (14) UTEN ET LIVSTEGN.** «Inntil videre» er den ærlige
+  defaulten, men en glemt bryter ville unnskyldt alt for alltid. Vi lukker den
+  ikke selv — det ville vært en påstand; `staleOpen` sier fra. Se
+  `docs/changelog/2026-09-16-fortsatt-syk.md`.
+  - **Taket måles fra `confirmedOn`, ikke fra `startDate`** — det er hele
+    forskjellen på en vakt og en frist. Vakten finnes for bryteren ingen skrudde
+    av, og en bekreftelse ER noen som tok i bryteren. Fram til 16. september
+    2026 løp klokka fra startdatoen, og på dag 16 sa flaten «Syk?» med en «Jeg
+    er syk»-knapp til en bruker som var syk — og tilbød ÉN handling, «Sett
+    sluttdato», altså nøyaktig den ene tingen en som fortsatt er syk ikke skal
+    gjøre. Samtidig sluttet sykeinnsjekken å fyre (den gater på
+    `getSickState().active`), chipen forsvant, og dags-nudgene begynte å mase.
+  - **To kilder til bekreftelse, slått sammen i `listSickPeriods`.** Knappen
+    (`confirmSickPeriod`) og en sykeinnsjekk (`sick_level`) datert inne i
+    perioden — å svare på «hvordan går det?» er et sterkere livstegn enn å
+    trykke på en knapp, så den som svarer på innsjekkene treffer aldri taket.
+    En test krever at tregeste `CHECKIN_CADENCE` (7 dager) ligger under taket;
+    ellers sulter en periode i hjel mellom to spørsmål.
+  - **`confirmedOn` kommer ALDRI fra en forespørselskropp**, og de tre
+    skrivestedene må løfte den tilbake fra den lagrede raden (`data` skrives i
+    sin helhet). Samme regel som `USER_OWNED_METADATA_KEYS` på øktene.
+  - **Et bortfall gjelder framover, aldri bakover.** `effectiveEnd` er kappet
+    ved taket nettopp for å si hvor langt perioden rakk, og `sickDayKeys` leser
+    den. Fram til 16. september gjorde den `continue` på hele perioden, så dag
+    15 fjernet unnskyldningen for dag 1–14 også: to uker i senga ble to uker
+    brutt streak, med tilbakevirkende kraft og uten et ord om det.
+  - **`needsConfirmation` spør FØR det ryker** (`CONFIRM_WARNING_DAYS`, 3). En
+    vakt som slår til uten forvarsel er ikke til å skille fra en feil.
+  - **«Jeg er syk»-knappen skjules mens en foreldet åpen periode står** — den
+    ville opprettet en ANDRE periode fra i dag og latt den gamle ligge åpen.
 - **En sluttdato fram i tid unnskylder ikke framtida.** En dag som ikke har vært
   kan ikke være brutt, altså ikke unnskyldt heller. Samme regel som `isFuture`.
 - **Friskmelding setter sluttdato til GÅRSDAGEN.** «Jeg er frisk» sies om dagen man
