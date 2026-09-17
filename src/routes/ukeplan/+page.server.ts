@@ -14,6 +14,8 @@ import { activeFerieThemes } from '$lib/ferie/active-ferie';
 import { loadSickDayKeys } from '$lib/server/health/sick-log';
 import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
 import { readGoalTargetValue } from '$lib/domain/goal-tracks';
+import { listEventsInRange } from '$lib/server/events/event-store';
+import { coversDay } from '$lib/domain/events/event-fields';
 
 function detectItemDomain(text: string | null | undefined): DomainType | null {
 	if (!text) return null;
@@ -220,7 +222,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes, livskompassGoals, dueMaintenance] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes, livskompassGoals, dueMaintenance, weekEvents] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -298,7 +300,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		getLivskompassGoalsForWeek(userId, week.dashedKey).catch(() => []),
 		// Periodisk vedlikehold som nærmer seg forfall — plukkbart ned på en dag, slik
 		// at streaken kan forsvares før den brytes (tåler feil → [])
-		listDueMaintenance(userId).catch(() => [])
+		listDueMaintenance(userId).catch(() => []),
+		// Arrangementer i uka. Ligger i prefetch-bunten og ikke i et eget await
+		// etterpå: en ekstra rundtur legger seg rett på ukeplanens svartid, som
+		// er instrumentert nettopp fordi den er merkbar.
+		listEventsInRange(userId, week.days[0].isoDate, week.days[6].isoDate).catch(() => [])
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -356,6 +362,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// Find trips that overlap this week
 	const weekStartStr = week.days[0].isoDate;
 	const weekEndStr = week.days[6].isoDate;
+
+	// Et flerdagsarrangement legges på HVER dag det dekker (`coversDay`), ikke
+	// bare på startdagen — festivalens lørdag er like mye «i dag» som fredagen,
+	// og en dagsvisning som bare viste startdagen ville sagt at lørdagen var tom.
+	const eventsByDay: Record<string, typeof weekEvents> = {};
+	for (const day of week.days) {
+		const onDay = weekEvents.filter((event) => coversDay(event, day.isoDate));
+		if (onDay.length > 0) eventsByDay[day.isoDate] = onDay;
+	}
 	const activeTrips = travelThemes
 		.filter((t) => {
 			const p = t.tripProfile;
@@ -696,6 +711,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		activeFerie,
 		sickDays,
 		spondEventsByDay,
+		eventsByDay,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
 			note: previousWeekArtifact?.note ?? '',

@@ -3133,6 +3133,75 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   opprettet en dupp tretten timer fram i tid. Bruk `validateNapStart`
   (`$lib/domain/sleep/nap-fields.ts`) på alle skrivinger med et brukeroppgitt klokkeslett.
 
+### Arrangementer: en billett er ikke en oppgave
+
+Se `docs/changelog/2026-09-17-arrangementer-og-billetter.md`. Reglene rent i
+`$lib/domain/events/`, lagringen i `$lib/server/events/event-store.ts`, lesingen
+av billetten i `ticket-reader.ts`, flaten `/arrangementer`.
+
+- **Datoen er en DATE og klokkeslettet er TEKST (`HH:MM`), aldri et timestamp.**
+  Oslo-veggklokke. En konsert 19:00 lagret som `timestamptz` kan leses ut på feil
+  dato — UTC-midnatt ligger kl. 02 om natta om sommeren, nøyaktig fella som delte
+  søvnnettene i to. Og billetten sier «19:00»: tallet på skjermen skal være tallet
+  på billetten. Samme valg som `checklist_items.metadata.timeHour`.
+- **Et `checklist_item` med dato kunne ikke bære dette.** Ikke inngang, ikke sete,
+  ikke billettbildet, og ikke et eget sett avkryssinger. Og forberedelsene hører
+  til ARRANGEMENTET, ikke til en dag: barnevakt ordnes seks uker i forveien, så et
+  dag-punkt måtte ligget på en dag ingen har planlagt ennå.
+- **Uttrekket fra en billett LAGRES IKKE av seg selv.** `POST
+  /api/arrangementer/les-billett` returnerer et utkast; brukeren bekrefter. En
+  modell som leser et skjermbilde tar feil noen ganger, og et arrangement som
+  skrev seg selv ville ligget i lista med en feillest dato som om noen hadde sett
+  på den — og en dato i lista er nettopp det man slutter å dobbeltsjekke.
+  `draft.warnings` sier hva som er verdt å se på.
+- **Modellen skal IKKE normalisere selv.** Prompten ber om datoen «slik den står»
+  («fredag 14. november 2026»); tolkningen skjer i `parseTicketDate`. Gjorde
+  modellen det, mistet vi muligheten til å se at ÅRSTALLET manglet — og det er
+  nettopp den slutningen brukeren skal få vite om.
+- **Et tomt felt slår et gjettet felt**, og det står i prompten. Brukeren ser på
+  billetten uansett; et utfylt felt blir trodd. `parseTicketTime` krever derfor
+  minutter: «kl 19» kan være 19:30, og et arrangement 19:00 og et 19:30 er ulike
+  kvelder.
+- **Uten årstall velges første FRAMTIDIGE forekomst.** En billett gjelder aldri
+  noe som har vært, så «2. mars» lest i september er neste år. Dagen i dag teller
+  som framtidig — en billett lest om morgenen gjelder som regel den kvelden.
+- **`buildTicketDraft` leser felt for felt, aldri med en spread.** Samme regel som
+  `toPublicCronRun`: en spread ville sluppet inn felter ingen validerte, og la vi
+  til en kolonne senere kunne modellen skrevet i den.
+- **Forberedelsene er en LISTE, ikke to kolonner.** Transport og barnevakt legges
+  på automatisk (`DEFAULT_PREP_IDS`); overnatting, billetter hentet og middag før
+  ligger som forslag. To uhakede punkter ser ut som det de er — fem ser ut som en
+  jobbliste man ikke har begynt på. `id` er en stabil nøkkel og ikke etiketten, så
+  en tekstendring senere ikke gjør et avhaket punkt til et nytt.
+- **Endepunktet for forberedelser tar en HANDLING (`toggle`/`add`/`remove`), ikke
+  hele lista.** Flere avkryssinger skjer raskt etter hverandre, og en klient som
+  sender hele lista overskriver en samtidig endring med sin egen litt gamle kopi.
+- **`describePrep` navngir punktene, teller dem ikke.** «Mangler barnevakt» kan
+  handles på; «1 av 2 igjen» tvinger deg til å åpne arrangementet. Samme regel som
+  `describeOpenItems` i dags-nudgene.
+- **«Over» måles mot DAGEN, ikke klokkeslettet** (`isPast`). En konsert kl. 19 står
+  under «kommende» hele den dagen — flyttet den seg kl. 19:01 mens brukeren sto i
+  køen, ville lista sett ut som en feil. Og et arrangement UTEN tidspunkt sorteres
+  sist på sin dag (`24:00`), ikke først: noe vi ikke har lest tidspunktet på skal
+  ikke legge seg over frokosten.
+- **Et flerdagsarrangement ligger på HVER dag det dekker** (`coversDay`), ikke bare
+  på startdagen. `listEventsInRange` filtrerer derfor på
+  `coalesce(endDate, eventDate) >= fra`, ikke på startdatoen alene — en festival
+  som begynte før vinduet pågår fortsatt.
+- **`normalizeEventInput` bor i domenelaget**, ikke hos lagringen: `POST`, `PATCH`
+  og flaten deler den. Et utelatt felt betyr «ikke endre», et eksplisitt `null`
+  NULLER — ellers kunne en feilskrevet inngang aldri fjernes.
+- **`EventRecord` bor i `$lib/domain/events/event-record.ts`.** Flaten kan ikke
+  importere fra `$lib/server`, heller ikke en ren type: SvelteKits importvakt ser
+  på modulgrafen, ikke på om kompilatoren fjerner importen etterpå.
+- **I dagsvisningen står arrangementer OVER Spond-linjene og med mer plass.** En
+  konsert med billett er dagens ankerpunkt, ikke en linje blant flere. Haking skjer
+  på `/arrangementer` — dagen det skjer er for sent å ordne barnevakt.
+- Kjent rest: ingen varsling (`digest-nugget-rules.ts` er den naturlige
+  koblingen — et arrangement med åpne forberedelser fyrer ÉN gang og hører derfor
+  høyt i `PUSH_RANK`), ingen chat-verktøy, ingen kobling til `themeId` eller til
+  billettkjøpet i `canonical_bank_transactions`, og ingen `/design`-seksjon.
+
 ### Økonomi: alt som teller kroner går gjennom én leser
 
 `$lib/server/economics/transactions.ts` (`readTransactions`, `readLatestBalances`). Se
