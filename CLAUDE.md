@@ -1871,6 +1871,78 @@ Se `docs/changelog/2026-09-02-symptomer-temperatur-og-oppfolging.md`. Reglene i
   betyr «kan sykle», altså en substitusjon — `generateSessionAlternative` er den
   naturlige koblingen), og `MAX_OPEN_SICK_DAYS` (14) er kort for en skade.
 
+### Medisiner: hva som ble GJORT, aldri om det virket
+
+Se `docs/changelog/2026-09-17-medisiner.md`. Reglene rent i
+`$lib/domain/health/medications.ts`, loggen i
+`$lib/server/health/medication-log.ts`, endepunktene under `/api/helse/medisiner`.
+
+- **En kur er en PERIODE, en dose er en HENDELSE** — samme todeling som
+  sykeperiode mot symptom. Kuren tegnes som et spenn på forløpets tidsakse
+  (`buildMedicationBars`), fordi nivåkurven kan snu uten at noe sier hvorfor, og
+  en kur startet dagen før er den mest sannsynlige forklaringen som finnes.
+- **Rytmen er et STRUKTURELT skille, ikke et innstillingsfelt.** `fast` og
+  `ved_behov` stiller ulike spørsmål, og det avgjør hva en DAG ser ut som: en
+  fast kur er en rekke SLOTS man haker av, en ved-behov-kur er en knapp og en
+  teller.
+- **Hovedflaten er en DOSEKALENDER**, ikke en sammenheng-med-symptomer-graf.
+  Første utgave logget ikke doser på faste kurer i det hele tatt — «antallet er
+  gitt av planen» — og det var feil prioritering: det er nettopp den faste kuren
+  som har slots å hake av. Forløpsbjelkene er beholdt, men er sekundære.
+- **`times: string[]` («HH:MM», Oslo), ikke fritekst.** Uten klokkeslett kan
+  ingen slot ORDNES, og da finnes verken «neste dose» eller en felles tidslinje
+  for to medisiner med ulik frekvens — som er hele spørsmålet en dosekalender
+  finnes for. Flaten sender et ANTALL, serveren slår opp `DEFAULT_TIMES`; tidene
+  kan rettes, for en plan man ikke kjenner igjen blir ikke fulgt.
+- **`slot` sies av flaten, ALDRI utledet av klokka.** «Jeg tok morgendosen først
+  kl. 11» er helt vanlig, og en nærmeste-slot-gjetning ville fylt
+  formiddagssloten og latt morgenen stå som glemt — gal i akkurat det tilfellet
+  loggen finnes for. En slot utenfor planen avvises med 400.
+- **`due` mot `missed` er skillet mellom en dag som er omme og en som ikke er
+  det** — en dose kl. 20 er ikke glemt kl. 10. Og en FORFALT dose er aldri
+  «neste»: ellers sto linja fast på en glemt morgendose resten av dagen framfor
+  å peke på den som kommer.
+- **Ved-behov-frekvensen er det ENE tallet her som er ekte data.** «Fire ganger
+  mandag, én gang fredag» sporer bedringen på en måte ingen sensor kan, og er
+  ærlig: den påstår ikke at medisinen virket, bare at du trengte den sjeldnere.
+- **Vi sier ALDRI om en kur virket**, og grunnen er statistisk framfor forsiktig:
+  et forløp går over av seg selv, så HVA SOM HELST startet underveis ser virksomt
+  ut — n = 1, ingen kontroll. En effektdom ville vært den andre «for mye»-dommen,
+  og den ville lest som et medisinsk råd. Briefingen har det som en EGEN regel
+  ved siden av symptomenes tolkningsforbud, og en test krever setningen. Ingen
+  doseringssjekk, ingen interaksjoner.
+- **Doser stemples med REGISTRERINGSTIDSPUNKTET**, og her biter
+  `sensor_events_sensor_datatype_timestamp_unique` hardest: flere doser samme dag
+  er ikke et kanttilfelle, det er hele signalet. Et dagsstempel ville kappet hver
+  dag til én dose — altså gjort tallet galt i den retningen som SKJULER
+  bedringen, mens de avviste skrivingene så ut som en flate som ikke virker. En
+  test leser kildefila og er verifisert ved å innføre feilen.
+- **`0` inne i kuren er en MÅLING, `null` utenfor er fravær av en.** Motsatt av
+  `history-series.ts` sin «hull er null, aldri 0», og med vilje: en dag uten
+  doser inne i kuren er en dag du ikke trengte den. Leses den som «ikke logget»,
+  forsvinner bedringen ut av raden.
+- **Dagens dag holdes utenfor doseTELLINGEN på forløpet** (`accumulates`-regelen
+  fra skritt), men kortet på Helse viser dagens teller LIVE. To ulike spørsmål om
+  de samme radene: «har jeg tatt den i dag» mot «hva er mønsteret».
+- **Ingen foreldelse, i motsetning til sykeperioden.** En åpen periode UNNSKYLDER
+  streak-dager og må ha et tak; en åpen kur beskriver bare, og en fast medisin
+  man går på i årevis er normal.
+- **Avslutning setter sluttdato til I DAG**, ikke gårsdagen som `endSickPeriod`.
+  Perioden unnskylder dager, så én for mye koster en streak-dag; en kur
+  beskriver. Og en sluttdato fram i tid er LOV her — «kuren varer ut uka» er en
+  opplysning fra resepten.
+- **`purpose` er FRITEKST**, ikke en kategori: en tvungen kategorisering er verre
+  enn en åpen, samme begrunnelse som `annet` blant symptom-typene.
+- **Fortsatt ingen varsling.** Kalenderen sier «neste kl. 14»; ingenting banker
+  på. Repoets påminnelser er slots på ukelista, ikke push, og et varsel som
+  svikter stille er verre enn ingen.
+- **Koblingen kur↔periode er datooverlapp**, som `symptomsDuringPeriod`.
+- Kjent rest: ingen chat-inngang (`saveMedication`/`logMedicationDose` er klare
+  for verktøy), ingen varsling, en dose kan angres men ikke FLYTTES til en annen
+  slot, klokkeslettene kan ikke rettes fra kortet (bare settes ved opprettelse —
+  `PATCH` tar `times`), og `describeDoseUse` finnes testet men kalles ikke av
+  noen flate.
+
 ### To temperatursignaler, aldri ett
 
 Se samme changelog. Reglene i `$lib/domain/health/temperature.ts`, synken i

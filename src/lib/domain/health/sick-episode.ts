@@ -40,6 +40,15 @@ import {
 	type ResolvedSickPeriod,
 	type SickPeriod
 } from './sick-periods';
+import {
+	describeMedication,
+	describeSchedule,
+	dosesPerDay,
+	resolveMedication,
+	type Medication,
+	type MedicationDose,
+	type MedicationRhythm
+} from './medications';
 import { describeSymptom, type ResolvedSymptom } from './symptoms';
 import type { SleepNightPoint } from './sleep-overview';
 import { buildNormalBand, placeInNormal, type NormalStanding } from './normal-band';
@@ -756,6 +765,115 @@ export function buildSymptomBars(
 	});
 }
 
+/* ── Medisiner ───────────────────────────────────────────────────────── */
+
+export interface MedicationBar {
+	id: string;
+	label: string;
+	rhythm: MedicationRhythm;
+	/** Planen med ord for fast rytme, «ved behov» ellers. */
+	rhythmText: string;
+	purpose: string | null;
+	fromIndex: number;
+	toIndex: number;
+	startsBefore: boolean;
+	endsAfter: boolean;
+	/**
+	 * Doser per dag over HELE vinduet, `null` utenfor kuren.
+	 *
+	 * Tom for fast rytme: antallet er gitt av planen, så en teller der ville vært
+	 * et tall uten informasjon. Se `medications.ts`.
+	 */
+	dosesByIndex: (number | null)[];
+	/** Flest doser på én dag i vinduet — skalaen stripa tegnes mot. */
+	peakDoses: number;
+	/** Holdes dagens dag utenfor tellingen? Se under. */
+	todayExcluded: boolean;
+	text: string;
+}
+
+/**
+ * Kurene som spenn på forløpets tidsakse, med doser per dag for ved-behov.
+ *
+ * ## Hvorfor de hører hjemme her
+ *
+ * Nivået er ryggraden fordi det er det eneste som kan si «jeg ble bedre og så
+ * dårligere igjen». Men når kurven snur, sier ingenting HVORFOR — og en kur
+ * startet på dag 4 er den mest sannsynlige forklaringen som finnes. Markøren er
+ * hele poenget; vi uttaler oss aldri om årsaken.
+ *
+ * ## Dagens dag holdes utenfor doseTELLINGEN
+ *
+ * Samme regel som `accumulates` på skritt: doser akkumulerer fra midnatt, så
+ * kl. 08 er dagens teller på 0 av det som kanskje blir 4 — og en 0 i kurven er
+ * en falsk bunn, ikke en dag du klarte deg uten. Kortet på Helse viser dagens
+ * teller live, fordi det spør «har jeg tatt den i dag»; raden spør om mønsteret.
+ * To ulike spørsmål om de samme radene.
+ *
+ * Kuren SELV strekker seg til og med i dag — det er en dag du går på den,
+ * uavhengig av om du har tatt dagens dose.
+ */
+export function buildMedicationBars(
+	medications: readonly Medication[],
+	doses: readonly MedicationDose[],
+	window: EpisodeWindow
+): MedicationBar[] {
+	if (window.days.length === 0) return [];
+	const dayKeys = window.days.map((d) => d.day);
+	const first = dayKeys[0]!;
+	const last = dayKeys[dayKeys.length - 1]!;
+	const firstNum = dayNumber(first);
+
+	const bars: MedicationBar[] = [];
+	for (const med of medications) {
+		if (!isDayKey(med.startDate)) continue;
+		const end = med.endDate ?? last;
+		if (med.startDate > last || end < first) continue;
+
+		const resolved = resolveMedication(med, window.today);
+		const counts = resolved.tracksDoses ? dosesPerDay(doses, med, dayKeys) : null;
+
+		let todayExcluded = false;
+		const dosesByIndex = dayKeys.map((day) => {
+			if (!counts) return null;
+			if (day === window.today) {
+				// Bare et EKSKLUDERT døgn når dagen faktisk lå inne i kuren; ellers
+				// var den null uansett og fotnoten ville vært en påstand.
+				if (counts.get(day) !== null) todayExcluded = true;
+				return null;
+			}
+			return counts.get(day) ?? null;
+		});
+
+		const measured = dosesByIndex.filter((v): v is number => v !== null);
+
+		bars.push({
+			id: med.id,
+			label: med.name,
+			rhythm: med.rhythm,
+			rhythmText: med.rhythm === 'ved_behov' ? 'ved behov' : describeSchedule(med.times),
+			purpose: med.purpose,
+			fromIndex: Math.max(0, dayNumber(med.startDate) - firstNum),
+			toIndex: Math.min(window.days.length - 1, dayNumber(end) - firstNum),
+			startsBefore: med.startDate < first,
+			endsAfter: end > last,
+			dosesByIndex,
+			peakDoses: measured.length > 0 ? Math.max(...measured) : 0,
+			todayExcluded,
+			text: describeMedication(resolved)
+		});
+	}
+
+	// Ved behov først — de har et tall som beveger seg. Deretter den som varte
+	// lengst i vinduet, som symptombjelkene.
+	return bars.sort((a, b) => {
+		const aDose = a.rhythm === 'ved_behov';
+		const bDose = b.rhythm === 'ved_behov';
+		if (aDose !== bDose) return aDose ? -1 : 1;
+		return b.toIndex - b.fromIndex - (a.toIndex - a.fromIndex);
+	});
+}
+
 /* ── Overskriften ────────────────────────────────────────────────────── */
 
 /**
@@ -795,6 +913,11 @@ export interface SickEpisode {
 	headline: string;
 	tracks: EpisodeTrack[];
 	symptoms: SymptomBar[];
+	/**
+	 * Kurene som spenn på samme tidsakse — hva som ble GJORT, ved siden av hva
+	 * som skjedde. Aldri en dom om hvorvidt de virket.
+	 */
+	medications: MedicationBar[];
 	/** Selvrapporterte nivåer — ryggraden i forløpet. */
 	levels: LevelObservation[];
 	levelText: string | null;

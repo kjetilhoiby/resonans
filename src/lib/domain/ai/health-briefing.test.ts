@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildHealthBriefing,
+	describeSick,
 	describeStreaks,
 	describeTraining,
 	describeWaist,
@@ -269,7 +270,7 @@ describe('buildHealthBriefing', () => {
 			weight,
 			training,
 			streaks: [streak()],
-			goals: [goal()], sick: null, symptoms: null, temperature: null
+			goals: [goal()], sick: null, symptoms: null, temperature: null, medications: []
 		});
 		expect(text).toContain('--- HELSE: HVOR BRUKEREN STÅR NÅ ---');
 		expect(text).toContain('VEKT:');
@@ -281,12 +282,12 @@ describe('buildHealthBriefing', () => {
 
 	it('sier at briefingen er et utsnitt', () => {
 		// Uten denne setningen slutter modellen å hente historikk den trenger.
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null, medications: [] });
 		expect(text).toContain('UTSNITT');
 	});
 
 	it('dropper seksjoner uten innhold framfor tomme overskrifter', () => {
-		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null });
+		const text = buildHealthBriefing({ weight, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null, medications: [] });
 		expect(text).toContain('VEKT:');
 		expect(text).not.toContain('TRENING:');
 		expect(text).not.toContain('STREAKS:');
@@ -295,7 +296,7 @@ describe('buildHealthBriefing', () => {
 
 	it('gir tom streng når det ikke er noe å si', () => {
 		// En overskrift uten innhold ser ut som at data mangler.
-		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null })).toBe('');
+		expect(buildHealthBriefing({ weight: null, training: null, streaks: [], goals: [], sick: null, symptoms: null, temperature: null, medications: [] })).toBe('');
 	});
 
 	it('tar med målene med progresjon og pause', () => {
@@ -304,7 +305,7 @@ describe('buildHealthBriefing', () => {
 			training: null,
 			streaks: [],
 			goals: [goal(), goal({ title: 'Løpe 5 km under 25 min', progressText: null, paused: true })],
-			sick: null, symptoms: null, temperature: null
+			sick: null, symptoms: null, temperature: null, medications: []
 		});
 		expect(text).toContain('4,4 kg igjen');
 		expect(text).toContain('83 dager igjen');
@@ -319,7 +320,7 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [],
-			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)', symptoms: null, temperature: null
+			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)', symptoms: null, temperature: null, medications: []
 		});
 		expect(text).toContain('SYKDOM:');
 		expect(text).toContain('Syk siden 1. sep');
@@ -331,7 +332,7 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [],
-			sick: 'Syk 1.–3. sep (3 dager)', symptoms: null, temperature: null
+			sick: 'Syk 1.–3. sep (3 dager)', symptoms: null, temperature: null, medications: []
 		});
 		expect(text).toContain('Streaks er pauset');
 		expect(text).toContain('ikke som sviktende rytme');
@@ -345,7 +346,7 @@ describe('buildHealthBriefing — sykdom', () => {
 			training: null,
 			streaks: [],
 			goals: [goal()],
-			sick: null, symptoms: null, temperature: null
+			sick: null, symptoms: null, temperature: null, medications: []
 		});
 		expect(text).not.toContain('SYKDOM');
 	});
@@ -360,6 +361,7 @@ describe('buildHealthBriefing — symptomer og temperatur', () => {
 			goals: [],
 			sick: 'Syk siden 1. sep (3 dager, ingen sluttdato satt)',
 			symptoms: null,
+			medications: [],
 			temperature: null,
 			...over
 		});
@@ -398,6 +400,7 @@ describe('buildHealthBriefing — symptomer og temperatur', () => {
 			goals: [goal()],
 			sick: null,
 			symptoms: 'ømt kne (litt)',
+			medications: [],
 			temperature: null
 		});
 		expect(text).not.toContain('SYKDOM');
@@ -480,10 +483,51 @@ describe('describeWaist', () => {
 			goals: [],
 			sick: null,
 			symptoms: null,
+			medications: [],
 			temperature: null
 		});
 		const vekt = text.split('VEKT:')[1] ?? '';
 		expect(vekt).toContain('Livvidde:');
 		expect(text).not.toContain('LIVVIDDE:');
+	});
+});
+
+describe('medisiner i briefingen', () => {
+	const lines = () =>
+		describeSick('Syk siden 1. sep (3 dager, ingen sluttdato satt)', null, null, [
+			'Amoksicillin 500 mg — 3 × daglig siden 14. sep (4 dager)',
+			'Paracet — ved behov siden 10. sep (8 dager)'
+		]);
+
+	it('gjengir kurene som brukerens egen registrering', () => {
+		const text = lines().join('\n');
+		expect(text).toContain('Medisiner brukeren selv har registrert');
+		expect(text).toContain('Amoksicillin 500 mg');
+		expect(text).toContain('Paracet');
+	});
+
+	it('forbyr eksplisitt å si om en kur virker', () => {
+		/*
+		 * Dette er den skarpeste grensa i hele briefingen, og grunnen er
+		 * statistisk framfor forsiktig: et forløp går over av seg selv, så ALT som
+		 * ble startet underveis ser virksomt ut. n = 1, ingen kontroll. Sier
+		 * modellen «antibiotikaen virker», har den påstått noe dataene ikke kan
+		 * bære — og det leses som et medisinsk råd.
+		 */
+		const text = lines().join('\n');
+		expect(text).toContain('Si ALDRI om en medisin virker');
+		expect(text).toContain('et forløp går over av seg selv');
+		expect(text).toMatch(/[Dd]osering/);
+	});
+
+	it('tolkningsforbudet nevner medisinene sammen med symptomene', () => {
+		expect(lines().join('\n')).toContain('Symptomene, temperaturen og medisinene');
+	});
+
+	it('uten medisiner sies ingenting om dem', () => {
+		const text = describeSick('Syk siden 1. sep', null, null, []).join('\n');
+		expect(text).not.toContain('Medisiner brukeren');
+		// Ingen tom rubrikk, og ingen regel om noe som ikke finnes.
+		expect(text).not.toContain('Si ALDRI om en medisin');
 	});
 });

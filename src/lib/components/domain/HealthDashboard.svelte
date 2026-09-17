@@ -7,6 +7,7 @@
 	import HealthSubthemeStrip from './health/HealthSubthemeStrip.svelte';
 	import HealthSignalSection from './health/HealthSignalSection.svelte';
 	import SickStatusCard from './health/SickStatusCard.svelte';
+	import MedicationCard from './health/MedicationCard.svelte';
 	import type { SubthemeTile } from '$lib/domain/health/subtheme-tiles';
 	import type { PresentedSignal } from '$lib/domain/health/signal-presentation';
 	import {
@@ -176,6 +177,11 @@
 	     data — én ekstra spørring bare når mortemaet er åpent, framfor å legge
 	     den i sidelasteren for alle helseflatene. -->
 	<SickStatusCard />
+
+	<!-- Medisiner står rett under sykestatusen, ikke inni den: en kur overlever
+	     perioden, og en fast medisin finnes når du ellers er frisk — akkurat som
+	     et symptom. Kortet henter sitt eget data, som sykekortet. -->
+	<MedicationCard />
 
 	<HealthProgramCard {activeProgram} {todaySession} loading={programWidgetLoading} />
 

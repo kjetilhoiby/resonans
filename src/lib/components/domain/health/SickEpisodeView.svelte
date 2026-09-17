@@ -176,9 +176,73 @@
 		{/if}
 	</section>
 
+	{#if episode.medications.length > 0}
+		<section class="blokk">
+			<SectionLabel>Medisiner</SectionLabel>
+
+			<ul class="symptomer">
+				{#each episode.medications as bar (bar.id)}
+					<li>
+						<div class="symptom-topp">
+							<span class="symptom-navn">
+								{bar.label}
+								{#if bar.purpose}<span class="merke">{bar.purpose}</span>{/if}
+							</span>
+							<span class="symptom-tekst">{bar.text}</span>
+						</div>
+						<div class="spor spor--medisin">
+							<div
+								class="bjelke bjelke--kur"
+								class:apen-start={bar.startsBefore}
+								class:apen-slutt={bar.endsAfter}
+								style="left: {pct(bar.fromIndex)}%; width: {Math.max(
+									1.5,
+									pct(bar.toIndex) - pct(bar.fromIndex)
+								)}%"
+							></div>
+							<!--
+								Ved behov: dosene per dag oppå kuren. Dette er det ene tallet her
+								som er ekte data — «fire ganger mandag, én gang fredag» — og det
+								er derfor det tegnes på samme akse som nivået rett over.
+
+								En dag INNE i kuren uten doser er en dag du ikke trengte den, og
+								den skal være synlig som et tomrom. Utenfor kuren er verdien null
+								og det tegnes ingenting.
+							-->
+							{#if bar.peakDoses > 0}
+								{#each bar.dosesByIndex as count, i (i)}
+									{#if count !== null && count > 0}
+										<div
+											class="dose"
+											style="left: {pct(i)}%; height: {Math.round(
+												(count / bar.peakDoses) * 100
+											)}%"
+											title="{count} {count === 1 ? 'dose' : 'doser'}"
+										></div>
+									{/if}
+								{/each}
+							{/if}
+						</div>
+					</li>
+				{/each}
+			</ul>
+			<p class="fot">
+				Bredden er dagene kuren varte. For medisiner du tar ved behov er søylene antall
+				doser per dag — høyest søyle er {episode.medications.find((m) => m.peakDoses > 0)
+					?.peakDoses ?? 0} på én dag.{#if episode.medications.some((m) => m.todayExcluded)}
+					I dag er ikke med: dosene telles gjennom døgnet, så dagen må være omme.{/if}
+			</p>
+			<p class="fot">
+				Kurene står her fordi de deler tidsakse med resten. Flaten sier når noe ble
+				startet og sluttet — den sier ingenting om hva det gjorde.
+			</p>
+		</section>
+	{/if}
+
 	<p class="ansvar">
 		Loggen beskriver, den vurderer ikke. Ingen av tallene her er en diagnose eller et
-		grunnlag for en.
+		grunnlag for en. En bedring som faller sammen med en kur er ikke et bevis på at kuren
+		er grunnen — et forløp går også over av seg selv.
 	</p>
 </div>
 
@@ -346,6 +410,26 @@
 		height: 10px;
 		border-radius: 5px;
 		background: var(--accent-muted);
+	}
+
+	/* Kuren er kromafritt dempet: den er kontekst for radene over, ikke et signal
+	   i seg selv, og en kulør ville lest som en dom om behandlingen. */
+	.bjelke--kur {
+		background: rgba(160, 170, 190, 0.22);
+		opacity: 1;
+	}
+	/* Høyere spor enn symptombjelkene: her bærer HØYDEN et tall, og ti piksler
+	   kan ikke skille tre doser fra fire. Bredden er fortsatt den samme
+	   tidsaksen, så radene ligger på samme dato-piksel som resten. */
+	.spor--medisin { height: 22px; }
+	/* Dosene oppå kuren. Forankret i bunnen, så høyden leses som en mengde. */
+	.dose {
+		position: absolute;
+		bottom: 0;
+		width: 3px;
+		min-height: 2px;
+		border-radius: 1px;
+		background: var(--accent-primary, #4a7fb5);
 	}
 
 	/* Åpen kant = symptomet fortsetter utenfor vinduet. */
