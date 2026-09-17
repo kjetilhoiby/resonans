@@ -3,7 +3,8 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { getEvent, setEventTickets } from '$lib/server/events/event-store';
 import { readTicketFile, toTicketFile } from '$lib/server/events/ticket-reader';
-import { uploadAndExtractAttachment } from '$lib/server/attachment-extract';
+import { detectAttachmentKind, uploadAndExtractAttachment } from '$lib/server/attachment-extract';
+import { uploadTicketImage } from '$lib/server/events/ticket-upload';
 
 /**
  * Legg en billett på et arrangement som alt finnes.
@@ -29,13 +30,20 @@ export const POST: RequestHandler = async ({ request, locals, params, url }) => 
 		if (!(file instanceof File)) return json({ error: 'Ingen fil mottatt.' }, { status: 400 });
 
 		if (url.searchParams.get('les') === '1') {
-			const { ticket, draft } = await readTicketFile(file);
-			const updated = await setEventTickets(userId, params.id, [...event.tickets, ticket]);
+			const { tickets, draft } = await readTicketFile(file);
+			const updated = await setEventTickets(userId, params.id, [...event.tickets, ...tickets]);
 			return json({ event: updated, draft });
 		}
 
-		const { attachment } = await uploadAndExtractAttachment(file, '', 'file');
-		const updated = await setEventTickets(userId, params.id, [...event.tickets, toTicketFile(attachment)]);
+		// Uten lesing: bilder skal fortsatt opp i FULL oppløsning. Den generiske
+		// vedleggsveien skalerer til 1600 px og ødelegger strekkoden — se
+		// `$lib/domain/events/ticket-image.ts`.
+		const added =
+			detectAttachmentKind(file) === 'image'
+				? (await uploadTicketImage(file)).ticket
+				: toTicketFile((await uploadAndExtractAttachment(file, '', 'file')).attachment);
+
+		const updated = await setEventTickets(userId, params.id, [...event.tickets, added]);
 		return json({ event: updated, draft: null });
 	} catch (error) {
 		console.error('[billett] opplasting feilet:', error);

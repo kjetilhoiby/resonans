@@ -12,6 +12,7 @@ import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { defaultPrep, normalizePrep } from '$lib/domain/events/prep';
 import { normalizeEventInput, type EventInput, type ValidationResult } from '$lib/domain/events/event-input';
 import type { EventRecord } from '$lib/domain/events/event-record';
+import { ticketFullUrl, ticketThumbUrl } from '$lib/server/events/ticket-upload';
 
 export type { EventInput, ValidationResult, EventRecord };
 
@@ -33,7 +34,12 @@ function toRecord(row: Row): EventRecord {
 		ticketCount: row.ticketCount,
 		bookingReference: row.bookingReference,
 		notes: row.notes,
-		tickets: normalizeTickets(row.tickets),
+		ticketUrl: row.ticketUrl,
+		tickets: normalizeTickets(row.tickets).map((ticket) => ({
+			...ticket,
+			thumbUrl: ticketThumbUrl(ticket),
+			fullUrl: ticketFullUrl(ticket)
+		})),
 		prep: normalizePrep(row.prep),
 		extractionSource: row.extractionSource,
 		themeId: row.themeId,
@@ -56,10 +62,26 @@ export function normalizeTickets(value: unknown): EventTicketFile[] {
 			kind: t.kind === 'image' || t.kind === 'document' ? t.kind : 'other',
 			name: typeof t.name === 'string' ? t.name : 'billett',
 			mimeType: typeof t.mimeType === 'string' ? t.mimeType : '',
-			addedAt: typeof t.addedAt === 'string' ? t.addedAt : new Date().toISOString()
+			addedAt: typeof t.addedAt === 'string' ? t.addedAt : new Date().toISOString(),
+			// Utsnittet må overleve en runde gjennom basen. Lista er en hviteliste
+			// (som `toPublicCronRun`), så et nytt felt må legges til HER — glemmes
+			// det, faller oppdelingen stille tilbake til hele siden.
+			region: normalizeRegion(t.region),
+			label: typeof t.label === 'string' && t.label ? t.label : null
 		});
 	}
 	return out;
+}
+
+/** Et lagret utsnitt, eller null. Verdier utenfor bildet er ikke et utsnitt. */
+function normalizeRegion(value: unknown): { top: number; height: number } | null {
+	if (!value || typeof value !== 'object') return null;
+	const r = value as Record<string, unknown>;
+	const top = typeof r.top === 'number' ? r.top : NaN;
+	const height = typeof r.height === 'number' ? r.height : NaN;
+	if (!Number.isFinite(top) || !Number.isFinite(height)) return null;
+	if (top < 0 || height <= 0 || top + height > 1.0001) return null;
+	return { top, height };
 }
 
 export async function listEvents(userId: string): Promise<EventRecord[]> {

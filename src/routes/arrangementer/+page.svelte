@@ -48,15 +48,18 @@
 		ticketCount: string;
 		bookingReference: string;
 		notes: string;
+		ticketUrl: string;
 	};
 
 	const EMPTY: Draft = {
 		id: null, title: '', kind: '', eventDate: '', endDate: '', startTime: '', doorsTime: '',
-		venue: '', address: '', entrance: '', seat: '', ticketCount: '', bookingReference: '', notes: ''
+		venue: '', address: '', entrance: '', seat: '', ticketCount: '', bookingReference: '', notes: '', ticketUrl: ''
 	};
 
 	let form = $state<Draft | null>(null);
-	let formTicket = $state<{ url: string; publicId: string; kind: string; name: string; mimeType: string; addedAt: string } | null>(null);
+	// Flertall: én billettside kan inneholde én billett per person, og lesingen
+	// deler den da i én oppføring per billett (samme opplasting, ulike utsnitt).
+	let formTickets = $state<Array<Record<string, unknown>>>([]);
 	let formExtracted = $state<Record<string, unknown> | null>(null);
 	let formSource = $state<string>('manual');
 	let formWarnings = $state<string[]>([]);
@@ -67,7 +70,7 @@
 
 	function openNew() {
 		form = { ...EMPTY };
-		formTicket = null;
+		formTickets = [];
 		formExtracted = null;
 		formSource = 'manual';
 		formWarnings = [];
@@ -89,9 +92,10 @@
 			seat: event.seat ?? '',
 			ticketCount: event.ticketCount ? String(event.ticketCount) : '',
 			bookingReference: event.bookingReference ?? '',
-			notes: event.notes ?? ''
+			notes: event.notes ?? '',
+			ticketUrl: event.ticketUrl ?? ''
 		};
-		formTicket = null;
+		formTickets = [];
 		formExtracted = null;
 		formSource = event.extractionSource ?? 'manual';
 		formWarnings = [];
@@ -133,11 +137,12 @@
 				seat: draft.seat ?? '',
 				ticketCount: draft.ticketCount ? String(draft.ticketCount) : '',
 				bookingReference: draft.bookingReference ?? '',
-				notes: draft.notes ?? ''
+				notes: draft.notes ?? '',
+				ticketUrl: ''
 			};
-			formTicket = payload.ticket ?? null;
+			formTickets = payload.tickets ?? [];
 			formExtracted = payload.raw ?? null;
-			formSource = payload.ticket?.kind === 'image' ? 'image' : 'pdf';
+			formSource = formTickets[0]?.kind === 'image' ? 'image' : 'pdf';
 			formWarnings = draft.warnings ?? [];
 		} catch {
 			error = 'Klarte ikke å lese billetten.';
@@ -165,7 +170,8 @@
 			seat: form.seat || null,
 			ticketCount: form.ticketCount || null,
 			bookingReference: form.bookingReference || null,
-			notes: form.notes || null
+			notes: form.notes || null,
+			ticketUrl: form.ticketUrl || null
 		};
 
 		try {
@@ -179,7 +185,7 @@
 				if (!res.ok) { error = body.error ?? 'Klarte ikke å lagre.'; return; }
 				events = events.map((e) => (e.id === body.event.id ? body.event : e));
 			} else {
-				if (formTicket) payload.tickets = [formTicket];
+				if (formTickets.length > 0) payload.tickets = formTickets;
 				if (formExtracted) payload.extracted = formExtracted;
 				payload.extractionSource = formSource;
 				const res = await fetch('/api/arrangementer', {
@@ -272,14 +278,18 @@
 			<section class="form-card">
 				<h2>{form.id ? 'Rediger arrangement' : 'Nytt arrangement'}</h2>
 
-				{#if formTicket}
-					<div class="form-ticket">
-						{#if formTicket.kind === 'image'}
-							<img src={formTicket.url} alt="Billett" loading="lazy" />
-						{:else}
-							<span class="doc-badge">📄</span>
-						{/if}
-						<span class="form-ticket-name">{formTicket.name}</span>
+				{#if formTickets.length > 0}
+					<div class="form-tickets">
+						{#each formTickets as ticket, i (i)}
+							<figure class="form-ticket">
+								{#if ticket.kind === 'image'}
+									<img src={String(ticket.thumbUrl ?? ticket.url)} alt="Billett" loading="lazy" />
+								{:else}
+									<span class="doc-badge">📄</span>
+								{/if}
+								<figcaption>{String(ticket.label ?? ticket.name ?? 'Billett')}</figcaption>
+							</figure>
+						{/each}
 					</div>
 				{/if}
 
@@ -358,6 +368,16 @@
 				</div>
 
 				<label class="field">
+					<span>Lenke til billetten</span>
+					<Input
+						bind:value={form.ticketUrl}
+						type="url"
+						placeholder="https://…"
+						dataTrack="arrangementer:billettlenke"
+					/>
+				</label>
+
+				<label class="field">
 					<span>Notat</span>
 					<Textarea bind:value={form.notes} rows={2} placeholder="Ta med legitimasjon" />
 				</label>
@@ -416,16 +436,29 @@
 
 						{#if event.tickets.length > 0}
 							<div class="tickets">
-								{#each event.tickets as ticket (ticket.url)}
-									<a class="ticket" href={ticket.url} target="_blank" rel="noopener" title={ticket.name}>
+								{#each event.tickets as ticket, i (ticket.fullUrl + i)}
+									<a
+										class="ticket"
+										href={ticket.fullUrl}
+										target="_blank"
+										rel="noopener"
+										title={ticket.label ?? ticket.name}
+									>
 										{#if ticket.kind === 'image'}
-											<img src={ticket.url} alt="Billett" loading="lazy" />
+											<img src={ticket.thumbUrl} alt={ticket.label ?? 'Billett'} loading="lazy" />
 										{:else}
 											<span class="doc-badge">📄</span>
 										{/if}
+										{#if ticket.label}<span class="ticket-label">{ticket.label}</span>{/if}
 									</a>
 								{/each}
 							</div>
+						{/if}
+
+						{#if event.ticketUrl}
+							<a class="ticket-link" href={event.ticketUrl} target="_blank" rel="noopener">
+								Åpne billetten hos utstederen →
+							</a>
 						{/if}
 
 						<div class="prep">
@@ -549,20 +582,31 @@
 		font-weight: 600;
 		color: var(--text-primary);
 	}
-	.form-ticket {
+	.form-tickets {
 		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		font-size: 0.78rem;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.form-ticket {
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.72rem;
 		color: var(--text-secondary);
+		max-width: 80px;
 	}
 	.form-ticket img {
-		width: 56px;
-		height: 56px;
+		width: 80px;
+		/* Billetter er høye. En kvadratisk `object-fit: cover` ville kuttet bort
+		   strekkoden, altså nøyaktig det man ser etter i en miniatyr. */
+		height: 104px;
 		object-fit: cover;
+		object-position: top;
 		border-radius: 8px;
+		background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
 	}
-	.form-ticket-name {
+	.form-ticket figcaption {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -689,12 +733,32 @@
 		gap: 0.4rem;
 		flex-wrap: wrap;
 	}
+	.ticket {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		text-decoration: none;
+	}
 	.ticket img {
-		width: 60px;
-		height: 60px;
+		width: 64px;
+		height: 84px;
 		object-fit: cover;
+		object-position: top;
 		border-radius: 8px;
 		display: block;
+		background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+	}
+	.ticket-label {
+		font-size: 0.66rem;
+		color: var(--text-secondary);
+	}
+	.ticket-link {
+		font-size: 0.78rem;
+		color: #b6acff;
+		text-decoration: none;
+	}
+	.ticket-link:hover {
+		text-decoration: underline;
 	}
 	.doc-badge {
 		display: inline-flex;
