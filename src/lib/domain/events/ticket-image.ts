@@ -140,7 +140,7 @@ export function regionsFromModel(value: unknown): ImageRegion[] {
 	// Er noe over 1, kan ingenting være en andel: hele svaret er i prosent.
 	const divisor = raw.some((r) => r.top > 1 || r.span > 1) ? 100 : 1;
 
-	const out: ImageRegion[] = [];
+	const parsed: ImageRegion[] = [];
 	for (const r of raw) {
 		const top = r.top / divisor;
 		let height = r.spanIsBottom ? r.span / divisor - top : r.span / divisor;
@@ -148,12 +148,80 @@ export function regionsFromModel(value: unknown): ImageRegion[] {
 		if (top < 0 || top >= 1 || height < MIN_REGION_HEIGHT) return [];
 		if (top + height > 1) height = 1 - top;
 
-		out.push(padRegion({ top: round(top), height: round(height) }));
+		parsed.push({ top: round(top), height: round(height) });
 	}
 
 	// Sorteres ovenfra og ned, så «Billett 1» er den øverste på siden.
-	out.sort((a, b) => a.top - b.top);
-	return out;
+	parsed.sort((a, b) => a.top - b.top);
+
+	// Rettes opp FØR polstring: polstringen er et slingringsmonn, ikke en
+	// korreksjon, og å polstre et feil utsnitt gir bare et større feil utsnitt.
+	return regularizeRegions(parsed).map((region) => padRegion(region));
+}
+
+/**
+ * Hvor ulike avstandene mellom billettene kan være før vi slutter å tro at
+ * siden er en gjentakelse.
+ *
+ * Romslig, fordi det er anslagene som spriker — ikke sidene. En ekte
+ * billettside er maskinsatt og helt regelmessig; kommer avstandene innenfor en
+ * tredjedel av hverandre, er det den samme blokka om igjen.
+ */
+export const UNIFORM_STRIDE_TOLERANCE = 0.35;
+
+function median(values: number[]): number {
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Gi alle billettene på en gjentakende side SAMME høyde.
+ *
+ * En billettside med tre billetter er tre IDENTISKE blokker — samme logo, samme
+ * ramme, samme høyde. Ulike høyder i modellens svar er derfor et anslag som
+ * skled, ikke en egenskap ved siden, og lista kan rette seg selv: avstanden
+ * mellom naboene måler blokka, og medianen av dem tåler at én er feil.
+ *
+ * Målt 17. september 2026 på en Cosmopolite-side med tre billetter: de to
+ * første utsnittene traff, det tredje var for KORT og endte akkurat i det
+ * billettboksen begynte — altså den ene feilen som gjør et utsnitt verdiløst.
+ * Toppene lå riktig; det var høyden som manglet.
+ *
+ * Er avstandene for ujevne til at siden ER en gjentakelse, røres ingenting:
+ * regelen henter sin styrke fra strukturen, og uten strukturen har den ingen.
+ */
+export function regularizeRegions(regions: ImageRegion[]): ImageRegion[] {
+	if (regions.length < 2) return regions;
+
+	const tops = regions.map((r) => r.top);
+	const strides: number[] = [];
+	for (let i = 1; i < tops.length; i++) strides.push(tops[i] - tops[i - 1]);
+
+	const stride = median(strides);
+	if (stride < MIN_REGION_HEIGHT) return regions;
+	if (strides.some((s) => Math.abs(s - stride) > stride * UNIFORM_STRIDE_TOLERANCE)) {
+		return regions;
+	}
+
+	// Ankeret er medianen av hvor hver billett SIER at rutenettet begynner, ikke
+	// den første toppen: er nettopp den ene bommet, ville hele rutenettet arvet
+	// bommen.
+	const anchor = Math.max(0, median(tops.map((top, i) => top - i * stride)));
+
+	// Høyden er hele den gjentakende enheten, ikke den rapporterte boksen.
+	// Utsnittene ligger da kant i kant og dekker siden uten hull — og et hull er
+	// nøyaktig der en billett forsvinner.
+	const height = Math.min(1, stride);
+
+	return regions.map((_, i) => {
+		let top = anchor + i * height;
+		// Siste utsnitt forankres i BUNNEN når det ellers ville stukket utenfor.
+		// Samme regel som `planTicketSlices`, og av samme grunn: klippet det mot
+		// kanten, ble nettopp den siste billetten kortet av.
+		if (top + height > 1) top = 1 - height;
+		return { top: round(Math.max(0, top)), height: round(height) };
+	});
 }
 
 /** Et endelig, ikke-negativt tall, eller null. Prosenttegn tolereres. */

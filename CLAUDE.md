@@ -3228,6 +3228,20 @@ av billetten i `ticket-reader.ts`, flaten `/arrangementer`.
 - **Utsnitt polstres, fordi feilene ikke er symmetriske.** Et utsnitt som tar med
   litt for mye er fortsatt en billett man kan vise i døra; ett som kutter
   strekkoden er verdiløst.
+- **HØYDEN hentes fra avstanden mellom billettene, aldri fra anslaget**
+  (`regularizeRegions`). Se
+  `docs/changelog/2026-09-17-den-tredje-billetten-ble-kappet.md`. En side med
+  tre billetter er tre IDENTISKE blokker, så ulike høyder er et anslag som
+  skled. Målt 17. september 2026: to utsnitt traff, det tredje var 0,20 mot
+  enhetens 0,33 og endte akkurat der billettboksen begynte. Toppene lå riktig.
+  `height = medianStride` gjør at utsnittene ligger kant i kant og dekker siden
+  uten hull — og et hull er nøyaktig der en billett forsvinner. Ankeret er
+  MEDIANEN av `top_i − i·stride`, ikke den første toppen: er nettopp den ene
+  bommet, ville hele rutenettet arvet bommen. Siste utsnitt forankres i BUNNEN,
+  som i `planTicketSlices`. Rettingen skjer FØR polstringen — polstringen er et
+  slingringsmonn, ikke en korreksjon, og å polstre et feil utsnitt gir bare et
+  større feil utsnitt. **Spriker avstandene mer enn 35 %, røres ingenting:**
+  regelen henter sin styrke fra strukturen, og uten strukturen har den ingen.
 - **`normalizeUrl` er en hviteliste — bare http og https.** `events.ticketUrl`
   kan komme fra et uttrekk av et BILDE, altså fra noe vi ikke kontrollerer, og
   `javascript:` i en `href` kjører i brukerens økt. En denylist må kjenne alle
