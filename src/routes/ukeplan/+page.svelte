@@ -26,7 +26,7 @@
 	import type { AutoCheckPrompt } from '$lib/components/domain/ukeplan/autocheck';
 	import type {
 		SaveState, WeekInfo, ChecklistItem, WeekChecklist, WeekTask, GoalReminder,
-		DayChecklist, EditingItem, DayRoutine, ActiveTrip, SpondEvent
+		DayChecklist, EditingItem, DayRoutine, ActiveTrip, SpondEvent, DayEvent
 	} from '$lib/components/domain/ukeplan/types';
 	import {
 		createChecklistItem as _createItem,
@@ -65,6 +65,7 @@
 			/** Sykedager i uka. Uhakede rutiner på disse dagene er unnskyldt, ikke uteblitt. */
 			sickDays?: string[];
 			spondEventsByDay: Record<string, SpondEvent[]>;
+			eventsByDay: Record<string, DayEvent[]>;
 			previousWeekSummary: {
 				weekKey: string; note: string; reflection: string;
 				carryoverItems: string[]; incompleteTasks: string[];
@@ -633,7 +634,7 @@
 
 	<DaySection
 		weekDays={data.week.days} {selectedDayIso} {todayIso} {dayChecklistsState} {dayRoutinesState} {dayHeadlinesState}
-		spondEventsByDay={data.spondEventsByDay} {tripDayEmoji} {tripDayWeather} {homeDayWeather} {dayCloseMessage}
+		spondEventsByDay={data.spondEventsByDay} eventsByDay={data.eventsByDay} {tripDayEmoji} {tripDayWeather} {homeDayWeather} {dayCloseMessage}
 		saveStateDayItems={saveStates.dayItems} saveStateDayNote={saveStates.dayNote} {editingItem}
 		{expandedDayParentIds} {expandedRoutineIds} onSetSelectedDay={setSelectedDay}
 		onToggleChecklistItem={toggleChecklistItem} onDeleteChecklistItem={deleteChecklistItem}

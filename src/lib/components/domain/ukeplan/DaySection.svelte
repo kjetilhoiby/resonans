@@ -5,7 +5,9 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { sortByTime, sortByStatus, activityTypeEmoji } from '$lib/utils/checklist-group';
-	import type { WeekDay, ChecklistItem, DayChecklist, EditingItem, SaveState, SpondEvent, DayRoutine } from './types';
+	import type { WeekDay, ChecklistItem, DayChecklist, EditingItem, SaveState, SpondEvent, DayRoutine, DayEvent } from './types';
+	import { eventKindMeta, formatEventPlace, formatEventTime } from '$lib/domain/events/event-fields';
+	import { describePrep } from '$lib/domain/events/prep';
 	import type { WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 
 	interface DayWeatherSummary { emoji: string; tempMax: number; periods: WeatherPeriod[] }
@@ -23,6 +25,8 @@
 		dayRoutinesState: Record<string, DayRoutine[]>;
 		dayHeadlinesState: Record<string, string>;
 		spondEventsByDay: Record<string, SpondEvent[]>;
+		/** Arrangementer per dag. Et flerdagsarrangement ligger på hver dag det dekker. */
+		eventsByDay?: Record<string, DayEvent[]>;
 		tripDayEmoji: Record<string, string>;
 		tripDayWeather: Record<string, DayWeatherEntry>;
 		homeDayWeather: Record<string, DayWeatherSummary>;
@@ -58,6 +62,7 @@
 		dayRoutinesState,
 		dayHeadlinesState,
 		spondEventsByDay,
+		eventsByDay = {},
 		tripDayEmoji,
 		tripDayWeather,
 		homeDayWeather,
@@ -98,6 +103,7 @@
 	const sortedDayItems = $derived(selectedDayChecklist ? sortByStatus(sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId))) : []);
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 	const selectedDaySpondEvents = $derived(spondEventsByDay?.[selectedDayIso] ?? []);
+	const selectedDayEvents = $derived(eventsByDay?.[selectedDayIso] ?? []);
 
 	const sortedDayEntries = $derived.by((): DayEntry[] => {
 		const entries: Array<DayEntry & { sortKey: number }> = [];
@@ -272,6 +278,36 @@
 	</div>
 
 	<div class="wp-notes-form">
+		<!--
+		  Arrangementer står ØVERST og med mer plass enn Spond-linjene under: en
+		  konsert med billett er dagens ankerpunkt, ikke en linje blant flere.
+		  Forberedelsene vises som tekst her og hakes av på /arrangementer —
+		  dagen den skjer er for sent å ordne barnevakt.
+		-->
+		{#if selectedDayEvents.length > 0}
+			<ul class="wp-event-list">
+				{#each selectedDayEvents as event (event.id)}
+					{@const meta = eventKindMeta(event.kind)}
+					{@const time = formatEventTime(event)}
+					{@const place = formatEventPlace(event)}
+					{@const prepText = describePrep(event.prep)}
+					<li class="wp-event-item" class:cancelled={event.status === 'cancelled'}>
+						<span class="wp-event-emoji" aria-hidden="true">{meta.emoji}</span>
+						<a class="wp-event-body" href="/arrangementer">
+							<span class="wp-event-top">
+								{#if time}<span class="wp-event-time">{time}</span>{/if}
+								<span class="wp-event-name">{event.title}</span>
+							</span>
+							{#if place}<span class="wp-event-place">{place}</span>{/if}
+							{#if prepText && prepText !== 'Alt klart'}
+								<span class="wp-event-prep">{prepText}</span>
+							{/if}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
 		{#if selectedDaySpondEvents.length > 0}
 			<ul class="wp-spond-list">
 				{#each selectedDaySpondEvents as event}
@@ -533,6 +569,66 @@
 		font-weight: 700;
 	}
 
+	.wp-event-list {
+		margin: 0 0 0.75rem;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+	.wp-event-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.45rem 0.55rem;
+		border-radius: 10px;
+		background: rgba(155, 143, 245, 0.1);
+		border-left: 2px solid #9b8ff5;
+	}
+	.wp-event-item.cancelled {
+		opacity: 0.4;
+		text-decoration: line-through;
+	}
+	.wp-event-emoji {
+		font-size: 0.95rem;
+		line-height: 1.35;
+	}
+	.wp-event-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		min-width: 0;
+		flex: 1;
+		text-decoration: none;
+		color: inherit;
+	}
+	.wp-event-top {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+	.wp-event-time {
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+		color: #b6acff;
+		white-space: nowrap;
+	}
+	.wp-event-name {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+	.wp-event-place,
+	.wp-event-prep {
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		line-height: 1.35;
+	}
+	.wp-event-prep {
+		color: #fcd34d;
+	}
 	.wp-spond-list {
 		margin: 0 0 0.9rem;
 		padding: 0;

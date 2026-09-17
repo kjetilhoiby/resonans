@@ -133,6 +133,28 @@ export interface SpondEvent {
 	spondEventId: string | null;
 }
 
+/**
+ * Et arrangement slik dagsvisningen trenger det.
+ *
+ * Formen er `EventRecord` (se `$lib/server/events/event-store`) minus feltene
+ * ingen leser her. Skrevet ut framfor importert fra serverlaget, som resten av
+ * typene i denne fila.
+ */
+export interface DayEvent {
+	id: string;
+	title: string;
+	kind: string | null;
+	eventDate: string;
+	endDate: string | null;
+	startTime: string | null;
+	doorsTime: string | null;
+	venue: string | null;
+	entrance: string | null;
+	seat: string | null;
+	status: string;
+	prep: Array<{ id: string; label: string; done: boolean; doneAt: string | null }>;
+}
+
 export interface DayRoutine {
 	definitionId: string;
 	checklistId: string;

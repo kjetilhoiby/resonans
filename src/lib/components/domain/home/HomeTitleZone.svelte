@@ -38,6 +38,10 @@
 				     videre til prosjektene ligger på /notater. -->
 				<a href="/notater" class="icon-link" aria-label="Notatblokk"><Icon name="file" size={18} /></a>
 				<a href="/funn" class="icon-link" aria-label="Funn"><Icon name="star" size={18} /></a>
+				<!-- Arrangementer: billetter kjøpt i god tid. Ligger her og ikke under
+				     /plan fordi det er en LISTE man åpner for å se hva som kommer, ikke
+				     en fane i planleggingen — og fordi dagsvisningen lenker hit. -->
+				<a href="/arrangementer" class="icon-link" aria-label="Arrangementer"><Icon name="calendar" size={18} /></a>
 				<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 			{/snippet}

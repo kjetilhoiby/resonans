@@ -3335,6 +3335,88 @@ export const findsRelations = relations(finds, ({ one }) => ({
 }));
 
 // ============================================
+// EVENTS — Arrangementer (konsert, teater, kamp)
+// ============================================
+//
+// Ikke en task. Billetten er kjøpt måneder i forveien, datoen er satt av noen
+// andre, og det som faktisk gjenstår er forberedelsene rundt den — transport,
+// barnevakt, overnatting. Et checklist_item med dato kunne ikke bære inngang,
+// sete, billettbilde og et lite sett med egne avkryssinger.
+//
+// NB om tid: `eventDate` er en DATE og `startTime`/`doorsTime` er 'HH:MM' som
+// TEKST — Oslo-veggklokke, aldri UTC-tidsstempler. Samme lærdom som natta som
+// ble delt av UTC-midnatt: en konsert 19:00 lagret som timestamp kan leses ut
+// på feil dato, og billetten sier «19:00».
+
+export interface EventTicketFile {
+	/**
+	 * Originalen, URØRT. Den generiske vedleggsopplastingen skalerer bilder til
+	 * 1600 px på lengste kant, noe som gjør et høyt «hele siden»-skjermbilde til
+	 * ~312×1600 og strekkoden uleselig — se `$lib/domain/events/ticket-image.ts`.
+	 * Billetter lastes derfor opp uten nedskalering, og alle visninger er utsnitt
+	 * utledet av denne via Cloudinary-URL-er.
+	 */
+	url: string;
+	publicId: string;
+	kind: 'image' | 'document' | 'other';
+	name: string;
+	mimeType: string;
+	addedAt: string;
+	/**
+	 * Vannrett utsnitt av bildet, som andeler av full høyde. Satt når én side med
+	 * flere billetter er delt i én oppføring per billett: alle peker på SAMME
+	 * `publicId`, og Cloudinary beskjærer i URL-en. Ingen ekstra opplasting, og
+	 * originalen er alltid intakt om et utsnitt skulle bomme.
+	 */
+	region?: { top: number; height: number } | null;
+	/** «Billett 2 av 3». Null når bildet er hele billetten. */
+	label?: string | null;
+}
+
+export interface EventPrepItem {
+	id: string;
+	label: string;
+	done: boolean;
+	doneAt: string | null;
+	note?: string | null;
+}
+
+export const events = pgTable('events', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	kind: text('kind'), // 'konsert' | 'teater' | 'kino' | 'sport' | 'annet'
+	eventDate: date('event_date').notNull(),
+	endDate: date('end_date'),
+	startTime: text('start_time'),   // 'HH:MM' Oslo, null = tidspunkt ukjent
+	doorsTime: text('doors_time'),   // 'HH:MM' Oslo
+	venue: text('venue'),
+	address: text('address'),
+	entrance: text('entrance'),
+	seat: text('seat'),
+	ticketCount: integer('ticket_count'),
+	bookingReference: text('booking_reference'),
+	notes: text('notes'),
+	/** Lenke til billetten hos utstederen — den levende utgaven ved siden av bildet. */
+	ticketUrl: text('ticket_url'),
+	tickets: jsonb('tickets').default([]).notNull().$type<EventTicketFile[]>(),
+	prep: jsonb('prep').default([]).notNull().$type<EventPrepItem[]>(),
+	extracted: jsonb('extracted').$type<Record<string, unknown> | null>(),
+	extractionSource: text('extraction_source'), // 'image' | 'pdf' | 'text' | 'manual'
+	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
+	status: text('status').notNull().default('planned'), // 'planned' | 'cancelled'
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxEventsUserDate: index('events_user_date_idx').on(table.userId, table.eventDate)
+}));
+
+export const eventsRelations = relations(events, ({ one }) => ({
+	user: one(users, { fields: [events.userId], references: [users.id] }),
+	theme: one(themes, { fields: [events.themeId], references: [themes.id] })
+}));
+
+// ============================================
 // PROCEDURES — Gjenbrukbare oppskrifter/fremgangsmåter
 // ============================================
 
