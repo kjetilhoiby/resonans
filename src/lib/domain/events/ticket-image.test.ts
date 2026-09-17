@@ -6,6 +6,7 @@ import {
 	padRegion,
 	planTicketSlices,
 	regionsFromModel,
+	regularizeRegions,
 	splitByRegions,
 	ticketLabel,
 	worthSplitting
@@ -88,14 +89,18 @@ describe('regionsFromModel', () => {
 
 	it('enheten avgjøres av HELE lista, ikke av det enkelte tallet', () => {
 		// Ett tall over 1 betyr at ingenting kan være en andel: alt er prosent.
+		// Ett utsnitt, så regulariseringen holder seg unna og bare enheten måles.
+		expect(regionsFromModel([{ top: 10, height: 20 }])).toEqual([{ top: 0.07, height: 0.26 }]);
+	});
+
+	it('leser prosent også over flere utsnitt — toppene er det enheten avgjør', () => {
 		const regions = regionsFromModel([
 			{ top: 10, height: 20 },
 			{ top: 40, height: 20 }
 		]);
-		expect(regions).toEqual([
-			{ top: 0.07, height: 0.26 },
-			{ top: 0.37, height: 0.26 }
-		]);
+		// Høydene settes av `regularizeRegions` til den gjentakende enheten (0,3),
+		// ikke av det modellen oppga. Toppene er det enhetsvalget bestemmer.
+		expect(regions.map((r) => r.top)).toEqual([0.07, 0.37]);
 	});
 
 	it('sorterer ovenfra og ned', () => {
@@ -178,5 +183,94 @@ describe('splitByRegions', () => {
 		splitByRegions(base, [{ top: 0.2, height: 0.25 }, { top: 0.5, height: 0.25 }]);
 		expect(base.region).toBeNull();
 		expect(base.label).toBeNull();
+	});
+});
+
+describe('regularizeRegions', () => {
+	it('gir alle utsnitt samme høyde som avstanden mellom dem', () => {
+		// Den målte feilen, 17. september 2026: tre billetter, riktige topper,
+		// men det siste utsnittet var for KORT og endte akkurat der billetten
+		// begynte. Høyden hentes derfor fra avstanden, ikke fra anslaget.
+		const fixed = regularizeRegions([
+			{ top: 0, height: 0.33 },
+			{ top: 0.333, height: 0.33 },
+			{ top: 0.667, height: 0.2 }
+		]);
+		expect(fixed.map((r) => r.height)).toEqual([0.3335, 0.3335, 0.3335]);
+	});
+
+	it('dekker siden uten hull — et hull er der en billett forsvinner', () => {
+		const fixed = regularizeRegions([
+			{ top: 0, height: 0.3 },
+			{ top: 0.333, height: 0.2 },
+			{ top: 0.667, height: 0.15 }
+		]);
+		for (let i = 1; i < fixed.length; i++) {
+			const prevEnd = fixed[i - 1].top + fixed[i - 1].height;
+			expect(fixed[i].top).toBeLessThanOrEqual(prevEnd + 0.0001);
+		}
+	});
+
+	it('holder seg innenfor bildet, og forankrer det siste i bunnen', () => {
+		const fixed = regularizeRegions([
+			{ top: 0.02, height: 0.3 },
+			{ top: 0.35, height: 0.3 },
+			{ top: 0.68, height: 0.3 }
+		]);
+		const last = fixed[fixed.length - 1];
+		expect(last.top + last.height).toBeLessThanOrEqual(1.0001);
+		expect(fixed.every((r) => r.top >= 0)).toBe(true);
+	});
+
+	it('bruker MEDIANEN av ankrene, så én bommet topp ikke drar rutenettet med seg', () => {
+		// Midterste topp er 0,05 for lav. De to andre skal vinne.
+		const fixed = regularizeRegions([
+			{ top: 0.1, height: 0.3 },
+			{ top: 0.35, height: 0.3 },
+			{ top: 0.7, height: 0.3 }
+		]);
+		expect(fixed[0].top).toBeCloseTo(0.1, 2);
+	});
+
+	it('rører ingenting når siden ikke ER en gjentakelse', () => {
+		const uneven = [
+			{ top: 0.05, height: 0.1 },
+			{ top: 0.2, height: 0.1 },
+			{ top: 0.8, height: 0.1 }
+		];
+		expect(regularizeRegions(uneven)).toEqual(uneven);
+	});
+
+	it('rører ikke ett enkelt utsnitt', () => {
+		const one = [{ top: 0.3, height: 0.2 }];
+		expect(regularizeRegions(one)).toEqual(one);
+	});
+
+	it('to billetter regulariseres like godt som tre', () => {
+		const fixed = regularizeRegions([
+			{ top: 0, height: 0.45 },
+			{ top: 0.5, height: 0.2 }
+		]);
+		expect(fixed.map((r) => r.height)).toEqual([0.5, 0.5]);
+		expect(fixed[1].top).toBeCloseTo(0.5, 3);
+	});
+});
+
+describe('regionsFromModel + regularisering', () => {
+	it('retter det avkuttede siste utsnittet ende til ende', () => {
+		const regions = regionsFromModel([
+			{ topPct: 0, bottomPct: 33 },
+			{ topPct: 33.3, bottomPct: 66 },
+			{ topPct: 66.7, bottomPct: 87 }
+		]);
+		expect(regions).toHaveLength(3);
+		// Invarianten som betyr noe: INGEN utsnitt er kortere enn den gjentakende
+		// enheten (~1/3). Det var nettopp det som gjorde det tredje verdiløst.
+		// Høydene er ikke identiske etter polstring, og skal ikke være det —
+		// polstringen klippes mot bildekanten, der det ikke finnes mer å ta med.
+		for (const region of regions) expect(region.height).toBeGreaterThanOrEqual(0.33);
+		// Og det siste når helt ned til bunnen av siden.
+		const last = regions[regions.length - 1];
+		expect(last.top + last.height).toBeGreaterThan(0.97);
 	});
 });
