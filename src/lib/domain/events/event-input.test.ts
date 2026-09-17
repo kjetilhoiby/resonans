@@ -98,3 +98,23 @@ describe('normalizeEventInput — retting', () => {
 		expect(normalizeEventInput({}, opts).ok).toBe(true);
 	});
 });
+
+describe('normalizeEventInput — billettlenke', () => {
+	const opts = { partial: true };
+
+	it('normaliserer og godtar en vanlig lenke', () => {
+		expect(normalizeEventInput({ ticketUrl: 'cosmopolite.no/billett' }, opts).value).toEqual({
+			ticketUrl: 'https://cosmopolite.no/billett'
+		});
+	});
+
+	it('avviser et skjema som ikke hører hjemme i en href', () => {
+		expect(normalizeEventInput({ ticketUrl: 'javascript:alert(1)' }, opts).error).toBe(
+			'Lenka må være en http- eller https-adresse.'
+		);
+	});
+
+	it('tom streng fjerner lenka', () => {
+		expect(normalizeEventInput({ ticketUrl: '' }, opts).value).toEqual({ ticketUrl: null });
+	});
+});

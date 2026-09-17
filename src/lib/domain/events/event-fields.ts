@@ -73,6 +73,29 @@ export function normalizeText(value: unknown, maxLength = 400): string | null {
 	return trimmed.slice(0, maxLength);
 }
 
+/**
+ * En lenke vi tør legge i en `href`.
+ *
+ * BARE http og https. `javascript:` og `data:` i en href kjører i brukerens
+ * økt, og denne verdien kan komme fra et uttrekk av et bilde — altså fra noe vi
+ * ikke kontrollerer. Hviteliste, aldri svarteliste: en denylist over farlige
+ * skjemaer må kjenne dem alle, en allowlist trenger bare kjenne de to vi vil ha.
+ */
+export function normalizeUrl(value: unknown): string | null {
+	const text = normalizeText(value, 2000);
+	if (!text) return null;
+	// Uten skjema er «cosmopolite.no/billett» ikke en gyldig URL for `new URL`,
+	// men det er det brukeren limer inn. Anta https framfor å avvise.
+	const candidate = /^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`;
+	try {
+		const url = new URL(candidate);
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+		return url.toString();
+	} catch {
+		return null;
+	}
+}
+
 export function normalizeTicketCount(value: unknown): number | null {
 	const num = typeof value === 'string' ? Number(value.trim()) : value;
 	if (typeof num !== 'number' || !Number.isFinite(num)) return null;

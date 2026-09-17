@@ -3349,12 +3349,28 @@ export const findsRelations = relations(finds, ({ one }) => ({
 // på feil dato, og billetten sier «19:00».
 
 export interface EventTicketFile {
+	/**
+	 * Originalen, URØRT. Den generiske vedleggsopplastingen skalerer bilder til
+	 * 1600 px på lengste kant, noe som gjør et høyt «hele siden»-skjermbilde til
+	 * ~312×1600 og strekkoden uleselig — se `$lib/domain/events/ticket-image.ts`.
+	 * Billetter lastes derfor opp uten nedskalering, og alle visninger er utsnitt
+	 * utledet av denne via Cloudinary-URL-er.
+	 */
 	url: string;
 	publicId: string;
 	kind: 'image' | 'document' | 'other';
 	name: string;
 	mimeType: string;
 	addedAt: string;
+	/**
+	 * Vannrett utsnitt av bildet, som andeler av full høyde. Satt når én side med
+	 * flere billetter er delt i én oppføring per billett: alle peker på SAMME
+	 * `publicId`, og Cloudinary beskjærer i URL-en. Ingen ekstra opplasting, og
+	 * originalen er alltid intakt om et utsnitt skulle bomme.
+	 */
+	region?: { top: number; height: number } | null;
+	/** «Billett 2 av 3». Null når bildet er hele billetten. */
+	label?: string | null;
 }
 
 export interface EventPrepItem {
@@ -3381,6 +3397,8 @@ export const events = pgTable('events', {
 	ticketCount: integer('ticket_count'),
 	bookingReference: text('booking_reference'),
 	notes: text('notes'),
+	/** Lenke til billetten hos utstederen — den levende utgaven ved siden av bildet. */
+	ticketUrl: text('ticket_url'),
 	tickets: jsonb('tickets').default([]).notNull().$type<EventTicketFile[]>(),
 	prep: jsonb('prep').default([]).notNull().$type<EventPrepItem[]>(),
 	extracted: jsonb('extracted').$type<Record<string, unknown> | null>(),

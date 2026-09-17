@@ -12,6 +12,7 @@ import {
 	normalizeEventKind,
 	normalizeEventTime,
 	normalizeTicketCount,
+	normalizeUrl,
 	sortEvents,
 	splitByTime
 } from './event-fields';
@@ -203,5 +204,28 @@ describe('formatEventPlace', () => {
 		);
 		expect(formatEventPlace({ venue: 'Sentrum Scene' })).toBe('Sentrum Scene');
 		expect(formatEventPlace({ venue: '   ' })).toBeNull();
+	});
+});
+
+describe('normalizeUrl', () => {
+	it('godtar http og https', () => {
+		expect(normalizeUrl('https://cosmopolite.no/billett/1')).toBe('https://cosmopolite.no/billett/1');
+		expect(normalizeUrl('http://eksempel.no/')).toBe('http://eksempel.no/');
+	});
+
+	it('antar https når skjemaet mangler — det er det folk limer inn', () => {
+		expect(normalizeUrl('cosmopolite.no/billett')).toBe('https://cosmopolite.no/billett');
+	});
+
+	it('avviser alt som ikke er http(s) — en href kjører i brukerens økt', () => {
+		expect(normalizeUrl('javascript:alert(1)')).toBeNull();
+		expect(normalizeUrl('data:text/html,<script>alert(1)</script>')).toBeNull();
+		expect(normalizeUrl('file:///etc/passwd')).toBeNull();
+	});
+
+	it('avviser tomt og tull', () => {
+		expect(normalizeUrl('   ')).toBeNull();
+		expect(normalizeUrl(null)).toBeNull();
+		expect(normalizeUrl('https://')).toBeNull();
 	});
 });

@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const text = body?.text?.trim();
 			if (!text) return json({ error: 'Ingen tekst å lese.' }, { status: 400 });
 			const { draft, raw } = await readTicketText(text);
-			return json({ draft, raw, ticket: null });
+			return json({ draft, raw, tickets: [] });
 		}
 
 		if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
@@ -41,8 +41,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const noteValue = formData.get('note');
 		const note = typeof noteValue === 'string' ? noteValue : '';
 
-		const { draft, ticket, raw } = await readTicketFile(file, note);
-		return json({ draft, ticket, raw });
+		const { draft, tickets, raw } = await readTicketFile(file, note);
+		// `tickets` er flertall fordi én billettside kan inneholde én billett per
+		// person. De peker på samme opplasting med hvert sitt utsnitt.
+		return json({ draft, tickets, raw });
 	} catch (error) {
 		console.error('[billett] les-billett feilet:', error);
 		return json(

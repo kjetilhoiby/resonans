@@ -13,7 +13,8 @@ import {
 	normalizeEventKind,
 	normalizeEventTime,
 	normalizeText,
-	normalizeTicketCount
+	normalizeTicketCount,
+	normalizeUrl
 } from './event-fields';
 
 /** Feltene en klient får sette. Ikke `userId`, ikke `id`, ikke `createdAt`. */
@@ -31,6 +32,7 @@ export interface EventInput {
 	ticketCount?: unknown;
 	bookingReference?: unknown;
 	notes?: unknown;
+	ticketUrl?: unknown;
 	themeId?: unknown;
 	status?: unknown;
 }
@@ -105,6 +107,16 @@ export function normalizeEventInput(
 	for (const [field, max] of textFields) {
 		if (!has(field)) continue;
 		out[field] = normalizeText(input[field], max);
+	}
+
+	if (has('ticketUrl')) {
+		if (input.ticketUrl === null || input.ticketUrl === '') {
+			out.ticketUrl = null;
+		} else {
+			const url = normalizeUrl(input.ticketUrl);
+			if (!url) return { ok: false, error: 'Lenka må være en http- eller https-adresse.' };
+			out.ticketUrl = url;
+		}
 	}
 
 	if (has('kind')) {

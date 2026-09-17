@@ -3197,10 +3197,50 @@ av billetten i `ticket-reader.ts`, flaten `/arrangementer`.
 - **I dagsvisningen står arrangementer OVER Spond-linjene og med mer plass.** En
   konsert med billett er dagens ankerpunkt, ikke en linje blant flere. Haking skjer
   på `/arrangementer` — dagen det skjer er for sent å ordne barnevakt.
+- **Billettbilder går ALDRI gjennom `uploadAndExtractAttachment`.** Se
+  `docs/changelog/2026-09-17-billetten-som-ble-skalert-i-hjel.md`. Den skalerer
+  til 1600 px på lengste kant, og et «hele siden»-skjermbilde av en billettside
+  er smalt og høyt — 1170×6000 blir da **312×1600**. Strekkoden blir uleselig i
+  døra, OG den lille teksten blir grøt for modellen: målt 17. september 2026 ble
+  ordrenummeret `163166254` lest som `151165243`. Bruk `uploadTicketImage`
+  (`$lib/server/events/ticket-upload.ts`), som lagrer originalen URØRT.
+- **Komprimering hører til LESINGEN av et bilde, ikke til lagringen.** En
+  nedskalering gjort ved opplasting kan ikke angres. `quality`/`fetch_format`
+  ligger på de utledede URL-ene (`ticketThumbUrl`, `ticketFullUrl`,
+  `ticketSliceUrls`), der de kan endres i ettertid. PDF går fortsatt den
+  generiske veien — der er det teksten vi er ute etter, og den skaleres ikke.
+- **Et langt bilde leses i SNITT** (`planTicketSlices`), 2–5 overlappende
+  vannrette utsnitt sendt som separate bilder i ETT kall. **`detail: 'high'` er
+  poenget med hele oppdelingen** — uten den nedskalerer OpenAI bildet selv, og
+  snittene er bortkastet. Siste snitt forankres i BUNNEN: regnet framover ville
+  avrunding pluss overlapp lagt det utenfor bildet, og de nederste linjene falt
+  ut — som er der ordrenummeret pleier å stå.
+- **Én billettside kan bli FLERE billetter** (`ticketRegions` → `regionsFromModel`
+  → `splitByRegions`). Ingen nye opplastinger: alle peker på samme `publicId` med
+  hvert sitt utsnitt, og Cloudinary beskjærer i URL-en. Derfor er en bom billig —
+  originalen er alltid intakt. `worthSplitting` avviser utsnitt som i praksis
+  dekker hele bildet: to kort som viser det samme er verre enn ett.
+- **Enheten på utsnittene avgjøres av HELE lista, ikke av det enkelte tallet.**
+  Modellen svarer konsekvent i én enhet (andeler eller prosent). Første utgave
+  gjettet per verdi og gjorde `1.5` — som ikke KAN være en andel — til 1,5 %.
+  Og er én rad tull, forkastes hele lista: «Billett 1 av 3» og «Billett 3 av 3»
+  ville fått brukeren til å tro at én var borte.
+- **Utsnitt polstres, fordi feilene ikke er symmetriske.** Et utsnitt som tar med
+  litt for mye er fortsatt en billett man kan vise i døra; ett som kutter
+  strekkoden er verdiløst.
+- **`normalizeUrl` er en hviteliste — bare http og https.** `events.ticketUrl`
+  kan komme fra et uttrekk av et BILDE, altså fra noe vi ikke kontrollerer, og
+  `javascript:` i en `href` kjører i brukerens økt. En denylist må kjenne alle
+  farlige skjemaer; en allowlist trenger bare kjenne de to vi vil ha.
+- **Miniatyrene er høye, ikke kvadratiske.** `object-fit: cover` på en kvadratisk
+  flate kutter bort strekkoden — nøyaktig det man ser etter i en miniatyr.
 - Kjent rest: ingen varsling (`digest-nugget-rules.ts` er den naturlige
   koblingen — et arrangement med åpne forberedelser fyrer ÉN gang og hører derfor
   høyt i `PUSH_RANK`), ingen chat-verktøy, ingen kobling til `themeId` eller til
   billettkjøpet i `canonical_bank_transactions`, og ingen `/design`-seksjon.
+  **Billetter lastet opp før 17. september 2026 er fortsatt nedskalerte** —
+  originalen er tapt for dem, og de må lastes opp på nytt. Og ordrenummeret
+  kryssjekkes ikke mot strekkoden, som ofte står ved siden av det.
 
 ### Økonomi: alt som teller kroner går gjennom én leser
 
