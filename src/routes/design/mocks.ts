@@ -17,6 +17,7 @@ import { findWeightSwings } from '$lib/domain/health/weight-swings';
 import {
 	buildEpisodeTrack,
 	buildEpisodeWindow,
+	buildMedicationBars,
 	buildSymptomBars,
 	describeEpisode,
 	describeLevelCourse,
@@ -2585,6 +2586,55 @@ export const sickEpisodeMock: SickEpisode = (() => {
 		tracks,
 		symptoms: buildSymptomBars(
 			symptoms.map((s) => resolveSymptom(s, sickEpisodeToday)),
+			window
+		),
+		// Begge rytmene, siden de tegnes ulikt: den faste er et rent spenn, den
+		// ved behov bærer doser per dag. Doseringen faller utover i forløpet —
+		// galleriet skal vise formen raden finnes for, uten at flaten noe sted
+		// påstår at medisinen er grunnen.
+		medications: buildMedicationBars(
+			[
+				{
+					id: 'med-fast',
+					name: 'Amoksicillin 500 mg',
+					purpose: 'mot bihulebetennelsen',
+					rhythm: 'fast',
+					times: ['08:00', '14:00', '20:00'],
+					startDate: '2026-09-04',
+					endDate: '2026-09-11',
+					note: null
+				},
+				{
+					id: 'med-behov',
+					name: 'Paracet',
+					purpose: 'mot hodepine',
+					rhythm: 'ved_behov',
+					times: [],
+					startDate: '2026-09-01',
+					endDate: null,
+					note: null
+				}
+			],
+			[
+				['2026-09-01', 3],
+				['2026-09-02', 4],
+				['2026-09-03', 4],
+				['2026-09-04', 3],
+				['2026-09-05', 2],
+				['2026-09-06', 2],
+				['2026-09-08', 3],
+				['2026-09-09', 1],
+				['2026-09-10', 1]
+			].flatMap(([day, count]) =>
+				Array.from({ length: count as number }, (_, i) => ({
+					id: `dose-${day}-${i}`,
+					medicationId: 'med-behov',
+					day: day as string,
+					takenAt: `${day}T0${i + 7}:00:00Z`,
+					slot: null,
+					note: null
+				}))
+			),
 			window
 		),
 		levels,

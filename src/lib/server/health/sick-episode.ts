@@ -14,6 +14,7 @@
  */
 
 import {
+	buildMedicationBars,
 	buildEpisodeTrack,
 	buildEpisodeWindow,
 	buildSymptomBars,
@@ -48,6 +49,7 @@ import {
 } from './daily-activity';
 import { listSickLevels, listSickPeriods, todayOsloKey } from './sick-log';
 import { listSymptoms } from './symptom-log';
+import { listMedicationDoses, listMedications } from './medication-log';
 
 /**
  * Litt slakk på lesevinduet.
@@ -85,7 +87,7 @@ export async function loadSickEpisode(
 	// to: to lesninger av de samme radene ville kostet dobbelt for ingenting.
 	const lookbackDays = Math.max(windowDays, NORM_WINDOW_DAYS + LOOKBACK_SLACK_DAYS);
 
-	const [weightDays, physiology, sleepNights, temperature, daily, levels, symptoms] =
+	const [weightDays, physiology, sleepNights, temperature, daily, levels, symptoms, medications, doses] =
 		await Promise.all([
 			readWeightDays(userId, { now }),
 			readNightlyPhysiology(userId, lookbackDays),
@@ -99,7 +101,11 @@ export async function loadSickEpisode(
 				activeMinutes: new Map<string, number>()
 			})),
 			listSickLevels(userId, lookbackDays).catch(() => []),
-			listSymptoms(userId)
+			listSymptoms(userId),
+			// Medisiner er nye og kan mangle helt. Feiler oppslaget, skal ikke
+			// resten av forløpet feile med det — som temperaturen over.
+			listMedications(userId).catch(() => []),
+			listMedicationDoses(userId).catch(() => [])
 		]);
 
 	const weightByDay = new Map(weightDays.map((d) => [d.date, d.weightKg]));
@@ -319,6 +325,11 @@ export async function loadSickEpisode(
 		headline: describeEpisode(window, period.startDate),
 		tracks,
 		symptoms: buildSymptomBars(resolvedSymptoms, window),
+		// Kurene på samme tidsakse. Markøren er hele poenget: snur nivåkurven,
+		// er en kur startet dagen før den mest sannsynlige forklaringen som
+		// finnes — og den var usynlig fram til september 2026. Vi uttaler oss
+		// aldri om årsaken; se `medications.ts`.
+		medications: buildMedicationBars(medications, doses, window),
 		levels: levelsInWindow,
 		levelText: describeLevelCourse(levelsInWindow),
 		relapse: findRelapse(levelsInWindow),

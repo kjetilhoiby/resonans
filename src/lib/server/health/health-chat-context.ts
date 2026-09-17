@@ -36,8 +36,10 @@ import { summarizeWeightForChat } from '$lib/domain/ai/weight-summary';
 import { frameGoals } from '$lib/domain/health/goal-horizon';
 import { getSickState, todayOsloKey } from '$lib/server/health/sick-log';
 import { listSymptoms } from '$lib/server/health/symptom-log';
+import { listMedications } from '$lib/server/health/medication-log';
 import { loadTemperature } from '$lib/server/health/temperature-log';
 import { summarizeSymptoms } from '$lib/domain/health/symptoms';
+import { describeMedication, rankOngoingMedications } from '$lib/domain/health/medications';
 import {
 	describeCoreTemperature,
 	describeSkinTemperature
@@ -184,7 +186,7 @@ export async function buildHealthChatContext(
 	userId: string,
 	healthThemeIds: readonly string[]
 ): Promise<string> {
-	const [training, weight, streaks, goalRows, sick, symptoms, temperature] = await Promise.all([
+	const [training, weight, streaks, goalRows, sick, symptoms, temperature, medications] = await Promise.all([
 		// evaluateMilestones utelates: en kontekstbygger skal ikke skrive til basen.
 		loadTrainingDashboardData(userId).catch(() => null),
 		loadWeightDashboardData(userId).catch(() => null),
@@ -192,7 +194,8 @@ export async function buildHealthChatContext(
 		readGoalsWithProgress(userId, [...healthThemeIds]).catch(() => []),
 		getSickState(userId).catch(() => null),
 		listSymptoms(userId).catch(() => []),
-		loadTemperature(userId).catch(() => null)
+		loadTemperature(userId).catch(() => null),
+		listMedications(userId).catch(() => [])
 	]);
 
 	const briefingStreaks: BriefingStreak[] = streaks.map(({ definition, state }) => ({
@@ -232,7 +235,13 @@ export async function buildHealthChatContext(
 						core: describeCoreTemperature(temperature.core),
 						skin: describeSkinTemperature(temperature.skin)
 					}
-				: null
+				: null,
+		// Følger sykeperioden, som symptomene: en fast medisin man går på året
+		// rundt er ikke det coachen skal åpne med utenfor et forløp. Setningene
+		// er domenelagets egne — modellen skal aldri formulere en dom om en kur.
+		medications: sick?.period
+			? rankOngoingMedications(medications, todayOsloKey()).map(describeMedication)
+			: []
 	});
 
 	return briefing ? `\n\n${briefing}\n` : '';

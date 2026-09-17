@@ -169,6 +169,14 @@ export interface HealthBriefingInput {
 	 */
 	symptoms: string | null;
 	/**
+	 * Pågående medisinkurer, én setning hver fra `describeMedication`.
+	 *
+	 * Setningene er flatens egne, som resten av briefingen — modellen skal aldri
+	 * formulere en dom om en kur selv, og rå felter ville invitert til nettopp
+	 * det.
+	 */
+	medications: string[];
+	/**
 	 * Temperatursetningene, hver fra sin kilde. Termometeret er absolutt;
 	 * klokka er et avvik fra brukerens eget snitt — de er ALDRI samme tall, og
 	 * de sendes derfor hver for seg med kilden navngitt.
@@ -478,12 +486,21 @@ export function describeStreaks(streaks: BriefingStreak[]): string[] {
 export function describeSick(
 	sentence: string,
 	symptoms: string | null,
-	temperature: { core: string | null; skin: string | null } | null
+	temperature: { core: string | null; skin: string | null } | null,
+	medications: readonly string[] = []
 ): string[] {
 	const lines = [sentence];
 
 	if (symptoms) {
 		lines.push(`Symptomer brukeren selv har meldt: ${symptoms}`);
+	}
+	if (medications.length > 0) {
+		// Går MED under samme tolkningsforbud som symptomene, og av en skarpere
+		// grunn: et forløp går over av seg selv, så en bedring som faller sammen
+		// med en kur ser ut som en effekt uansett. Sier modellen «antibiotikaen
+		// virker», har den påstått noe n = 1 uten kontroll ikke kan bære — og det
+		// leses som et medisinsk råd.
+		lines.push(`Medisiner brukeren selv har registrert: ${medications.join('; ')}`);
 	}
 	if (temperature?.core) {
 		// Kilden navngis, som med målvekta: to temperaturtall uten kilde ville
@@ -510,8 +527,13 @@ export function describeSick(
 	 * ingenting her; brukeren har skrevet det selv.
 	 */
 	lines.push(
-		'Symptomene og temperaturen er brukerens EGEN logg. Gjenta dem hvis det er relevant, men ikke tolk dem, ikke antyd en diagnose eller et forløp, og ikke gi medisinske råd — heller ikke om å oppsøke lege.'
+		'Symptomene, temperaturen og medisinene er brukerens EGEN logg. Gjenta dem hvis det er relevant, men ikke tolk dem, ikke antyd en diagnose eller et forløp, og ikke gi medisinske råd — heller ikke om å oppsøke lege.'
 	);
+	if (medications.length > 0) {
+		lines.push(
+			'Si ALDRI om en medisin virker, har virket eller burde byttes, og knytt ingen bedring eller forverring til en kur: et forløp går over av seg selv, så alt som ble startet underveis ser virksomt ut. Ingenting her måler effekt. Dosering, hyppighet og kombinasjoner er heller ikke noe du skal uttale deg om.'
+		);
+	}
 	return lines;
 }
 
@@ -530,7 +552,12 @@ export const BRIEFING_FOOTER = '--- SLUTT PÅ HELSE ---';
  */
 export function buildHealthBriefing(input: HealthBriefingInput): string {
 	const blocks = [
-		input.sick ? section('SYKDOM', describeSick(input.sick, input.symptoms, input.temperature)) : null,
+		input.sick
+			? section(
+					'SYKDOM',
+					describeSick(input.sick, input.symptoms, input.temperature, input.medications)
+				)
+			: null,
 		input.weight ? section('VEKT', describeWeight(input.weight)) : null,
 		input.training ? section('TRENING', describeTraining(input.training)) : null,
 		section('STREAKS', describeStreaks(input.streaks)),
