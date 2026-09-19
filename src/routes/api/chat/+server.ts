@@ -272,36 +272,13 @@ const tools = [
 	 * `$lib/server/assistant/tool-schema.ts`.
 	 */
 	openAiFunctionDefinition(createGoalTool),
-	{
-		type: 'function' as const,
-		function: {
-			name: updateGoalTool.name,
-			description: updateGoalTool.description,
-			parameters: {
-				type: 'object',
-				properties: {
-					goalId: {
-						type: 'string',
-						description: 'UUID-en til målet, fra lista over aktive mål. Aldri tittel eller nummer.'
-					},
-					action: {
-						type: 'string',
-						enum: ['adjust_target', 'set_deadline', 'pause', 'resume', 'complete', 'abandon'],
-						description: 'Hva som skal endres'
-					},
-					targetValue: {
-						type: 'number',
-						description: 'Ny målverdi (adjust_target). For vektmål: MÅLVEKTEN i kg.'
-					},
-					targetDate: {
-						type: 'string',
-						description: 'Ny frist YYYY-MM-DD (set_deadline).'
-					}
-				},
-				required: ['goalId', 'action']
-			}
-		}
-	},
+	/**
+	 * Også generert — kopien her manglet `frees`/`cost` i det øyeblikket
+	 * milepælsregnskapet ble lagt på verktøymodulen (september 2026), og da hadde
+	 * Ekko sett feltene mens web-chatten ikke kunne sende dem. Nøyaktig samme
+	 * driv som `create_goal` sin kopi hadde, bare i motsatt retning.
+	 */
+	openAiFunctionDefinition(updateGoalTool),
 	{
 		type: 'function' as const,
 		function: {

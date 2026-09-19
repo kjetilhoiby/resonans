@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMilestoneDate } from '$lib/domain/goals/milestone';
 	import { invalidateAll } from '$app/navigation';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
@@ -147,6 +148,9 @@
 	// ── Inline-redigering av én visjon ────────────────────────────────────
 	let editingHorizon = $state<string | null>(null);
 	let editDraft = $state('');
+
+	// Datoformatet deles med chat-konteksten, så flaten og coachen skriver datoen likt.
+	const formatMilepaelDato = (day: string, coarse = false) => formatMilestoneDate(day, coarse);
 
 	function startEdit(kind: string, summary: string) {
 		editingHorizon = kind;
@@ -324,6 +328,52 @@
 			{/each}
 		</div>
 	</section>
+
+	<!--
+	  SEKSJON 1b: Oppnådd. Står mellom retningen og verdiene fordi milepælene er
+	  premissene for hva som kan prioriteres nå — ikke en seiersliste. Ferske skilles
+	  fra bakgrunn med samme regel som chat-konteksten bruker (`splitMilestones`), så
+	  flaten og coachen har samme syn på hva som fortsatt er en nyhet.
+	-->
+	{#if data.milepaeler.fresh.length > 0 || data.milepaeler.background.length > 0}
+		<section class="milepaeler">
+			<h2>🏁 Oppnådd</h2>
+			<p class="hint">Hva du har nådd — og hva det frigjorde og kostet.</p>
+
+			{#if data.milepaeler.fresh.length > 0}
+				<ul class="milepael-liste">
+					{#each data.milepaeler.fresh as m (m.id)}
+						<li class="milepael fersk">
+							<span class="milepael-tittel">{m.title}</span>
+							{#if m.achievedOn}
+								<span class="milepael-dato">{formatMilepaelDato(m.achievedOn)}</span>
+							{/if}
+							{#if m.frees}<span class="milepael-regnskap">Frigjør: {m.frees}</span>{/if}
+							{#if m.cost}<span class="milepael-regnskap">Kostet: {m.cost}</span>{/if}
+							{#if !m.frees && !m.cost}
+								<span class="milepael-mangler">Ingen regnskap ført — si i chatten hva det frigjorde og hva det kostet.</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
+			{#if data.milepaeler.background.length > 0}
+				<ul class="milepael-liste bakgrunn">
+					{#each data.milepaeler.background as m (m.id)}
+						<li class="milepael">
+							<span class="milepael-tittel">{m.title}</span>
+							{#if m.achievedOn}
+								<span class="milepael-dato">{formatMilepaelDato(m.achievedOn, true)}</span>
+							{/if}
+							{#if m.frees}<span class="milepael-regnskap">Frigjør: {m.frees}</span>{/if}
+							{#if m.cost}<span class="milepael-regnskap">Kostet: {m.cost}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 
 	<!-- SEKSJON 2: Verdier -->
 	{#if data.values.length > 0}
@@ -628,6 +678,64 @@
 	.edit-actions {
 		display: flex;
 		gap: 0.5rem;
+	}
+
+	.milepaeler {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 1.5rem 0 0;
+	}
+
+	.milepael-liste {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 0.25rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.milepael {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0.6rem 0.75rem;
+		background: var(--card-bg-subtle);
+		border: 1px solid var(--card-border);
+		border-radius: var(--radius-lg);
+	}
+
+	/* Fersk = fortsatt et tema. Bakgrunn dempes, den skal kunne skannes forbi. */
+	.milepael.fersk {
+		border-color: var(--accent-primary);
+	}
+
+	.milepael-liste.bakgrunn .milepael {
+		opacity: 0.72;
+	}
+
+	.milepael-tittel {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.milepael-dato {
+		font-size: 0.78rem;
+		color: var(--text-tertiary);
+	}
+
+	.milepael-regnskap {
+		font-size: 0.82rem;
+		line-height: 1.5;
+		color: var(--text-secondary);
+	}
+
+	.milepael-mangler {
+		font-size: 0.78rem;
+		line-height: 1.5;
+		color: var(--text-tertiary);
 	}
 
 	.verdier {

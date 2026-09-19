@@ -3,6 +3,8 @@
  * Skilt ut fra ContextService så logikken kan enhetstestes uten DB.
  */
 
+import { buildMilestoneBlock, type Milestone } from '$lib/domain/goals/milestone';
+
 export interface DirectionVision {
 	kind: string;
 	summary: string;
@@ -23,16 +25,25 @@ export function horizonLabel(kind: string): string {
 }
 
 /**
- * Bygger retningsblokken: visjoner per horisont, brukerens verdier, og — når
- * retningen er brukerforfattet — en instruks om å konfrontere gap mellom
- * uttalt retning og det hverdagen (mål, planer, refleksjoner) viser.
+ * Bygger retningsblokken: visjoner per horisont, brukerens verdier, oppnådde
+ * milepæler (ferske som tema, eldre som bakgrunn) og — når retningen er
+ * brukerforfattet — en instruks om å konfrontere gap mellom uttalt retning og det
+ * hverdagen (mål, planer, refleksjoner) viser.
+ *
+ * Milepælene står MELLOM verdiene og gap-notatet med vilje: de er premisser for
+ * hva som er mulig nå, altså noe som skal leses før dommen om hva som spriker.
  */
 export function buildDirectionBlock(
 	visions: DirectionVision[],
 	valuesMemories: string[] = [],
-	gapNote?: string
+	gapNote?: string,
+	milestones: Milestone[] = [],
+	now: Date = new Date()
 ): string {
 	const withSummary = visions.filter((v) => v.summary?.trim());
+	// Milepælene alene bærer ikke en retningsblokk: uten prosa eller verdier er det
+	// bare en liste oppnåelser, og da er instruksen om å ikke gratulere det eneste
+	// som står der. De henger på at det finnes en retning å tolke dem mot.
 	if (withSummary.length === 0 && valuesMemories.length === 0) return '';
 
 	const sorted = [...withSummary].sort(
@@ -49,6 +60,8 @@ export function buildDirectionBlock(
 		out += '\nVERDIER (brukerens egne, bekreftede ord):\n';
 		for (const value of valuesMemories) out += `- ${value}\n`;
 	}
+
+	out += buildMilestoneBlock(milestones, now);
 
 	if (gapNote?.trim()) {
 		out += `\nKJENTE GAP (fra siste retningssamtale):\n${gapNote.trim()}\n`;

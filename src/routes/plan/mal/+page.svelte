@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import GoalDetailCard from '$lib/components/domain/plan/GoalDetailCard.svelte';
+	import GoalCompleteForm from '$lib/components/domain/plan/GoalCompleteForm.svelte';
 	import {
 		calculateGoalProgress,
 		getIntentEvaluationLabel,
@@ -38,6 +39,10 @@
 	let completedExpanded = $state(false);
 	let unmeasuredExpanded = $state(false);
 	let horizonFilter = $state<GoalHorizon | 'alle'>('kort');
+	// Milepælsregnskapet: hvilket mål som holder på å fullføres, og status på skrivingen
+	let completingGoalId = $state<string | null>(null);
+	let completeBusy = $state(false);
+	let completeError = $state<string | null>(null);
 
 	const HORIZON_OPTIONS: Array<{ value: GoalHorizon | 'alle'; label: string }> = [
 		{ value: 'kort', label: 'Neste tre måneder' },
@@ -244,22 +249,43 @@
 		}
 	}
 
-	async function completeGoal(goalId: string) {
+	/**
+	 * Fullfører målet OG skriver milepælsregnskapet i samme kall — «hva det frigjør» og
+	 * «hva det kostet» huskes i det øyeblikket man markerer, ikke etterpå.
+	 * Feilen vises i skjemaet framfor i en alert: serveren avviser et for langt
+	 * regnskap, og da skal teksten stå igjen så den kan kortes ned.
+	 */
+	async function completeGoal(goalId: string, ledger: { frees: string; cost: string }) {
+		// Settes også her: målkortet åpner skjemaet selv, så uten dette ville
+		// busy/feil-propene stått tomme og en avvist lagring vært usynlig.
+		completingGoalId = goalId;
+		completeBusy = true;
+		completeError = null;
 		try {
 			const response = await fetch(`/api/goals/${goalId}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ status: 'completed' })
+				body: JSON.stringify({
+					status: 'completed',
+					milestone: { frees: ledger.frees, cost: ledger.cost }
+				})
 			});
 			const result = await response.json();
 			if (!response.ok) {
 				throw new Error(result.error || 'Kunne ikke fullføre målet');
 			}
-			data.goals = data.goals.map((g) => g.id === goalId ? { ...g, status: 'completed' } : g);
+			data.goals = data.goals.map((g) =>
+				g.id === goalId
+					? { ...g, status: 'completed', metadata: result.goal?.metadata ?? g.metadata }
+					: g
+			);
 			expandedGoals = new Set([...expandedGoals].filter((id) => id !== goalId));
+			completingGoalId = null;
 			completedExpanded = true;
 		} catch (error) {
-			alert(`Feil ved fullføring: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
+			completeError = error instanceof Error ? error.message : 'Ukjent feil';
+		} finally {
+			completeBusy = false;
 		}
 	}
 
@@ -333,6 +359,8 @@
 							onArchive={archiveGoal}
 							onComplete={completeGoal}
 							onDelete={deleteGoal}
+							completeBusy={completeBusy && completingGoalId === goal.id}
+							completeError={completingGoalId === goal.id ? completeError : null}
 						/>
 					{/each}
 				</div>
@@ -347,21 +375,43 @@
 					{#if unmeasuredExpanded}
 						<div class="compact-list">
 							{#each unmeasuredGoals as goal}
-								<div class="compact-row">
-									<div class="compact-row-main">
-										<span class="compact-title">{goal.title}</span>
-										{#if goal.category}
-											<span class="compact-category">{goal.category.icon || '📌'} {goal.category.name}</span>
-										{/if}
+								{#if completingGoalId === goal.id}
+									<GoalCompleteForm
+										title={goal.title}
+										busy={completeBusy}
+										error={completeError}
+										onconfirm={(ledger) => completeGoal(goal.id, ledger)}
+										oncancel={() => { completingGoalId = null; completeError = null; }}
+									/>
+								{:else}
+									<div class="compact-row">
+										<div class="compact-row-main">
+											<span class="compact-title">{goal.title}</span>
+											{#if goal.category}
+												<span class="compact-category">{goal.category.icon || '📌'} {goal.category.name}</span>
+											{/if}
+										</div>
+										<!--
+										  Denne gruppa er mål uten måling — altså nettopp de der brukeren er den
+										  eneste som kan si at de er nådd. Fram til september 2026 hadde de bare
+										  «Arkiver», så et oppnådd jobbmål kunne ikke markeres som oppnådd.
+										-->
+										<button
+											class="btn-complete"
+											data-track="maal:fullfoer-uten-maaling"
+											onclick={() => { completingGoalId = goal.id; completeError = null; }}
+										>
+											Fullfør
+										</button>
+										<button
+											class="btn-archive"
+											data-track="maal:arkiver-uten-maaling"
+											onclick={() => archiveGoal(goal.id)}
+										>
+											Arkiver
+										</button>
 									</div>
-									<button
-										class="btn-archive"
-										data-track="maal:arkiver-uten-maaling"
-										onclick={() => archiveGoal(goal.id)}
-									>
-										Arkiver
-									</button>
-								</div>
+								{/if}
 							{/each}
 						</div>
 					{/if}
@@ -641,6 +691,10 @@
 		flex-direction: column;
 		gap: 0.15rem;
 		min-width: 0;
+		/* Raden har to knapper nå (Fullfør + Arkiver); uten dette sprer
+		   space-between dem fra hverandre i stedet for å holde dem samlet til høyre. */
+		flex: 1 1 auto;
+		margin-right: auto;
 	}
 
 	.compact-title {

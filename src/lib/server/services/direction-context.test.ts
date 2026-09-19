@@ -79,3 +79,48 @@ describe('buildDirectionBlock', () => {
 		expect(buildDirectionBlock([{ kind: 'vision_5year', summary: '   ' }])).toBe('');
 	});
 });
+
+describe('buildDirectionBlock — milepæler', () => {
+	const NOW = new Date('2026-09-19T08:00:00Z');
+	const vision = [{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }];
+
+	it('rendrer ferske milepæler med regnskap', () => {
+		const block = buildDirectionBlock(vision, [], undefined, [
+			{
+				id: 'a',
+				title: 'Skifte jobb',
+				achievedOn: '2026-09-14',
+				frees: 'mindre belastning fra jobbsøking',
+				cost: 'spenning på gammel jobb'
+			}
+		], NOW);
+		expect(block).toContain('NYLIG OPPNÅDD');
+		expect(block).toContain('Skifte jobb (14. september 2026)');
+		expect(block).toContain('Kostet: spenning på gammel jobb');
+	});
+
+	it('står mellom verdiene og gap-notatet', () => {
+		const block = buildDirectionBlock(
+			vision,
+			['Nærvær med barna'],
+			'Sier trening er viktig, men uka har null økter.',
+			[{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }],
+			NOW
+		);
+		expect(block.indexOf('VERDIER')).toBeLessThan(block.indexOf('NYLIG OPPNÅDD'));
+		expect(block.indexOf('NYLIG OPPNÅDD')).toBeLessThan(block.indexOf('KJENTE GAP'));
+	});
+
+	it('endrer ingenting uten milepæler', () => {
+		const uten = buildDirectionBlock(vision, ['Nærvær med barna']);
+		const tom = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, [], NOW);
+		expect(tom).toBe(uten);
+	});
+
+	// Uten retning er en milepælsliste bare oppnåelser uten noe å tolke dem mot.
+	it('rendrer ikke milepæler alene når retningen er tom', () => {
+		expect(buildDirectionBlock([], [], undefined, [
+			{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }
+		], NOW)).toBe('');
+	});
+});

@@ -2157,6 +2157,51 @@ Se `docs/changelog/2026-08-28-maloppnaaelse-i-tid.md`. Logikken i
   så ut som en som akkurat kom i mål. Taket skal følge det høyeste av mål og
   faktisk verdi.
 
+### Et nådd mål er en milepæl med et regnskap — og med forfall
+
+Se `docs/changelog/2026-09-19-retningen-som-baerer-prioriteringer.md`. Reglene
+rent i `$lib/domain/goals/milestone.ts`, lesingen i
+`$lib/server/goal-milestones.ts`, rendringen i `direction-context.ts`.
+
+- **«Fullfør» gjaldt bare målbare mål fram til september 2026.** Knappen var
+  gated på `reached` i `GoalDetailCard.svelte`, som bare regner ut vekt- og
+  løpsmål — så et intensjonsmål («skifte jobb») kunne bare ARKIVERES, og arkivert
+  er ikke fullført. Det er nettopp klassen mål der brukeren er den ENESTE som kan
+  si at det er nådd. `reached` styrer nå bare fremhevingen.
+- **Regnskapet er to felt, og det andre er det som mangler.** `frees` og `cost`
+  svarer på ulike spørsmål: en oppnåelse huskes for gevinsten, og prisen
+  forsvinner. Det er regnskapet — ikke seieren — som sier hva som kan prioriteres
+  nå. Begge er valgfrie; et tomt felt er bedre enn et gjettet, og modellen skal
+  spørre framfor å fylle ut.
+- **Skjemaet står der man MARKERER, ikke på en egen flate.** Spør vi en uke
+  senere, er prisen alt glattet bort.
+- **`achievedOn` settes ÉN gang.** Fullfører man på nytt, eller fyller ut
+  regnskapet etterpå, står datoen: den sier når det SKJEDDE, ikke når noen sist
+  trykket. Samme regel som at `sensor_events.timestamp` ikke flyttes ved retting.
+  En eksplisitt dato i patchen er en retting brukeren ba om, og vinner.
+- **Milepæler uten dato er ALLTID bakgrunn.** Mål fullført før dette fantes har
+  ingen `achievedOn`, og uten regelen ville hele historikken blitt annonsert som
+  fersk den dagen dette ble deployet.
+- **Forfallet er hele poenget.** Et fullført mål er sant for alltid, så uten et
+  skille blir «siden du lyktes med å skifte jobb» åpningen på hvert svar. Samme
+  metning `PUSH_RANK` finnes for i krydderet på veiingen, bare verre.
+  Bakgrunnsseksjonen sier eksplisitt at den ikke er et tema — en modell som ser en
+  liste prestasjoner uten instruks, gratulerer.
+- **Milepælen forteller også at PROSAEN kan være utdatert.** Visjonsteksten har
+  høyeste troverdighet i prompten og har ingen utløpsdato; et nådd mål som
+  fortsatt står der som ønske er den feilen dette finnes for å fange. Sies én
+  gang, med henvisning til Retning-fanen.
+- **`metadata` flettes, aldri erstattes.** Målet bærer `visionHorizon` og
+  `goalTrack` i samme objekt — et skriv som bygger metadataen på nytt kobler målet
+  fra retningen og tømmer målverdien, stille.
+- **Begge skriveveier normaliserer med `mergeMilestoneRecord`.** `update_goal` i
+  chatten og `PATCH /api/goals/[id]` (som «Fullfør»-knappen går gjennom). Skriver
+  de hver sin `metadata.milestone`, husker bare én av dem at datoen settes én gang.
+- `update_goal` sitt skjema **genereres** nå med `openAiFunctionDefinition`. Kopien
+  i chat-endepunktet skrev `name: updateGoalTool.name` med et håndskrevet
+  `parameters`-objekt under — den farligste formen, fordi den SER generert ut, og
+  den eldre tekstvakten så bare etter navnet som literal. Vakten dekker begge nå.
+
 ### Skjermtid: oppmerksomhet er ikke at skjermen sto på
 
 Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i

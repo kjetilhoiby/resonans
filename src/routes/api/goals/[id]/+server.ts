@@ -3,11 +3,13 @@ import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { updateGoalMetric } from '$lib/server/goals';
+import { mergeMilestoneRecord, readMilestoneRecord } from '$lib/domain/goals/milestone';
+import { osloDayKey } from '$lib/domain/oslo-time';
 import type { RequestHandler } from './$types';
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
-	const { title, description, targetDate, status, metadata, metric, themeId } = body;
+	const { title, description, targetDate, status, metadata, metric, themeId, milestone } = body;
 
 	// Verify ownership
 	const existingGoal = await db.query.goals.findFirst({
@@ -48,6 +50,34 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		updateData.metadata = { ...((existingGoal.metadata ?? {}) as Record<string, unknown>), ...metadata };
 	}
 	if (themeId !== undefined) updateData.themeId = typeof themeId === 'string' && themeId.length > 0 ? themeId : null;
+
+	/**
+	 * Milepælen: stemples når målet settes til `completed`, og kan rettes etterpå på et
+	 * mål som alt er fullført. `mergeMilestoneRecord` eier reglene — `achievedOn` settes
+	 * ÉN gang, tomt felt tømmer, for langt regnskap avvises — så denne ruta og
+	 * `update_goal` i chatten ikke kan bli uenige. Se `$lib/domain/goals/milestone.ts`.
+	 */
+	const wantsMilestone = milestone !== null && typeof milestone === 'object';
+	const becomesCompleted = status === 'completed';
+	if (becomesCompleted || (wantsMilestone && existingGoal.status === 'completed')) {
+		const patch = wantsMilestone ? (milestone as Record<string, unknown>) : {};
+		const merged = mergeMilestoneRecord(
+			readMilestoneRecord(existingGoal.metadata),
+			{
+				frees: patch.frees as string | null | undefined,
+				cost: patch.cost as string | null | undefined,
+				achievedOn: patch.achievedOn as string | undefined
+			},
+			osloDayKey(new Date())
+		);
+		if (!merged.ok) return json({ error: merged.error }, { status: 400 });
+		// Flett videre på det metadata-objektet som alt er bygget over, så
+		// `visionHorizon` og `goalTrack` står igjen.
+		updateData.metadata = {
+			...((updateData.metadata ?? existingGoal.metadata ?? {}) as Record<string, unknown>),
+			milestone: merged.record
+		};
+	}
 
 	const [updatedGoal] = await db
 		.update(goals)

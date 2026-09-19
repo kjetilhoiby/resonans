@@ -4,6 +4,7 @@ import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { buildDirectionBlock } from '$lib/server/services/direction-context';
+import { readMilestones } from '$lib/server/goal-milestones';
 import { buildObservedBehaviorBlock } from '$lib/server/services/observed-behavior-service';
 import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
@@ -106,7 +107,7 @@ export class ContextService {
 
 	private static async activeVision(userId: string): Promise<string> {
 		const horizons = ['vision_10year', 'vision_5year', 'vision_yearly', 'vision_quarterly'] as const;
-		const [found, valueRows, gapReflection] = await Promise.all([
+		const [found, valueRows, gapReflection, milestones] = await Promise.all([
 			Promise.all(horizons.map((k) => DreamService.getActive(userId, k))),
 			db.query.memories.findMany({
 				where: and(
@@ -125,14 +126,17 @@ export class ContextService {
 					gte(reflections.createdAt, new Date(Date.now() - 120 * 86_400_000))
 				),
 				orderBy: [desc(reflections.createdAt)]
-			})
+			}),
+			// Oppnådde mål: premisser for hva som er mulig nå, ikke prestasjoner å feire
+			readMilestones(userId)
 		]);
 		const visions = found.filter((v): v is NonNullable<typeof v> => Boolean(v?.summary));
 
 		return buildDirectionBlock(
 			visions.map((v) => ({ kind: v.kind, summary: v.summary ?? '', originKind: v.originKind })),
 			valueRows.map((m) => m.content),
-			gapReflection?.content
+			gapReflection?.content,
+			milestones
 		);
 	}
 

@@ -18,6 +18,7 @@
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import GoalTrajectorySection from './GoalTrajectorySection.svelte';
+	import GoalCompleteForm from './GoalCompleteForm.svelte';
 	import {
 		calculateTaskProgress,
 		calculateGoalProgress,
@@ -50,7 +51,9 @@
 		expanded?: boolean;
 		onToggle?: () => void;
 		onArchive?: (goalId: string) => void;
-		onComplete?: (goalId: string) => void;
+		onComplete?: (goalId: string, ledger: { frees: string; cost: string }) => void;
+		completeBusy?: boolean;
+		completeError?: string | null;
 		onDelete?: (goalId: string, title: string) => void;
 	}
 
@@ -65,7 +68,9 @@
 		onToggle,
 		onArchive,
 		onComplete,
-		onDelete
+		onDelete,
+		completeBusy = false,
+		completeError = null
 	}: Props = $props();
 
 	function formatSleepValue(value: number): string {
@@ -105,6 +110,8 @@
 	}
 
 	const displayedNapCount = $derived((sleepEval?.napCount ?? 0) + napDelta);
+
+	let completeFormOpen = $state(false);
 
 	const goalProgress = $derived(calculateGoalProgress(goal));
 	const goalTrackLabel = $derived(formatGoalTrack(goal));
@@ -386,14 +393,38 @@
 				</div>
 			{/if}
 
+			{#if completeFormOpen}
+				<div class="complete-slot">
+					<GoalCompleteForm
+						title={goal.title}
+						busy={completeBusy}
+						error={completeError}
+						onconfirm={(ledger) => onComplete?.(goal.id, ledger)}
+						oncancel={() => (completeFormOpen = false)}
+					/>
+				</div>
+			{/if}
+
 			<div class="goal-actions">
-				{#if reached}
+				<!--
+				  Fullfør gjaldt bare `reached`, altså vekt- og løpsmål med målt progresjon.
+				  Et intensjonsmål («skifte jobb») kunne derfor bare ARKIVERES, og arkivert er
+				  ikke fullført — det er nettopp klassen mål der brukeren er den eneste som kan
+				  si at det er nådd. `reached` styrer nå bare fremhevingen.
+				-->
+				<!--
+				  Lista på /plan/mal regner ALT som ikke er arkivert eller fullført som
+				  aktivt, så et mål på pause rendres også her. Uten samme definisjon her
+				  ville det vært det eneste kortet uten fullfør-knapp.
+				-->
+				{#if goal.status !== 'completed' && goal.status !== 'archived' && !completeFormOpen}
 					<button
 						class="btn-complete"
+						class:reached
 						data-track="maal:fullfoer"
-						onclick={() => onComplete?.(goal.id)}
+						onclick={() => (completeFormOpen = true)}
 					>
-						Fullfør
+						{reached ? 'Fullfør — målet er nådd' : 'Fullfør'}
 					</button>
 				{/if}
 				<button
@@ -513,7 +544,17 @@
 	.goal-actions {
 		margin-top: 1.25rem;
 		display: flex;
+		gap: 0.5rem;
 		justify-content: flex-end;
+	}
+
+	.complete-slot {
+		margin-top: 1.25rem;
+	}
+
+	/* Målt progresjon har krysset målet — knappen skal si det, ikke bare finnes. */
+	.btn-complete.reached {
+		font-weight: 600;
 	}
 
 	.goal-title-row {

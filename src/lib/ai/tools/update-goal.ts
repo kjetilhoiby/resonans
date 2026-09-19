@@ -27,6 +27,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { updateGoalMetric } from '$lib/server/goals';
+import { completeGoalWithMilestone } from '$lib/server/goal-milestones';
 import { describeMeasurement } from './create-goal';
 
 export type UpdateGoalAction =
@@ -83,7 +84,7 @@ export function validateUpdateGoalArgs(args: {
 export const updateGoalTool = {
 	name: 'update_goal',
 	description:
-		'Endre et mål som allerede finnes. Bruk DENNE framfor create_goal når brukeren vil justere noe de har satt — to mål om samme sak gjør begge meningsløse. goalId er UUID-en fra lista over aktive mål. action: "adjust_target" (ny målverdi — for vektmål: MÅLVEKTEN i kg, f.eks. 98 for «ned til 98 kg»), "set_deadline" (flytt eller sett frist, targetDate=YYYY-MM-DD), "pause" (legg målet på is uten å slette det), "resume", "complete" (nådd), "abandon" (vi dropper det). Svaret sier hvilke tall målet faktisk måles mot etterpå — bruk DEM i kvitteringen, aldri egne anslag. Målverdien kan bare endres på mål som har en metrikk; har målet ingen, sier svaret det, og da skal du si det til brukeren framfor å påstå at det er justert.',
+		'Endre et mål som allerede finnes. Bruk DENNE framfor create_goal når brukeren vil justere noe de har satt — to mål om samme sak gjør begge meningsløse. goalId er UUID-en fra lista over aktive mål. action: "adjust_target" (ny målverdi — for vektmål: MÅLVEKTEN i kg, f.eks. 98 for «ned til 98 kg»), "set_deadline" (flytt eller sett frist, targetDate=YYYY-MM-DD), "pause" (legg målet på is uten å slette det), "resume", "complete" (nådd — ta med frees/cost hvis brukeren har sagt hva målet frigjør og hva det kostet), "abandon" (vi dropper det). Svaret sier hvilke tall målet faktisk måles mot etterpå — bruk DEM i kvitteringen, aldri egne anslag. Målverdien kan bare endres på mål som har en metrikk; har målet ingen, sier svaret det, og da skal du si det til brukeren framfor å påstå at det er justert.',
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
@@ -100,7 +101,19 @@ export const updateGoalTool = {
 		targetDate: z
 			.string()
 			.optional()
-			.describe('Ny frist (YYYY-MM-DD). Påkrevd for set_deadline.')
+			.describe('Ny frist (YYYY-MM-DD). Påkrevd for set_deadline.'),
+		frees: z
+			.string()
+			.optional()
+			.describe(
+				'Bare med "complete": hva det å nå målet FRIGJØR, i brukerens egne ord — én setning. Gjett aldri; ta det med bare når brukeren har sagt det.'
+			),
+		cost: z
+			.string()
+			.optional()
+			.describe(
+				'Bare med "complete": hva det KOSTET, i brukerens egne ord — én setning. Den halvdelen glemmes oftest, så spør hvis bare gevinsten er nevnt. Gjett aldri.'
+			)
 	}),
 
 	execute: async (args: {
@@ -109,6 +122,8 @@ export const updateGoalTool = {
 		action: UpdateGoalAction;
 		targetValue?: number;
 		targetDate?: string;
+		frees?: string;
+		cost?: string;
 	}) => {
 		const valid = validateUpdateGoalArgs(args);
 		if (!valid.ok) return { success: false as const, error: valid.error };
@@ -212,6 +227,40 @@ export const updateGoalTool = {
 
 			const status = STATUS_BY_ACTION[args.action];
 			if (!status) return { success: false as const, error: `Ukjent action: ${args.action}` };
+
+			/**
+			 * «Nådd» er ikke bare en status — det er en milepæl med et regnskap, og
+			 * regnskapet er premisset for hva som kan prioriteres nå. Derfor gjennom den
+			 * delte skriveveien, ikke et bart statusskriv her.
+			 */
+			if (args.action === 'complete') {
+				const result = await completeGoalWithMilestone({
+					userId: args.userId,
+					goalId: goal.id,
+					patch: { frees: args.frees, cost: args.cost }
+				});
+				if (!result.ok) return { success: false as const, error: result.error };
+
+				const mangler = [
+					result.milestone.frees ? '' : 'hva det frigjør',
+					result.milestone.cost ? '' : 'hva det kostet'
+				].filter(Boolean);
+
+				return {
+					success: true as const,
+					goalId: goal.id,
+					goalTitle: goal.title,
+					action: args.action,
+					status,
+					achievedOn: result.milestone.achievedOn,
+					message:
+						`«${goal.title}» er markert som nådd${result.milestone.achievedOn ? ` (${result.milestone.achievedOn})` : ''}.` +
+						(mangler.length
+							? ` Regnskapet mangler ${mangler.join(' og ')} — spør om det NÅ, mens brukeren har det friskt, og kall update_goal på nytt med svaret. Det er regnskapet som gjør milepælen brukbar senere; selve oppnåelsen sier ingenting om hva som er mulig nå.`
+							: '') +
+						' Står det fortsatt noe i retningsprosaen om dette målet, er prosaen utdatert — si det én gang, og vis til Retning-fanen.'
+				};
+			}
 
 			await db
 				.update(goals)

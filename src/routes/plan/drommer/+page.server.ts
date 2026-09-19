@@ -7,6 +7,8 @@ import { getLatestReflection } from '$lib/server/reflections';
 import { read10kBest, readMonthlySavings, readWeightProgress } from '$lib/server/goal-progress';
 import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 import { formatLongTermValue } from '$lib/components/domain/plan/helpers.js';
+import { readMilestones } from '$lib/server/goal-milestones';
+import { splitMilestones } from '$lib/domain/goals/milestone';
 
 export type LangtidsmaalView = {
 	id: string;
@@ -89,7 +91,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
 	if (!userId) throw redirect(303, '/auth');
 
-	const [all, valueMemories, intervjuTranskript, langtidsmaal] = await Promise.all([
+	const [all, valueMemories, intervjuTranskript, langtidsmaal, milepaeler] = await Promise.all([
 		db.query.dreams.findMany({
 			where: eq(dreams.userId, userId),
 			orderBy: [desc(dreams.createdAt)],
@@ -106,7 +108,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}),
 		// Rå-samtalen er førsteklasses: siste intervju-transkript vises på siden
 		getLatestReflection(userId, 'livsintervju_chat'),
-		loadLangtidsmaal(userId)
+		loadLangtidsmaal(userId),
+		// Oppnådde mål hører i Retningen: de er premissene for hva som kan prioriteres nå.
+		// Fram til september 2026 forsvant et fullført mål herfra helt (loadLangtidsmaal
+		// filtrerer på `active`), så «oppnådd» var i praksis det samme som «glemt».
+		readMilestones(userId)
 	]);
 
 	// Grupper: nyeste per kind for "aktive", resten i historikk.
@@ -152,7 +158,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 					createdAt: intervjuTranskript.createdAt.toISOString()
 				}
 			: null,
-		langtidsmaal
+		langtidsmaal,
+		milepaeler: splitMilestones(milepaeler, new Date())
 	};
 };
 

@@ -30,6 +30,11 @@ export type GoalItem = {
 			met?: boolean;
 			lastEvaluatedAt?: string;
 		} | null;
+		milestone?: {
+			achievedOn?: string;
+			frees?: string | null;
+			cost?: string | null;
+		} | null;
 	} | null;
 	createdAt: Date;
 	category: {
