@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { formatMilestoneDate } from '$lib/domain/goals/milestone';
+	import { livsintervjuInitialData } from '$lib/flows/livsintervju';
 	import DeprioritizationSection from '$lib/components/domain/plan/DeprioritizationSection.svelte';
+	import PrioritySection from '$lib/components/domain/plan/PrioritySection.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
@@ -125,20 +127,7 @@
 		try {
 			const res = await fetch('/api/retning/interview-context');
 			if (res.ok) {
-				const ctx = (await res.json()) as {
-					eksisterendeRetning: string;
-					verdierNaa: string;
-					forrigeIntervju: string;
-					kildemateriale: string;
-				};
-				livsintervjuContext = {
-					initialData: {
-						_eksisterendeRetning: ctx.eksisterendeRetning,
-						_verdierNaa: ctx.verdierNaa,
-						_forrigeIntervju: ctx.forrigeIntervju,
-						_kildemateriale: ctx.kildemateriale
-					}
-				};
+				livsintervjuContext = { initialData: livsintervjuInitialData(await res.json()) };
 			}
 		} catch {
 			livsintervjuContext = {};
@@ -331,10 +320,13 @@
 	</section>
 
 	<!--
-	  SEKSJON 1a: Prioriteringer. Står FØR milepælene og verdiene fordi rekkefølgen
-	  er den samme som i chat-konteksten: prosaen, så hva som er valgt bort nå, så
-	  hva som er oppnådd. Et valgt fravær er en del av retningen, ikke et avvik.
+	  SEKSJON 1a: Rekkefølgen, så nedprioriteringene. Begge står FØR milepælene og
+	  verdiene fordi rekkefølgen er den samme som i chat-konteksten: prosaen, så
+	  hva som kommer først, så hva som er valgt bort nå, så hva som er oppnådd.
+	  Et valgt fravær er en del av retningen, ikke et avvik.
 	-->
+	<PrioritySection ranking={data.rangering} onchanged={() => invalidateAll()} />
+
 	<DeprioritizationSection
 		periods={data.nedprioriteringer}
 		onchanged={() => invalidateAll()}

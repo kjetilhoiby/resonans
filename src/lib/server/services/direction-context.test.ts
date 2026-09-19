@@ -176,3 +176,62 @@ describe('buildDirectionBlock — bevisste nedprioriteringer', () => {
 		expect(tom).toBe(uten);
 	});
 });
+
+describe('buildDirectionBlock — rekkefølgen', () => {
+	const NOW = new Date('2026-09-19T08:00:00Z');
+	const vision = [{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }];
+	const rangering = {
+		priorities: [
+			{ label: 'Helse', anchorKind: 'area' as const, anchorId: 'helse', why: 'fundamentet' },
+			{ label: 'Bidrag hjemme', anchorKind: null, anchorId: null, why: null }
+		],
+		setOn: '2026-02-12'
+	};
+
+	it('rendrer rekkefølgen med posisjon og begrunnelse', () => {
+		const block = buildDirectionBlock(vision, [], undefined, { ranking: rangering, now: NOW });
+		expect(block).toContain('REKKEFØLGEN');
+		expect(block).toContain('1. Helse — fundamentet');
+		expect(block).toContain('2. Bidrag hjemme');
+	});
+
+	// De to prioriteringsblokkene er ikke hverandres motsatser, og en modell som
+	// ser dem ved siden av hverandre tar nettopp den slutningen.
+	it('sier at det som mangler ikke er valgt bort', () => {
+		const block = buildDirectionBlock(vision, [], undefined, { ranking: rangering, now: NOW });
+		expect(block).toContain('ikke valgt bort');
+	});
+
+	it('står etter verdiene og FØR nedprioriteringene', () => {
+		const valgt = resolveDeprioritization(
+			{
+				id: 'd1',
+				dimensionId: 'kultur',
+				startDate: '2026-08-10',
+				endDate: '2026-11-02',
+				reason: 'gir plass til jobbstarten',
+				repair: null,
+				confirmedOn: null,
+				settledOn: null,
+				outcome: null
+			},
+			'2026-09-19'
+		);
+		const block = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, {
+			ranking: rangering,
+			deprioritizations: [valgt],
+			now: NOW
+		});
+		expect(block.indexOf('VERDIER')).toBeLessThan(block.indexOf('REKKEFØLGEN'));
+		expect(block.indexOf('REKKEFØLGEN')).toBeLessThan(block.indexOf('BEVISST NEDPRIORITERT'));
+	});
+
+	it('endrer ingenting uten rekkefølge', () => {
+		const uten = buildDirectionBlock(vision, ['Nærvær med barna']);
+		const tom = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, {
+			ranking: null,
+			now: NOW
+		});
+		expect(tom).toBe(uten);
+	});
+});

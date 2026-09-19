@@ -9,6 +9,8 @@
  */
 
 import { LIVSKOMPASS_DIMENSIONS } from '$lib/domains/livskompass/dimensions';
+import { validatePriorities, type Priority } from '$lib/domains/livskompass/ranking';
+import type { GoalKind } from '$lib/domain/goals/goal-kind';
 
 export interface LivsintervjuSection {
 	id: string;
@@ -100,20 +102,48 @@ export interface LongTermGoal {
 	unit: string | null;
 	/** Målåret, f.eks. 2031 */
 	year: number | null;
+	/**
+	 * Arten speilet foreslo, eller null.
+	 *
+	 * Null er ikke «ukjent art» som et tap — det er regelen fra `goal-kind.ts`:
+	 * en metrikk BEVISER at målet er kontrollert, fravær av markør beviser
+	 * ingenting, og `inferGoalKind` avgjør resten. Vi gjetter ikke her heller.
+	 */
+	kind?: GoalKind | null;
 }
 
+/** Markørene speilet bruker for målart. Ukjent markør ignoreres, den gjetter ikke. */
+const KIND_MARKERS: Record<string, GoalKind> = {
+	styrer: 'kontrollert',
+	tilrettelegger: 'tilrettelagt'
+};
+
 /**
- * Hent foreslåtte målbare langtidsmål fra speil-meldingen — linjene mellom
+ * Hent foreslåtte langtidsmål fra speil-meldingen — linjene mellom
  * <langtidsmål>-markørene. Format «Tittel: 80 kg innen 2031»; linjer uten
  * tall blir intensjonsmål uten verdi. Maks 5. Tom liste uten markører
  * (bevisst strengt, så løs prosa aldri blir mål).
+ *
+ * En valgfri `[styrer]`/`[tilrettelegger]`-markør foran linja bærer MÅLARTEN.
+ * Den står i en egen klamme og ikke i tittelen fordi tittelen er det brukeren
+ * leser: «[tilrettelegger] Mer aktive vennskap» skal bli målet «Mer aktive
+ * vennskap», ikke et mål som heter det med en etikett i.
  */
 export function parseLongTermGoals(message: string): LongTermGoal[] {
 	const match = message.match(/<langtidsmål>([\s\S]*?)<\/langtidsmål>/i);
 	if (!match) return [];
 	const goals: LongTermGoal[] = [];
 	for (const raw of match[1].split('\n')) {
-		const line = raw.trim().replace(/^[-*•·]\s*/, '');
+		let line = raw.trim().replace(/^[-*•·]\s*/, '');
+		if (!line || line.length > 200) continue;
+
+		// Målart-markøren strippes FØR alt annet, så tittelen blir brukerens ord
+		let kind: GoalKind | null = null;
+		const kindMatch = line.match(/^\[([a-zæøå]+)\]\s*/i);
+		if (kindMatch) {
+			kind = KIND_MARKERS[kindMatch[1].toLowerCase()] ?? null;
+			line = line.slice(kindMatch[0].length).trim();
+		}
 		if (!line || line.length > 160) continue;
 
 		// «innen ÅÅÅÅ» på slutten (valgfritt)
@@ -127,10 +157,17 @@ export function parseLongTermGoals(message: string): LongTermGoal[] {
 				title: m[1].trim(),
 				value: parseFloat(m[2].replace(',', '.')),
 				unit: m[3].trim() || null,
-				year
+				year,
+				kind
 			});
 		} else {
-			goals.push({ title: withoutYear.replace(/:$/, '').trim(), value: null, unit: null, year });
+			goals.push({
+				title: withoutYear.replace(/:$/, '').trim(),
+				value: null,
+				unit: null,
+				year,
+				kind
+			});
 		}
 	}
 	return goals.slice(0, 5);
@@ -212,4 +249,77 @@ export function livskompassDoorOpeners(): string {
 		areas.set(dim.area, list);
 	}
 	return [...areas.entries()].map(([area, labels]) => `${area}: ${labels.join(', ')}`).join('\n');
+}
+
+// ── Rekkefølgen fra speil-steget ────────────────────────────────────────────
+
+/**
+ * Hent prioriteringene fra speil-meldingen — linjene mellom
+ * <prioritering>-markørene, i den rekkefølgen de står.
+ *
+ * Formen er «Etikett — begrunnelse», og separatoren godtas i fire varianter
+ * fordi en språkmodell veksler mellom tankestrek, bindestrek og kolon uten at
+ * meningen endrer seg. Nummerering foran strippes: RANGEN ER POSISJONEN
+ * (`ranking.ts`), så et tall i teksten er en andre kilde til samme faktum, og
+ * en modell som hopper fra «2.» til «4.» skal ikke kunne lage et hull.
+ *
+ * Valideringen er den samme som endepunktet bruker — inkludert taket på fem og
+ * forankringen i livskompasset. Er lista ugyldig (for lang, duplikater),
+ * returneres den tomme lista framfor en halv rekkefølge: en rangering som har
+ * mistet et ledd, er verre enn ingen.
+ */
+export function parseRankingBlock(message: string): Priority[] {
+	const match = message.match(/<prioritering>([\s\S]*?)<\/prioritering>/i);
+	if (!match) return [];
+
+	const raw: Array<{ label: string; why: string }> = [];
+	for (const line of match[1].split('\n')) {
+		const cleaned = line
+			.trim()
+			.replace(/^[-*•·]\s*/, '')
+			.replace(/^\d+[.)]\s*/, '')
+			.trim();
+		if (!cleaned) continue;
+		const split = cleaned.match(/^(.+?)\s*(?:—|–|\s-\s|:)\s*(.+)$/);
+		if (split) {
+			raw.push({ label: split[1].trim(), why: split[2].trim() });
+		} else {
+			raw.push({ label: cleaned, why: '' });
+		}
+	}
+
+	const validated = validatePriorities(raw);
+	return validated.ok ? validated.value : [];
+}
+
+// ── Konteksten inn i flyten ─────────────────────────────────────────────────
+
+export interface LivsintervjuContext {
+	eksisterendeRetning?: string;
+	verdierNaa?: string;
+	forrigeIntervju?: string;
+	kildemateriale?: string;
+	/** Livskompasset som målt materiale (`describeLivskompassMaterial`). */
+	livskompass?: string;
+	/** Rekkefølgen slik den står nå — skal testes, ikke skrives på nytt blindt. */
+	rangeringNaa?: string;
+}
+
+/**
+ * Oversett `/api/retning/interview-context` til flytens `initialData`.
+ *
+ * Delt fordi den samme oversettelsen står i to knapper — hjemskjermen og
+ * Retning-fanen — og et felt lagt til ett sted ville blitt usynlig fra det
+ * andre. Symptomet er da at intervjuet oppfører seg ulikt ut fra hvor det ble
+ * startet, uten at noe sier fra.
+ */
+export function livsintervjuInitialData(ctx: LivsintervjuContext): Record<string, string> {
+	return {
+		_eksisterendeRetning: ctx.eksisterendeRetning ?? '',
+		_verdierNaa: ctx.verdierNaa ?? '',
+		_forrigeIntervju: ctx.forrigeIntervju ?? '',
+		_kildemateriale: ctx.kildemateriale ?? '',
+		_livskompass: ctx.livskompass ?? '',
+		_rangeringNaa: ctx.rangeringNaa ?? ''
+	};
 }

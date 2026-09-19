@@ -2280,6 +2280,108 @@ rent i `$lib/domain/goals/goal-kind.ts`.
   noe sa fra. `null` fjerner arten. Chatten setter den med `update_goal`,
   `action: 'set_kind'`.
 
+### Rekkefølgen: hva som kommer først når noe må vike
+
+Se `docs/changelog/2026-09-19-retningen-som-baerer-prioriteringer.md`. Reglene
+rent i `$lib/domains/livskompass/ranking.ts`, lagringen i
+`$lib/server/livskompass-ranking.ts`, flaten på Retning-fanen.
+
+- **Retningen kunne ikke svare på hva som kommer FØRST.** Prosa (visjonene),
+  uordnede verdier, tolv uavhengige akser i hjulet og fra september 2026 bevisste
+  nedprioriteringer — ingen av dem er en rekkefølge. Uten en har en coach
+  ingenting å avgjøre med når to ting ikke får plass i samme uke, og svaret blir
+  at begge er viktige, som er sant og ubrukelig. Brukerens egne ord: det manglet
+  «en mulighet til å prioritere f.eks helse først, deretter bidrag hjemme,
+  deretter ekstra oppmerksomhet til hvert enkelt av barna fra ti års alder».
+- **Rekkefølgen og nedprioriteringene er IKKE hverandres motsatser.** Fristelsen
+  er å utlede at det som ikke står på lista er nedprioritert. Det er feil begge
+  veier: en nedprioritering er et DATERT valg med en termin og et oppgjør, mens
+  et fravær fra topp tre bare betyr at tre ting kom foran. Begge blokkene i
+  chat-konteksten sier det eksplisitt, fordi det er nøyaktig slutningen en modell
+  tar av å se dem ved siden av hverandre.
+- **Rangen er POSISJONEN, aldri et lagret tall.** Et `rank`-felt ved siden av en
+  array er to kilder til samme faktum, og de blir uenige (to toere, et hopp fra
+  1 til 3).
+- **Forankringen i livskompasset gjettes ALDRI**, og den treffer OMRÅDER også —
+  «helse først» peker ikke på noen dimensjon (det finnes bare søvn, trening,
+  mat). Treffet er eksakt på id, full eller kort etikett. «Mer tid til barna»
+  forankres ikke i «Barn» ved delstreng: en uforankret prioritering er fullt
+  gyldig, en feilforankret er en stille løgn om hva hjulet måler. Samme regel som
+  at `inferGoalKind` ikke gjetter `tilrettelagt`.
+- **`MAX_PRIORITIES` er 5.** Tolv rangerte ting er ikke en rangering — det er
+  livshjulet om igjen, på én linje.
+- **Strengt ved skriving, tolerant ved lesing.** `validatePriorities` er regelen
+  for hva som kan SETTES; `normalizeStoredPriorities` leser det som alt står. En
+  senere innstramming av taket skal ikke få en rekkefølge brukeren har satt til å
+  forsvinne uten et ord.
+- **Append-only, nyeste vinner.** En rekkefølge rettes ikke, den settes på nytt —
+  da er historikken gratis, og «i fjor kom jobb først» er nøyaktig det et
+  re-intervju skal holde opp mot brukeren. Tidsstempelet er
+  REGISTRERINGSTIDSPUNKTET; `setOn` bor i `data`.
+- **Den blir gammel, men forsvinner ikke.** Over `RANKING_STALE_DAYS` (365) sier
+  blokka at den bør bekreftes én gang før den avgjør noe stort. Samme grep som
+  forfallet på milepælene: bakgrunn framfor fjerning.
+
+### Livsintervjuet: bredde før dybde, og livskompasset som data
+
+Se samme changelog, fase 4. Materialet i
+`$lib/domains/livskompass/interview-material.ts`, promptene i
+`$lib/flows/registry.ts`.
+
+- **Trakten var designet, ikke en modellsvakhet.** Alle fire chat-stegene sa
+  «Still ETT spørsmål om gangen» og «grav der det blir ekte»; ingen sa noe om
+  bredde. `<status>`-blokka skulle oppdateres etter HVER respons, fra første svar
+  — altså måtte en 4–7-linjers verdiliste finnes før samtalen hadde åpnet seg, og
+  hver oppdatering gjorde neste spørsmål smalere. Verdi-steget har nå to runder,
+  og `<status>` skrives IKKE i runde 1.
+- **Instruksen sier HVORFOR, ikke bare hva.** «Ikke skriv blokka ennå» uten
+  begrunnelse overlever ikke en modell som vil være hjelpsom.
+- **Livskompasset går inn som TALL, ikke som en ordliste.** Tolv etiketter kan
+  modellen finne på selv; «venner har ligget ute av synk i sju av åtte uker» kan
+  den ikke. `describeLivskompassMaterial` leser åtte ukers innsjekker.
+- **Materialet SIER hva det måler, aldri hva det BETYR.** Skriver vi dommen inn i
+  konteksten, gjentar modellen den som sin egen innsikt — og da har vi laget en
+  trakt til, bare lenger opp.
+- **Målingene brukes i runde 2, ikke i runde 1**, og prompten sier det. Lar man
+  dem styre bredderunden, ER de den nye trakta: da spørres det bare om områdene
+  der tallene alt er lave, og brukeren får aldri sagt hva som betyr noe.
+- **Én uke er ikke et mønster.** `MIN_WEEKS_FOR_PATTERN` (4) og median, som
+  ellers. Under terskelen sies tallene uten dom.
+- **Et VALGT gap er intervjumateriale, men et annet spørsmål.** Coachingen i
+  `dimensions.ts` filtrerer nedprioriteringene HELT ut — uka skal ikke be deg
+  heve det du nettopp la bort. Intervjuet handler om årene, og der er terminen
+  selv spørsmålet: holder valget over år, eller er det i ferd med å bli en
+  tilstand?
+- **Ti år er en SEKVENS, ikke et øyeblikk.** «Hva gjør du en vanlig tirsdag»
+  svarer bare på siste fase; barn blir tenåringer og flytter ut, en jobb har en
+  begynnelse og en slutt. Steget ber om to–tre faser med omtrentlige år. Det
+  krevde IKKE at lagringsformatet ble rørt: `summary` er fri prosa.
+- **Femårssteget skal snevre inn fra HELE tiårsbildet**, ikke fra tråden som er
+  lettest å konkretisere — og det er der det blir tydelig hva som må vike. Steget
+  spør derfor hvor lenge og hva som skal til for å hente det opp igjen, altså
+  formen på en nedprioritering.
+- **Speil-steget forfatter to blokker:** `<prioritering>` (rekkefølgen) og
+  `<langtidsmål>` med en valgfri `[styrer]`/`[tilrettelegger]`-markør for
+  MÅLARTEN. Markøren gjettes ikke — er speilet i tvil, står den av, og flaten
+  spør.
+- **`parseRankingBlock` forkaster HELE lista når den er ugyldig.** En rangering
+  som har mistet et ledd er verre enn ingen.
+- **Ingen nye steg.** Intervjuet er estimert til 30 minutter og oppleves alt som
+  tungt. Rekkefølgen og målarten kommer ut av speil-steget som alt finnes, og
+  rekkefølgen kan settes direkte på Retning-fanen.
+- **`livsintervjuInitialData` er DELT** mellom hjemskjermen og Retning-fanen. De
+  hadde hver sin kopi av oversettelsen fra `/api/retning/interview-context`, og
+  et nytt felt lagt til ett sted ville vært usynlig fra det andre — symptomet er
+  at intervjuet oppfører seg ulikt ut fra hvor det ble startet.
+- **`art` i `createGoal`, ikke `goalKind`.** Det navnet er opptatt og betyr noe
+  helt annet der: TRACK-arten (`level`/`change`/`trajectory`). To felt med samme
+  navn og ulik betydning i samme objekt er en feil uten feilmelding.
+- Kjent rest: retningssamtalen (kvartalsvis) får ikke livskompass-materialet;
+  rekkefølgen har ingen chat-inngang; ingenting MÅLER at bredderunden faktisk
+  dekket alle fire områdene (en `<bredde-ferdig/>`-markør ble vurdert og
+  forkastet — et steg til å tape på); fasene i tiårsbildet er prosa, ikke
+  struktur.
+
 ### Skjermtid: oppmerksomhet er ikke at skjermen sto på
 
 Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i

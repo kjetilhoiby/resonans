@@ -119,8 +119,14 @@ export async function createLongTermGoal(userId: string, goal: LongTermGoal) {
 	return createGoal({
 		userId,
 		categoryName: metric.categoryName,
+		// Arten speilet foreslo. Utelates den, avgjør `inferGoalKind` ved lesing —
+		// et mål uten metrikk blir «uavklart» og flaten SPØR, framfor å sortere
+		// det inn i «Trenger en form» på en gjetning.
+		art: goal.kind ?? undefined,
 		title,
-		description: `Målbart langtidsmål knyttet til retningen (${visionHorizon.replace('vision_', '')}).`,
+		// «Målbart» er en påstand som ikke holder for et tilrettelagt mål — det
+		// måles på betingelsene du setter opp, ikke på utfallet.
+		description: `Langtidsmål knyttet til retningen (${visionHorizon.replace('vision_', '')}).`,
 		targetDate,
 		metricId: metric.metricId,
 		targetValue: metric.targetValue,

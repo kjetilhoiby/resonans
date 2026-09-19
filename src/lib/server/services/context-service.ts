@@ -6,6 +6,7 @@ import { DreamService } from '$lib/server/services/dream-service';
 import { buildDirectionBlock } from '$lib/server/services/direction-context';
 import { readMilestones } from '$lib/server/goal-milestones';
 import { listDeprioritizations } from '$lib/server/livskompass-deprioritization';
+import { readRanking } from '$lib/server/livskompass-ranking';
 import { buildObservedBehaviorBlock } from '$lib/server/services/observed-behavior-service';
 import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
@@ -108,7 +109,7 @@ export class ContextService {
 
 	private static async activeVision(userId: string): Promise<string> {
 		const horizons = ['vision_10year', 'vision_5year', 'vision_yearly', 'vision_quarterly'] as const;
-		const [found, valueRows, gapReflection, milestones, deprioritizations] = await Promise.all([
+		const [found, valueRows, gapReflection, milestones, deprioritizations, ranking] = await Promise.all([
 			Promise.all(horizons.map((k) => DreamService.getActive(userId, k))),
 			db.query.memories.findMany({
 				where: and(
@@ -131,7 +132,9 @@ export class ContextService {
 			// Oppnådde mål: premisser for hva som er mulig nå, ikke prestasjoner å feire
 			readMilestones(userId),
 			// Bevisste nedprioriteringer: et valgt gap skal ikke konfronteres som drift
-			listDeprioritizations(userId)
+			listDeprioritizations(userId),
+			// Rekkefølgen: uten den kan ingen chat si hva som skal vike når noe må vike
+			readRanking(userId)
 		]);
 		const visions = found.filter((v): v is NonNullable<typeof v> => Boolean(v?.summary));
 
@@ -139,7 +142,7 @@ export class ContextService {
 			visions.map((v) => ({ kind: v.kind, summary: v.summary ?? '', originKind: v.originKind })),
 			valueRows.map((m) => m.content),
 			gapReflection?.content,
-			{ milestones, deprioritizations }
+			{ milestones, deprioritizations, ranking }
 		);
 	}
 

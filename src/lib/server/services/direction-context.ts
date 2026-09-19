@@ -8,6 +8,8 @@ import {
 	buildPriorityBlock,
 	type ResolvedDeprioritization
 } from '$lib/domains/livskompass/deprioritization';
+import { buildRankingBlock, type Ranking } from '$lib/domains/livskompass/ranking';
+import { osloDayKey } from '$lib/domain/oslo-time';
 
 export interface DirectionVision {
 	kind: string;
@@ -38,6 +40,12 @@ export function horizonLabel(kind: string): string {
  * spriker: prosaen, verdiene, de bevisste prioriteringene, og milepælene som
  * sier hva som alt er oppnådd. Gap-notatet kommer sist, fordi det er dommen.
  *
+ * Innenfor prioriteringene kommer RANGERINGEN før nedprioriteringene: hva som
+ * er først, så hva som er lagt bort. De er ikke hverandres motsatser — det som
+ * mangler i rangeringen er ikke valgt bort — og begge blokkene sier det selv,
+ * fordi det er nøyaktig slutningen en modell tar av å se dem ved siden av
+ * hverandre.
+ *
  * `extras` er et objekt og ikke flere posisjonelle argumenter: da den tredje
  * samlingen kom, var alternativet fire valgfrie parametere på rad der to av dem
  * er lister — og et kallsted som bytter om på to lister får ingen feil.
@@ -47,6 +55,8 @@ export interface DirectionExtras {
 	milestones?: Milestone[];
 	/** Bevisste, tidsavgrensede nedprioriteringer fra livskompasset. */
 	deprioritizations?: ResolvedDeprioritization[];
+	/** Brukerens egen rekkefølge — hva som kommer først når noe må vike. */
+	ranking?: Ranking | null;
 	now?: Date;
 }
 
@@ -77,8 +87,10 @@ export function buildDirectionBlock(
 		for (const value of valuesMemories) out += `- ${value}\n`;
 	}
 
+	const now = extras.now ?? new Date();
+	out += buildRankingBlock(extras.ranking ?? null, osloDayKey(now));
 	out += buildPriorityBlock(extras.deprioritizations ?? []);
-	out += buildMilestoneBlock(extras.milestones ?? [], extras.now ?? new Date());
+	out += buildMilestoneBlock(extras.milestones ?? [], now);
 
 	if (gapNote?.trim()) {
 		out += `\nKJENTE GAP (fra siste retningssamtale):\n${gapNote.trim()}\n`;

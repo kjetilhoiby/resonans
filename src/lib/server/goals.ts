@@ -9,6 +9,7 @@ import { openai } from './openai';
 import { PersonMentionService } from './services/person-mention-service';
 import { readLatestWeight } from './goal-progress';
 import { resolveWeightGoalNumbers } from '$lib/domain/health/weight-goal';
+import type { GoalKind } from '$lib/domain/goals/goal-kind';
 
 export interface GoalCreationParams {
 	userId: string;
@@ -20,6 +21,19 @@ export interface GoalCreationParams {
 	metricId?: string;
 	goalKind?: GoalTrackKind;
 	goalWindow?: GoalWindow;
+	/**
+	 * MÅLARTEN — `kontrollert` eller `tilrettelagt` (`$lib/domain/goals/goal-kind.ts`).
+	 *
+	 * **Den heter `art` og ikke `goalKind` fordi det navnet er opptatt her**, og
+	 * betyr noe helt annet: `goalKind` over er TRACK-arten (`level`/`change`/
+	 * `trajectory`), altså hvordan målet evalueres. To felt med samme navn og
+	 * ulik betydning i samme objekt er en feil som ikke gir noen feilmelding.
+	 * Lagres som `metadata.goalKind`, som er nøkkelen `readGoalKind` leser.
+	 *
+	 * Utelates den, avgjør `inferGoalKind` ved lesing: en metrikk beviser
+	 * `kontrollert`, fravær beviser ingenting. Vi gjetter ikke her heller.
+	 */
+	art?: GoalKind;
 	targetValue?: number;
 	unit?: string;
 	durationDays?: number;
@@ -270,6 +284,7 @@ export async function createGoal(params: GoalCreationParams) {
 	const metadata = {
 		metricId: resolvedMetricId,
 		...(params.visionHorizon ? { visionHorizon: params.visionHorizon } : {}),
+		...(params.art ? { goalKind: params.art } : {}),
 		...(resolvedMetricId === 'category_spend' && params.spendCategory
 			? { spendCategory: params.spendCategory }
 			: {}),

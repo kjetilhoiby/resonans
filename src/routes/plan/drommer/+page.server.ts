@@ -10,6 +10,7 @@ import { formatLongTermValue } from '$lib/components/domain/plan/helpers.js';
 import { readMilestones } from '$lib/server/goal-milestones';
 import { splitMilestones } from '$lib/domain/goals/milestone';
 import { listDeprioritizations } from '$lib/server/livskompass-deprioritization';
+import { readRanking } from '$lib/server/livskompass-ranking';
 
 export type LangtidsmaalView = {
 	id: string;
@@ -92,8 +93,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
 	if (!userId) throw redirect(303, '/auth');
 
-	const [all, valueMemories, intervjuTranskript, langtidsmaal, milepaeler, nedprioriteringer] =
-		await Promise.all([
+	const [
+		all,
+		valueMemories,
+		intervjuTranskript,
+		langtidsmaal,
+		milepaeler,
+		nedprioriteringer,
+		rangering
+	] = await Promise.all([
 		db.query.dreams.findMany({
 			where: eq(dreams.userId, userId),
 			orderBy: [desc(dreams.createdAt)],
@@ -115,10 +123,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		// Fram til september 2026 forsvant et fullført mål herfra helt (loadLangtidsmaal
 		// filtrerer på `active`), så «oppnådd» var i praksis det samme som «glemt».
 		readMilestones(userId),
-			// Prioriteringene hører i Retningen: beslutningen spenner over måneder,
-			// mens livskompasset måler uka. Hjulet LESER dem, men de settes her.
-			listDeprioritizations(userId)
-		]);
+		// Prioriteringene hører i Retningen: beslutningen spenner over måneder,
+		// mens livskompasset måler uka. Hjulet LESER dem, men de settes her.
+		listDeprioritizations(userId),
+		// Rekkefølgen: hva som kommer først når to ting ikke får plass samtidig
+		readRanking(userId)
+	]);
 
 	// Grupper: nyeste per kind for "aktive", resten i historikk.
 	const seen = new Set<string>();
@@ -165,7 +175,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			: null,
 		langtidsmaal,
 		milepaeler: splitMilestones(milepaeler, new Date()),
-		nedprioriteringer
+		nedprioriteringer,
+		rangering
 	};
 };
 

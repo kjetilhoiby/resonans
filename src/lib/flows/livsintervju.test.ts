@@ -7,6 +7,7 @@ import {
 	resolveKilde,
 	segmentConversationBySteps,
 	parseLongTermGoals,
+	parseRankingBlock,
 	horizonForYear,
 	LIVSINTERVJU_STEP_PROMPTS
 } from './livsintervju';
@@ -147,16 +148,16 @@ describe('parseLongTermGoals', () => {
 			'Bra!\n<langtidsmål>\nVekt: 80 kg innen 2031\n10 km: 50 min innen 2029\nSparing: 8000 kr/mnd innen 2027\n</langtidsmål>'
 		);
 		expect(goals).toEqual([
-			{ title: 'Vekt', value: 80, unit: 'kg', year: 2031 },
-			{ title: '10 km', value: 50, unit: 'min', year: 2029 },
-			{ title: 'Sparing', value: 8000, unit: 'kr/mnd', year: 2027 }
+			{ title: 'Vekt', value: 80, unit: 'kg', year: 2031, kind: null },
+			{ title: '10 km', value: 50, unit: 'min', year: 2029, kind: null },
+			{ title: 'Sparing', value: 8000, unit: 'kr/mnd', year: 2027, kind: null }
 		]);
 	});
 
 	it('tåler linjer uten tall og uten år', () => {
 		const goals = parseLongTermGoals('<langtidsmål>\nLøpe Oslo maraton\nVekt: 80 kg\n</langtidsmål>');
-		expect(goals[0]).toEqual({ title: 'Løpe Oslo maraton', value: null, unit: null, year: null });
-		expect(goals[1]).toEqual({ title: 'Vekt', value: 80, unit: 'kg', year: null });
+		expect(goals[0]).toEqual({ title: 'Løpe Oslo maraton', value: null, unit: null, year: null, kind: null });
+		expect(goals[1]).toEqual({ title: 'Vekt', value: 80, unit: 'kg', year: null, kind: null });
 	});
 
 	it('gir tom liste uten markører — løs prosa blir aldri mål', () => {
@@ -166,6 +167,55 @@ describe('parseLongTermGoals', () => {
 	it('begrenser til maks 5', () => {
 		const lines = Array.from({ length: 8 }, (_, i) => `Mål ${i}: ${i} stk innen 2030`).join('\n');
 		expect(parseLongTermGoals(`<langtidsmål>\n${lines}\n</langtidsmål>`)).toHaveLength(5);
+	});
+
+	it('leser målarten fra markøren og holder den ute av tittelen', () => {
+		const goals = parseLongTermGoals(
+			'<langtidsmål>\n[styrer] Vekt: 80 kg innen 2031\n[tilrettelegger] Mer aktive vennskap innen 2028\n</langtidsmål>'
+		);
+		expect(goals[0]).toEqual({ title: 'Vekt', value: 80, unit: 'kg', year: 2031, kind: 'kontrollert' });
+		expect(goals[1]).toEqual({
+			title: 'Mer aktive vennskap',
+			value: null,
+			unit: null,
+			year: 2028,
+			kind: 'tilrettelagt'
+		});
+	});
+
+	it('gjetter ikke på en ukjent markør — arten blir null, linja består', () => {
+		const goals = parseLongTermGoals('<langtidsmål>\n[kanskje] Vekt: 80 kg innen 2031\n</langtidsmål>');
+		expect(goals[0]).toEqual({ title: 'Vekt', value: 80, unit: 'kg', year: 2031, kind: null });
+	});
+});
+
+describe('parseRankingBlock', () => {
+	it('leser rekkefølgen i den rekkefølgen den står, og forankrer der den kan', () => {
+		const priorities = parseRankingBlock(
+			'Her:\n<prioritering>\n1. Helse — alt annet henger på den\n2. Bidrag hjemme: avtalt med Ida\n3. Venner\n</prioritering>'
+		);
+		expect(priorities.map((p) => p.label)).toEqual(['Helse', 'Bidrag hjemme', 'Venner']);
+		expect(priorities[0]).toMatchObject({ anchorKind: 'area', anchorId: 'helse' });
+		expect(priorities[1].anchorKind).toBeNull();
+		expect(priorities[2]).toMatchObject({ anchorKind: 'dimension', anchorId: 'venner', why: null });
+	});
+
+	it('godtar tankestrek, bindestrek og kolon som separator', () => {
+		const priorities = parseRankingBlock(
+			'<prioritering>\nHelse – fundamentet\nVenner - flere initiativ\n</prioritering>'
+		);
+		expect(priorities[0].why).toBe('fundamentet');
+		expect(priorities[1].why).toBe('flere initiativ');
+	});
+
+	it('gir tom liste uten markører — løs prosa blir aldri en rekkefølge', () => {
+		expect(parseRankingBlock('Først helse, så bidrag hjemme.')).toEqual([]);
+	});
+
+	it('forkaster hele lista når den er ugyldig, framfor å levere en halv rangering', () => {
+		const lines = Array.from({ length: 7 }, (_, i) => `Ting ${i}`).join('\n');
+		expect(parseRankingBlock(`<prioritering>\n${lines}\n</prioritering>`)).toEqual([]);
+		expect(parseRankingBlock('<prioritering>\nHelse\nhelse\n</prioritering>')).toEqual([]);
 	});
 });
 

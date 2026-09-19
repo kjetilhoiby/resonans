@@ -24,6 +24,7 @@
 -->
 <script lang="ts">
 	import type { SickCheckinFlowContext } from '$lib/flows/sick-checkin';
+	import { livsintervjuInitialData } from '$lib/flows/livsintervju';
 	import { goto, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount, setContext } from 'svelte';
@@ -563,15 +564,7 @@
 		try {
 			const res = await fetch('/api/retning/interview-context');
 			if (res.ok) {
-				const ctx = await res.json() as { eksisterendeRetning: string; verdierNaa: string; forrigeIntervju: string; kildemateriale: string };
-				livsintervjuFlowContext = {
-					initialData: {
-						_eksisterendeRetning: ctx.eksisterendeRetning,
-						_verdierNaa: ctx.verdierNaa,
-						_forrigeIntervju: ctx.forrigeIntervju,
-						_kildemateriale: ctx.kildemateriale
-					}
-				};
+				livsintervjuFlowContext = { initialData: livsintervjuInitialData(await res.json()) };
 			}
 		} catch {
 			livsintervjuFlowContext = {};

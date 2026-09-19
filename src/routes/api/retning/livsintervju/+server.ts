@@ -5,6 +5,7 @@ import { MemoryService } from '$lib/server/services/memory-service';
 import { addCanonicalEventMessage, getConversationByIdForUser } from '$lib/server/conversations';
 import { buildLivsintervjuMarkdown, parseValueLines, type LongTermGoal } from '$lib/flows/livsintervju';
 import { createLongTermGoal } from '$lib/server/retning-goals';
+import { saveRanking } from '$lib/server/livskompass-ranking';
 import type { RequestHandler } from './$types';
 
 /**
@@ -13,6 +14,10 @@ import type { RequestHandler } from './$types';
  * destillatet som refleksjon per år (kind 'livsintervju', upsert) og
  * chattene som transkript-refleksjon ('livsintervju_chat' — «samtalen er
  * data»). Skriver til slutt et hendelseskort i dagboken.
+ *
+ * Rekkefølgen (`prioritering`) lagres for seg, på livskompassets sensor: den
+ * er ikke prosa og hører ikke i destillatet. Uten den kan ingen chat avgjøre
+ * hva som skal vike når to ting ikke får plass i samme uke.
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
@@ -146,6 +151,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 	}
 
+	// Rekkefølgen: brukerens egen prioritering, satt i speil-steget. En TOM liste
+	// skrives ikke — da ville et intervju uten rekkefølge slettet fjorårets.
+	let rankingSaved = false;
+	const rawRanking = Array.isArray(body?.prioritering) ? body.prioritering : [];
+	if (rawRanking.length > 0) {
+		const result = await saveRanking(userId, rawRanking, new Date(), 'livsintervju');
+		if (!result.ok) console.error('[retning] rekkefølge feilet:', result.error);
+		rankingSaved = result.ok;
+	}
+
 	// Fire-and-forget: hendelseskort i dagboken
 	void addCanonicalEventMessage(userId, {
 		kind: 'flow',
@@ -160,6 +175,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		periodKey,
 		savedVisions,
 		valuesCreated,
-		goalsCreated
+		goalsCreated,
+		rankingSaved
 	});
 };

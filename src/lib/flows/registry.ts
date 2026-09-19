@@ -13,7 +13,13 @@ import {
 	parseBirthdayGoals,
 	parseStatusBlock
 } from './birthday-interview';
-import { livskompassDoorOpeners, livsintervjuStepPrompt, parseLongTermGoals, resolveKilde } from './livsintervju';
+import {
+	livskompassDoorOpeners,
+	livsintervjuStepPrompt,
+	parseLongTermGoals,
+	parseRankingBlock,
+	resolveKilde
+} from './livsintervju';
 import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	HODEDUMP_DECISION_OPTIONS,
@@ -1791,23 +1797,31 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				buildPrompts: (data) => {
 					const verdierNaa = typeof data._verdierNaa === 'string' ? data._verdierNaa : '';
 					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
+					const livskompass = typeof data._livskompass === 'string' ? data._livskompass : '';
 					const kilde = resolveKilde(data);
 					return {
 						prompt: livsintervjuStepPrompt('verdier'),
 						systemPrompt: [
 							'Du åpner livsintervjuet — den store retningssamtalen om hvem brukeren vil være om ett, fem og ti år. Første beat er VERDIENE: hva brukeren faktisk står for, ikke hva som høres fint ut.',
 							'',
-							'Still ETT åpent spørsmål om gangen og grav der det blir ekte: Hva er du ikke villig til å ofre? Hva angrer du på når du ikke lever etter det? Hva bruker du faktisk tid og penger på — og stemmer det med det du sier er viktig?',
+							'ARBEIDSORDEN — to runder, og BREDDE KOMMER FØRST:',
 							'',
-							'Livsområdene under er døråpnere hvis samtalen trenger terreng — ikke en sjekkliste som skal gjennomgås:',
+							'RUNDE 1 (bredde): Vær innom alle fire livsområdene før du graver i noe som helst. Ett kort spørsmål per område, og gå videre selv om svaret er tynt — et tynt svar på et område er også data. Målet er å ha hele terrenget på bordet.',
 							livskompassDoorOpeners(),
+							'',
+							'RUNDE 2 (dybde): Velg de to–tre stedene der det ble ekte, eller der svaret spriker mest fra hvordan hverdagen faktisk ser ut, og grav der. ETT spørsmål om gangen: Hva er du ikke villig til å ofre? Hva angrer du på når du ikke lever etter det? Hva bruker du faktisk tid og penger på — og stemmer det med det du sier er viktig?',
+							'',
+							'IKKE skriv <status>-blokka i runde 1. Den er en TRAKT hvis den kommer for tidlig: en verdiliste som oppdateres fra første svar gjør hvert neste spørsmål smalere, og da måler intervjuet bare hva brukeren tilfeldigvis nevnte først. Vent til alle fire områdene er berørt.',
+							livskompass
+								? `\n${livskompass}\n\nBruk målingene i RUNDE 2, ikke i runde 1. Lar du dem styre bredderunden, er de blitt den nye trakta: da spør du bare om områdene der tallene alt er lave, og brukeren får aldri sagt hva som betyr noe.`
+								: '',
 							verdierNaa ? `\nVerdier som er lagret om brukeren fra før — test dem, ikke gjenta dem («det står at X er viktig for deg — stemmer det fortsatt?»):\n${verdierNaa}` : '',
 							forrige ? `\nForrige livsintervju — bruk det aktivt («sist sa du …, står det seg?»):\n${forrige}` : '',
 							kilde ? `\nBrukerens eget råmateriale fra en tidligere dyp samtale (Balanse). Les det etter fire ting: hva han har sagt om IDENTITET, hva han har STÅTT I, hvilke GREP han tok, og hvilke MÅL han satte. Han var ofte mer konkret og direkte der enn nå — bruk formuleringene som døråpnere og test dem mot det han sier i dag; der dagens svar er vagere enn den gang, si det:\n${kilde}` : '',
 							'',
 							'Vær ærlig, ikke behagelig — men se først, utfordre så: vis at du forstår hva verdien betyr for brukeren før du tester den. Når brukeren svarer med floskler («familie er viktig»), be om et konkret eksempel fra siste måned der verdien kostet noe. En verdi som aldri koster noe er ikke en verdi.',
 							'',
-							'Etter HVER respons: oppdater en verdiliste mellom markørene <status> og </status> — 4–7 verdier, ÉN per linje, i brukerens egne formuleringer (hver linje skal stå på egne ben som en setning). Blokken er INTERN (skjules for brukeren og lagres som verdier). Ikke nevn den, ikke gjenta svarene tilbake — still heller neste spørsmål.',
+							'Fra og med runde 2, etter HVER respons: oppdater en verdiliste mellom markørene <status> og </status> — 4–7 verdier, ÉN per linje, i brukerens egne formuleringer (hver linje skal stå på egne ben som en setning). Lista skal dekke mer enn ett livsområde; er alle sju fra samme område, har runde 1 ikke gjort jobben sin. Blokken er INTERN (skjules for brukeren og lagres som verdier). Ikke nevn den, ikke gjenta svarene tilbake — still heller neste spørsmål.',
 							'',
 							'Når verdiene sitter, si kort at neste steg er å se ti år frem. Norsk. Tone: varm, nysgjerrig og på brukerens side — utfordringen kommer fra omsorg, ikke distanse. Venn, ikke terapeut, ikke ja-menneske.'
 						]
@@ -1836,9 +1850,13 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							forrige ? `\nForrige livsintervju (hvis det finnes en tiårsvisjon der: «sist så du deg selv som …, gjelder det fortsatt?»):\n${forrige}` : '',
 							kilde ? `\nRåmateriale fra en tidligere dyp samtale (Balanse) — hold tiårsbildet opp mot identiteten og målene han formulerte da: hva står seg, hva er forlatt, og er det forlatt med vilje?\n${kilde}` : '',
 							'',
-							'Still ETT spørsmål om gangen: Hvem er du om ti år — i rollene dine, i kroppen, i hodet, i arbeidet? Hva gjør du en vanlig tirsdag? Hva har du sluppet taket i? Grav der det blir levende, og utfordre der det blir vagt eller lånt («er det ditt bilde, eller noe du føler du burde ville?»).',
+							'TI ÅR ER EN SEKVENS, IKKE ET ØYEBLIKK. Det er ikke én tilstand man går inn i — det er faser som avløser hverandre, og de kommer i en rekkefølge man ikke velger: barn blir tenåringer og flytter ut, foreldre blir eldre, kroppen endrer seg, en jobb har en begynnelse og en slutt. Et bilde av «en vanlig tirsdag om ti år» svarer bare på siste fase, og da mister man nettopp det brukeren kan planlegge rundt.',
 							'',
-							'Etter HVER respons: oppdater et fremtidsbilde mellom markørene <status> og </status> — 3–5 setninger i FØRSTEPERSON, i brukerens egne ord («Om ti år er jeg …»). Blokken er INTERN (skjules og lagres som tiårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
+							'Be derfor om to–tre FASER, med omtrentlige år («de nærmeste årene», «midtveis», «mot slutten»). Spør hva som kjennetegner hver: hva er mest krevende, hva må være på plass FØR den begynner, og hva åpner seg når den er over. Ett spørsmål om gangen — start med fasen brukeren er inne i nå, den er lettest å beskrive.',
+							'',
+							'Grav der det blir levende, og utfordre der det blir vagt eller lånt («er det ditt bilde, eller noe du føler du burde ville?»). Én konkretisering per fase er nok: hva gjør du en vanlig tirsdag DA?',
+							'',
+							'Etter HVER respons: oppdater et fremtidsbilde mellom markørene <status> og </status> — 3–6 setninger i FØRSTEPERSON, i brukerens egne ord, og med fasene i rekkefølge («De første årene …», «Fra rundt 2031 …», «Mot slutten av tiåret …»). Blokken er INTERN (skjules og lagres som tiårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
 							'',
 							'Når bildet sitter, si kort at neste steg er fem år. Norsk. Tone: varm og nysgjerrig — la brukeren drømme høyt før du tester bildet. Utfordringen kommer fra omsorg, ikke distanse.'
 						]
@@ -1869,6 +1887,10 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							verdier ? `\nVerdiene:\n${verdier}` : '',
 							'',
 							'Arbeidsmåte: regn baklengs. «Hvis du skal være X om ti år — hva MÅ være sant om fem?» Still ETT spørsmål om gangen. Påpek hull uten å pakke inn: hvis tiårsbildet krever noe femårsbildet ikke rommer, si det rett ut og spør hva som skal ryke.',
+							'',
+							'Regn baklengs fra HELE tiårsbildet, ikke bare fra den tråden som er lettest å konkretisere. Går alle spørsmålene dine til ett livsområde, har du smalnet inn for tidlig.',
+							'',
+							'Fem år er også der det blir tydelig hva som må VIKE. Det er ikke en feil — et valg om at noe får mindre plass i en periode er et valg, så lenge noen tar det og setter en termin på det. Når brukeren beskriver noe som ryker, spør hvor lenge og hva som skal til for å hente det opp igjen. Ikke la det gli forbi som noe som «bare blir sånn»: det er forskjellen på et valg og drift.',
 							'',
 							'Etter HVER respons: oppdater femårsbildet mellom markørene <status> og </status> — 3–5 setninger i FØRSTEPERSON, i brukerens egne ord. Blokken er INTERN (skjules og lagres som femårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
 							'',
@@ -1930,6 +1952,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							: '';
 					const eksisterende =
 						typeof data._eksisterendeRetning === 'string' ? data._eksisterendeRetning : '';
+					const rangeringNaa =
+						typeof data._rangeringNaa === 'string' ? data._rangeringNaa : '';
 					const kilde = resolveKilde(data);
 					return {
 						prompt: livsintervjuStepPrompt('speil'),
@@ -1951,13 +1975,25 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 								: '3. Pek på hva i visjonene som kommer til å kreve mest av brukeren — og hva som er mest sårbart for å skli.',
 							'4. Avslutt med ETT ubehagelig, presist spørsmål — det du tror brukeren helst vil slippe å svare på.',
 							'',
-							'MÅLBARE LANGTIDSMÅL: Foreslå deretter 2–4 målbare mål som gjør visjonene etterprøvbare — typisk vekt (kg), beste 10 km-tid (min) og månedlig sparing (kr/mnd), men bare der visjonene faktisk peker dit. Etter HVER respons der mål er tema, list gjeldende forslag mellom markørene <langtidsmål> og </langtidsmål>, én per linje på formen «Tittel: verdi enhet innen ÅÅÅÅ»:',
+							'REKKEFØLGEN: Foreslå så en prioritert rekkefølge på 3–5 punkter — hva som kommer FØRST når to ting ikke får plass i samme uke. Dette er det visjonene ikke kan svare på: en liste over hva som er viktig sier ingenting om hva som skal vike. Bruk brukerens egne ord, og der et punkt svarer til et livsområde eller en livskompass-dimensjon, skriv navnet på den (Helse, Partner, Barn, Venner, Søvn, Trening, Mat, Jobb, Læring, Hobbyer, Egen tid, Natur, Kultur) — da kobles rekkefølgen til målingene. Et punkt kan også være smalere enn noen dimensjon; det er helt greit.',
+							rangeringNaa ? `Rekkefølgen brukeren satte sist — test den, ikke skriv den av: «du satte X først; gjelder det fortsatt?»\n${rangeringNaa}` : '',
+							'List forslaget mellom markørene <prioritering> og </prioritering>, ett punkt per linje på formen «Etikett — kort begrunnelse», viktigst først. Ingen nummerering (rekkefølgen ER rangeringen):',
+							'<prioritering>',
+							'Helse — alt annet henger på at kroppen holder',
+							'Bidrag hjemme — avtalt, og det er der friksjonen er nå',
+							'Venner — det som har ligget lengst nede',
+							'</prioritering>',
+							'Rekkefølgen sier ikke at det som mangler er valgt bort. Si det hvis brukeren leser den sånn.',
+							'',
+							'LANGTIDSMÅL: Foreslå deretter 2–4 mål som gjør visjonene etterprøvbare. To ARTER, og skillet er brukerens eget: noe styrer man selv (vekt, tider, sparing, skjermtid), og noe kan man bare LEGGE TIL RETTE FOR (ny jobb, endret tillit hos noen, mer aktive vennskap). Et tilrettelagt mål får aldri et utfallstall — det måles på betingelsene brukeren setter opp, altså én jevnlig handling han faktisk bestemmer over.',
+							'Etter HVER respons der mål er tema, list gjeldende forslag mellom markørene <langtidsmål> og </langtidsmål>, én per linje, med art-markør først:',
 							'<langtidsmål>',
-							'Vekt: 80 kg innen 2031',
-							'10 km: 50 min innen 2029',
-							'Sparing: 8000 kr/mnd innen 2027',
+							'[styrer] Vekt: 80 kg innen 2031',
+							'[styrer] 10 km: 50 min innen 2029',
+							'[tilrettelegger] Mer aktive vennskap innen 2028',
 							'</langtidsmål>',
-							'Brukeren kan justere i chat — hold listen oppdatert. Ved levering opprettes målene automatisk og vises under visjonene på Retning-fanen med målt fremdrift.',
+							'Bruk [styrer] bare der det finnes et tall brukeren selv flytter, og [tilrettelegger] der utfallet avhenger av andre. Er du i tvil, la markøren stå av — en gjetning her sorterer målet i feil bås, og en tom markør spørres det om på flaten. For hvert [tilrettelegger]-mål: spør hvilken jevnlig handling som er den ærlige ledende indikatoren («ta initiativ til én ting i måneden»), og si at den legges inn som en oppgave under målet.',
+							'Brukeren kan justere i chat — hold listene oppdatert. Ved levering opprettes målene automatisk og vises under visjonene på Retning-fanen.',
 							'',
 							'La brukeren svare og grav videre der de vil. Når samtalen ebber ut, si at retningen lagres når de leverer — og at den heretter blir målestokken resten av Resonans holder hverdagen opp mot.',
 							'',
@@ -1990,6 +2026,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 			const speil = speilMessage
 				.replace(/<status>[\s\S]*?<\/status>/gi, '')
 				.replace(/<langtidsmål>[\s\S]*?<\/langtidsmål>/gi, '')
+				.replace(/<prioritering>[\s\S]*?<\/prioritering>/gi, '')
 				.trim();
 			const kilde = typeof data.kilde === 'string' ? data.kilde.trim() : '';
 			if (!verdier && !tiAar && !femAar && !ettAar && !kilde) return;
@@ -2002,8 +2039,10 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					speil,
 					// Balanse-materialet i full, utrimmet form — lagres i originalformat
 					kilde,
-					// Speilets målbare langtidsmål — opprettes som goals med visionHorizon
+					// Speilets langtidsmål — opprettes som goals med visionHorizon og målart
 					langtidsmaal: parseLongTermGoals(speilMessage),
+					// Rekkefølgen: det visjonene ikke kan svare på — hva som kommer først
+					prioritering: parseRankingBlock(speilMessage),
 					// Rå-samtalen i messages-tabellen — kobles til visjonene som kilde
 					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
 					// «Samtalen er data»: hele chattene arkiveres som transkript

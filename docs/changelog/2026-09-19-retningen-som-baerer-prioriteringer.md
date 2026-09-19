@@ -1,7 +1,7 @@
 # Retningen skal bære prioriteringer og milepæler
 
 Dato: 2026-09-19
-Status: pågår (fase 1–3 ferdig, fase 4 planlagt)
+Status: ferdig (fase 1–4)
 
 > Bygger på `2026-07-12-retning-livsintervju.md` (livsintervjuet, visjonene,
 > `buildDirectionBlock`), `2026-07-17-retning-facelift-langtidsmaal.md` (målbare
@@ -243,27 +243,58 @@ validert mot unionen, ikke gjennom den rå `metadata`-flettingen. En fritekstver
 der ville gjort `resolveGoalKind` stum (den forkaster det den ikke kjenner), og
 målet ville stått som «uavklart» uten at noe sa fra. `null` fjerner arten.
 
-### Fase 4: Intervjuet (planlagt)
+### Fase 4: Intervjuet
 
 Sist med vilje — intervjuet er FORFATTERFLATEN for fase 1–3. Skriver vi om
 promptene før tingene det skal forfatte finnes, produserer det bare mer prosa.
 
-- **Bredderunde før graving.** Alle fire chat-stegene sier «Still ETT spørsmål om
-  gangen» og «grav der det blir ekte»; ingen sier noe om bredde. `<status>`-blokka
-  skal dessuten oppdateres etter HVER respons, fra første svar — altså må en
-  4–7-linjers liste eksistere før samtalen har rukket å åpne seg. Trakten er ikke
-  en modellsvakhet, den er designet.
-- **Livskompasset som data**, ikke som statisk ordliste: viktighet, siste
-  `outOfSync` og åtte ukers historikk inn i `interview-context`.
-- **Rangering og nedprioriteringer forfattes**, ikke bare prosa.
-- **Faser i tiårssteget.** «Hva gjør du en vanlig tirsdag» ber om et
-  øyeblikksbilde; en tiårshorisont med barn er en sekvens av faser. Dette er det
-  eneste punktet som krever at lagringsformatet røres.
+**Bredderunde før graving.** Alle fire chat-stegene sa «Still ETT spørsmål om
+gangen» og «grav der det blir ekte»; ingen sa noe om bredde. `<status>`-blokka
+skulle dessuten oppdateres etter HVER respons, fra første svar — altså måtte en
+4–7-linjers verdiliste eksistere før samtalen hadde rukket å åpne seg. **Trakten
+var ikke en modellsvakhet, den var designet.** Verdi-steget har nå to runder:
+runde 1 er innom alle fire livsområdene, og `<status>` skrives IKKE før den er
+ferdig. Instruksen sier hvorfor, ikke bare hva — en verdiliste som oppdateres fra
+første svar gjør hvert neste spørsmål smalere. Lista skal dessuten dekke mer enn
+ett område; er alle sju fra samme, har runde 1 ikke gjort jobben sin.
 
-**Intervjuet kan ikke være eneste vei inn.** Det er estimert til 30 minutter og
-oppleves alt som tungt; legger vi på to steg blir det verre. Fase 1–3 skal kunne
-settes og endres direkte på Retning-siden — samme mønster som visjonene alt har
-(✏️ ved siden av intervjuet).
+**Livskompasset som data.** `describeLivskompassMaterial`
+(`$lib/domains/livskompass/interview-material.ts`) gjør åtte ukers innsjekker om
+til materiale: hva som har ligget ute av synk, hvor mange uker av hvor mange,
+medianen på begge akser, og retningen mellom halvdelene. Fram til nå fikk
+intervjuet livskompasset som en STATISK ORDLISTE — tolv etiketter gruppert per
+område. Forskjellen er ikke kosmetisk: en ordliste kan modellen finne på selv,
+«venner har ligget ute av synk i sju av åtte uker» kan den ikke.
+
+Men målingene brukes i RUNDE 2, ikke i runde 1, og prompten sier hvorfor: lar man
+dem styre bredderunden, er de blitt den nye trakta — da spørres det bare om
+områdene der tallene alt er lave, og brukeren får aldri sagt hva som betyr noe.
+
+**Faser i tiårssteget.** «Hva gjør du en vanlig tirsdag» ber om ett øyeblikk. Ti
+år er en SEKVENS — barn blir tenåringer og flytter ut, en jobb har en begynnelse
+og en slutt — og et øyeblikksbilde svarer bare på siste fase. Steget ber nå om
+to–tre faser med omtrentlige år, og spør per fase hva som må være på plass FØR
+den begynner og hva som åpner seg når den er over. **Dette krevde likevel ikke at
+lagringsformatet ble rørt**, i motsetning til det planen antok: `summary` er fri
+prosa, og `<status>`-blokka bærer fasene som setninger i rekkefølge.
+
+**Femårssteget spør hva som må vike.** Det var «giret mot innsnevring», og det er
+riktig — men innsnevringen skal komme fra HELE tiårsbildet, ikke fra den tråden
+som er lettest å konkretisere. Og fem år er der det blir tydelig hva som ryker:
+steget ber nå om hvor lenge og hva som skal til for å hente det opp igjen, altså
+nøyaktig formen på en nedprioritering fra fase 2.
+
+**Rekkefølgen forfattes** (`$lib/domains/livskompass/ranking.ts`). Speil-steget
+foreslår 3–5 prioriteringer i en `<prioritering>`-blokk, brukeren justerer i
+chat, og de lagres på livskompassets sensor. `buildRankingBlock` rendrer dem i
+retningsblokka, over nedprioriteringene. Uten den har en coach ingenting å
+avgjøre med når to ting ikke får plass i samme uke, og svaret blir at begge er
+viktige — som er sant og ubrukelig.
+
+**Målarten settes ved opprettelsen.** `<langtidsmål>`-linjene tar en valgfri
+`[styrer]`/`[tilrettelegger]`-markør som går gjennom `createLongTermGoal` →
+`createGoal` → `metadata.goalKind`. Kjent rest fra fase 3, lukket. Markøren
+gjettes ikke: er speilet i tvil, lar det den stå av, og flaten spør.
 
 ## Filer (fase 2)
 
@@ -311,8 +342,9 @@ settes og endres direkte på Retning-siden — samme mønster som visjonene alt 
   snitter oppgavene som før; den vet ikke at utfallet ikke skal telles. Riktig nok
   i praksis (indikatoren ER en oppgave), men det er tilfeldig, ikke bestemt.
 - **`createLongTermGoal` setter ikke arten.** Et mål fra livsintervjuet uten
-  metrikk blir «uavklart» og må avklares på flaten. Fase 4 er stedet: speil-steget
-  vet hvilken art det foreslo.
+  metrikk blir «uavklart» og måtte avklares på flaten. Lukket i fase 4:
+  `<langtidsmål>`-linjene bærer en `[styrer]`/`[tilrettelegger]`-markør som går
+  hele veien inn i `metadata.goalKind`.
 - **Ingen kobling mellom arten og «Fullfør».** Et tilrettelagt mål er nådd når
   brukeren sier det — som før — men ingenting sier at det er den eneste måten.
 - **`create_goal` tar ikke `kind`.** Et nytt tilrettelagt mål må merkes i to steg.
@@ -402,10 +434,9 @@ settes og endres direkte på Retning-siden — samme mønster som visjonene alt 
 - **Ingen kobling til `livskompass_importance`.** En nedprioritering endrer ikke
   viktigheten, og det er riktig — viktighet er hva som BETYR noe, ikke hva som
   får plass. Men ingenting sier det til brukeren.
-- **Rangeringen mangler fortsatt.** Ryggradens punkt 2 er «rekkefølgen, med
+- **Rangeringen manglet fortsatt.** Ryggradens punkt 2 er «rekkefølgen, med
   eventuelle bevisste nedprioriteringer»; fase 2 leverte den andre halvdelen.
-  En ordnet topp-3 av verdiene er ikke bygget, og det er fase 4s jobb —
-  intervjuet er forfatterflaten for den.
+  Fase 4 leverte den første (`$lib/domains/livskompass/ranking.ts`).
 
 ## Kjent rest etter fase 1
 
@@ -430,3 +461,95 @@ settes og endres direkte på Retning-siden — samme mønster som visjonene alt 
 - **`abandoned` er ikke en milepæl**, og skal ikke bli det. Men statusen vises
   fortsatt som «aktiv» på `/plan/mal`, som regner alt som ikke er
   `archived`/`completed` som aktivt. Urørt her.
+
+## Filer (fase 4)
+
+| Fil | Rolle |
+|-----|-------|
+| `src/lib/domains/livskompass/ranking.ts` | rekkefølgen rent: forankring, validering, alder, ord |
+| `src/lib/domains/livskompass/interview-material.ts` | livskompasset som målt materiale |
+| `src/lib/server/livskompass-ranking.ts` | lagring og lesing, append-only |
+| `src/routes/api/livskompass/prioritering/+server.ts` | GET/PUT, PUT tar hele lista |
+| `src/lib/flows/livsintervju.ts` | `parseRankingBlock`, målart-markør, delt `initialData` |
+| `src/lib/flows/registry.ts` | bredderunde, faser, femårssteget, speilets to blokker |
+| `src/routes/api/retning/interview-context/+server.ts` | livskompasset og rekkefølgen inn i flyten |
+| `src/routes/api/retning/livsintervju/+server.ts` | rekkefølgen lagres ved levering |
+| `src/lib/server/services/direction-context.ts` | rekkefølgen i «LANGSIKTIG RETNING» |
+| `src/lib/server/goals.ts` | `art` (målarten) i `createGoal` |
+| `src/lib/components/domain/plan/PrioritySection.svelte` | flaten — intervjuet er ikke eneste vei inn |
+| `src/lib/server/prompts/domains.ts` | blokk i `self` om hva rekkefølgen er, og ikke er |
+
+## Verifisering (fase 4)
+
+- `npm test`: 5004 tester grønne (333 filer), inkludert 20 for `ranking.ts`,
+  14 for `interview-material.ts`, 6 nye for parserne og 4 for rekkefølgen i
+  retningsblokka.
+- `npm run check`: 0 feil. `npm run build`: OK (med attrapp-env).
+- **Gjenstår i dev:**
+  1. Åpne livsintervjuet → verdi-steget spør om alle fire områdene før det graver,
+     og `<status>` kommer først etterpå.
+  2. Med ukesinnsjekker i basen: promptkonteksten bærer «ute av synk N av M uker».
+  3. Speil-steget foreslår en `<prioritering>`-blokk → levering skriver
+     `livskompass_ranking`, og `/plan/drommer` viser «🥇 Rekkefølgen».
+  4. Send en chatmelding → REKKEFØLGEN står mellom verdiene og
+     BEVISST NEDPRIORITERT.
+  5. `[tilrettelegger]` på et langtidsmål → målet får `metadata.goalKind` og står
+     som tilrettelagt på `/plan/mal`.
+
+## Beslutninger (fase 4)
+
+- **Rekkefølgen og nedprioriteringene er ikke hverandres motsatser.** Fristelsen
+  er å utlede: det som ikke står på lista, er nedprioritert. Det er feil begge
+  veier, og begge blokkene sier det selv — fordi det er nøyaktig slutningen en
+  modell tar av å se dem ved siden av hverandre.
+- **Rangen er POSISJONEN, aldri et lagret tall.** Et `rank`-felt ved siden av en
+  array er to kilder til samme faktum, og de kan bli uenige (to toere, et hopp
+  fra 1 til 3).
+- **Forankringen i livskompasset gjettes aldri.** Treffet er eksakt på id, full
+  eller kort etikett — og på OMRÅDER også, siden «helse først» ikke peker på noen
+  dimensjon. «Mer tid til barna» forankres IKKE i «Barn» ved delstreng: en
+  uforankret prioritering er fullt gyldig, en feilforankret er en stille løgn om
+  hva hjulet måler. Samme regel som at `inferGoalKind` ikke gjetter.
+- **Maks fem prioriteringer.** Tolv rangerte ting er ikke en rangering — det er
+  livshjulet om igjen, på én linje. Brukerens eget eksempel hadde tre.
+- **Strengt ved skriving, tolerant ved lesing.** `validatePriorities` er en regel
+  om hva som kan SETTES; `normalizeStoredPriorities` leser det som alt står. En
+  senere innstramming av taket skal ikke få en rekkefølge brukeren har satt til å
+  forsvinne uten et ord.
+- **Append-only, nyeste vinner.** En rekkefølge rettes ikke, den settes på nytt.
+  Da er historikken gratis: «i fjor kom jobb først» er nøyaktig det et
+  re-intervju skal kunne holde opp mot brukeren.
+- **Materialet SIER hva det måler, aldri hva det betyr.** Skriver vi dommen inn i
+  konteksten, gjentar modellen den som sin egen innsikt — og da har vi laget en
+  trakt til, bare lenger opp.
+- **Én uke er ikke et mønster.** `MIN_WEEKS_FOR_PATTERN` (4) og median, som
+  ellers i repoet. Under terskelen sies tallene uten dom.
+- **Et VALGT gap er også intervjumateriale — men et annet spørsmål.** Coachingen
+  i `dimensions.ts` filtrerer nedprioriteringene HELT ut: uka skal ikke be deg
+  heve det du nettopp la bort. Intervjuet handler om årene, og der er terminen
+  selv spørsmålet — holder valget over år, eller er det i ferd med å bli en
+  tilstand?
+- **Ingen nye steg i intervjuet.** Det er estimert til 30 minutter og oppleves
+  alt som tungt. Rekkefølgen og målarten kommer ut av speil-steget, som alt
+  finnes, og rekkefølgen kan settes direkte på Retning-fanen.
+- **`art`, ikke `goalKind`, i `createGoal`.** Navnet var opptatt og betyr noe helt
+  annet der: `goalKind` er TRACK-arten (`level`/`change`/`trajectory`). To felt
+  med samme navn og ulik betydning i samme objekt er en feil som ikke gir noen
+  feilmelding.
+
+## Kjent rest etter fase 4
+
+- **Retningssamtalen (kvartalsvis) får ikke livskompass-materialet.** Den leser
+  samme endepunkt, men bruker bare `synteser`. Den naturlige neste koblingen.
+- **Rekkefølgen har ingen chat-inngang.** `saveRanking` er klar for et verktøy;
+  prompten viser til flaten i mellomtiden.
+- **Ingen kobling rekkefølge ↔ nedprioritering.** At noe faller ut av rekkefølgen
+  er ikke det samme som at det nedprioriteres, og det skal det heller ikke bli —
+  men ingenting SPØR heller om det burde bli det.
+- **Bredderunden er en instruks, ikke en mekanisme.** Ingenting måler at alle fire
+  områdene faktisk ble berørt før `<status>` kom. En `<bredde-ferdig/>`-markør ble
+  vurdert og forkastet: den ville gjort en modell-slurv til en synlig feil, men
+  også gitt et steg til å tape på.
+- **Fasene i tiårsbildet er prosa, ikke struktur.** De kan ikke spørres på, og
+  ingenting vet når en fase er over. Det er riktig for nå — en fasemodell med
+  datoer ville vært en påstand om livet vi ikke har dekning for.
