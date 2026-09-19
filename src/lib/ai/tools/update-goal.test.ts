@@ -41,6 +41,25 @@ describe('validateUpdateGoalArgs', () => {
 		}
 	});
 
+	it('krever en gyldig art for set_kind', () => {
+		expect(validateUpdateGoalArgs({ action: 'set_kind', kind: 'tilrettelagt' })).toEqual({ ok: true });
+		expect(validateUpdateGoalArgs({ action: 'set_kind', kind: 'kontrollert' })).toEqual({ ok: true });
+	});
+
+	// Uten arten ville verktøyet skrevet `goalKind: undefined` og målet stått som
+	// «uavklart» — en lagring som ser vellykket ut og ikke er det.
+	it('avviser set_kind uten art, og sier hva de to artene betyr', () => {
+		const res = validateUpdateGoalArgs({ action: 'set_kind' });
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.error).toContain('kontrollert');
+			expect(res.error).toContain('tilrettelagt');
+		}
+		expect(validateUpdateGoalArgs({ action: 'set_kind', kind: 'litt av begge' })).toMatchObject({
+			ok: false
+		});
+	});
+
 	it('avviser en ukjent action', () => {
 		expect(validateUpdateGoalArgs({ action: 'delete' as never })).toMatchObject({ ok: false });
 	});

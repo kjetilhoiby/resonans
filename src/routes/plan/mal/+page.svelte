@@ -3,6 +3,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import GoalDetailCard from '$lib/components/domain/plan/GoalDetailCard.svelte';
 	import GoalCompleteForm from '$lib/components/domain/plan/GoalCompleteForm.svelte';
+	import { groupGoal, type GoalKind } from '$lib/domain/goals/goal-kind';
 	import {
 		calculateGoalProgress,
 		getIntentEvaluationLabel,
@@ -38,6 +39,7 @@
 	let archivedExpanded = $state(false);
 	let completedExpanded = $state(false);
 	let unmeasuredExpanded = $state(false);
+	let kindBusy = $state<string | null>(null);
 	let horizonFilter = $state<GoalHorizon | 'alle'>('kort');
 	// Milepælsregnskapet: hvilket mål som holder på å fullføres, og status på skrivingen
 	let completingGoalId = $state<string | null>(null);
@@ -78,7 +80,18 @@
 		...horizonGoals.filter(hasMeasurement),
 		...horizonGoals.filter((g) => !hasMeasurement(g) && g.tasks.length > 0)
 	]);
-	const unmeasuredGoals = $derived(
+
+	/**
+	 * Het «Uten måling» fram til september 2026, og navnet var problemet: «uten
+	 * måling» er en påstand om OSS — vi fant ingen metrikk — presentert som en
+	 * egenskap ved målet. Halvparten av livet (ny jobb, tillit, vennskap) havnet
+	 * strukturelt i en kollapset skuff med den etiketten.
+	 *
+	 * Nå sier gruppa hva som MANGLER, og hvert punkt har en handling ved siden av
+	 * seg. Kriteriet er uendret (ingen måling, ingen oppgaver), så ingen mål
+	 * flyttes ned hit av endringen — bare de som alt lå her.
+	 */
+	const needsShapeGoals = $derived(
 		horizonGoals.filter((g) => !hasMeasurement(g) && g.tasks.length === 0)
 	);
 
@@ -289,6 +302,31 @@
 		}
 	}
 
+	/**
+	 * Setter målarten. Et tilrettelagt mål måles på det brukeren GJØR, ikke på
+	 * utfallet — så svaret på «hva mangler» er en ledende indikator, ikke en
+	 * metrikk vi ikke kan lage.
+	 */
+	async function setGoalKind(goalId: string, kind: GoalKind) {
+		kindBusy = goalId;
+		try {
+			const response = await fetch(`/api/goals/${goalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ goalKind: kind })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || 'Kunne ikke sette målart');
+			data.goals = data.goals.map((g) =>
+				g.id === goalId ? { ...g, metadata: { ...(g.metadata ?? {}), goalKind: kind } } : g
+			);
+		} catch (error) {
+			alert(`Feil: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
+		} finally {
+			kindBusy = null;
+		}
+	}
+
 	async function unarchiveGoal(goalId: string) {
 		try {
 			const response = await fetch(`/api/goals/${goalId}`, {
@@ -336,7 +374,7 @@
 				{/each}
 			</div>
 
-			{#if mainGoals.length === 0 && unmeasuredGoals.length === 0}
+			{#if mainGoals.length === 0 && needsShapeGoals.length === 0}
 				<p class="horizon-empty">
 					{horizonFilter === 'lang'
 						? 'Ingen mål på lang sikt ennå.'
@@ -366,15 +404,15 @@
 				</div>
 			{/if}
 
-			{#if unmeasuredGoals.length > 0}
+			{#if needsShapeGoals.length > 0}
 				<div class="group-section">
 					<button class="archived-toggle" onclick={() => (unmeasuredExpanded = !unmeasuredExpanded)}>
-						<span class="archived-toggle-label">Uten måling ({unmeasuredGoals.length})</span>
+						<span class="archived-toggle-label">Trenger en form ({needsShapeGoals.length})</span>
 						<span class="chevron" class:open={unmeasuredExpanded}>›</span>
 					</button>
 					{#if unmeasuredExpanded}
 						<div class="compact-list">
-							{#each unmeasuredGoals as goal}
+							{#each needsShapeGoals as goal}
 								{#if completingGoalId === goal.id}
 									<GoalCompleteForm
 										title={goal.title}
@@ -389,6 +427,40 @@
 											<span class="compact-title">{goal.title}</span>
 											{#if goal.category}
 												<span class="compact-category">{goal.category.icon || '📌'} {goal.category.name}</span>
+											{/if}
+											<!--
+											  Sier hva som MANGLER, og gir handlingen ved siden av. «Uten måling»
+											  var en dom uten en utvei: for et mål som «ny jobb» eller «mer aktive
+											  vennskap» finnes det ingen metrikk å lage, og etiketten gjorde det
+											  til brukerens problem.
+											-->
+											{#if groupGoal(goal) === 'uavklart'}
+												<span class="compact-hint">
+													Styrer du dette selv, eller kan du bare legge til rette for det?
+												</span>
+												<div class="kind-actions">
+													<button
+														class="btn-secondary"
+														data-track="maal:art-kontrollert"
+														disabled={kindBusy === goal.id}
+														onclick={() => setGoalKind(goal.id, 'kontrollert')}
+													>
+														Jeg styrer det selv
+													</button>
+													<button
+														class="btn-secondary"
+														data-track="maal:art-tilrettelagt"
+														disabled={kindBusy === goal.id}
+														onclick={() => setGoalKind(goal.id, 'tilrettelagt')}
+													>
+														Jeg legger til rette
+													</button>
+												</div>
+											{:else if groupGoal(goal) === 'mangler-indikator'}
+												<span class="compact-hint">
+													Tilrettelagt — utfallet er ikke ditt å styre. Mangler én jevnlig
+													handling å følge; be chatten opprette den.
+												</span>
 											{/if}
 										</div>
 										<!--
@@ -677,13 +749,31 @@
 
 	.compact-row {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 0.65rem 1rem;
 		background: var(--bg-elevated);
 		border: 1px solid var(--border-color);
 		border-radius: var(--radius-sm);
+	}
+
+	.compact-hint {
+		font-size: 0.78rem;
+		line-height: 1.45;
+		color: var(--text-tertiary);
+	}
+
+	.kind-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.3rem;
+	}
+
+	.kind-actions button:disabled {
+		opacity: 0.55;
+		cursor: default;
 	}
 
 	.compact-row-main {

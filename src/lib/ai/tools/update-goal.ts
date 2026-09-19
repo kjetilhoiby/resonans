@@ -28,10 +28,12 @@ import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { updateGoalMetric } from '$lib/server/goals';
 import { completeGoalWithMilestone } from '$lib/server/goal-milestones';
+import { readGoalKind, type GoalKind } from '$lib/domain/goals/goal-kind';
 import { describeMeasurement } from './create-goal';
 
 export type UpdateGoalAction =
 	| 'adjust_target'
+	| 'set_kind'
 	| 'set_deadline'
 	| 'pause'
 	| 'resume'
@@ -57,10 +59,20 @@ export function validateUpdateGoalArgs(args: {
 	action: UpdateGoalAction;
 	targetValue?: number;
 	targetDate?: string;
+	kind?: string;
 }): { ok: true } | { ok: false; error: string } {
 	if (args.action === 'adjust_target') {
 		if (typeof args.targetValue !== 'number' || !Number.isFinite(args.targetValue)) {
 			return { ok: false, error: 'adjust_target krever targetValue (et tall).' };
+		}
+		return { ok: true };
+	}
+	if (args.action === 'set_kind') {
+		if (!readGoalKind({ goalKind: args.kind })) {
+			return {
+				ok: false,
+				error: 'set_kind krever kind = "kontrollert" (brukeren styrer tallet selv) eller "tilrettelagt" (brukeren kan bare legge til rette; utfallet er ikke hens).'
+			};
 		}
 		return { ok: true };
 	}
@@ -84,13 +96,13 @@ export function validateUpdateGoalArgs(args: {
 export const updateGoalTool = {
 	name: 'update_goal',
 	description:
-		'Endre et mål som allerede finnes. Bruk DENNE framfor create_goal når brukeren vil justere noe de har satt — to mål om samme sak gjør begge meningsløse. goalId er UUID-en fra lista over aktive mål. action: "adjust_target" (ny målverdi — for vektmål: MÅLVEKTEN i kg, f.eks. 98 for «ned til 98 kg»), "set_deadline" (flytt eller sett frist, targetDate=YYYY-MM-DD), "pause" (legg målet på is uten å slette det), "resume", "complete" (nådd — ta med frees/cost hvis brukeren har sagt hva målet frigjør og hva det kostet), "abandon" (vi dropper det). Svaret sier hvilke tall målet faktisk måles mot etterpå — bruk DEM i kvitteringen, aldri egne anslag. Målverdien kan bare endres på mål som har en metrikk; har målet ingen, sier svaret det, og da skal du si det til brukeren framfor å påstå at det er justert.',
+		'Endre et mål som allerede finnes. Bruk DENNE framfor create_goal når brukeren vil justere noe de har satt — to mål om samme sak gjør begge meningsløse. goalId er UUID-en fra lista over aktive mål. action: "adjust_target" (ny målverdi — for vektmål: MÅLVEKTEN i kg, f.eks. 98 for «ned til 98 kg»), "set_kind" (si om målet er "kontrollert" — brukeren flytter tallet selv — eller "tilrettelagt", der utfallet ikke er hens å styre og målet i stedet måles på det hen GJØR jevnlig), "set_deadline" (flytt eller sett frist, targetDate=YYYY-MM-DD), "pause" (legg målet på is uten å slette det), "resume", "complete" (nådd — ta med frees/cost hvis brukeren har sagt hva målet frigjør og hva det kostet), "abandon" (vi dropper det). Svaret sier hvilke tall målet faktisk måles mot etterpå — bruk DEM i kvitteringen, aldri egne anslag. Målverdien kan bare endres på mål som har en metrikk; har målet ingen, sier svaret det, og da skal du si det til brukeren framfor å påstå at det er justert.',
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
 		goalId: z.string().describe('UUID-en til målet, fra lista over aktive mål. Aldri tittel eller nummer.'),
 		action: z
-			.enum(['adjust_target', 'set_deadline', 'pause', 'resume', 'complete', 'abandon'])
+			.enum(['adjust_target', 'set_kind', 'set_deadline', 'pause', 'resume', 'complete', 'abandon'])
 			.describe('Hva som skal endres'),
 		targetValue: z
 			.number()
@@ -102,6 +114,12 @@ export const updateGoalTool = {
 			.string()
 			.optional()
 			.describe('Ny frist (YYYY-MM-DD). Påkrevd for set_deadline.'),
+		kind: z
+			.enum(['kontrollert', 'tilrettelagt'])
+			.optional()
+			.describe(
+				'Påkrevd for set_kind. "tilrettelagt" når utfallet ikke er brukerens å styre (ny jobb, tillit, vennskap) — da måles målet på betingelsene hen setter opp, ikke på utfallet.'
+			),
 		frees: z
 			.string()
 			.optional()
@@ -122,6 +140,7 @@ export const updateGoalTool = {
 		action: UpdateGoalAction;
 		targetValue?: number;
 		targetDate?: string;
+		kind?: GoalKind;
 		frees?: string;
 		cost?: string;
 	}) => {
@@ -222,6 +241,30 @@ export const updateGoalTool = {
 					action: args.action,
 					targetDate: args.targetDate,
 					message: `Fristen på «${goal.title}» er satt til ${args.targetDate}.`
+				};
+			}
+
+			if (args.action === 'set_kind') {
+				/**
+				 * Arten er et felt i `metadata`, og `existing` er HELE det objektet —
+				 * lest rett over. Spread-en er derfor trygg her, i motsetning til en
+				 * som bygger metadataen på nytt fra utvalgte felt.
+				 */
+				await db
+					.update(goals)
+					.set({ metadata: { ...existing, goalKind: args.kind }, updatedAt: new Date() })
+					.where(eq(goals.id, goal.id));
+
+				const tilrettelagt = args.kind === 'tilrettelagt';
+				return {
+					success: true as const,
+					goalId: goal.id,
+					goalTitle: goal.title,
+					action: args.action,
+					kind: args.kind,
+					message: tilrettelagt
+						? `«${goal.title}» er nå merket som tilrettelagt: utfallet er ikke brukerens å styre, så målet måles på det hen GJØR. Mangler det en ledende indikator, foreslå én konkret, jevnlig handling og opprett den med create_task (frequency + targetValue). Ikke spør om framdrift mot selve utfallet.`
+						: `«${goal.title}» er nå merket som kontrollert — brukeren flytter tallet selv.`
 				};
 			}
 

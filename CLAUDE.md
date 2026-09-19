@@ -2247,6 +2247,39 @@ rent i `$lib/domains/livskompass/deprioritization.ts`, lagringen i
   `deprioritizations`, `now`). Fire valgfrie posisjonelle parametere der to er
   lister gir ingen feil når et kallsted bytter om på dem.
 
+### Målart: noe du styrer, eller noe du legger til rette for
+
+Se `docs/changelog/2026-09-19-retningen-som-baerer-prioriteringer.md`. Reglene
+rent i `$lib/domain/goals/goal-kind.ts`.
+
+- **«Uten måling» var en påstand om OSS, presentert som en egenskap ved MÅLET.**
+  `createLongTermGoal` sin metrikk-mapping dekker bare tall brukeren selv flytter
+  (vekt, 5/10 km-tid, hvilepuls, belastning, sammensetning, sparing). Ny jobb,
+  tillit hos kone og barn, mer aktive vennskap traff ingenting og havnet i en
+  kollapset skuff — altså ble halvparten av livet strukturelt degradert av en
+  etikett. Gruppa heter nå **«Trenger en form»**, og hvert punkt har en handling.
+- **Ikke oppfinn en metrikk for tillit.** Et `tilrettelagt` mål måles på
+  BETINGELSENE brukeren setter opp, aldri på utfallet. «Mer aktive vennskap» er
+  ikke målbart; «ta initiativ til én ting i måneden» er det.
+- **Utledningen gjetter ALDRI `tilrettelagt`.** En metrikk beviser at målet er
+  kontrollert; fravær av metrikk beviser ingenting («gå ned i vekt» uten målvekt
+  er et uferdig kontrollert mål). Å gjette ville vært samme feil som
+  `startWorkout.type` sin stille default — en konkret verdi der sannheten er
+  «ikke oppgitt». `resolveGoalKind` returnerer `null`, og flaten SPØR.
+- **Den ledende indikatoren er ingen ny lagring:** en OPPGAVE under målet med
+  `frequency` + `targetValue`, registrert med `record_tracking_event`.
+  `readLeadingIndicator` leser den; første AKTIVE frekvens-oppgave vinner, siden
+  to «ledende» indikatorer ikke er en indikator.
+- **Linja i chat-konteksten sier hva arten BETYR**, ikke bare hva den er — ellers
+  leser modellen etiketten og spør videre om framdrift mot utfallet. Kontrollerte
+  mål får INGEN linje (normalen trenger ingen), og linja settes bare på AKTIVE
+  mål: et fullført mål har ingen framdrift igjen.
+- **`goalKind` valideres mot unionen i `PATCH /api/goals/[id]`**, ikke gjennom den
+  rå `metadata`-flettingen. En fritekstverdi ville gjort `resolveGoalKind` stum —
+  den forkaster det den ikke kjenner — og målet ville stått som «uavklart» uten at
+  noe sa fra. `null` fjerner arten. Chatten setter den med `update_goal`,
+  `action: 'set_kind'`.
+
 ### Skjermtid: oppmerksomhet er ikke at skjermen sto på
 
 Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i

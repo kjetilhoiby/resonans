@@ -4,12 +4,14 @@ import { goals } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { updateGoalMetric } from '$lib/server/goals';
 import { mergeMilestoneRecord, readMilestoneRecord } from '$lib/domain/goals/milestone';
+import { readGoalKind } from '$lib/domain/goals/goal-kind';
 import { osloDayKey } from '$lib/domain/oslo-time';
 import type { RequestHandler } from './$types';
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
-	const { title, description, targetDate, status, metadata, metric, themeId, milestone } = body;
+	const { title, description, targetDate, status, metadata, metric, themeId, milestone, goalKind } =
+		body;
 
 	// Verify ownership
 	const existingGoal = await db.query.goals.findFirst({
@@ -50,6 +52,32 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		updateData.metadata = { ...((existingGoal.metadata ?? {}) as Record<string, unknown>), ...metadata };
 	}
 	if (themeId !== undefined) updateData.themeId = typeof themeId === 'string' && themeId.length > 0 ? themeId : null;
+
+	/**
+	 * Målarten valideres mot unionen framfor å gå gjennom den rå `metadata`-
+	 * flettingen: en fritekstverdi her ville gjort `resolveGoalKind` stum — den
+	 * forkaster det den ikke kjenner — og målet ville stått som «uavklart» uten at
+	 * noe sa fra. `null` fjerner arten, så et feilvalg kan angres.
+	 */
+	if (goalKind !== undefined) {
+		if (goalKind === null) {
+			const base = (updateData.metadata ?? existingGoal.metadata ?? {}) as Record<string, unknown>;
+			const { goalKind: _fjernet, ...resten } = base;
+			updateData.metadata = resten;
+		} else {
+			const parsed = readGoalKind({ goalKind });
+			if (!parsed) {
+				return json(
+					{ error: `Ugyldig målart: ${goalKind}. Bruk «kontrollert» eller «tilrettelagt».` },
+					{ status: 400 }
+				);
+			}
+			updateData.metadata = {
+				...((updateData.metadata ?? existingGoal.metadata ?? {}) as Record<string, unknown>),
+				goalKind: parsed
+			};
+		}
+	}
 
 	/**
 	 * Milepælen: stemples når målet settes til `completed`, og kan rettes etterpå på et

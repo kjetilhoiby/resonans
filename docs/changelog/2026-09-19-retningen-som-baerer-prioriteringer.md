@@ -1,7 +1,7 @@
 # Retningen skal bære prioriteringer og milepæler
 
 Dato: 2026-09-19
-Status: pågår (fase 1–2 ferdig, fase 3–4 planlagt)
+Status: pågår (fase 1–3 ferdig, fase 4 planlagt)
 
 > Bygger på `2026-07-12-retning-livsintervju.md` (livsintervjuet, visjonene,
 > `buildDirectionBlock`), `2026-07-17-retning-facelift-langtidsmaal.md` (målbare
@@ -201,15 +201,47 @@ flyttet ut av `spending-analyzer.ts`.
 var alternativet fire valgfrie posisjonelle parametere der to er lister — og et
 kallsted som bytter om på to lister får ingen feil.
 
-### Fase 3: Målart — kontrollert mot tilrettelagt (planlagt)
+### Fase 3: Målart — kontrollert mot tilrettelagt
 
-Ikke oppfinn en metrikk for tillit. Gjør ARTEN eksplisitt: et tilrettelagt mål
-måles på **betingelsene du setter opp**, ikke på utfallet. «Mer aktive vennskap»
-er ikke målbart; «ta initiativ til én ting i måneden» er det, og er den ærlige
-ledende indikatoren. Formen finnes: `count_per_window`-streaks.
+**Navnet på skuffen var problemet.** «Uten måling» er en påstand om OSS — vi fant
+ingen metrikk — presentert som en egenskap ved MÅLET. `createLongTermGoal` sin
+metrikk-mapping dekker vekt, 5/10 km-tid, hvilepuls, belastning,
+kroppssammensetning og sparing; alt sammen tall man selv kan flytte. Ny jobb,
+tillit hos kone og barn, mer aktive vennskap traff ingenting og havnet i en
+kollapset skuff med en etikett som gjorde det til brukerens problem.
 
-Konsekvens for flaten: «Uten måling»-skuffen skal ikke lenger være stedet halve
-livet havner.
+**Løsningen er ikke en metrikk for tillit.** Et tilrettelagt mål måles på
+**betingelsene du setter opp**, ikke på utfallet. `GoalKind` er
+`kontrollert | tilrettelagt`, satt av brukeren eller utledet.
+
+**Utledningen gjetter ALDRI `tilrettelagt`.** En metrikk BEVISER at målet er
+kontrollert: noen har oppgitt et tall man selv flytter. Fravær av metrikk beviser
+ingenting — «gå ned i vekt» uten målvekt er et uferdig kontrollert mål. Å gjette
+her ville vært samme feil som `startWorkout.type` sin stille default: en KONKRET
+verdi satt inn der sannheten er «ikke oppgitt». Derfor `null`, og flaten SPØR.
+
+**Den ledende indikatoren er ikke ny lagring.** Mekanismen fantes: en OPPGAVE
+under målet med `frequency` og `targetValue`, registrert med
+`record_tracking_event`. `readLeadingIndicator` sier bare hvordan den skal LESES.
+Første aktive frekvens-oppgave vinner — to «ledende» indikatorer er ingen
+indikator, og valget hører hos brukeren, ikke i en sorteringsregel.
+
+**Fire båser, og de to nye sier hva som mangler.** `kontrollert`,
+`tilrettelagt`, `mangler-indikator`, `uavklart`. De to siste erstatter «Uten
+måling», og forskjellen er ikke kosmetisk: begge har en handling ved siden av seg.
+Kriteriet for hvem som havner der er UENDRET (ingen måling, ingen oppgaver), så
+endringen flytter ingen mål ned — bare de som alt lå der.
+
+**Linja i chat-konteksten sier hva arten BETYR, ikke bare hva den er.** Uten den
+halvdelen leser modellen «tilrettelagt» som en etikett og fortsetter å spørre om
+framdrift mot utfallet — nettopp det brukeren ikke styrer. Kontrollerte mål får
+INGEN linje: normalen trenger ikke en, og en linje per mål ville vært støy. Og
+linja settes bare på aktive mål; et fullført mål har ingen framdrift igjen.
+
+**`update_goal` fikk `set_kind`**, og `PATCH /api/goals/[id]` tar `goalKind` —
+validert mot unionen, ikke gjennom den rå `metadata`-flettingen. En fritekstverdi
+der ville gjort `resolveGoalKind` stum (den forkaster det den ikke kjenner), og
+målet ville stått som «uavklart» uten at noe sa fra. `null` fjerner arten.
 
 ### Fase 4: Intervjuet (planlagt)
 
@@ -247,6 +279,43 @@ settes og endres direkte på Retning-siden — samme mønster som visjonene alt 
 | `src/lib/components/domain/plan/DeprioritizationSection.svelte` | flaten på Retning-fanen |
 | `src/lib/components/domain/LivskompassCheckin.svelte` | «Valgt bort i denne perioden» |
 | `src/lib/server/prompts/domains.ts` | blokk i `self` om hva et valgt gap er |
+
+## Filer (fase 3)
+
+| Fil | Rolle |
+|-----|-------|
+| `src/lib/domain/goals/goal-kind.ts` | arten, den ledende indikatoren, grupperingen, ordene |
+| `src/routes/api/chat/+server.ts` | art-linja i mål-blokka, bare på aktive mål |
+| `src/routes/api/goals/[id]/+server.ts` | `goalKind` i PATCH, validert mot unionen |
+| `src/lib/ai/tools/update-goal.ts` | `set_kind` |
+| `src/routes/plan/mal/+page.svelte` | «Trenger en form» med art-velger |
+| `src/lib/server/prompts/domains.ts` | blokk i `self` om de to artene |
+
+## Verifisering (fase 3)
+
+- `npm test`: 4964 tester grønne (331 filer), inkludert 15 nye for `goal-kind.ts`
+  og 2 for `set_kind`.
+- `npm run check`: 0 feil. `npm run build`: OK.
+- **Gjenstår i dev:**
+  1. Et mål uten måling og uten oppgaver står under «Trenger en form» med to
+     knapper. Trykk «Jeg legger til rette» → raden sier at det mangler én jevnlig
+     handling.
+  2. Send en chatmelding → målet bærer «Art: tilrettelagt …» i mål-blokka, og
+     coachen foreslår en frekvens-oppgave framfor å spørre om utfallet.
+  3. Si «det der er ikke noe jeg styrer selv» i chatten → `update_goal` med
+     `set_kind`.
+
+## Kjent rest etter fase 3
+
+- **Ingen framdrift på et tilrettelagt mål på flaten.** `calculateGoalProgress`
+  snitter oppgavene som før; den vet ikke at utfallet ikke skal telles. Riktig nok
+  i praksis (indikatoren ER en oppgave), men det er tilfeldig, ikke bestemt.
+- **`createLongTermGoal` setter ikke arten.** Et mål fra livsintervjuet uten
+  metrikk blir «uavklart» og må avklares på flaten. Fase 4 er stedet: speil-steget
+  vet hvilken art det foreslo.
+- **Ingen kobling mellom arten og «Fullfør».** Et tilrettelagt mål er nådd når
+  brukeren sier det — som før — men ingenting sier at det er den eneste måten.
+- **`create_goal` tar ikke `kind`.** Et nytt tilrettelagt mål må merkes i to steg.
 
 ## Beslutninger
 

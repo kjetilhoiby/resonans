@@ -30,6 +30,8 @@ export type GoalItem = {
 			met?: boolean;
 			lastEvaluatedAt?: string;
 		} | null;
+		/** 'kontrollert' | 'tilrettelagt' — se `$lib/domain/goals/goal-kind.ts`. */
+		goalKind?: string | null;
 		milestone?: {
 			achievedOn?: string;
 			frees?: string | null;

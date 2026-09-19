@@ -29,6 +29,7 @@ import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { openAiFunctionDefinition } from '$lib/server/assistant/tool-schema';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { updateGoalTool } from '$lib/ai/tools/update-goal';
+import { describeGoalKindForPrompt } from '$lib/domain/goals/goal-kind';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
 import { logSleepDisturbanceTool } from '$lib/ai/tools/log-sleep-disturbance';
@@ -2598,6 +2599,17 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				goalsContext += `\nMÅL: "${goal.title}" (ID: ${goal.id})\n`;
 				goalsContext += `Kategori: ${categoryName || 'Ingen'}\n`;
 				goalsContext += `Status: ${goal.status}\n`;
+				/**
+				 * Arten sier hvordan målet skal SNAKKES OM, ikke bare hva det er.
+				 * Uten linja ber modellen om framdrift mot et utfall brukeren ikke
+				 * styrer — «hvordan går det med tilliten?» — og gjør et manglende
+				 * utfall til noe hen har mislyktes med. Kontrollerte mål er normalen
+				 * og får ingen linje. Se `$lib/domain/goals/goal-kind.ts`.
+				 */
+				// Bare for mål som fortsatt er i gang: arten sier hvordan man skal SNAKKE
+				// om framdrift, og et fullført eller arkivert mål har ingen framdrift igjen.
+				const kindLine = goal.status === 'active' ? describeGoalKindForPrompt(goal) : null;
+				if (kindLine) goalsContext += `${kindLine}\n`;
 				if (goal.tasks.length > 0) {
 					goalsContext += `Oppgaver:\n`;
 					for (const task of goal.tasks) {
