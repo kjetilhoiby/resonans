@@ -18,6 +18,9 @@ import {
 	type LivskompassWeekGoal,
 	type OutOfSyncItem
 } from '$lib/domains/livskompass/dimensions';
+import { listDeprioritizations } from '$lib/server/livskompass-deprioritization';
+import { getOrCreateLivskompassSensor } from '$lib/server/livskompass-sensor';
+import type { ResolvedDeprioritization } from '$lib/domains/livskompass/deprioritization';
 
 export class LivskompassCheckinError extends Error {}
 
@@ -46,26 +49,11 @@ export interface LivskompassStatus {
 	prefillImportance: Record<string, number>;
 	/** Bruker har aldri satt viktighet (ingen profil + ingen innsjekk) → vis onboarding. */
 	needsOnboarding: boolean;
-}
-
-async function getOrCreateLivskompassSensor(userId: string) {
-	const existing = await db.query.sensors.findFirst({
-		where: and(eq(sensors.userId, userId), eq(sensors.provider, 'livskompass_checkin'))
-	});
-	if (existing) return existing;
-	const [created] = await db
-		.insert(sensors)
-		.values({
-			userId,
-			provider: 'livskompass_checkin',
-			type: 'manual_log',
-			subtype: 'livskompass_weekly',
-			name: 'Livskompasset',
-			isActive: true,
-			config: { sliderRange: '1_10', cadence: 'weekly' }
-		})
-		.returning();
-	return created;
+	/**
+	 * Bevisste nedprioriteringer. Innsjekken bruker dem til å skille et VALGT gap
+	 * fra drift — uten dem tegnes begge som samme røde sektor.
+	 */
+	deprioritizations: ResolvedDeprioritization[];
 }
 
 /** Validerer og normaliserer en score-map fra klienten (viktighet 1–10, samsvar 1–5). */
@@ -247,9 +235,10 @@ export async function getLivskompassStatus(
 	const profileRow = await latestImportanceProfileRow(userId);
 
 	// Sløyfe-kontekst: forrige innsjekk (spøkelses-markør) + ukas mål (oppfølging).
-	const [recent, weekGoals] = await Promise.all([
+	const [recent, weekGoals, deprioritizations] = await Promise.all([
 		getLivskompassRecent(userId, 8),
-		getLivskompassWeekGoals(userId, week)
+		getLivskompassWeekGoals(userId, week),
+		listDeprioritizations(userId)
 	]);
 	const previousCheckin = recent.find((c) => c.week !== '' && c.week < week) ?? null;
 	const previous = previousCheckin ? { week: previousCheckin.week, scores: previousCheckin.scores } : null;
@@ -276,7 +265,8 @@ export async function getLivskompassStatus(
 		weekGoals,
 		prefillImportance,
 		// Onboarding trengs bare når bruker aldri har satt viktighet (verken profil eller innsjekk).
-		needsOnboarding: !checkinRow && !profileRow
+		needsOnboarding: !checkinRow && !profileRow,
+		deprioritizations
 	};
 }
 

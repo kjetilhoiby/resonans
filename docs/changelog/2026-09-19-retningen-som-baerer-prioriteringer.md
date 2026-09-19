@@ -1,7 +1,7 @@
 # Retningen skal bære prioriteringer og milepæler
 
 Dato: 2026-09-19
-Status: pågår (fase 1 ferdig, fase 2–4 planlagt)
+Status: pågår (fase 1–2 ferdig, fase 3–4 planlagt)
 
 > Bygger på `2026-07-12-retning-livsintervju.md` (livsintervjuet, visjonene,
 > `buildDirectionBlock`), `2026-07-17-retning-facelift-langtidsmaal.md` (målbare
@@ -141,22 +141,65 @@ skrives av. Kopien i `routes/api/chat/+server.ts` var nettopp den formen
 CLAUDE.md advarer mot, og de nye feltene ville ellers vært usynlige i
 web-chatten mens Ekko så dem.
 
-### Fase 2: Bevisst, tidsavgrenset nedprioritering (planlagt)
+### Fase 2: Bevisst, tidsavgrenset nedprioritering
 
-Den egentlig nye ideen. Et objekt per dimensjon: `{ dimensionId, fra, til,
-begrunnelse, reparasjon }`.
+Den egentlig nye ideen. Én rad per periode:
+`{ dimensionId, startDate, endDate, reason, repair, confirmedOn, settledOn, outcome }`.
 
-**Formen finnes ferdig utprøvd: `sick-periods.ts`.** En sykeperiode unnskylder
-noe for en periode, har start og slutt, må bekreftes for å leve videre
-(`confirmedOn`, `needsConfirmation`, `MAX_OPEN_SICK_DAYS`), og et bortfall
-gjelder framover — aldri bakover. En nedprioritering er strukturelt det samme, og
-alle fellene er funnet der alt. En som ikke bekreftes er nettopp «drift som
-utgir seg for å være et valg», og vakten som fanger det er skrevet.
+**Formen er hentet fra `sick-periods.ts`** — en periode som unnskylder noe, med
+livstegn, varsel før vakten slår til, og et bortfall som gjelder framover og
+aldri bakover. Men ÉN ting er snudd, og det er den viktigste beslutningen her:
 
-Livskompassets ukesinnsjekk leser den: en valgt nedprioritering skal si «dette er
-uke 6 av 12, slik du bestemte» framfor å flagges som avvik. Når terminen løper
-ut: reparere, forlenge, eller innrømme at det var drift. Det er `sick-checkin`
-sin form.
+**Terminen er OBLIGATORISK.** Sykeperioder lar `endDate` være null, fordi
+«inntil videre» er den ærlige defaulten: ingen vet på dag én hvor lenge en
+infeksjon varer. Her er det motsatt. En nedprioritering uten sluttdato er ikke et
+valg — det er drift med en forklaring foran. Du KAN velge terminen, og det å
+velge den er selve handlingen. Validatoren avviser derfor en tom sluttdato med
+nettopp den setningen, og `MAX_TERM_DAYS` (365) er taket: over et år er det ikke
+en periode lenger, det er den du har blitt.
+
+**Oppgjøret ved terminslutt er vakten**, ikke en periodisk bekreftelse. Når
+terminen går ut slutter den å unnskylde, og flaten tilbyr tre utfall: hentet opp
+igjen, forlenget, eller **det var drift**. Det tredje er det som gjør de to
+andre troverdige — uten det kan en forlengelse gjentas i det uendelige og
+fortsatt kalles et valg. En forlengelse setter `confirmedOn`, så den står som en
+handling og ikke som fravær av en.
+
+**`CHECKIN_INTERVAL_DAYS` (60) dekker den lange terminen.** Terminen er
+forpliktelsen, så vi maser ikke på en på seks uker. Men en halvårig
+nedprioritering ingen har sett på siden den ble satt, er ikke til å skille fra
+drift — og det er nøyaktig forskjellen modulen finnes for.
+
+**Møtepunktet med hjulet er `partitionOutOfSync`.** `computeOutOfSync` kjenner
+bare viktighet minus samsvar og tegner derfor et valgt fravær som samme røde
+sektor som en dimensjon ingen har sett på siden mars. Partisjonen gjør
+forskjellen synlig uten å skjule noe: et valgt gap er fortsatt et gap, det er
+bare ikke et avvik. En UTLØPT termin faller tilbake blant de driftende — i det
+oppgjøret ikke er tatt, vet vi ikke lenger hva det er.
+
+**Coachingen er den som gjorde mest skade uten dette.**
+`buildCoachingSystemPrompt` ba modellen finne de største gapene og foreslå å heve
+dem ett poeng — altså det stikk motsatte av det brukeren nettopp hadde bestemt
+seg for. Valgte dimensjoner filtreres nå ut av den lista og står som kontekst,
+med beskjed om å ikke be om et mål på dem.
+
+**Innsjekken skjuler dem ikke.** «Valgt bort i denne perioden» står som en egen,
+dempet seksjon under «Ute av synk»: et tall som bare forsvinner er ikke til å
+etterprøve. Ingen varselfarge — det er ikke et varsel.
+
+**Flaten er Retning-fanen, ikke livskompasset.** Hjulet er ukentlig og måler uka
+som gikk; en nedprioritering spenner over måneder og hører sammen med prosaen,
+målene og milepælene. Hjulet LESER den, men den settes der retningen bor.
+
+**`getOrCreateLivskompassSensor` flyttet til `livskompass-sensor.ts`.**
+Innsjekk-modulen leser nedprioriteringene inn i statusen, og
+nedprioriteringsmodulen trenger sensoren å skrive på — lå hjelperen hos den ene,
+importerte de to modulene hverandre. Samme grunn som `loadMerchantMappings` ble
+flyttet ut av `spending-analyzer.ts`.
+
+**`buildDirectionBlock` tar nå et `extras`-objekt.** Da den tredje samlingen kom,
+var alternativet fire valgfrie posisjonelle parametere der to er lister — og et
+kallsted som bytter om på to lister får ingen feil.
 
 ### Fase 3: Målart — kontrollert mot tilrettelagt (planlagt)
 
@@ -189,6 +232,21 @@ promptene før tingene det skal forfatte finnes, produserer det bare mer prosa.
 oppleves alt som tungt; legger vi på to steg blir det verre. Fase 1–3 skal kunne
 settes og endres direkte på Retning-siden — samme mønster som visjonene alt har
 (✏️ ved siden av intervjuet).
+
+## Filer (fase 2)
+
+| Fil | Rolle |
+|-----|-------|
+| `src/lib/domains/livskompass/deprioritization.ts` | reglene rent: termin, oppgjør, partisjon, ord |
+| `src/lib/server/livskompass-deprioritization.ts` | lagring og lesing, én skrivevei |
+| `src/lib/server/livskompass-sensor.ts` | delt sensor-hjelper (bryter sirkelen) |
+| `src/lib/domains/livskompass/dimensions.ts` | coaching-prompten hopper over valgte gap |
+| `src/lib/server/livskompass-checkin.ts` | statusen bærer nedprioriteringene |
+| `src/lib/server/services/direction-context.ts` | prioriteringsblokka i chat-konteksten |
+| `src/routes/api/livskompass/nedprioritering/+server.ts` | GET/POST/PATCH/DELETE, PATCH tar en handling |
+| `src/lib/components/domain/plan/DeprioritizationSection.svelte` | flaten på Retning-fanen |
+| `src/lib/components/domain/LivskompassCheckin.svelte` | «Valgt bort i denne perioden» |
+| `src/lib/server/prompts/domains.ts` | blokk i `self` om hva et valgt gap er |
 
 ## Beslutninger
 
@@ -241,6 +299,44 @@ settes og endres direkte på Retning-siden — samme mønster som visjonene alt 
   5. Rett regnskapet på et alt fullført mål → `achievedOn` står uendret.
   6. `VISUAL_REVIEW_CONTEXT="Milepælsregnskap på mål og Retning-fanen" npm run test:visual:review`
      (Retning-fanen er ikke i piksel-suiten; `/plan/mal` kan påvirkes.)
+
+## Verifisering (fase 2)
+
+- `npm test`: 4948 tester grønne (330 filer), inkludert 27 nye for
+  `deprioritization.ts`, 3 for prioriteringsblokka i `direction-context` og 3 for
+  coaching-prompten.
+- `npm run check`: 0 feil, 0 advarsler.
+- **Gjenstår i dev:**
+  1. Retning → «Nedprioriter noe bevisst» → velg Kultur, 12 uker, grunn. Raden
+     dukker opp med «Uke 1 av 13».
+  2. Ta ukesinnsjekken med lavt samsvar på Kultur → den står under «Valgt bort i
+     denne perioden», ikke under «Ute av synk», og «Snakk om det» foreslår ikke å
+     heve den.
+  3. Send en chatmelding → «BEVISST NEDPRIORITERT NÅ» står i retningsblokka
+     mellom verdiene og milepælene, og coachen konfronterer ikke det valget.
+  4. Sett en termin som alt er over (rett `endDate` i basen) → raden flytter seg
+     til «terminen gikk ut» med tre utfall, og faller tilbake blant de driftende
+     i innsjekken.
+
+## Kjent rest etter fase 2
+
+- **Ingen nudge når en termin går ut.** `digest-nugget-rules.ts` er den naturlige
+  koblingen, og en utløpt termin fyrer ÉN gang — altså høyt i `PUSH_RANK`. Uten
+  den må brukeren åpne Retning-fanen for å se at oppgjøret venter.
+- **Ingen chat-inngang.** `saveDeprioritization` er klar for et verktøy, men
+  prompten viser til flaten — samme valg som sykeperiodene.
+- **En startdato fram i tid avvises.** «Fra 1. oktober» er ikke urimelig, men en
+  slik rad ville vært usynlig: hverken aktiv, uoppgjort eller avsluttet, altså i
+  ingen av flatens lister. Skal det støttes, må flaten få en fjerde liste først.
+- **«Forleng» er hardkodet til 12 uker** i flaten. En forlengelse man ikke velger
+  lengden på er en halv beslutning.
+- **Ingen kobling til `livskompass_importance`.** En nedprioritering endrer ikke
+  viktigheten, og det er riktig — viktighet er hva som BETYR noe, ikke hva som
+  får plass. Men ingenting sier det til brukeren.
+- **Rangeringen mangler fortsatt.** Ryggradens punkt 2 er «rekkefølgen, med
+  eventuelle bevisste nedprioriteringer»; fase 2 leverte den andre halvdelen.
+  En ordnet topp-3 av verdiene er ikke bygget, og det er fase 4s jobb —
+  intervjuet er forfatterflaten for den.
 
 ## Kjent rest etter fase 1
 

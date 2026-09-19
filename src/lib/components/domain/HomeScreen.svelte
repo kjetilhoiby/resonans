@@ -115,6 +115,7 @@
 		type LivskompassScores,
 		type LivskompassWeekGoal,
 	} from '$lib/domains/livskompass/dimensions';
+	import type { ResolvedDeprioritization } from '$lib/domains/livskompass/deprioritization';
 
 	import {
 		handleCameraFileSelect as cameraFileSelectHandler,
@@ -444,6 +445,7 @@
 	let livskompassLatest = $state<{ week: string; scores: LivskompassScores } | null>(null);
 	let livskompassPrevious = $state<{ week: string; scores: LivskompassScores } | null>(null);
 	let livskompassWeekGoals = $state<LivskompassWeekGoal[]>([]);
+	let livskompassDeprioritizations = $state<ResolvedDeprioritization[]>([]);
 	let livskompassInitialScores = $state<LivskompassScores | null>(null);
 	let livskompassStartStage = $state<'scoring' | 'result'>('scoring');
 	let livskompassNeedsOnboarding = $state(false);
@@ -471,6 +473,7 @@
 			livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
 			livskompassPrevious = status.previous ?? null;
 			livskompassWeekGoals = status.weekGoals ?? [];
+			livskompassDeprioritizations = status.deprioritizations ?? [];
 		} catch { /* best-effort */ }
 	}
 
@@ -1011,6 +1014,8 @@
 				livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
 				livskompassPrevious = status.previous ?? null;
 				livskompassWeekGoals = status.weekGoals ?? [];
+				livskompassDeprioritizations = status.deprioritizations ?? [];
+			livskompassDeprioritizations = status.deprioritizations ?? [];
 				if (status.isWeekendNow !== true) return; // gaten gjelder bare i helga
 				if (status.submitted) return; // allerede tatt denne uka
 				const seen = typeof localStorage !== 'undefined'
@@ -1198,6 +1203,7 @@
 		get livskompassLatest() { return livskompassLatest; }, set livskompassLatest(v) { livskompassLatest = v; },
 		get livskompassPrevious() { return livskompassPrevious; }, set livskompassPrevious(v) { livskompassPrevious = v; },
 		get livskompassWeekGoals() { return livskompassWeekGoals; }, set livskompassWeekGoals(v) { livskompassWeekGoals = v; },
+		get livskompassDeprioritizations() { return livskompassDeprioritizations; }, set livskompassDeprioritizations(v) { livskompassDeprioritizations = v; },
 		loadLivskompass,
 		openLivskompass,
 

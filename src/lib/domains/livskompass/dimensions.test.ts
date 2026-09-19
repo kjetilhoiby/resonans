@@ -255,3 +255,36 @@ describe('localIsoWeek / isValidWeekKey', () => {
 		expect(isValidWeekKey(42)).toBe(false);
 	});
 });
+
+describe('buildCoachingSystemPrompt — bevisste nedprioriteringer', () => {
+	const scores = scoresFrom({
+		kultur: { importance: 8, match: 2 },
+		natur: { importance: 9, match: 2 }
+	});
+	const chosen = [
+		{ dimensionId: 'kultur', label: 'Kultur', sentence: 'Kultur: nedprioritert ut 2. nov. Uke 6 av 13.' }
+	];
+
+	// Uten dette foreslår coachen å heve nettopp det brukeren har bestemt seg for
+	// å legge bort — det stikk motsatte av valget.
+	it('holder et valgt gap UTE av lista som skal heves ett poeng', () => {
+		const prompt = buildCoachingSystemPrompt(scores, { chosen });
+		const gapSection = prompt.slice(
+			prompt.indexOf('OMRÅDER MED STØRST GAP'),
+			prompt.indexOf('BEVISST NEDPRIORITERT')
+		);
+		expect(gapSection).toContain('Natur');
+		expect(gapSection).not.toContain('(id: kultur)');
+	});
+
+	it('nevner den som kontekst, med beskjed om å ikke be om et mål på den', () => {
+		const prompt = buildCoachingSystemPrompt(scores, { chosen });
+		expect(prompt).toContain('BEVISST NEDPRIORITERT');
+		expect(prompt).toContain('IKKE foreslå å heve disse');
+		expect(prompt).toContain('Uke 6 av 13');
+	});
+
+	it('endrer ingenting uten nedprioriteringer', () => {
+		expect(buildCoachingSystemPrompt(scores)).toBe(buildCoachingSystemPrompt(scores, { chosen: [] }));
+	});
+});

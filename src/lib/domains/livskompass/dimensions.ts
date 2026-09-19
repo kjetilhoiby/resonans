@@ -210,14 +210,41 @@ export function describeGoalOutcome(o: LivskompassGoalOutcome): string {
  */
 export function buildCoachingSystemPrompt(
 	scores: LivskompassScores,
-	opts?: { weekGoals?: LivskompassWeekGoal[] | null }
+	opts?: {
+		weekGoals?: LivskompassWeekGoal[] | null;
+		/**
+		 * Dimensjoner brukeren har nedprioritert BEVISST, med termin.
+		 *
+		 * Formen er strukturell og ikke en typeimport fra
+		 * `deprioritization.ts`: den modulen importerer `dimensionById` herfra,
+		 * så en import tilbake ville lukket en sirkel.
+		 */
+		chosen?: Array<{ dimensionId: string; label: string; sentence: string }> | null;
+	}
 ): string {
-	const oos = computeOutOfSync(scores).slice(0, COACHING_TOP_GAPS);
+	const chosenIds = new Set((opts?.chosen ?? []).map((c) => c.dimensionId));
+	// Et valgt gap er ikke et avvik å coache på — det er planen som virker. Ut av
+	// lista modellen får beskjed om å heve ett poeng.
+	const oos = computeOutOfSync(scores)
+		.filter((d) => !chosenIds.has(d.id))
+		.slice(0, COACHING_TOP_GAPS);
 	const gapLines = oos.length
 		? oos
 				.map((d, i) => `${i + 1}. «${d.label}» (id: ${d.id}) — viktighet ${d.importance}/10, samsvar ${d.match}/10 (gap ${d.gap})`)
 				.join('\n')
 		: '(ingen store avvik denne uka)';
+	/**
+	 * De valgte står som KONTEKST, ikke som avvik. Uten linja ser coachen bare at
+	 * et viktig område mangler samsvar, og foreslår å heve det ett poeng — altså
+	 * det stikk motsatte av det brukeren har bestemt seg for.
+	 */
+	const chosenSection = (opts?.chosen ?? []).length
+		? [
+				'',
+				'BEVISST NEDPRIORITERT (brukerens eget valg, med termin — IKKE foreslå å heve disse, og ikke be om et mål på dem):',
+				...(opts?.chosen ?? []).map((c) => `- ${c.sentence}`)
+			]
+		: [];
 	const outcomes = evaluateWeekGoals(scores, opts?.weekGoals);
 	const goalSection = outcomes.length
 		? [
@@ -233,6 +260,7 @@ export function buildCoachingSystemPrompt(
 		'',
 		'OMRÅDER MED STØRST GAP DENNE UKA:',
 		gapLines,
+		...chosenSection,
 		'',
 		'DIN ROLLE:',
 		'- Hjelp brukeren sette ett lite, konkret mål: å heve ETT poeng (f.eks. fra 3 til 4) neste uke for ett eller to av de største avvikene.',

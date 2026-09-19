@@ -7,6 +7,7 @@
  * Svelte 5: $state-egenskaper på objektet er reaktive gjennom context uten wrapping.
  */
 
+import type { ResolvedDeprioritization } from '$lib/domains/livskompass/deprioritization';
 import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
@@ -367,6 +368,8 @@ export interface HomeContext {
 	livskompassPrevious: { week: string; scores: LivskompassScores } | null;
 	/** Ett-poengs-mål som peker på inneværende uke, med tiltaksstatus */
 	livskompassWeekGoals: LivskompassWeekGoal[];
+	/** Bevisste nedprioriteringer — innsjekken skiller et valgt gap fra drift. */
+	livskompassDeprioritizations: ResolvedDeprioritization[];
 	loadLivskompass: () => Promise<void>;
 	openLivskompass: (opts?: { startStage?: 'scoring' | 'result' }) => void;
 

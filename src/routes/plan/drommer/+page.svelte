@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatMilestoneDate } from '$lib/domain/goals/milestone';
+	import DeprioritizationSection from '$lib/components/domain/plan/DeprioritizationSection.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
@@ -328,6 +329,16 @@
 			{/each}
 		</div>
 	</section>
+
+	<!--
+	  SEKSJON 1a: Prioriteringer. Står FØR milepælene og verdiene fordi rekkefølgen
+	  er den samme som i chat-konteksten: prosaen, så hva som er valgt bort nå, så
+	  hva som er oppnådd. Et valgt fravær er en del av retningen, ikke et avvik.
+	-->
+	<DeprioritizationSection
+		periods={data.nedprioriteringer}
+		onchanged={() => invalidateAll()}
+	/>
 
 	<!--
 	  SEKSJON 1b: Oppnådd. Står mellom retningen og verdiene fordi milepælene er

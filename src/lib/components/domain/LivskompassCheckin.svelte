@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+		partitionOutOfSync,
+		type ResolvedDeprioritization
+	} from '$lib/domains/livskompass/deprioritization';
 	import { fade } from 'svelte/transition';
 	import LivskompassWheel from './LivskompassWheel.svelte';
 	import {
@@ -29,6 +33,14 @@
 		previousScores?: LivskompassScores | null;
 		/** Ett-poengs-mål som peker på denne uka (fra forrige coaching), med tiltaksstatus. */
 		weekGoals?: LivskompassWeekGoal[] | null;
+		/**
+		 * Bevisste nedprioriteringer med termin (settes på Retning-fanen).
+		 *
+		 * Uten dem tegner hjulet et valgt fravær som samme røde sektor som en
+		 * dimensjon ingen har sett på siden mars — og coachen foreslår å heve den
+		 * ett poeng, altså det stikk motsatte av det brukeren har bestemt.
+		 */
+		deprioritizations?: ResolvedDeprioritization[] | null;
 		/** Vis viktighets-onboarding først (bruker har aldri rangert viktighet). */
 		needsOnboarding?: boolean;
 		/** Start direkte på et bestemt steg (f.eks. resultat når man åpner et registrert kompass). */
@@ -45,6 +57,7 @@
 		initialScores = null,
 		previousScores = null,
 		weekGoals = null,
+		deprioritizations = null,
 		needsOnboarding = false,
 		startStage = 'scoring',
 		onSaveImportance,
@@ -73,7 +86,10 @@
 		stage = startStage; // videre til ukas samsvar-scoring
 	}
 
-	const outOfSync = $derived(computeOutOfSync(scores));
+	// Delt: et valgt gap er fortsatt et gap, men det er ikke et avvik.
+	const split = $derived(partitionOutOfSync(computeOutOfSync(scores), deprioritizations ?? []));
+	const outOfSync = $derived(split.drifting);
+	const chosenGaps = $derived(split.chosen);
 	const avg = $derived(averageMatch(scores).toFixed(1));
 	// Ukas mål vurdert mot scorene brukeren setter nå — oppdateres live under scoring.
 	const goalOutcomes = $derived(evaluateWeekGoals(scores, weekGoals));
@@ -96,7 +112,10 @@
 			scores: snapshot,
 			note: note.trim(),
 			seed: buildCoachingSeed(snapshot, note, { weekGoals }),
-			systemPrompt: buildCoachingSystemPrompt(snapshot, { weekGoals })
+			systemPrompt: buildCoachingSystemPrompt(snapshot, {
+				weekGoals,
+				chosen: chosenGaps.map((g) => g.choice)
+			})
 		});
 	}
 </script>
@@ -256,6 +275,23 @@
 						<p class="lk-sync-text">Ingen store gap mellom det som er viktig og det uka ga rom for.</p>
 					{/if}
 
+					<!--
+					  Valgte gap står SEPARAT, ikke skjult: de er fortsatt et fravær, og et
+					  tall som bare forsvinner er ikke til å etterprøve. Men de er ikke et
+					  avvik, så de får ingen varselfarge og ingen «heve ett poeng»-oppfordring.
+					-->
+					{#if chosenGaps.length}
+						<h3>Valgt bort i denne perioden</h3>
+						<ul class="lk-sync-list">
+							{#each chosenGaps as d (d.id)}
+								<li>
+									<span class="lk-sync-dot lk-chosen-dot" style:background={d.color}></span>
+									<span class="lk-sync-text lk-chosen-text">{d.choice.sentence}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+
 					<label class="lk-note">
 						<span>Vil du si noe kort?</span>
 						<textarea
@@ -280,6 +316,15 @@
 </div>
 
 <style>
+	/* Kromafritt og dempet: et valgt fravær er ikke et varsel. */
+	.lk-chosen-dot {
+		opacity: 0.45;
+	}
+
+	.lk-chosen-text {
+		opacity: 0.8;
+	}
+
 	.lk-overlay {
 		position: fixed;
 		inset: 0;

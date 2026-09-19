@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildDirectionBlock, horizonLabel } from './direction-context';
+import { resolveDeprioritization } from '$lib/domains/livskompass/deprioritization';
 
 describe('horizonLabel', () => {
 	it('kjenner alle fire horisonter', () => {
@@ -85,15 +86,18 @@ describe('buildDirectionBlock — milepæler', () => {
 	const vision = [{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }];
 
 	it('rendrer ferske milepæler med regnskap', () => {
-		const block = buildDirectionBlock(vision, [], undefined, [
-			{
-				id: 'a',
-				title: 'Skifte jobb',
-				achievedOn: '2026-09-14',
-				frees: 'mindre belastning fra jobbsøking',
-				cost: 'spenning på gammel jobb'
-			}
-		], NOW);
+		const block = buildDirectionBlock(vision, [], undefined, {
+			milestones: [
+				{
+					id: 'a',
+					title: 'Skifte jobb',
+					achievedOn: '2026-09-14',
+					frees: 'mindre belastning fra jobbsøking',
+					cost: 'spenning på gammel jobb'
+				}
+			],
+			now: NOW
+		});
 		expect(block).toContain('NYLIG OPPNÅDD');
 		expect(block).toContain('Skifte jobb (14. september 2026)');
 		expect(block).toContain('Kostet: spenning på gammel jobb');
@@ -104,8 +108,7 @@ describe('buildDirectionBlock — milepæler', () => {
 			vision,
 			['Nærvær med barna'],
 			'Sier trening er viktig, men uka har null økter.',
-			[{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }],
-			NOW
+			{ milestones: [{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }], now: NOW }
 		);
 		expect(block.indexOf('VERDIER')).toBeLessThan(block.indexOf('NYLIG OPPNÅDD'));
 		expect(block.indexOf('NYLIG OPPNÅDD')).toBeLessThan(block.indexOf('KJENTE GAP'));
@@ -113,14 +116,63 @@ describe('buildDirectionBlock — milepæler', () => {
 
 	it('endrer ingenting uten milepæler', () => {
 		const uten = buildDirectionBlock(vision, ['Nærvær med barna']);
-		const tom = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, [], NOW);
+		const tom = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, { milestones: [], now: NOW });
 		expect(tom).toBe(uten);
 	});
 
 	// Uten retning er en milepælsliste bare oppnåelser uten noe å tolke dem mot.
 	it('rendrer ikke milepæler alene når retningen er tom', () => {
-		expect(buildDirectionBlock([], [], undefined, [
-			{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }
-		], NOW)).toBe('');
+		expect(
+			buildDirectionBlock([], [], undefined, {
+				milestones: [{ id: 'a', title: 'Skifte jobb', achievedOn: '2026-09-14' }],
+				now: NOW
+			})
+		).toBe('');
+	});
+});
+
+describe('buildDirectionBlock — bevisste nedprioriteringer', () => {
+	const NOW = new Date('2026-09-19T08:00:00Z');
+	const vision = [{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }];
+	const valgt = resolveDeprioritization(
+		{
+			id: 'd1',
+			dimensionId: 'kultur',
+			startDate: '2026-08-10',
+			endDate: '2026-11-02',
+			reason: 'gir plass til jobbstarten',
+			repair: 'to konserter i november',
+			confirmedOn: null,
+			settledOn: null,
+			outcome: null
+		},
+		'2026-09-19'
+	);
+
+	it('rendrer den valgte nedprioriteringen med terminen', () => {
+		const block = buildDirectionBlock(vision, [], undefined, { deprioritizations: [valgt], now: NOW });
+		expect(block).toContain('BEVISST NEDPRIORITERT NÅ');
+		expect(block).toContain('Uke 6 av 13, slik du bestemte');
+	});
+
+	// Rekkefølgen er en påstand: prioriteringene leses FØR dommen om hva som spriker.
+	it('står mellom verdiene og milepælene, og foran gap-notatet', () => {
+		const block = buildDirectionBlock(vision, ['Nærvær med barna'], 'Trener for lite.', {
+			deprioritizations: [valgt],
+			milestones: [{ id: 'm1', title: 'Skifte jobb', achievedOn: '2026-09-14' }],
+			now: NOW
+		});
+		expect(block.indexOf('VERDIER')).toBeLessThan(block.indexOf('BEVISST NEDPRIORITERT'));
+		expect(block.indexOf('BEVISST NEDPRIORITERT')).toBeLessThan(block.indexOf('NYLIG OPPNÅDD'));
+		expect(block.indexOf('NYLIG OPPNÅDD')).toBeLessThan(block.indexOf('KJENTE GAP'));
+	});
+
+	it('endrer ingenting uten nedprioriteringer', () => {
+		const uten = buildDirectionBlock(vision, ['Nærvær med barna']);
+		const tom = buildDirectionBlock(vision, ['Nærvær med barna'], undefined, {
+			deprioritizations: [],
+			now: NOW
+		});
+		expect(tom).toBe(uten);
 	});
 });

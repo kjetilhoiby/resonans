@@ -2202,6 +2202,51 @@ rent i `$lib/domain/goals/milestone.ts`, lesingen i
   `parameters`-objekt under — den farligste formen, fordi den SER generert ut, og
   den eldre tekstvakten så bare etter navnet som literal. Vakten dekker begge nå.
 
+### En nedprioritering er et valg med en termin, ellers er den drift
+
+Se `docs/changelog/2026-09-19-retningen-som-baerer-prioriteringer.md`. Reglene
+rent i `$lib/domains/livskompass/deprioritization.ts`, lagringen i
+`$lib/server/livskompass-deprioritization.ts`, flaten på Retning-fanen.
+
+- **Livskompasset kunne ikke skille drift fra valg.** Kultur som sklir uten at
+  noen bestemte det, og bidraget hjemme som er lagt bort med en begrunnelse og en
+  reparasjonsplan, tegnes som samme røde sektor. Brukerens egne ord: «den
+  endimensjonale livshjuløvelsen blir for flat for å fange opp dette».
+- **`endDate` er PÅKREVD — motsatt av sykeperiodene.** Der er «inntil videre» den
+  ærlige defaulten, fordi ingen vet hvor lenge en infeksjon varer. Her KAN du
+  velge terminen, og det å velge den er selve handlingen. Uten sluttdato er det
+  drift med en forklaring foran. `MAX_TERM_DAYS` (365) er taket: over et år er det
+  ikke en periode, det er den du har blitt.
+- **Oppgjøret er vakten, ikke en periodisk bekreftelse.** Tre utfall ved
+  terminslutt: hentet opp igjen, forlenget, eller **det var drift**. Det tredje
+  gjør de to andre troverdige — uten det kan en forlengelse gjentas i det
+  uendelige og fortsatt kalles et valg. En forlengelse setter `confirmedOn`, så
+  den står som en handling.
+- **`CHECKIN_INTERVAL_DAYS` (60) dekker den lange terminen.** En på seks uker
+  maser vi ikke på; en halvårig ingen har sett på er ikke til å skille fra drift.
+- **`partitionOutOfSync` er møtepunktet med hjulet.** Et valgt gap er fortsatt et
+  gap — det skjules ikke, det får bare ingen varselfarge og ingen
+  «hev ett poeng»-oppfordring. En UTLØPT termin faller tilbake blant de
+  driftende: i det oppgjøret ikke er tatt, vet vi ikke hva det er.
+- **Coachingen gjorde mest skade uten dette.** `buildCoachingSystemPrompt` ba
+  modellen heve de største gapene ett poeng — altså det stikk motsatte av valget.
+  Valgte dimensjoner filtreres ut av lista og står som kontekst i stedet.
+  Formen på `chosen` er STRUKTURELL, ikke en typeimport: `deprioritization.ts`
+  importerer `dimensionById` fra `dimensions.ts`, så en import tilbake lukker en
+  sirkel.
+- **Flaten er Retning-fanen, ikke livskompasset.** Hjulet er ukentlig og måler uka
+  som gikk; beslutningen spenner over måneder og hører sammen med prosaen, målene
+  og milepælene.
+- **`getOrCreateLivskompassSensor` bor i `livskompass-sensor.ts`.** Innsjekken
+  leser nedprioriteringene, og nedprioriteringene trenger sensoren — lå hjelperen
+  hos den ene, importerte modulene hverandre.
+- **Tidsstempelet er REGISTRERINGSTIDSPUNKTET**, aldri startdagen: unikhets-
+  indeksen på `sensor_events` ville ellers innført «én nedprioritering per dag»
+  som en 500. Og det flyttes ikke ved retting.
+- **`buildDirectionBlock` tar et `extras`-objekt** (`milestones`,
+  `deprioritizations`, `now`). Fire valgfrie posisjonelle parametere der to er
+  lister gir ingen feil når et kallsted bytter om på dem.
+
 ### Skjermtid: oppmerksomhet er ikke at skjermen sto på
 
 Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i

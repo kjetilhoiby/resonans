@@ -504,6 +504,7 @@
 		initialScores={ctx.livskompassInitialScores}
 		previousScores={ctx.livskompassPrevious?.scores ?? null}
 		weekGoals={ctx.livskompassWeekGoals}
+		deprioritizations={ctx.livskompassDeprioritizations}
 		needsOnboarding={ctx.livskompassNeedsOnboarding}
 		startStage={ctx.livskompassStartStage}
 		onSaveImportance={handleLivskompassSaveImportance}
