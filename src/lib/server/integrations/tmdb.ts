@@ -73,6 +73,10 @@ export interface PersonFilmographyEntry {
 	posterUrl?: string;
 	job?: string; // 'Director' e.l. for crew; udefinert for cast
 	character?: string;
+	/** TMDB-snitt (publikumsvurderinger 0–10, ikke kritikere). Utelatt uten stemmer. */
+	rating?: number;
+	voteCount?: number;
+	genreIds?: number[];
 }
 
 export interface PersonFilmography {
@@ -105,6 +109,9 @@ interface RawMovieResult {
 	release_date?: string;
 	poster_path?: string | null;
 	overview?: string;
+	vote_average?: number;
+	vote_count?: number;
+	genre_ids?: number[];
 }
 
 interface RawCredits {
@@ -230,12 +237,18 @@ export function parsePersonFilmography(
 		if (!(m.title || m.name)) return;
 		seen.add(m.id);
 		const base = parseSearchResult(m);
+		const voteCount = typeof m.vote_count === 'number' ? m.vote_count : 0;
 		entries.push({
 			tmdbId: base.tmdbId,
 			title: base.title,
 			year: base.year,
 			posterUrl: base.posterUrl,
-			...extra
+			...extra,
+			// Et snitt av null stemmer er TMDBs 0, ikke en dårlig film.
+			...(voteCount > 0 && typeof m.vote_average === 'number'
+				? { rating: m.vote_average, voteCount }
+				: {}),
+			...(m.genre_ids?.length ? { genreIds: m.genre_ids } : {})
 		});
 	};
 

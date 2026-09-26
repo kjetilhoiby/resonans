@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { extractApiErrorMessage } from '$lib/client/api-error';
-	import { pickPersonMatch, sortNewestFirst, type PersonRole } from '$lib/domain/film/person-filmography';
+	import {
+		pickAcclaimed,
+		pickCareerSpan,
+		pickPersonMatch,
+		sortNewestFirst,
+		type PersonRole
+	} from '$lib/domain/film/person-filmography';
 	import type {
 		Film,
 		FilmList,
@@ -9,7 +15,8 @@
 		FilmPersonRef,
 		PersonFilmography,
 		PersonFilmographyEntry,
-		PersonSearchResult
+		PersonSearchResult,
+		PersonViewMode
 	} from './film-api';
 
 	interface Props {
@@ -40,6 +47,7 @@
 	}: Props = $props();
 
 	let role = $state<PersonRole>(untrack(() => person.role));
+	let mode = $state<PersonViewMode>(untrack(() => person.mode ?? 'all'));
 	let personId = $state<number | null>(null);
 	let resolvedByName = $state(false);
 	let filmography = $state<PersonFilmography | null>(null);
@@ -53,8 +61,28 @@
 	const libraryByTmdb = $derived(
 		new Map(films.filter((f) => f.tmdbId != null).map((f) => [f.tmdbId as number, f]))
 	);
-	const entries = $derived(sortNewestFirst(filmography?.films ?? []));
-	const seenCount = $derived(entries.filter((e) => libraryByTmdb.get(e.tmdbId)?.status === 'watched').length);
+	const allEntries = $derived(sortNewestFirst(filmography?.films ?? []));
+	const seenCount = $derived(allEntries.filter((e) => libraryByTmdb.get(e.tmdbId)?.status === 'watched').length);
+	/* Forslagene holder det man har SETT utenfor. Ønskelista står: den er nettopp
+	   det man ikke har sett, og merket «På ønskelisten» sier at den alt er valgt. */
+	const seenIds = $derived(
+		new Set(films.filter((f) => f.status === 'watched' && f.tmdbId != null).map((f) => f.tmdbId as number))
+	);
+	const nowYear = new Date().getFullYear();
+	const entries = $derived(
+		mode === 'acclaimed'
+			? pickAcclaimed(allEntries, { exclude: seenIds, nowYear, limit: 10 })
+			: mode === 'span'
+				? pickCareerSpan(allEntries, { exclude: seenIds, nowYear, slots: 6 })
+				: allEntries
+	);
+	const MODE_LABEL: Record<PersonViewMode, string> = { all: 'Alle', acclaimed: 'Best vurdert', span: 'Tverrsnitt' };
+	const LIST_SUFFIX: Record<PersonViewMode, string> = { all: '', acclaimed: 'best vurdert', span: 'tverrsnitt' };
+
+	function formatRating(entry: PersonFilmographyEntry): string | null {
+		if (entry.rating == null || !entry.voteCount) return null;
+		return `★ ${entry.rating.toFixed(1).replace('.', ',')} (${entry.voteCount.toLocaleString('nb-NO')})`;
+	}
 
 	$effect(() => {
 		const ref = person;
@@ -70,6 +98,7 @@
 		loadError = '';
 		filmography = null;
 		role = ref.role;
+		mode = ref.mode ?? 'all';
 		resolvedByName = false;
 		personId = ref.personId;
 		try {
@@ -187,15 +216,25 @@
 		});
 	}
 
-	async function createListFromAll() {
+	async function createList() {
 		if (!filmography || creatingList) return;
 		creatingList = true;
 		actionError = '';
+		// «Alle» er en levende regissør-/skuespillerliste som fylles fra filmografien;
+		// et utvalg er et øyeblikksbilde og blir en egen liste med nettopp de filmene.
+		const body =
+			mode === 'all'
+				? { name: filmography.name, kind: role, tmdbPersonId: filmography.personId }
+				: {
+						name: `${filmography.name} – ${LIST_SUFFIX[mode]}`,
+						kind: 'manual',
+						items: entries.map((e) => ({ tmdbId: e.tmdbId, title: e.title, year: e.year ?? null, posterUrl: e.posterUrl ?? null }))
+					};
 		try {
 			const res = await fetch(`/api/tema/${themeId}/films/lists`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name: filmography.name, kind: role, tmdbPersonId: filmography.personId })
+				body: JSON.stringify(body)
 			});
 			if (!res.ok) throw new Error(await readError(res));
 			onListCreated((await res.json()) as FilmList);
@@ -212,7 +251,7 @@
 		<button class="fl-title-btn fl-ps-titles" onclick={onBack} aria-label="Tilbake til filmen">
 			<h1 class="fl-ps-title">{filmography?.name ?? person.name}</h1>
 			<span class="fl-ps-sub">
-				{role === 'director' ? 'Regi' : 'Skuespiller'}{#if filmography} · {entries.length} filmer{#if seenCount} · {seenCount} sett{/if}{/if}
+				{role === 'director' ? 'Regi' : 'Skuespiller'}{#if filmography} · {allEntries.length} filmer{#if seenCount} · {seenCount} sett{/if}{/if}
 			</span>
 		</button>
 	</div>
@@ -221,6 +260,22 @@
 		<button class="fl-ps-role" class:active={role === 'actor'} disabled={loading} onclick={() => switchRole('actor')}>Som skuespiller</button>
 		<button class="fl-ps-role" class:active={role === 'director'} disabled={loading} onclick={() => switchRole('director')}>Som regissør</button>
 	</div>
+
+	{#if filmography && !loading && !loadError}
+		<div class="fl-ps-modes" role="group" aria-label="Visning">
+			{#each (['all', 'acclaimed', 'span'] as const) as m}
+				<button class="fl-ps-mode" class:active={mode === m} onclick={() => (mode = m)} data-track="film-person:visning-{m}">{MODE_LABEL[m]}</button>
+			{/each}
+		</div>
+		{#if mode !== 'all'}
+			<p class="fl-ps-note">
+				{mode === 'acclaimed'
+					? 'Rangert på TMDB-snitt, vektet mot antall stemmer.'
+					: 'Den best vurderte filmen fra hver del av karrieren.'}
+				Det er publikums vurderinger, ikke kritikernes. Dokumentarer, opptredener som seg selv og filmer med under ti stemmer er holdt utenfor{#if seenIds.size}, og det samme er filmer du har sett{/if}.
+			</p>
+		{/if}
+	{/if}
 
 	{#if resolvedByName}
 		<p class="fl-ps-note">Slått opp på navn. Er det feil person, er det en navnebror — «Oppdater kontekst» på filmen lagrer riktig kobling.</p>
@@ -231,11 +286,17 @@
 	{:else if loadError}
 		<p class="fl-error">{loadError}</p>
 	{:else if entries.length === 0}
-		<p class="fl-empty">Ingen filmer som {role === 'director' ? 'regissør' : 'skuespiller'} i TMDB.</p>
+		<p class="fl-empty">
+			{#if mode === 'all'}
+				Ingen filmer som {role === 'director' ? 'regissør' : 'skuespiller'} i TMDB.
+			{:else}
+				Ingen flere å foreslå — enten har du sett dem, eller så har de for få stemmer i TMDB til å rangeres.
+			{/if}
+		</p>
 	{:else}
 		<div class="fl-ps-actions">
-			<button class="fl-ps-make-list" disabled={creatingList} onclick={createListFromAll} data-track="film-person:lag-liste">
-				{creatingList ? 'Lager liste…' : `+ Lag liste av alle ${entries.length}`}
+			<button class="fl-ps-make-list" disabled={creatingList} onclick={createList} data-track="film-person:lag-liste">
+				{creatingList ? 'Lager liste…' : mode === 'all' ? `+ Lag liste av alle ${entries.length}` : `+ Lag liste av disse ${entries.length}`}
 			</button>
 		</div>
 		{#if actionError}<p class="fl-error">{actionError}</p>{/if}
@@ -257,6 +318,7 @@
 							<span class="fl-ps-film-sub">
 								{entry.year ?? 'Uten årstall'}{#if entry.character} · {entry.character}{/if}
 							</span>
+							{#if formatRating(entry)}<span class="fl-ps-film-sub">{formatRating(entry)}</span>{/if}
 							{#if film?.status === 'want_to_watch'}<span class="fl-ps-badge">🎯 På ønskelisten</span>{/if}
 						</span>
 					</svelte:element>
@@ -378,6 +440,26 @@
 		cursor: pointer;
 	}
 	.fl-ps-role.active {
+		color: var(--film-accent-text, #ffcaa0);
+		border-color: var(--film-border-accent, #6a3a3e);
+		background: var(--film-bg-active, #2a1418);
+	}
+	.fl-ps-modes {
+		display: flex;
+		gap: 4px;
+	}
+	.fl-ps-mode {
+		flex: 1;
+		font: inherit;
+		font-size: 0.78rem;
+		padding: 6px 4px;
+		background: none;
+		border: 1px solid var(--film-border-faint, #2a1a1a);
+		border-radius: 8px;
+		color: var(--film-text-tertiary, #7a6a6a);
+		cursor: pointer;
+	}
+	.fl-ps-mode.active {
 		color: var(--film-accent-text, #ffcaa0);
 		border-color: var(--film-border-accent, #6a3a3e);
 		background: var(--film-bg-active, #2a1418);

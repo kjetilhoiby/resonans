@@ -92,7 +92,8 @@
 	}
 
 	function openPerson(person: FilmPersonRef) {
-		personOrigin = selectedFilm;
+		// Fra biblioteket finnes ingen film å gå tilbake til; tittelen fører da hjem dit.
+		personOrigin = view === 'film' ? selectedFilm : null;
 		selectedPerson = person;
 		filmFromPerson = false;
 		view = 'person';
@@ -298,6 +299,7 @@
 			onOpenWhatToWatch={() => (view = 'whatToWatch')}
 			onOpenProviders={() => (view = 'providers')}
 			onOpenChat={() => (view = 'themeChat')}
+			onOpenPerson={openPerson}
 		/>
 	{/if}
 </div>
