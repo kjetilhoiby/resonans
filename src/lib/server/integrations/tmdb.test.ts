@@ -175,4 +175,15 @@ describe('parsePersonFilmography', () => {
 		const f = parsePersonFilmography(dup, 'X', { role: 'director' });
 		expect(f.films).toHaveLength(1);
 	});
+
+	it('tar med snitt, stemmer og sjangre — men ikke et snitt uten stemmer', () => {
+		const raw = { id: 1, cast: [
+			{ id: 1, title: 'Anatomie', release_date: '2023', vote_average: 7.6, vote_count: 3200, genre_ids: [18, 53] },
+			{ id: 2, title: 'Ukjent', release_date: '2024', vote_average: 0, vote_count: 0 }
+		] };
+		const f = parsePersonFilmography(raw, 'X', { role: 'actor' });
+		expect(f.films[0]).toMatchObject({ rating: 7.6, voteCount: 3200, genreIds: [18, 53] });
+		expect(f.films[1].rating).toBeUndefined();
+		expect(f.films[1].voteCount).toBeUndefined();
+	});
 });

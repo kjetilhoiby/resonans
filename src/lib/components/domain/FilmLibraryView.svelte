@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
-	import type { Film, FilmList, FilmSearchResult, PersonSearchResult } from './film-api';
+	import { recurringPeople } from '$lib/domain/film/person-filmography';
+	import type { Film, FilmList, FilmPersonRef, FilmSearchResult, PersonSearchResult } from './film-api';
 
 	interface Props {
 		themeId: string;
@@ -17,6 +18,8 @@
 		onOpenWhatToWatch: () => void;
 		onOpenProviders: () => void;
 		onOpenChat: () => void;
+		/** Trykk på en person som går igjen → filmografien, åpnet på «Best vurdert». */
+		onOpenPerson?: (person: FilmPersonRef) => void;
 	}
 
 	let {
@@ -33,8 +36,14 @@
 		onListCreated,
 		onOpenWhatToWatch,
 		onOpenProviders,
-		onOpenChat
+		onOpenChat,
+		onOpenPerson
 	}: Props = $props();
+
+	/* Folk du har sett minst to filmer med. Mer enn åtte blir en rolleliste, ikke
+	   et forslag. */
+	const MAX_RECURRING = 8;
+	const recurring = $derived(recurringPeople(films).slice(0, MAX_RECURRING));
 
 	const grouped = $derived.by(() => {
 		const want: Film[] = [];
@@ -292,6 +301,24 @@
 		{/snippet}
 
 		<div class="fl-groups">
+			{#if onOpenPerson && recurring.length > 0}
+				<section class="fl-group">
+					<h2 class="fl-group-title"><SectionLabel tag="span">Går igjen hos deg</SectionLabel></h2>
+					<div class="fl-recurring">
+						{#each recurring as p (p.personId ?? p.name)}
+							<button
+								class="fl-recurring-chip"
+								title={p.titles.join(', ')}
+								onclick={() => onOpenPerson({ personId: p.personId, name: p.name, role: p.role, mode: 'acclaimed' })}
+								data-track="film-bibliotek:gar-igjen"
+							>
+								<span>{p.role === 'director' ? '🎬' : '🎭'} {p.name}</span>
+								<span class="fl-recurring-count">{p.count} sett ›</span>
+							</button>
+						{/each}
+					</div>
+				</section>
+			{/if}
 			{#if grouped.want.length > 0}
 				<section class="fl-group">
 					<h2 class="fl-group-title"><SectionLabel tag="span">Ønskeliste</SectionLabel> <span class="fl-group-count">{grouped.want.length}</span></h2>
@@ -586,6 +613,33 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+	}
+	.fl-recurring {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.fl-recurring-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 5px 11px;
+		border-radius: 99px;
+		background: var(--film-chip-bg, #241619);
+		border: 1px solid var(--film-chip-border, #4a2a30);
+		color: var(--film-chip-text, #c89890);
+		cursor: pointer;
+	}
+	.fl-recurring-chip:hover,
+	.fl-recurring-chip:focus-visible {
+		border-color: var(--film-border-accent, #6a3a3e);
+		color: var(--film-accent-text, #ffcaa0);
+	}
+	.fl-recurring-count {
+		color: var(--film-text-tertiary, #7a6a6a);
+		font-size: 0.72rem;
 	}
 	.fl-group-count {
 		color: var(--film-text-tertiary, #7a6a6a);

@@ -155,7 +155,12 @@ export interface FilmPersonRef {
 	personId: number | null;
 	name: string;
 	role: 'director' | 'actor';
+	/** Hvilken visning filmografien åpnes i. Uten: hele lista. */
+	mode?: PersonViewMode;
 }
+
+/** Hele filmografien, de best vurderte, eller et tverrsnitt av karrieren. */
+export type PersonViewMode = 'all' | 'acclaimed' | 'span';
 
 export interface PersonFilmographyEntry {
 	tmdbId: number;
@@ -164,6 +169,10 @@ export interface PersonFilmographyEntry {
 	posterUrl?: string;
 	job?: string;
 	character?: string;
+	/** TMDB-snitt (publikumsvurderinger 0–10, ikke kritikere). */
+	rating?: number;
+	voteCount?: number;
+	genreIds?: number[];
 }
 
 export interface PersonFilmography {
