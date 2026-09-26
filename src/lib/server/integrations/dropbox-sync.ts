@@ -11,6 +11,7 @@ import {
 import { runAfterWorkoutWrite } from '$lib/server/workouts/after-workout-write';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { suggestForgottenTracking } from '$lib/domain/health/moving-time';
+import type { WorkoutSample } from '$lib/domain/health/workout-samples';
 
 interface DropboxCredentials {
 	access_token: string;
@@ -47,6 +48,11 @@ export interface ParsedWorkout {
 	maxHeartRate?: number;
 	minHeartRate?: number;
 	trackPoints: TrackPoint[];
+	/**
+	 * Tidsserien for en økt UTEN posisjon (mølla): tid, kumulativ distanse, høyde,
+	 * puls. Bare satt når sporet er tomt – se `$lib/domain/health/workout-samples.ts`.
+	 */
+	samples?: WorkoutSample[];
 	/**
 	 * Hvilket format økta ble lest fra.
 	 *
@@ -192,7 +198,7 @@ function parseGpx(content: string): ParsedWorkout | null {
 function parseTcx(content: string): ParsedWorkout | null {
 	const sportType = content.match(/<Activity\s+Sport="([^"]+)"/i)?.[1]?.toLowerCase() || 'running';
 	const points: TrackPoint[] = [];
-	const samples: Array<{ ele?: number; hr?: number; time?: string }> = [];
+	const samples: Array<{ ele?: number; hr?: number; time?: string; dist?: number }> = [];
 	const tpRe = /<Trackpoint>([\s\S]*?)<\/Trackpoint>/g;
 	let match: RegExpExecArray | null;
 	let lastDistance: number | undefined;
@@ -210,7 +216,7 @@ function parseTcx(content: string): ParsedWorkout | null {
 			lastDistance = distanceMeters;
 		}
 
-		samples.push({ ele, hr, time });
+		samples.push({ ele, hr, time, dist: distanceMeters });
 		if (typeof lat === 'number' && typeof lon === 'number') {
 			points.push({ lat, lon, ele, hr, time });
 		}
@@ -228,6 +234,17 @@ function parseTcx(content: string): ParsedWorkout | null {
 	const distance = typeof lastDistance === 'number' ? lastDistance : computeDistance(points);
 	const hrValues = samples.map((p) => p.hr).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
 
+	// Uten spor er samplene det eneste som beskriver forløpet – pulskurven og
+	// fartskurven. Med spor trengs de ikke; sporet bærer det samme og mer.
+	const indoorSamples: WorkoutSample[] =
+		points.length < 2
+			? samples.flatMap((p) =>
+					p.time && typeof p.dist === 'number'
+						? [{ time: p.time, dist: p.dist, ...(p.ele !== undefined ? { ele: p.ele } : {}), ...(p.hr !== undefined ? { hr: p.hr } : {}) }]
+						: []
+				)
+			: [];
+
 	return {
 		sportType,
 		startTime,
@@ -240,6 +257,7 @@ function parseTcx(content: string): ParsedWorkout | null {
 		maxHeartRate: hrValues.length ? Math.max(...hrValues) : undefined,
 		minHeartRate: hrValues.length ? Math.min(...hrValues) : undefined,
 		trackPoints: points,
+		...(indoorSamples.length >= 2 ? { samples: indoorSamples } : {}),
 		sourceFormat: 'tcx'
 	};
 }

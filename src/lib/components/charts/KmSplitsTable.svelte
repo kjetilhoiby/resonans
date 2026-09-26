@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { computeKmSplits, type TrackPoint } from '$lib/utils/track-stats';
+	import { computeKmSplits, type ProfilePoint } from '$lib/utils/track-stats';
 	import { isWheeledSport, formatPace, formatSpeed } from '$lib/utils/activity-metrics';
 
 	interface Props {
-		points: TrackPoint[];
+		points: ProfilePoint[];
 		title?: string;
 		sportType?: string;
 	}

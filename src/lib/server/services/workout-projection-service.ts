@@ -5,9 +5,10 @@ import { buildUnifiedWorkoutActivitiesPage } from '$lib/server/activity-layer';
 import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-refresh-queue';
 import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
 import { getTrailAttributedEventIds } from '$lib/server/tracks/routes-repository';
-import { analyzeWorkout, type TrackPoint, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
+import { analyzeWorkout, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
 import { workoutSportFamily } from '$lib/domain/health/workout-sport';
 import { decideProjectionChunk, nextProjectionCursor } from '$lib/domain/health/workout-projection-chunking';
+import { analysisSeriesSql } from '$lib/server/workouts/analysis-series';
 
 export type WorkoutProjectionRefreshResult = {
 	canonicalCount: number;
@@ -63,7 +64,8 @@ async function fetchAnalyticsForRunningWorkouts(
 	const rows = await db
 		.select({
 			id: sensorEvents.id,
-			trackPoints: sql<TrackPoint[] | null>`${sensorEvents.data}->'trackPoints'`
+			// Sporet, eller samplene fra en innendørsøkt – se analysis-series.ts.
+			trackPoints: analysisSeriesSql
 		})
 		.from(sensorEvents)
 		.where(inArray(sensorEvents.id, [...eventIds]));
