@@ -95,11 +95,18 @@
 </div>
 
 <style>
+	/* Forelderen (.fl-view i FilmDashboard) er position: fixed med overflow: hidden,
+	   så panelet må eie scrollen selv — ellers er alt under folden uoppnåelig.
+	   Samme grep som .fl-w2w og .fl-lib. */
 	.fl-prefs {
-		padding: 12px 16px;
+		padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 	.fl-prefs-head {
 		display: flex;
@@ -161,7 +168,11 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	/* Klistret til bunnen: med opptil 40 tjenester ligger knappen ellers langt
+	   under folden, og det er den man skal trykke på til slutt. */
 	.fl-prefs-save {
+		position: sticky;
+		bottom: 0;
 		align-self: flex-start;
 		font: inherit;
 		font-size: 0.85rem;
