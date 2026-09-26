@@ -118,7 +118,7 @@ function computeDistance(points: TrackPoint[]): number {
  * deles IKKE på samme måte: FIT bærer kumulativ distanse fra enheten, mens
  * GPX må summere haversine — og det er sporlengde med GPS-støyen i.
  */
-export function computeElevationGain(points: TrackPoint[]): number {
+export function computeElevationGain(points: ReadonlyArray<{ ele?: number }>): number {
 	let gain = 0;
 	for (let i = 1; i < points.length; i += 1) {
 		const prev = points[i - 1].ele;
@@ -176,9 +176,23 @@ function parseGpx(content: string): ParsedWorkout | null {
 	};
 }
 
+/**
+ * Leser en TCX-fil.
+ *
+ * Et `<Trackpoint>` uten `<Position>` er gyldig TCX, og det er slik innendørsøkter
+ * ser ut: tredemølla i Ekko (september 2026), innendørsløp fra en Garmin. Fram til
+ * da ble slike punkter kastet sammen med posisjonen, og en mølleøkt fikk varighet 0
+ * (sluttiden ble lest fra punktene), ingen puls og ingen høydemeter — bare distansen
+ * overlevde, fordi den ble plukket opp på veien.
+ *
+ * Nå leses tid, puls og høyde fra ALLE punktene. `trackPoints` er fortsatt bare de
+ * med posisjon, for alt nedstrøms som leser feltet tegner et kart eller måler et
+ * spor, og et tomt spor er det ærlige svaret for en økt på stedet.
+ */
 function parseTcx(content: string): ParsedWorkout | null {
 	const sportType = content.match(/<Activity\s+Sport="([^"]+)"/i)?.[1]?.toLowerCase() || 'running';
 	const points: TrackPoint[] = [];
+	const samples: Array<{ ele?: number; hr?: number; time?: string }> = [];
 	const tpRe = /<Trackpoint>([\s\S]*?)<\/Trackpoint>/g;
 	let match: RegExpExecArray | null;
 	let lastDistance: number | undefined;
@@ -196,6 +210,7 @@ function parseTcx(content: string): ParsedWorkout | null {
 			lastDistance = distanceMeters;
 		}
 
+		samples.push({ ele, hr, time });
 		if (typeof lat === 'number' && typeof lon === 'number') {
 			points.push({ lat, lon, ele, hr, time });
 		}
@@ -205,20 +220,22 @@ function parseTcx(content: string): ParsedWorkout | null {
 
 	const startTimeRaw =
 		content.match(/<Id>([^<]+)<\/Id>/)?.[1] ??
-		points.find((p) => p.time)?.time;
+		samples.find((p) => p.time)?.time;
 	const startTime = startTimeRaw ? new Date(startTimeRaw) : new Date();
-	const endTimeRaw = [...points].reverse().find((p) => p.time)?.time;
+	const endTimeRaw = [...samples].reverse().find((p) => p.time)?.time;
 	const endTime = endTimeRaw ? new Date(endTimeRaw) : startTime;
 	const duration = Math.max(0, Math.round((endTime.getTime() - startTime.getTime()) / 1000));
 	const distance = typeof lastDistance === 'number' ? lastDistance : computeDistance(points);
-	const hrValues = points.map((p) => p.hr).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+	const hrValues = samples.map((p) => p.hr).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
 
 	return {
 		sportType,
 		startTime,
 		duration,
 		distance,
-		elevation: computeElevationGain(points),
+		// Over alle punktene, ikke bare sporet: på mølla er stigningen Ekkos
+		// utregnede høyde, og den har ingen posisjon.
+		elevation: computeElevationGain(samples),
 		avgHeartRate: hrValues.length ? Math.round(hrValues.reduce((a, b) => a + b, 0) / hrValues.length) : undefined,
 		maxHeartRate: hrValues.length ? Math.max(...hrValues) : undefined,
 		minHeartRate: hrValues.length ? Math.min(...hrValues) : undefined,

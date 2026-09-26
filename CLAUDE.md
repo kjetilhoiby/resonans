@@ -514,6 +514,11 @@ id-er på samme URL-posisjon, som er den fella å passe seg for.
 - Både denne og web-flatens knapp går gjennom `setWorkoutDismissed`
   (`$lib/server/workouts/dismiss-workout.ts`); skriv aldri en andre skjulesti.
 
+**Mølleøkter kommer som TCX uten posisjoner** (`docs/ekko-molle.md`). `treadmill`
+normaliseres til `indoor_running`, `parseTcx` leser tid/puls/høyde fra alle punktene
+(ikke bare de med `<Position>`), og Strava får fila som `tcx` med `trainer=1`. Et tomt
+`trackPoints` er riktig for en slik økt — ikke «fiks» det med en falsk posisjon.
+
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
 *innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.

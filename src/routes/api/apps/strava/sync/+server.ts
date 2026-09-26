@@ -105,7 +105,7 @@ async function syncEvent(userId: string, appId: string, eventRow: WorkoutEvent):
 		userId,
 		appId,
 		sessionId,
-		gpx,
+		file: { content: gpx, format: 'gpx' },
 		sportType,
 		name,
 		sensorEventId: eventRow.id

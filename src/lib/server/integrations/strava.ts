@@ -117,16 +117,44 @@ export async function deauthorize(accessToken: string): Promise<void> {
 	}
 }
 
+/** Øktfilen slik den ble lastet opp til Resonans. Strava tar begge formatene rett inn. */
+export interface StravaActivityFile {
+	content: string;
+	format: 'gpx' | 'tcx';
+}
+
+const FILE_MIME: Record<StravaActivityFile['format'], string> = {
+	gpx: 'application/gpx+xml',
+	tcx: 'application/vnd.garmin.tcx+xml'
+};
+
 export async function uploadActivity(
 	accessToken: string,
-	opts: { gpx: string; externalId: string; name?: string; sportType?: string }
+	opts: {
+		file: StravaActivityFile;
+		externalId: string;
+		name?: string;
+		sportType?: string;
+		/**
+		 * Innendørs (mølle, sykkelrulle). Strava merker økta og viser ikke kart —
+		 * uten flagget blir en TCX uten posisjoner en løpetur som «mangler GPS».
+		 */
+		trainer?: boolean;
+	}
 ): Promise<StravaUploadResponse> {
 	const form = new FormData();
-	form.append('data_type', 'gpx');
+	form.append('data_type', opts.file.format);
 	form.append('external_id', opts.externalId);
 	if (opts.name) form.append('name', opts.name);
 	if (opts.sportType) form.append('sport_type', opts.sportType);
-	form.append('file', new Blob([opts.gpx], { type: 'application/gpx+xml' }), `${opts.externalId}.gpx`);
+	if (opts.trainer) form.append('trainer', '1');
+	// Strava avviser en TCX med blanktegn før XML-deklarasjonen («Error parsing file»),
+	// så det kuttes her i stedet for å stole på hver klient.
+	form.append(
+		'file',
+		new Blob([opts.file.content.trimStart()], { type: FILE_MIME[opts.file.format] }),
+		`${opts.externalId}.${opts.file.format}`
+	);
 
 	const res = await stravaFetch(`${API_BASE}/uploads`, {
 		method: 'POST',
@@ -180,6 +208,11 @@ const SPORT_MAP: Record<string, string> = {
 	hill: 'Run',
 	swimming: 'Swim'
 };
+
+/** Er dette en innendørsøkt? Da skal den til Strava som `trainer`. */
+export function isIndoorSportType(sportType: string | null | undefined): boolean {
+	return (sportType ?? '').trim().toLowerCase().startsWith('indoor_');
+}
 
 export function mapSportType(sportType: string | null | undefined): string | undefined {
 	if (!sportType) return undefined;

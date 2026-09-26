@@ -202,14 +202,15 @@ export interface PushSessionInput {
 	userId: string;
 	appId: string;
 	sessionId: string;
-	gpx: string;
+	/** Øktfilen som ble lastet opp. GPX for utendørs, TCX for mølla (ingen posisjoner). */
+	file: strava.StravaActivityFile;
 	sportType?: string | null;
 	name?: string | null;
 	sensorEventId?: string | null;
 }
 
 /**
- * Pusher en GPX-økt til Strava. Dedup på (userId, sessionId): allerede pushede
+ * Pusher en økt (GPX eller TCX) til Strava. Dedup på (userId, sessionId): allerede pushede
  * eller ventende økter hoppes over. Feiler aldri hardt — alle feil fanges og
  * bokføres på koblingen, slik at ekkos opplastingssvar aldri blokkeres.
  */
@@ -258,10 +259,11 @@ export async function pushSession(input: PushSessionInput): Promise<{ pushed: bo
 	try {
 		const accessToken = await getValidAccessToken(connection);
 		const upload = await strava.uploadActivity(accessToken, {
-			gpx: input.gpx,
+			file: input.file,
 			externalId,
 			name: input.name ?? undefined,
-			sportType: strava.mapSportType(input.sportType)
+			sportType: strava.mapSportType(input.sportType),
+			trainer: strava.isIndoorSportType(input.sportType)
 		});
 
 		const { status, activityId, error } = classifyUpload(upload);

@@ -8,6 +8,12 @@ describe('normalizeSportType', () => {
 		}
 	});
 
+	it('mapper mølle til indoor_running, som er i løpefamilien', () => {
+		for (const v of ['treadmill', 'Treadmill', 'tredemølle', 'mølle']) {
+			expect(normalizeSportType(v)).toBe('indoor_running');
+		}
+	});
+
 	it('lavbokstaverer andre verdier uendret', () => {
 		expect(normalizeSportType('Running')).toBe('running');
 		expect(normalizeSportType('Cycling')).toBe('cycling');

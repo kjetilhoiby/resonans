@@ -163,8 +163,11 @@ async function handleWorkoutUpload(
 			`[apps/upload] øktanalyse fra ${ctx.app.id} delvis forkastet: ${analysisWarnings.join('; ')}`
 		);
 	}
-	const gpxContent = await file.text();
-	const parsed = parseWorkoutFile(file.name || 'track.gpx', gpxContent);
+	// GPX fra en tur ute, TCX fra mølla: en TCX kan ha punkter uten posisjon, som er
+	// hvordan en økt på stedet ser ut. Formatet følger filendelsen hele veien til Strava.
+	const fileContent = await file.text();
+	const fileFormat: 'gpx' | 'tcx' = getFileExtension(file.name) === '.tcx' ? 'tcx' : 'gpx';
+	const parsed = parseWorkoutFile(file.name || 'track.gpx', fileContent);
 
 	if (!parsed) {
 		return json({ error: 'Failed to parse workout file' }, { status: 400 });
@@ -265,7 +268,7 @@ async function handleWorkoutUpload(
 				userId: ctx.userId,
 				appId: ctx.app.id,
 				sessionId: ctx.sessionId,
-				gpx: gpxContent,
+				file: { content: fileContent, format: fileFormat },
 				sportType: parsed.sportType,
 				name: `${describeWorkoutSportType(parsed.sportType)} — ${formatWorkoutDate(parsed.startTime)}`,
 				sensorEventId: result.event.id
