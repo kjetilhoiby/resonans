@@ -3,8 +3,9 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { canonicalWorkouts, sensorEvents } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { analyzeWorkout, type BestEfforts, type TrackPoint } from '$lib/server/workouts/workout-analytics';
+import { analyzeWorkout, type BestEfforts } from '$lib/server/workouts/workout-analytics';
 import { getEffortBaseline } from '$lib/server/services/effort-service';
+import { analysisSeriesSql } from '$lib/server/workouts/analysis-series';
 
 /**
  * GET /api/apps/workouts/:id/analysis
@@ -78,7 +79,8 @@ async function analyzeFromEventIds(
 	const rows = await db
 		.select({
 			id: sensorEvents.id,
-			trackPoints: sql<TrackPoint[] | null>`${sensorEvents.data}->'trackPoints'`
+			// Sporet, eller samplene fra en innendørsøkt – se analysis-series.ts.
+			trackPoints: analysisSeriesSql
 		})
 		.from(sensorEvents)
 		.where(

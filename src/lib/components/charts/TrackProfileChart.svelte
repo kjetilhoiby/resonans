@@ -2,11 +2,11 @@
 	import {
 		computeSpeedSeries,
 		computeElevationSeries,
-		type TrackPoint
+		type ProfilePoint
 	} from '$lib/utils/track-stats';
 
 	interface Props {
-		points: TrackPoint[];
+		points: ProfilePoint[];
 		kind: 'speed' | 'elevation';
 		height?: number;
 		showAxes?: boolean;
