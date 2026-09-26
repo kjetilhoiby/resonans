@@ -75,6 +75,10 @@ describe('parseCast', () => {
 		);
 		expect(cast).toEqual([{ name: 'A', character: 'X' }, { name: 'B', character: undefined }]);
 	});
+	it('tar med person-id-en når TMDB har den', () => {
+		const cast = parseCast({ cast: [{ id: 42, name: 'Josephson', character: 'Alexander' }] });
+		expect(cast).toEqual([{ name: 'Josephson', character: 'Alexander', personId: 42 }]);
+	});
 });
 
 describe('parseFilmDetails', () => {

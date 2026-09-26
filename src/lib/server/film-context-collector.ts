@@ -205,6 +205,10 @@ export async function processFilmContextCollectJob(payload: {
 		.set({
 			contextPack,
 			contextStatus: status,
+			// Person-id-ene som gjør rollelisten og regissøren trykkbare. Filmer lagt
+			// til før id-ene ble lagret får dem her. Aldri overskriv med tomt.
+			...(bundle.details?.cast.length ? { cast: bundle.details.cast } : {}),
+			...(bundle.details?.directorId ? { directorTmdbId: bundle.details.directorId } : {}),
 			// Cache strømmetilgjengelighet for rask visning i biblioteket
 			...(bundle.providers
 				? { watchProviders: bundle.providers, watchProvidersUpdatedAt: new Date() }

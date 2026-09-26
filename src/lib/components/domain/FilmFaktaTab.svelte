@@ -1,15 +1,17 @@
 <script lang="ts">
-	import { filmTabsApi, type FilmTabsApi, type Film } from './film-api';
+	import { filmTabsApi, type FilmTabsApi, type Film, type FilmPersonRef } from './film-api';
 
 	interface Props {
 		themeId: string;
 		film: Film;
 		onFilmUpdated: (film: Film) => void;
 		onFilmDeleted: (filmId: string) => void;
+		/** Trykk på regissør eller skuespiller → filmografien. Uten den er navnene tekst. */
+		onOpenPerson?: (person: FilmPersonRef) => void;
 		api?: FilmTabsApi;
 	}
 
-	let { themeId, film, onFilmUpdated, onFilmDeleted, api = filmTabsApi }: Props = $props();
+	let { themeId, film, onFilmUpdated, onFilmDeleted, onOpenPerson, api = filmTabsApi }: Props = $props();
 
 	let saving = $state(false);
 	let reviewDraft = $state(film.reviewNote ?? '');
@@ -110,12 +112,37 @@
 		</div>
 	{/if}
 
+	{#if film.director}
+		<div class="fl-section">
+			<span class="fl-label">Regi</span>
+			<div class="fl-chips">
+				{#if onOpenPerson}
+					<button
+						class="fl-chip fl-chip-link"
+						onclick={() => onOpenPerson({ personId: film.directorTmdbId ?? null, name: film.director!, role: 'director' })}
+						data-track="film-fakta:regissor"
+					>{film.director} ›</button>
+				{:else}
+					<span class="fl-chip">{film.director}</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	{#if film.cast?.length}
 		<div class="fl-section">
 			<span class="fl-label">Medvirkende</span>
 			<div class="fl-chips">
 				{#each film.cast.slice(0, 8) as c}
-					<span class="fl-chip">{c.name}{#if c.character} <span class="fl-chip-sub">· {c.character}</span>{/if}</span>
+					{#if onOpenPerson}
+						<button
+							class="fl-chip fl-chip-link"
+							onclick={() => onOpenPerson({ personId: c.personId ?? null, name: c.name, role: 'actor' })}
+							data-track="film-fakta:skuespiller"
+						>{c.name}{#if c.character} <span class="fl-chip-sub">· {c.character}</span>{/if} ›</button>
+					{:else}
+						<span class="fl-chip">{c.name}{#if c.character} <span class="fl-chip-sub">· {c.character}</span>{/if}</span>
+					{/if}
 				{/each}
 			</div>
 		</div>
@@ -249,6 +276,17 @@
 	}
 	.fl-chip-sub {
 		color: var(--film-text-tertiary, #7a6a6a);
+	}
+	.fl-chip-link {
+		font: inherit;
+		font-size: 0.76rem;
+		cursor: pointer;
+		text-align: left;
+	}
+	.fl-chip-link:hover,
+	.fl-chip-link:focus-visible {
+		border-color: var(--film-border-accent, #6a3a3e);
+		color: var(--film-accent-text, #ffcaa0);
 	}
 
 	.fl-providers {

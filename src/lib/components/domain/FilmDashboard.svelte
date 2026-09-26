@@ -9,9 +9,10 @@
 	import WhatToWatchView from './WhatToWatchView.svelte';
 	import FilmProvidersSettings from './FilmProvidersSettings.svelte';
 	import FilmThemeChatView from './FilmThemeChatView.svelte';
+	import FilmPersonView from './FilmPersonView.svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
-	import type { Film, FilmList, FilmListItem } from './film-api';
+	import type { Film, FilmList, FilmListItem, FilmPersonRef } from './film-api';
 
 	interface Props {
 		themeId: string;
@@ -29,12 +30,17 @@
 	let loaded = $state(false);
 
 	/* ── View ───────────────────────────────────────────── */
-	type View = 'library' | 'film' | 'list' | 'whatToWatch' | 'providers' | 'themeChat';
+	type View = 'library' | 'film' | 'list' | 'whatToWatch' | 'providers' | 'themeChat' | 'person';
 	let view = $state<View>('library');
 	type FilmTab = 'chat' | 'klipp' | 'fakta' | 'kontekst';
 	let filmTab = $state<FilmTab>('chat');
 	let selectedFilm = $state<Film | null>(null);
 	let selectedList = $state<FilmList | null>(null);
+	/* Personvisningen (filmografi) åpnes fra en film og lukkes tilbake til den.
+	   En film åpnet FRA personvisningen lukkes tilbake til personen. */
+	let selectedPerson = $state<FilmPersonRef | null>(null);
+	let personOrigin = $state<Film | null>(null);
+	let filmFromPerson = $state(false);
 
 	/* ── Chat ───────────────────────────────────────────── */
 
@@ -77,7 +83,39 @@
 
 	function closeFilm() {
 		selectedFilm = null;
+		if (filmFromPerson && selectedPerson) {
+			filmFromPerson = false;
+			view = 'person';
+			return;
+		}
 		view = 'library';
+	}
+
+	function openPerson(person: FilmPersonRef) {
+		personOrigin = selectedFilm;
+		selectedPerson = person;
+		filmFromPerson = false;
+		view = 'person';
+	}
+
+	function closePerson() {
+		const origin = personOrigin;
+		selectedPerson = null;
+		personOrigin = null;
+		if (origin) {
+			// Siste utgave: rating/status kan ha endret seg i filmografien.
+			selectedFilm = films.find((f) => f.id === origin.id) ?? origin;
+			view = 'film';
+			filmTab = 'fakta';
+			return;
+		}
+		view = 'library';
+	}
+
+	function openFilmFromPerson(film: Film) {
+		void openFilm(film);
+		filmFromPerson = true;
+		filmTab = 'fakta';
 	}
 
 	async function pollContextStatus(filmId: string) {
@@ -119,6 +157,18 @@
 	function handleFilmDeleted(filmId: string) {
 		films = films.filter((f) => f.id !== filmId);
 		closeFilm();
+	}
+	/** Lagt i biblioteket fra filmografien — åpnes ikke, man blar videre. */
+	function handleFilmCreated(film: Film) {
+		films = [...films, film];
+	}
+	/** Endret et annet sted enn på filmsida — selectedFilm følger bare med hvis det er den. */
+	function handleFilmChanged(updated: Film) {
+		films = films.map((f) => (f.id === updated.id ? updated : f));
+		if (selectedFilm?.id === updated.id) selectedFilm = updated;
+	}
+	function handleListItemAdded(listId: string, item: FilmListItem) {
+		lists = lists.map((l) => (l.id === listId ? { ...l, items: [...l.items, item] } : l));
 	}
 	function handleFilmAdded(film: Film) {
 		films = [...films, film];
@@ -195,10 +245,29 @@
 		{:else if filmTab === 'klipp'}
 			<FilmClipsTab {themeId} film={selectedFilm} />
 		{:else if filmTab === 'fakta'}
-			<FilmFaktaTab {themeId} film={selectedFilm} onFilmUpdated={handleFilmUpdated} onFilmDeleted={handleFilmDeleted} />
+			<FilmFaktaTab
+				{themeId}
+				film={selectedFilm}
+				onFilmUpdated={handleFilmUpdated}
+				onFilmDeleted={handleFilmDeleted}
+				onOpenPerson={openPerson}
+			/>
 		{:else if filmTab === 'kontekst'}
 			<FilmContextTab {themeId} film={selectedFilm} onRefresh={handleContextRefresh} />
 		{/if}
+	{:else if view === 'person' && selectedPerson}
+		<FilmPersonView
+			{themeId}
+			person={selectedPerson}
+			{films}
+			{lists}
+			onBack={closePerson}
+			onOpenFilm={openFilmFromPerson}
+			onFilmCreated={handleFilmCreated}
+			onFilmChanged={handleFilmChanged}
+			onListItemAdded={handleListItemAdded}
+			onListCreated={handleListCreated}
+		/>
 	{:else if view === 'list' && selectedList}
 		<FilmListView {themeId} list={selectedList} onBack={() => (view = 'library')} onDeleted={handleListDeleted} onOpenItem={openListItem} />
 	{:else if view === 'whatToWatch'}
