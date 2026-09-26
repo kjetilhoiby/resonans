@@ -518,6 +518,8 @@ id-er på samme URL-posisjon, som er den fella å passe seg for.
 normaliseres til `indoor_running`, `parseTcx` leser tid/puls/høyde fra alle punktene
 (ikke bare de med `<Position>`), og Strava får fila som `tcx` med `trainer=1`. Et tomt
 `trackPoints` er riktig for en slik økt — ikke «fiks» det med en falsk posisjon.
+Puls- og fartskurven bor i `data.samples` (tid + kumulativ `dist`); grafene leser dem via
+`profileSeries`, analysen via `analysisSeriesSql`, Strava-etterpåsynken via `buildIndoorTcx`.
 
 Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ekstern
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe

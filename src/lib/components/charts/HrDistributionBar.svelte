@@ -3,11 +3,11 @@
 		computeHrDistribution,
 		hrBandsFromBaseline,
 		hasHeartRate,
-		type TrackPoint
+		type ProfilePoint
 	} from '$lib/utils/track-stats';
 
 	interface Props {
-		points: TrackPoint[];
+		points: ProfilePoint[];
 		/**
 		 * Brukerens hvile- og makspuls. Sonebåndene regnes av den — det finnes
 		 * ingen hardkodede bånd lenger. `null` når baselinen ikke er hentet: da
