@@ -7,6 +7,8 @@
 export interface FilmCastMember {
 	name: string;
 	character?: string;
+	/** TMDB person-id. Mangler på filmer lagt til før id-en ble lagret. */
+	personId?: number;
 }
 
 export interface WatchProvider {
@@ -28,6 +30,7 @@ export interface Film {
 	originalTitle: string | null;
 	year: number | null;
 	director: string | null;
+	directorTmdbId?: number | null;
 	runtime: number | null;
 	posterUrl: string | null;
 	backdropUrl: string | null;
@@ -144,6 +147,30 @@ export interface FilmSearchResult {
 	year?: number;
 	posterUrl?: string;
 	overview?: string;
+}
+
+/** Personen man trykket på i rollelisten eller under «Regi». */
+export interface FilmPersonRef {
+	/** null når filmen ble lagret uten id — slås da opp på navn. */
+	personId: number | null;
+	name: string;
+	role: 'director' | 'actor';
+}
+
+export interface PersonFilmographyEntry {
+	tmdbId: number;
+	title: string;
+	year?: number;
+	posterUrl?: string;
+	job?: string;
+	character?: string;
+}
+
+export interface PersonFilmography {
+	personId: number;
+	name: string;
+	knownForDepartment?: string;
+	films: PersonFilmographyEntry[];
 }
 
 export interface PersonSearchResult {

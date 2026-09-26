@@ -42,6 +42,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	// Startverdier fra klienten (fra søketreffet)
 	let director = typeof body?.director === 'string' ? body.director : null;
+	let directorTmdbId: number | null = null;
 	let year = typeof body?.year === 'number' ? body.year : null;
 	let runtime = typeof body?.runtime === 'number' ? body.runtime : null;
 	let posterUrl = typeof body?.posterUrl === 'string' && body.posterUrl ? body.posterUrl : null;
@@ -49,7 +50,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	let overview = typeof body?.overview === 'string' ? body.overview : null;
 	let originalTitle = typeof body?.originalTitle === 'string' ? body.originalTitle : null;
 	let genres: string[] | null = Array.isArray(body?.genres) ? body.genres : null;
-	let cast: Array<{ name: string; character?: string }> | null = null;
+	let cast: Array<{ name: string; character?: string; personId?: number }> | null = null;
 
 	// Best-effort berikelse fra TMDB (fyller feltene biblioteket viser umiddelbart)
 	if (tmdbId) {
@@ -57,6 +58,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			const details = await getFilmDetails(tmdbId);
 			if (details) {
 				director = director ?? details.director ?? null;
+				directorTmdbId = details.directorId ?? null;
 				year = year ?? details.year ?? null;
 				runtime = runtime ?? details.runtime ?? null;
 				posterUrl = posterUrl ?? details.posterUrl ?? null;
@@ -91,6 +93,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			originalTitle,
 			year,
 			director,
+			directorTmdbId,
 			runtime,
 			posterUrl,
 			backdropUrl,

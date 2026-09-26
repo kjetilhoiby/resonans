@@ -2480,12 +2480,13 @@ export const films = pgTable('films', {
 	originalTitle: text('original_title'),
 	year: integer('year'),
 	director: text('director'),
+	directorTmdbId: integer('director_tmdb_id'), // TMDB person-id — åpner regissørens filmografi
 	runtime: integer('runtime'), // Spilletid i minutter
 	posterUrl: text('poster_url'),
 	backdropUrl: text('backdrop_url'),
 	overview: text('overview'), // Kort synopsis
 	genres: jsonb('genres').$type<string[]>(),
-	cast: jsonb('cast').$type<Array<{ name: string; character?: string }>>(), // Topp 5-10
+	cast: jsonb('cast').$type<Array<{ name: string; character?: string; personId?: number }>>(), // Topp 5-10
 	status: text('status').notNull().default('want_to_watch'), // 'want_to_watch'|'watched'
 	rating: integer('rating'), // Terning 1-6 (valgfri)
 	reviewNote: text('review_note'), // Brukerens setning om filmen

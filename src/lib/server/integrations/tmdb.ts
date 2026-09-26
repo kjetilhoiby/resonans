@@ -30,6 +30,8 @@ export interface FilmSearchResult {
 export interface FilmCastMember {
 	name: string;
 	character?: string;
+	/** TMDB person-id — nøkkelen til filmografien når navnet trykkes på. */
+	personId?: number;
 }
 
 export interface FilmDetails {
@@ -148,7 +150,11 @@ export function parseDirectorId(credits: RawCredits | undefined): number | undef
 export function parseCast(credits: RawCredits | undefined, limit = 8): FilmCastMember[] {
 	return (credits?.cast ?? [])
 		.slice(0, limit)
-		.map((c) => ({ name: c.name, character: c.character || undefined }));
+		.map((c) => ({
+			name: c.name,
+			character: c.character || undefined,
+			...(typeof c.id === 'number' ? { personId: c.id } : {})
+		}));
 }
 
 export function parseFilmDetails(raw: RawMovieDetails): FilmDetails {
