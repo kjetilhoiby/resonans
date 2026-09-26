@@ -208,6 +208,8 @@ async function handleWorkoutUpload(
 						? parsed.duration / (parsed.distance / 1000)
 						: undefined,
 				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS),
+				// Mølla: puls- og fartskurven, uten posisjon. Se docs/ekko-molle.md.
+				...(parsed.samples ? { samples: downsampleTrack(parsed.samples, MAX_STORED_TRACK_POINTS) } : {}),
 				...(preferredBasemap ? { preferredBasemap } : {}),
 				...(analysis ? { ekkoAnalysis: analysis } : {})
 			},

@@ -19,7 +19,7 @@
 	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, trackSource, assessment, activityListThemeId } = data;
+	const { workout, trackPoints, profilePoints, trackSource, assessment, activityListThemeId } = data;
 	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
@@ -166,19 +166,20 @@
 
 	interface ChartPoint { x: number; y: number; }
 
+	// Grafene leser `profilePoints`: sporet, eller samplene fra en innendørsøkt.
 	const totalKm = $derived.by(() => {
-		if (trackPoints.length < 2) return 0;
-		const cum = cumulativeDistanceMeters(trackPoints);
+		if (profilePoints.length < 2) return 0;
+		const cum = cumulativeDistanceMeters(profilePoints);
 		return cum[cum.length - 1] / 1000;
 	});
 
 	const hrSeries = $derived.by(() => {
-		if (trackPoints.length < 2 || !hasHeartRate(trackPoints)) return [] as ChartPoint[];
-		const cum = cumulativeDistanceMeters(trackPoints);
+		if (profilePoints.length < 2 || !hasHeartRate(profilePoints)) return [] as ChartPoint[];
+		const cum = cumulativeDistanceMeters(profilePoints);
 		const total = cum[cum.length - 1] || 1;
 		const out: ChartPoint[] = [];
-		for (let i = 0; i < trackPoints.length; i++) {
-			const hr = trackPoints[i].hr;
+		for (let i = 0; i < profilePoints.length; i++) {
+			const hr = profilePoints[i].hr;
 			if (typeof hr === 'number') out.push({ x: cum[i] / total, y: hr });
 		}
 		return out;
@@ -312,17 +313,19 @@
 						Sporet er hentet fra {sourceLabel(trackSource.provider)} — samme økt, annen kilde.
 					</p>
 				{/if}
+			{:else if profilePoints.length >= 2}
+				<p class="no-data">Innendørsøkt – ingen kart. Puls og fart ligger under Graf.</p>
 			{:else}
 				<p class="no-data">Ingen GPS-data for denne økten.</p>
 			{/if}
 
 		{:else if tab === 'graf'}
-			{#if trackPoints.length < 2}
+			{#if profilePoints.length < 2}
 				<p class="no-data">Ingen graf-data for denne økten.</p>
 			{:else}
-				<TrackProfileChart points={trackPoints} kind="speed" height={120} showAxes={true} />
-				{#if hasElevation(trackPoints)}
-					<TrackProfileChart points={trackPoints} kind="elevation" height={100} showAxes={true} />
+				<TrackProfileChart points={profilePoints} kind="speed" height={120} showAxes={true} />
+				{#if hasElevation(profilePoints)}
+					<TrackProfileChart points={profilePoints} kind="elevation" height={100} showAxes={true} />
 				{/if}
 				{#if hrSeries.length >= 2}
 					{@const W = 560}
@@ -348,9 +351,9 @@
 						{/if}
 					</div>
 				{/if}
-				<KmSplitsTable points={trackPoints} sportType={workout.sportType} />
-				{#if hasHeartRate(trackPoints)}
-					<HrDistributionBar points={trackPoints} baseline={data.hrBaseline} />
+				<KmSplitsTable points={profilePoints} sportType={workout.sportType} />
+				{#if hasHeartRate(profilePoints)}
+					<HrDistributionBar points={profilePoints} baseline={data.hrBaseline} />
 				{/if}
 			{/if}
 		{/if}

@@ -6,6 +6,9 @@ import { sensorEvents } from '$lib/db/schema';
 import { getConnection, pushSession } from '$lib/server/services/strava-sync-service';
 import { isWorkoutSuppressedForUser } from '$lib/server/workouts/workout-suppressions';
 import { describeWorkoutSportType } from '$lib/server/workout-taxonomy';
+import { readWorkoutSamples } from '$lib/domain/health/workout-samples';
+import { buildIndoorTcx } from '$lib/server/workouts/samples-tcx';
+import type { StravaActivityFile } from '$lib/server/integrations/strava';
 
 /**
  * Manuell re-synk / backfill til Strava. Bearer-autentisert.
@@ -14,8 +17,9 @@ import { describeWorkoutSportType } from '$lib/server/workout-taxonomy';
  *   POST {}                        → backfiller siste N ikke-synkede økter
  *
  * Vi lagrer ikke rå GPX, men rekonstruerer en GPX fra de lagrede track-punktene
- * (lat/lon/ele/hr/time) på workout-eventet. pushSession er dedup-et, så allerede
- * synkede økter hoppes over.
+ * (lat/lon/ele/hr/time) på workout-eventet. En innendørsøkt (mølla) har ingen
+ * track-punkter; da bygges en TCX fra `data.samples` i stedet (se
+ * docs/ekko-molle.md). pushSession er dedup-et, så allerede synkede økter hoppes over.
  */
 
 const BACKFILL_LIMIT = 10;
@@ -86,8 +90,9 @@ async function syncEvent(userId: string, appId: string, eventRow: WorkoutEvent):
 	const metadata = (eventRow.metadata ?? {}) as Record<string, unknown>;
 	const sessionId = typeof metadata.sessionId === 'string' ? metadata.sessionId : null;
 	const points = Array.isArray(data.trackPoints) ? (data.trackPoints as StoredTrackPoint[]) : [];
+	const samples = points.length === 0 ? readWorkoutSamples(data.samples) : [];
 
-	if (!sessionId || points.length === 0) return false;
+	if (!sessionId || (points.length === 0 && samples.length < 2)) return false;
 
 	if (metadata.dismissed === true || metadata.dismissed === 'true') return false;
 	const sportTypeRaw = typeof data.sportType === 'string' ? data.sportType : null;
@@ -100,12 +105,22 @@ async function syncEvent(userId: string, appId: string, eventRow: WorkoutEvent):
 		year: 'numeric'
 	}).format(eventRow.timestamp)}`;
 
-	const gpx = buildGpx(points, { name, sportType });
+	const file: StravaActivityFile =
+		points.length > 0
+			? { content: buildGpx(points, { name, sportType }), format: 'gpx' }
+			: {
+					content: buildIndoorTcx(samples, {
+						startTime: eventRow.timestamp,
+						durationSeconds: typeof data.duration === 'number' ? Math.round(data.duration) : undefined,
+						name
+					}),
+					format: 'tcx'
+				};
 	const result = await pushSession({
 		userId,
 		appId,
 		sessionId,
-		file: { content: gpx, format: 'gpx' },
+		file,
 		sportType,
 		name,
 		sensorEventId: eventRow.id
@@ -140,7 +155,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 		const pushed = await syncEvent(userId, appId, eventRow);
 		if (!pushed) {
-			return json({ error: 'Økten mangler GPS-data eller er allerede synket' }, { status: 409 });
+			return json({ error: 'Økten mangler spor/samples eller er allerede synket' }, { status: 409 });
 		}
 		return json({ queued: true }, { status: 202 });
 	}

@@ -63,6 +63,13 @@ describe('parseWorkoutFile – TCX uten posisjoner (mølle)', () => {
 	it('høydemeterne summeres fra høyden møllestigningen ga', () => {
 		expect(parsed!.elevation).toBeCloseTo(33.3, 0);
 	});
+
+	it('pulskurven følger med som samples, med distansen fra fila', () => {
+		expect(parsed!.samples).toHaveLength(11);
+		expect(parsed!.samples![0]).toMatchObject({ dist: 0, hr: 130 });
+		expect(parsed!.samples![10].dist).toBeCloseTo(1666.7, 1);
+		expect(parsed!.samples![10].hr).toBe(140);
+	});
 });
 
 describe('parseWorkoutFile – TCX med posisjoner', () => {
@@ -77,5 +84,7 @@ describe('parseWorkoutFile – TCX med posisjoner', () => {
 		expect(parsed.duration).toBe(120);
 		expect(parsed.avgHeartRate).toBe(120);
 		expect(parsed.distance).toBeGreaterThan(100);
+		// Med spor trengs ingen samples – sporet bærer kurven.
+		expect(parsed.samples).toBeUndefined();
 	});
 });

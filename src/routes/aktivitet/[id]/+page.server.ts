@@ -9,6 +9,7 @@ import { getWorkoutAssessment } from '$lib/server/workouts/workout-assessment';
 import { findHealthThemeId, findThemeByName, getHealthThemeIds } from '$lib/server/themes';
 import { getEffortBaseline } from '$lib/server/services/effort-service';
 import { readClusterTrackPoints } from '$lib/server/activity-layer';
+import { profileSeries, readWorkoutSamples } from '$lib/domain/health/workout-samples';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const userId = locals.userId;
@@ -48,6 +49,10 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 					return null;
 				});
 	const trackPoints = borrowedTrack?.trackPoints ?? ownTrackPoints;
+	// Grafene og pulsfordelingen: sporet når det finnes, ellers samplene fra en
+	// innendørsøkt (mølla), som har puls- og fartskurve men ingen posisjon.
+	// Kartet leser fortsatt bare `trackPoints`. Se docs/ekko-molle.md.
+	const profilePoints = profileSeries(trackPoints, readWorkoutSamples(eventData?.samples));
 
 	const [healthThemeId, healthThemeIds, trainingTheme, hrBaseline] = await Promise.all([
 		findHealthThemeId(userId),
@@ -88,6 +93,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		workout,
 		trackPoints,
+		profilePoints,
 		// Flaten skal SI at sporet er lånt fra en annen kilde i klynga. Et kart
 		// som stille tilhører en annen rad enn tallene over det er en påstand
 		// brukeren ikke kan etterprøve.

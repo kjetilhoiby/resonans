@@ -12,6 +12,20 @@ export interface TrackPoint {
 	hr?: number | null;
 }
 
+/**
+ * Et punkt i en tidsserie grafene kan tegne: et sporpunkt, eller et innendørs-sample
+ * uten posisjon som bærer distansen selv (`dist`, kumulative meter fra enheten).
+ * Se `$lib/domain/health/workout-samples.ts`.
+ */
+export interface ProfilePoint {
+	lat?: number;
+	lon?: number;
+	time?: string | null;
+	ele?: number | null;
+	hr?: number | null;
+	dist?: number;
+}
+
 export interface SeriesPoint {
 	distanceKm: number;
 	value: number;
@@ -102,24 +116,39 @@ export function haversineMeters(a: TrackPoint, b: TrackPoint): number {
 	return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-export function cumulativeDistanceMeters(points: TrackPoint[]): number[] {
+/**
+ * Kumulativ distanse langs serien. Bærer ALLE punktene distansen selv (innendørs-
+ * samples), brukes den; ellers måles sporet med haversine. En blanding måles som
+ * spor – punkter uten posisjon bidrar da med 0.
+ */
+export function cumulativeDistanceMeters(points: ProfilePoint[]): number[] {
 	if (points.length === 0) return [];
+	if (points.every((p) => typeof p.dist === 'number' && Number.isFinite(p.dist))) {
+		const d0 = points[0].dist as number;
+		return points.map((p) => Math.max(0, (p.dist as number) - d0));
+	}
 	const result = new Array<number>(points.length);
 	result[0] = 0;
 	for (let i = 1; i < points.length; i++) {
-		result[i] = result[i - 1] + haversineMeters(points[i - 1], points[i]);
+		const a = points[i - 1];
+		const b = points[i];
+		const step =
+			typeof a.lat === 'number' && typeof a.lon === 'number' && typeof b.lat === 'number' && typeof b.lon === 'number'
+				? haversineMeters(a as TrackPoint, b as TrackPoint)
+				: 0;
+		result[i] = result[i - 1] + step;
 	}
 	return result;
 }
 
-function parseTime(p: TrackPoint): number | null {
+function parseTime(p: ProfilePoint): number | null {
 	if (!p.time) return null;
 	const t = new Date(p.time).getTime();
 	return Number.isFinite(t) ? t : null;
 }
 
 export function computeSpeedSeries(
-	points: TrackPoint[],
+	points: ProfilePoint[],
 	smoothingWindowSec = 20
 ): SeriesPoint[] {
 	if (points.length < 2) return [];
@@ -173,7 +202,7 @@ export function computeSpeedSeries(
 	return result;
 }
 
-export function computeElevationSeries(points: TrackPoint[]): SeriesPoint[] {
+export function computeElevationSeries(points: ProfilePoint[]): SeriesPoint[] {
 	if (points.length < 2) return [];
 	const cum = cumulativeDistanceMeters(points);
 	const result: SeriesPoint[] = [];
@@ -185,7 +214,7 @@ export function computeElevationSeries(points: TrackPoint[]): SeriesPoint[] {
 	return result;
 }
 
-export function computeKmSplits(points: TrackPoint[]): KmSplit[] {
+export function computeKmSplits(points: ProfilePoint[]): KmSplit[] {
 	if (points.length < 2) return [];
 	const cum = cumulativeDistanceMeters(points);
 	const times = points.map(parseTime);
@@ -277,7 +306,7 @@ export function computeKmSplits(points: TrackPoint[]): KmSplit[] {
  * og det er poenget: en default her var en sonemodell ingen visste at de brukte.
  */
 export function computeHrDistribution(
-	points: TrackPoint[],
+	points: ProfilePoint[],
 	bands: Omit<HrBand, 'seconds'>[]
 ): HrBand[] {
 	const result: HrBand[] = bands.map((b) => ({ ...b, seconds: 0 }));
@@ -300,10 +329,10 @@ export function computeHrDistribution(
 	return result;
 }
 
-export function hasHeartRate(points: TrackPoint[]): boolean {
+export function hasHeartRate(points: ProfilePoint[]): boolean {
 	return points.some((p) => typeof p.hr === 'number');
 }
 
-export function hasElevation(points: TrackPoint[]): boolean {
+export function hasElevation(points: ProfilePoint[]): boolean {
 	return points.some((p) => typeof p.ele === 'number');
 }

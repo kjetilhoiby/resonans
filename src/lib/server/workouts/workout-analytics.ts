@@ -27,6 +27,12 @@ export interface TrackPoint {
 	ele?: number;
 	hr?: number;
 	time?: string; // ISO timestamp
+	/**
+	 * Kumulativ distanse fra enheten, i meter. Satt på innendørs-samples (mølla i
+	 * Ekko, `data.samples`), som ikke har posisjon. Når ALLE punktene har den, er
+	 * den distansen – se `buildCumulative` og `$lib/domain/health/workout-samples.ts`.
+	 */
+	dist?: number;
 }
 
 export interface BestEfforts {
@@ -129,6 +135,10 @@ export function bestEffortKey(distanceMeters: number): keyof BestEfforts {
 /**
  * Bygger en strukturert tids- og distanse-array av trackPoints.
  * Filtrerer bort punkter uten gyldig posisjon eller tidsstempel.
+ *
+ * Innendørs-samples har ingen posisjon, men bærer distansen selv (`dist`). Da
+ * brukes den, og posisjonskravet faller – resten av analysen (soner, tidsdeling,
+ * beste innsats) er den samme, for den leser bare tid, distanse og puls.
  */
 interface Cumulative {
 	tSec: number; // sekunder fra start
@@ -138,6 +148,9 @@ interface Cumulative {
 }
 
 function buildCumulative(points: TrackPoint[]): Cumulative[] {
+	const withDist = buildCumulativeFromDistance(points);
+	if (withDist) return withDist;
+
 	const valid: Array<TrackPoint & { tMs: number }> = [];
 	for (const p of points) {
 		if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
@@ -168,6 +181,33 @@ function buildCumulative(points: TrackPoint[]): Cumulative[] {
 		});
 	}
 	return cum;
+}
+
+/**
+ * Samme serie av punkter som bærer distansen selv. `null` når ikke alle punktene
+ * gjør det – en blanding ville gitt to distansemål i samme kurve.
+ */
+function buildCumulativeFromDistance(points: TrackPoint[]): Cumulative[] | null {
+	if (points.length < 2 || !points.every((p) => typeof p.dist === 'number' && Number.isFinite(p.dist))) {
+		return null;
+	}
+	const valid: Array<TrackPoint & { tMs: number; dist: number }> = [];
+	for (const p of points) {
+		if (!p.time) continue;
+		const tMs = Date.parse(p.time);
+		if (!Number.isFinite(tMs)) continue;
+		valid.push({ ...p, tMs, dist: p.dist as number });
+	}
+	if (valid.length < 2) return [];
+	valid.sort((a, b) => a.tMs - b.tMs);
+	const t0 = valid[0].tMs;
+	const d0 = valid[0].dist;
+	return valid.map((p) => ({
+		tSec: (p.tMs - t0) / 1000,
+		distM: Math.max(0, p.dist - d0),
+		ele: p.ele,
+		hr: p.hr
+	}));
 }
 
 /**

@@ -12,6 +12,7 @@ import { db } from '$lib/db';
 import { canonicalWorkouts, programTestResults } from '$lib/db/schema';
 import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
 import { estimateVdotFromBestEfforts, paceZonesForVdot, vdotFromCooper, vdotFromTime, type DanielsPaces } from '$lib/server/workouts/vdot';
+import { analysisSeriesSql } from '$lib/server/workouts/analysis-series';
 
 export type DataQuality = 'rich' | 'thin' | 'none';
 
@@ -288,7 +289,7 @@ export function snapshotForPersistence(snapshot: AthleteSnapshot) {
  */
 async function backfillAnalyticsForUser(userId: string): Promise<void> {
 	const { sensorEvents } = await import('$lib/db/schema');
-	const { sql, eq, and, isNull, inArray } = await import('drizzle-orm');
+	const { eq, and, isNull, inArray } = await import('drizzle-orm');
 	const { analyzeWorkout } = await import('$lib/server/workouts/workout-analytics');
 	const { getEffortBaseline } = await import('$lib/server/services/effort-service');
 
@@ -325,7 +326,8 @@ async function backfillAnalyticsForUser(userId: string): Promise<void> {
 	const rows = await db
 		.select({
 			id: sensorEvents.id,
-			trackPoints: sql<unknown>`${sensorEvents.data}->'trackPoints'`
+			// Sporet, eller samplene fra en innendørsøkt – se analysis-series.ts.
+			trackPoints: analysisSeriesSql
 		})
 		.from(sensorEvents)
 		.where(inArray(sensorEvents.id, [...eventIds]));
