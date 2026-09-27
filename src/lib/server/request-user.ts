@@ -6,25 +6,11 @@ import { DEFAULT_USER_ID, ensureUser } from '$lib/server/users';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { isUserHeaderTrusted } from '$lib/server/user-header-auth';
+import { pickFallbackUserId, sanitizeUserId } from '$lib/server/request-user-sources';
 
 export const USER_ID_HEADER_NAME = 'x-resonans-user-id';
 export const USER_ID_QUERY_PARAM = 'userId';
 export const USER_ID_COOKIE_NAME = 'resonans_user_id';
-
-const USER_ID_PATTERN = /^[a-zA-Z0-9._-]{3,100}$/;
-
-function sanitizeUserId(value: string | null | undefined): string | null {
-	if (!value) {
-		return null;
-	}
-
-	const trimmed = value.trim();
-	if (!trimmed || !USER_ID_PATTERN.test(trimmed)) {
-		return null;
-	}
-
-	return trimmed;
-}
 
 export async function resolveRequestUserId(event: RequestEvent): Promise<string> {
 	if (event.url.pathname.startsWith('/api/')) {
@@ -45,19 +31,23 @@ export async function resolveRequestUserId(event: RequestEvent): Promise<string>
 	}
 
 	// Samme gating som i authorizationHandle: en header uten hemmelighet er ikke
-	// bevis når vi er deployet.
-	const userIdFromHeader = isUserHeaderTrusted(event.request.headers, {
+	// bevis når vi er deployet. Query og cookie er aldri bevis, og leses bare i
+	// dev — se request-user-sources.ts for hva som skjedde da de ble lest i prod.
+	const fallbackUserId = pickFallbackUserId({
 		isDev: dev,
-		expectedSecret: env.RESONANS_HEADER_SECRET
-	})
-		? sanitizeUserId(event.request.headers.get(USER_ID_HEADER_NAME))
-		: null;
-	const userIdFromQuery = sanitizeUserId(event.url.searchParams.get(USER_ID_QUERY_PARAM));
-	const userIdFromCookie = sanitizeUserId(event.cookies.get(USER_ID_COOKIE_NAME));
+		trustedHeader: isUserHeaderTrusted(event.request.headers, {
+			isDev: dev,
+			expectedSecret: env.RESONANS_HEADER_SECRET
+		})
+			? event.request.headers.get(USER_ID_HEADER_NAME)
+			: null,
+		query: event.url.searchParams.get(USER_ID_QUERY_PARAM),
+		cookie: event.cookies.get(USER_ID_COOKIE_NAME)
+	});
 	const authConfigured = isGoogleAuthConfigured();
-	const userId = userIdFromHeader ?? userIdFromQuery ?? userIdFromCookie ?? DEFAULT_USER_ID;
+	const userId = fallbackUserId ?? DEFAULT_USER_ID;
 
-	if (authConfigured && !userIdFromHeader && !userIdFromQuery && !userIdFromCookie) {
+	if (authConfigured && !fallbackUserId) {
 		const isSystemPath =
 			event.url.pathname.startsWith('/api/cron') || event.url.pathname.startsWith('/api/scheduler/trigger');
 		if (!dev && !isSystemPath) {
