@@ -20,10 +20,24 @@ to ting: velger øvelsen før turen, og tenker med brukeren i ett kort svar ette
 | `POST` | `/sessions/{id}/reflection` | `{ text, durationSec? }` → `reply`, `proposal?`, `theme?`, `next?`, `advanced`, `safety`. Tom `text` registrerer økta uten modellkall. |
 | `POST` | `/proposals/{noteId}` | `{ accept: boolean }` – ja/nei til en foreslått hypotese |
 | `GET` | `/profile` | `overview` (økter siste 30 dager, temaer, det som virker, aksepterte hypoteser, `reviewSuggested`) + `continueTheme` |
+| `POST` | `/speech` | `{ text }` → `audio/wav`: én linje lest av Gemini TTS. 503 = ikke satt opp, 502 = Google feilet. |
 | `POST` | `/themes/{themeId}/review` | Den lengre gjennomgangen: før/nå/forsøkt/hjulpet/står fast + ett spørsmål |
 
 Bare `mode=theme` på `/plan` bruker en modell (rask, `EKKO_RO_INTAKE_MODEL`, default
 `gpt-4o`, ~2 s). Refleksjon og gjennomgang bruker `EKKO_RO_MODEL` (default `gpt-5.5`, 5–10 s).
+
+## Stemmen (`/speech`)
+
+Gemini TTS, ikke Live: Live omformulerer, og i Ro er ordlyden øvelsen. `generateContent` med
+`responseModalities: ["AUDIO"]`, `languageCode: "nb-NO"` og en leseinstruks foran teksten
+(«exactly as written … calmly, slowly»). Rå PCM pakkes som WAV før den sendes til Ekko.
+
+- **Modellen slås opp i Googles katalog** (`pickTtsModel`: flash foran pro, ikke lite,
+  ikke preview, nyeste versjon) og huskes i en time. `GEMINI_TTS_MODEL` overstyrer.
+- **Stemmen** er `GEMINI_TTS_VOICE`, standard `Sulafat` («warm»). Bytter du stemme eller
+  instruks, må Ekkos `RoVoice.version` bumpes, ellers spilles gammel lyd fra appens cache.
+- Ingen cache på serveren: Ekko cacher per linje, og de faste linjene er få.
+- Linjer med brukerens egne fraser («planen som ble endret») sendes til Google.
 
 ## Filer
 
@@ -33,6 +47,7 @@ Bare `mode=theme` på `/plan` bruker en modell (rask, `EKKO_RO_INTAKE_MODEL`, de
 | Promptene | `src/lib/server/ro/ro-llm.ts` |
 | Orkestrering | `src/lib/server/ro/ro-service.ts` |
 | DB | `src/lib/server/ro/ro-repository.ts`, tabellene `ro_profiles` og `ro_sessions` (`0067_ro_modus.sql`) |
+| Stemmen | `src/lib/server/ro/ro-speech-logic.ts` (+ `.test.ts`), `ro-speech.ts` |
 | Rutene | `src/routes/api/apps/ro/**` |
 
 ## Beslutninger
@@ -67,7 +82,7 @@ Bare `mode=theme` på `/plan` bruker en modell (rask, `EKKO_RO_INTAKE_MODEL`, de
 
 ## Verifisering
 
-- `npx vitest run src/lib/server/ro` – 36 tester.
+- `npx vitest run src/lib/server/ro` – 44 tester.
 - Ende til ende 27. september 2026 mot `resonans-pg` (podman, port 55432) og en egen
   dev-server på 5175, med `local-test-user`. Testet: plan (åpen, fortsett, tema), to
   refleksjoner med hypotese og trinnskifte, ja til hypotese, «hopp over», gjennomgang, og
