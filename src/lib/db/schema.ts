@@ -4421,3 +4421,34 @@ export const writingDocsRelations = relations(writingDocs, ({ one }) => ({
 		references: [writingProjects.id]
 	})
 }));
+
+// Ro: Ekkos refleksjons- og ekvanimitetsmodus. Se docs/ekko-ro.md og
+// scripts/db-migrations/0067_ro_modus.sql. `state` er en RoProfile
+// ($lib/server/ro/ro-logic.ts) – en liten tilstandsmodell, ikke en dagbok.
+export const roProfiles = pgTable('ro_profiles', {
+	userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+	state: jsonb('state').$type<Record<string, unknown>>().notNull().default({}),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+export const roSessions = pgTable('ro_sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	mode: text('mode').notNull(),
+	themeId: text('theme_id'),
+	structureId: text('structure_id').notNull(),
+	stage: text('stage'),
+	focus: text('focus'),
+	situation: text('situation'),
+	closingQuestion: text('closing_question'),
+	intake: text('intake'),
+	durationSec: integer('duration_sec'),
+	reflection: text('reflection'),
+	reply: text('reply'),
+	proposal: jsonb('proposal').$type<Record<string, unknown>>(),
+	completedAt: timestamp('completed_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserCreated: index('ro_sessions_user_created_idx').on(table.userId, table.createdAt)
+}));
