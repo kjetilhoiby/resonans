@@ -33,6 +33,8 @@
 		distanceMeters: number | null;
 		durationSeconds: number | null;
 		avgHeartRate: number | null;
+		/** Satt når kilden er skilt ut til en egen økt. */
+		clusterGroup?: string;
 	}
 
 	interface WorkoutActivity {
@@ -47,6 +49,8 @@
 		maxHeartRate: number | null;
 		sources: string[];
 		evidence: WorkoutEvidence[];
+		/** Eldre rader fra en sensor som har en nyere i økta. Se `activity-layer`. */
+		superseded?: WorkoutEvidence[];
 	}
 
 	interface Props {
@@ -67,14 +71,18 @@
 	let sheetActivity = $state<WorkoutActivity | null>(null);
 	let sheetEv = $state<WorkoutEvidence | null>(null);
 	let sheetBusy = $state(false);
+	/** Kilden i panelet er en skjult, eldre versjon – ikke en av økta sine kilder. */
+	let sheetSuperseded = $state(false);
 
-	function openSourceSheet(activity: WorkoutActivity, ev: WorkoutEvidence) {
+	function openSourceSheet(activity: WorkoutActivity, ev: WorkoutEvidence, superseded = false) {
 		sheetActivity = activity;
 		sheetEv = ev;
+		sheetSuperseded = superseded;
 	}
 	function closeSourceSheet() {
 		sheetActivity = null;
 		sheetEv = null;
+		sheetSuperseded = false;
 	}
 
 	/**
@@ -103,6 +111,23 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ role, siblings })
 			});
+			await refreshAfterMutation();
+			closeSourceSheet();
+		} finally {
+			sheetBusy = false;
+		}
+	}
+
+	/**
+	 * Skiller kilden ut til en egen økt (POST), eller slår den sammen igjen (DELETE).
+	 * To turer samme ettermiddag havner i samme klynge når de starter innen to timer;
+	 * se `$lib/server/workouts/split-workout`.
+	 */
+	async function setSplit(split: boolean) {
+		if (!sheetEv || sheetBusy) return;
+		sheetBusy = true;
+		try {
+			await fetch(`/api/workouts/${sheetEv.eventId}/split`, { method: split ? 'POST' : 'DELETE' });
 			await refreshAfterMutation();
 			closeSourceSheet();
 		} finally {
@@ -451,6 +476,17 @@
 													{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
 												</button>
 											{/each}
+											{#each act.superseded ?? [] as ev}
+												<button
+													class="hd-source-chip hd-source-chip-superseded"
+													title="Skjult versjon – kan skilles ut som egen økt"
+													onclick={() => openSourceSheet(act, ev, true)}
+												>
+													{providerLabel(ev.provider, ev.sensorType)} (skjult)
+													{#if ev.distanceMeters !== null && !noDistance}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
+													{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
+												</button>
+											{/each}
 										</div>
 									{/if}
 									{#if discrepancies.length > 0}
@@ -481,7 +517,8 @@
 </div>
 
 {#if sheetEv && sheetActivity}
-	{@const multi = sheetActivity.evidence.length > 1}
+	{@const multi = sheetActivity.evidence.length > 1 && !sheetSuperseded}
+	{@const canSplit = sheetActivity.evidence.length + (sheetActivity.superseded?.length ?? 0) > 1}
 	<BottomSheet onclose={closeSourceSheet} ariaLabel="Kilde">
 		<div class="hd-sheet">
 			<h3 class="hd-sheet-title">{providerLabel(sheetEv.provider, sheetEv.sensorType)}</h3>
@@ -497,12 +534,27 @@
 				chips står ved siden av hverandre.
 			-->
 			<p class="hd-sheet-meta">Starttid {startedAtLabel(sheetEv.timestamp)}</p>
+			{#if sheetSuperseded}
+				<!--
+					En nyere registrering fra samme kilde ligger i økta, så denne telles ikke.
+					Det er riktig når den er en eldre versjon av samme tur, og feil når den
+					er en annen tur samme ettermiddag – da er utskilling svaret.
+				-->
+				<p class="hd-sheet-meta">
+					Skjult: en nyere registrering fra samme kilde ligger i økta. Er dette en egen tur, skill den ut.
+				</p>
+			{/if}
 			<div class="hd-sheet-actions">
 				{#if multi}
 					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('main')}>Hovedkilde (alt)</button>
 					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('gps')}>Kilde for GPS/distanse</button>
 					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('hr')}>Kilde for puls</button>
 					<button class="hd-sheet-btn hd-sheet-btn-ghost" disabled={sheetBusy} onclick={() => applyRole('none')}>Nullstill valg (auto)</button>
+				{/if}
+				{#if sheetEv.clusterGroup}
+					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => setSplit(false)}>Slå sammen igjen</button>
+				{:else if canSplit}
+					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => setSplit(true)}>Skill ut som egen økt</button>
 				{/if}
 				<button class="hd-sheet-btn hd-sheet-btn-danger" disabled={sheetBusy} onclick={removeSource}>Fjern kilde</button>
 			</div>
@@ -744,6 +796,11 @@
 	.hd-source-chip-track {
 		border-color: #2a3a55;
 		color: #6a9edd;
+	}
+
+	.hd-source-chip-superseded {
+		border-style: dashed;
+		opacity: 0.7;
 	}
 
 	.hd-sheet {

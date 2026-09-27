@@ -9,7 +9,7 @@
  * raden så identisk ut, fantes det ingen feilmelding å lete etter.
  *
  * Nøklene her settes utelukkende av eksplisitte brukerhandlinger
- * (`/api/workouts/[activityId]/dismiss` og `.../source-role`) og skal overleve
+ * (`/api/workouts/[activityId]/dismiss`, `.../source-role` og `.../split`) og skal overleve
  * enhver re-synk av den samme raden: valget gjelder AKTIVITETEN, ikke den
  * bestemte payloaden kilden hadde da valget ble tatt. Synken får fortsatt
  * revidere sine egne felt fritt.
@@ -25,7 +25,9 @@ export const USER_OWNED_METADATA_KEYS = [
 	/** Denne kilden vinner på distanse/tempo/høyde. */
 	'preferGps',
 	/** Denne kilden vinner på puls. */
-	'preferHr'
+	'preferHr',
+	/** Kilden er skilt ut til en egen økt, og klynges bare med sin gruppe. */
+	'clusterGroup'
 ] as const;
 
 export type UserOwnedMetadataKey = (typeof USER_OWNED_METADATA_KEYS)[number];

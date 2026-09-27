@@ -56,6 +56,10 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
 			// oppslaget er én bestemt rad på id — ikke en telling over flere.
 			'lib/server/workouts/dismiss-workout.ts',
+			// Utskilling likeså: flagget (`clusterGroup`) settes på én rad på id, pluss
+			// andre versjoner av SAMME opptak (samme sensor og `sessionId`). Det er
+			// nettopp raden klyngingen slukte som skal nås.
+			'lib/server/workouts/split-workout.ts',
 			// Importdedupen spør «har vi lest denne FILA før», ikke «hvor mange
 			// økter finnes». Oppslaget er ÉN sensor og en kildespesifikk
 			// metadata-nøkkel (`stravaActivityId`) — det dedupliserte laget kan
