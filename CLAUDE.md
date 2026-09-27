@@ -491,7 +491,8 @@ iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, 
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
 `/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
 skjuling), `/api/apps/heart-rate-baseline` (pulssoner), `/api/apps/strava/*`,
-`/api/apps/tesla/*` og `/api/apps/gemini/*` (kortlevde Gemini Live-tokens).
+`/api/apps/tesla/*`, `/api/apps/gemini/*` (kortlevde Gemini Live-tokens) og `/api/apps/ro/*`
+(Ro, refleksjons- og ekvanimitetsmodusen – se `docs/ekko-ro.md`).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
 AI-økt. Gemini realtime bor under `/api/apps/gemini/`.
