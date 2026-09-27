@@ -32,6 +32,8 @@ import * as repo from './ro-repository';
  */
 
 export type RoMode = 'open' | 'continue' | 'theme';
+/** I bevegelse (løp/gå) eller sittende. Samme øvelser; Ekko har egne linjer for å sitte. */
+export type RoSetting = 'moving' | 'still';
 
 export interface RoPlanResponse {
 	sessionId: string;
@@ -60,7 +62,7 @@ function themeSummary(t: RoTheme | null) {
  */
 export async function planSession(
 	userId: string,
-	input: { mode: RoMode; text: string | null; durationMin: number | null },
+	input: { mode: RoMode; text: string | null; durationMin: number | null; setting?: RoSetting },
 	now = new Date()
 ): Promise<RoPlanResponse> {
 	const profile = await repo.loadProfile(userId);
@@ -110,6 +112,7 @@ export async function planSession(
 	const row = await repo.createSession({
 		userId,
 		mode,
+		setting: input.setting ?? 'moving',
 		themeId: theme?.id ?? null,
 		structureId: structure.id,
 		stage: theme?.stage ?? null,
@@ -179,7 +182,8 @@ export async function reflectOnSession(
 			intake: session.intake,
 			closingQuestion: session.closingQuestion,
 			reflection: input.text,
-			durationMin: input.durationSec ? Math.round(input.durationSec / 60) : null
+			durationMin: input.durationSec ? Math.round(input.durationSec / 60) : null,
+			still: session.setting === 'still'
 		});
 	} catch (error) {
 		console.error('[ro] refleksjon feilet, bruker fallback:', error);

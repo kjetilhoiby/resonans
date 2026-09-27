@@ -166,6 +166,7 @@ export async function reflect(input: {
 	closingQuestion: string | null;
 	reflection: string;
 	durationMin: number | null;
+	still?: boolean;
 }): Promise<unknown> {
 	const structure = RO_STRUCTURES.find((s) => s.id === input.structureId);
 	const lines = [
@@ -177,6 +178,7 @@ export async function reflect(input: {
 		input.focus ? `- fokus: ${input.focus}` : '',
 		input.intake ? `- brukeren sa før turen: «${input.intake}»` : '',
 		input.durationMin ? `- varighet: ${input.durationMin} min` : '',
+		input.still ? '- sittende økt (Ro i stillhet), ikke løp eller gange' : '- i bevegelse (løp eller gange)',
 		'',
 		`Spørsmålet etter turen: ${input.closingQuestion ?? 'Hva la du merke til?'}`,
 		`Brukeren svarte:\n«${input.reflection}»`

@@ -16,7 +16,7 @@ to ting: velger øvelsen før turen, og tenker med brukeren i ett kort svar ette
 
 | Metode | Sti | Hva |
 | --- | --- | --- |
-| `POST` | `/plan` | `{ mode: open\|continue\|theme, text?, durationMin? }` → øvelse, tema, `situation`, `focus`, `closingQuestion`, `safety`, `sessionId` |
+| `POST` | `/plan` | `{ mode: open\|continue\|theme, text?, durationMin?, setting?: moving\|still }` → øvelse, tema, `situation`, `focus`, `closingQuestion`, `safety`, `sessionId` |
 | `POST` | `/sessions/{id}/reflection` | `{ text, durationSec? }` → `reply`, `proposal?`, `theme?`, `next?`, `advanced`, `safety`. Tom `text` registrerer økta uten modellkall. |
 | `POST` | `/proposals/{noteId}` | `{ accept: boolean }` – ja/nei til en foreslått hypotese |
 | `GET` | `/profile` | `overview` (økter siste 30 dager, temaer, det som virker, aksepterte hypoteser, `reviewSuggested`) + `continueTheme` |
@@ -38,6 +38,12 @@ Gemini TTS, ikke Live: Live omformulerer, og i Ro er ordlyden øvelsen. `generat
   instruks, må Ekkos `RoVoice.version` bumpes, ellers spilles gammel lyd fra appens cache.
 - Ingen cache på serveren: Ekko cacher per linje, og de faste linjene er få.
 - Linjer med brukerens egne fraser («planen som ble endret») sendes til Google.
+
+## I bevegelse og i stillhet
+
+`ro_sessions.setting` (`0068_ro_setting.sql`) er `moving` (løp/gå) eller `still` (sittende).
+Øvelsene og progresjonen er de samme; Ekko har egne linjer for å sitte. Refleksjonsprompten
+får vite hvilken det var. Rader fra før kolonnen fantes er `moving`.
 
 ## Filer
 
