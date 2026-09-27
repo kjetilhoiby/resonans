@@ -8,6 +8,7 @@
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
 	import { invalidateAll } from '$app/navigation';
+	import { profileSeries, type WorkoutSample } from '$lib/domain/health/workout-samples';
 	import { invalidateHealthFamily } from '$lib/client/dashboard-cache';
 	import BottomSheet from '../../ui/BottomSheet.svelte';
 	import {
@@ -27,6 +28,7 @@
 	interface WorkoutEvidence {
 		eventId: string;
 		hasTrackPoints: boolean;
+		hasSamples?: boolean;
 		provider: string;
 		sensorType: string;
 		timestamp: string;
@@ -151,6 +153,8 @@
 	interface TrackPoint { lat: number; lon: number; ele?: number | null; hr?: number | null; time?: string | null; }
 	let mapEventId = $state<string | null>(null);
 	let mapPoints = $state<TrackPoint[]>([]);
+	/** Det grafene leser: sporet, eller samplene fra en mølleøkt. */
+	let profilePoints = $state<Array<TrackPoint | WorkoutSample>>([]);
 	let mapLoading = $state(false);
 
 	// Activity card expand state
@@ -175,12 +179,14 @@
 	async function openMap(eventId: string) {
 		mapEventId = eventId;
 		mapPoints = [];
+		profilePoints = [];
 		mapLoading = true;
 		try {
 			const res = await fetch(`/api/activities/${eventId}/track`);
 			if (res.ok) {
-				const json = await res.json() as { trackPoints?: TrackPoint[] };
+				const json = await res.json() as { trackPoints?: TrackPoint[]; samples?: WorkoutSample[] };
 				mapPoints = json.trackPoints ?? [];
+				profilePoints = profileSeries(mapPoints, json.samples ?? []);
 			}
 		} catch { /* stille feil */ }
 		mapLoading = false;
@@ -208,7 +214,9 @@
 
 	const SPORT_ICONS: Record<string, string> = {
 		running: '\u{1F3C3}',
+		indoor_running: '\u{1F3C3}',
 		cycling: '\u{1F6B4}',
+		indoor_cycling: '\u{1F6B4}',
 		e_bike: '\u{1F6B4}',
 		walking: '\u{1F6B6}',
 		hiking: '\u{1F97E}',
@@ -238,6 +246,10 @@
 	function sportLabel(sportType: string): string {
 		const labels: Record<string, string> = {
 			running: 'Løping',
+			// Uten disse viste kortet den rå verdien: «Indoor_running».
+			indoor_running: 'Tredemølle',
+			indoor_cycling: 'Sykling inne',
+			indoor_walking: 'Gåtur på mølle',
 			cycling: 'Sykling',
 			e_bike: 'Elsykkel',
 			walking: 'Gåtur',
@@ -337,6 +349,8 @@
 	<div class="hd-activity-list">
 		{#each filteredActivities.slice(0, activityVisibleCount) as act}
 			{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
+			<!-- Mølla har ingen posisjon, men samples: grafene uten kart. -->
+			{@const profileEventId = trackEventId ?? act.evidence.find(e => e.hasSamples)?.eventId ?? null}
 			{@const discrepancies = sourceDiscrepancies(act.evidence)}
 			{@const isExpanded = expandedActivityIds.has(act.activityId)}
 			{@const noDistance = DISTANCE_LESS_SPORTS.has(act.sportType.toLowerCase())}
@@ -348,7 +362,7 @@
 			})()}
 			<ExpandableCard
 				expanded={isExpanded}
-				onToggle={() => toggleActivity(act.activityId, trackEventId)}
+				onToggle={() => toggleActivity(act.activityId, profileEventId)}
 				ariaLabel={`Vis detaljer for ${sportLabel(act.sportType)}`}
 				--ec-bg="transparent"
 				--ec-border-expanded="#252525"
@@ -376,6 +390,7 @@
 						? compareActivityToBaseline(act.paceSecondsPerKm, baseline)
 						: null}
 					{@const showMapData = mapEventId === trackEventId && mapPoints.length > 0}
+					{@const showProfile = mapEventId === profileEventId && profilePoints.length >= 2}
 					<div class="hd-activity-details">
 						<div class="hd-stats">
 							{#if act.distanceMeters && !noDistance}
@@ -442,16 +457,18 @@
 									<GpxMap points={mapPoints} height={280} />
 								{/if}
 							</div>
+						{:else if profileEventId && mapLoading && mapEventId === profileEventId}
+							<div class="hd-map-loading">Laster grafer…</div>
+						{/if}
 
-							{#if showMapData}
-								<TrackProfileChart points={mapPoints} kind="speed" height={90} />
-								{#if hasElevation(mapPoints)}
-									<TrackProfileChart points={mapPoints} kind="elevation" height={70} />
-								{/if}
-								<KmSplitsTable points={mapPoints} sportType={act.sportType} />
-								{#if hasHeartRate(mapPoints)}
-									<HrDistributionBar points={mapPoints} baseline={hrBaseline} />
-								{/if}
+						{#if showProfile}
+							<TrackProfileChart points={profilePoints} kind="speed" height={90} />
+							{#if hasElevation(profilePoints)}
+								<TrackProfileChart points={profilePoints} kind="elevation" height={70} />
+							{/if}
+							<KmSplitsTable points={profilePoints} sportType={act.sportType} />
+							{#if hasHeartRate(profilePoints)}
+								<HrDistributionBar points={profilePoints} baseline={hrBaseline} />
 							{/if}
 						{/if}
 

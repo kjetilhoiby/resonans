@@ -41,6 +41,8 @@ export interface WorkoutEvidenceEvent {
 	sensorType: string;
 	priority: number;
 	hasTrackPoints: boolean;
+	/** Innendørs tidsserie (mølla) i `data.samples`. Se `$lib/domain/health/workout-samples`. */
+	hasSamples?: boolean;
 }
 
 export interface WorkoutEvidence {
@@ -53,6 +55,8 @@ export interface WorkoutEvidence {
 	hasDuration: boolean;
 	hasHeartRate: boolean;
 	hasTrackPoints: boolean;
+	/** Mølleøkt med puls- og fartskurve uten posisjon. */
+	hasSamples: boolean;
 	hasImageEvidence: boolean;
 	imageUrl?: string;
 	notes?: string;
@@ -372,6 +376,7 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 			normalizeHeartRate(event.data.maxHeartRate) !== null ||
 			normalizeHeartRate(event.data.heartRate) !== null,
 		hasTrackPoints,
+		hasSamples: event.hasSamples === true,
 		hasImageEvidence: Boolean(imageUrl),
 		imageUrl,
 		notes: notesValue,
@@ -465,6 +470,7 @@ export async function buildUnifiedWorkoutActivitiesPage(
 				'clusterGroup', ${sensorEvents.metadata}->'clusterGroup'
 			)`,
 			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints'`,
+			hasSamples: sql<boolean>`${sensorEvents.data} ? 'samples'`,
 		})
 		.from(sensorEvents)
 		.where(and(...conditions))
@@ -499,7 +505,8 @@ export async function buildUnifiedWorkoutActivitiesPage(
 			provider,
 			sensorType,
 			priority: sourcePriority(provider, sensorType),
-			hasTrackPoints: event.hasTrackPoints
+			hasTrackPoints: event.hasTrackPoints,
+			hasSamples: event.hasSamples
 		};
 	});
 
