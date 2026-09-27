@@ -1,11 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { planSession, type RoMode } from '$lib/server/ro/ro-service';
+import { planSession, type RoMode, type RoSetting } from '$lib/server/ro/ro-service';
 
 /**
  * POST /api/apps/ro/plan — Ro, før turen (docs/ekko-ro.md).
  *
- * Body: { mode: 'open' | 'continue' | 'theme', text?: string, durationMin?: number }
+ * Body: { mode: 'open' | 'continue' | 'theme', text?: string, durationMin?: number,
+ *         setting?: 'moving' | 'still' }
  *
  * Svarer med hvilken ferdigskrevne øvelse Ekko skal spille, og de to korte
  * frasene som settes inn i den. Under selve turen snakker ingen modell – det er
@@ -16,7 +17,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
 
-	let body: { mode?: unknown; text?: unknown; durationMin?: unknown };
+	let body: { mode?: unknown; text?: unknown; durationMin?: unknown; setting?: unknown };
 	try {
 		body = await request.json();
 	} catch {
@@ -33,5 +34,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			? Math.max(5, Math.min(120, Math.round(body.durationMin)))
 			: null;
 
-	return json(await planSession(userId, { mode, text, durationMin }));
+	const setting: RoSetting = body.setting === 'still' ? 'still' : 'moving';
+
+	return json(await planSession(userId, { mode, text, durationMin, setting }));
 };

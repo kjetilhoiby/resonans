@@ -4436,6 +4436,8 @@ export const roSessions = pgTable('ro_sessions', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	mode: text('mode').notNull(),
+	/** 'moving' (løp/gå) eller 'still' (sittende). 0068_ro_setting.sql. */
+	setting: text('setting').notNull().default('moving'),
 	themeId: text('theme_id'),
 	structureId: text('structure_id').notNull(),
 	stage: text('stage'),
