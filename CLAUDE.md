@@ -384,6 +384,15 @@ Google OAuth via `@auth/sveltekit`. Allowlist-gated (`allowed_emails`). API-rute
 
 Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 
+**En offentlig sti som utsteder legitimasjon leser brukeren fra ØKTA, aldri
+gjennom `resolveRequestUserId`.** Se
+`docs/changelog/2026-09-27-app-callback-krever-okt.md`. `/api/apps/callback` gjorde
+det fram til september 2026, og `?userId=<uuid>` mintet da en `rsn_`-hemmelighet
+for hvem som helst uten innlogging (og `ensureUser` opprettet vilkårlige brukere
+forbi allowlisten). Bruk `sessionUserIdForAppCallback`
+(`$lib/server/request-user-sources.ts`). `?userId=` og `resonans_user_id`-cookien
+leses nå bare i `dev` — de er bekvemmelighet, aldri bevis.
+
 **Cron og scheduler autentiseres av ÉN vakt.** `denyUnauthorizedCron(request)`
 (`$lib/server/cron-guard`) over ren logikk i `$lib/server/cron-auth.ts`. Se
 `docs/changelog/2026-08-24-herding-for-flytting.md`.
