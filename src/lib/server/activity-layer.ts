@@ -29,7 +29,7 @@ export interface CanonicalActivityFeedItem {
 	workout?: UnifiedWorkoutActivity;
 }
 
-interface WorkoutEvidenceEvent {
+export interface WorkoutEvidenceEvent {
 	id: string;
 	sensorId: string;
 	timestamp: Date;
@@ -60,6 +60,8 @@ export interface WorkoutEvidence {
 	distanceMeters: number | null;
 	durationSeconds: number | null;
 	avgHeartRate: number | null;
+	/** Satt når kilden er skilt ut manuelt (`/api/workouts/[id]/split`). */
+	clusterGroup?: string;
 }
 
 export interface UnifiedWorkoutActivity {
@@ -78,6 +80,12 @@ export interface UnifiedWorkoutActivity {
 	hasHeartRateEvidence: boolean;
 	notes: string[];
 	evidence: WorkoutEvidence[];
+	/**
+	 * Rader fra en sensor som også har en nyere rad i klynga (`latestPerSensor`).
+	 * Tallene brukes ikke, men de vises, så en økt som ble slukt av en annen fra
+	 * samme app kan skilles ut igjen. Se `clusterWorkoutEvents`.
+	 */
+	superseded: WorkoutEvidence[];
 }
 
 function normalizeSportType(value: unknown): string {
@@ -273,6 +281,64 @@ function latestPerSensor(events: WorkoutEvidenceEvent[]): WorkoutEvidenceEvent[]
 	return events.filter((event) => bySensor.get(event.sensorId) === event);
 }
 
+/** Gruppa en kilde er skilt ut i, eller null. */
+export function clusterGroupOf(metadata: Record<string, unknown>): string | null {
+	const group = metadata.clusterGroup;
+	return typeof group === 'string' && group.length > 0 ? group : null;
+}
+
+/**
+ * Klynger økt-hendelser til aktiviteter: samme idrettsfamilie, start innenfor
+ * `CLUSTER_WINDOW_MS` av klyngas tidligste start, nærmeste klynge vinner.
+ *
+ * **En manuelt utskilt kilde (`metadata.clusterGroup`) klynges bare med kilder i
+ * samme gruppe**, og kilder uten gruppe aldri med den. To timer er riktig
+ * slingringsmonn for samme tur fra tre kilder, men feil for to turer samme
+ * ettermiddag: 27. september 2026 slukte en utetur kl. 17.55 mølleturen kl.
+ * 17.17 fra samme app, fordi `latestPerSensor` tok den nyeste raden fra Ekko.
+ * Regelen beholdes; splitting er utveien når den bommer.
+ *
+ * Hendelsene må være sortert på `timestamp`, stigende. Kilde-avviste rader
+ * (`sourceRejected`) holdes utenfor.
+ */
+export function clusterWorkoutEvents(
+	events: WorkoutEvidenceEvent[],
+	windowMs: number = CLUSTER_WINDOW_MS
+): Array<{ sportFamily: string; group: string | null; startTime: Date; events: WorkoutEvidenceEvent[] }> {
+	const clusters: Array<{ sportFamily: string; group: string | null; startTime: Date; events: WorkoutEvidenceEvent[] }> = [];
+
+	for (const event of events) {
+		// Kilde-avviste enkeltregistreringer holdes utenfor klyngingen (event-nivå), så en
+		// aktivitet består av sine gjenværende gode kilder. Skiller seg fra `dismissed`, som
+		// skjuler HELE økta (klynge-nivå). Avvises alle kilder, forsvinner økta.
+		if (event.metadata.sourceRejected === true || event.metadata.sourceRejected === 'true') continue;
+		const family = clusterSportFamily(normalizeSportType(event.data.sportType));
+		const group = clusterGroupOf(event.metadata);
+		let matchIndex = -1;
+		let bestDelta = Number.POSITIVE_INFINITY;
+
+		for (let i = clusters.length - 1; i >= 0; i -= 1) {
+			const cluster = clusters[i];
+			if (cluster.sportFamily !== family || cluster.group !== group) continue;
+			const delta = Math.abs(event.timestamp.getTime() - cluster.startTime.getTime());
+			if (delta <= windowMs && delta < bestDelta) {
+				bestDelta = delta;
+				matchIndex = i;
+			}
+		}
+
+		if (matchIndex >= 0) {
+			clusters[matchIndex].events.push(event);
+			if (event.timestamp < clusters[matchIndex].startTime) {
+				clusters[matchIndex].startTime = event.timestamp;
+			}
+		} else {
+			clusters.push({ sportFamily: family, group, startTime: event.timestamp, events: [event] });
+		}
+	}
+	return clusters;
+}
+
 function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 	const hasTrackPoints = event.hasTrackPoints
 		|| (typeof event.metadata.totalTrackPoints === 'number' && event.metadata.totalTrackPoints > 0);
@@ -311,7 +377,8 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 		notes: notesValue,
 		distanceMeters,
 		durationSeconds,
-		avgHeartRate
+		avgHeartRate,
+		...(clusterGroupOf(event.metadata) ? { clusterGroup: clusterGroupOf(event.metadata)! } : {})
 	};
 }
 
@@ -394,7 +461,8 @@ export async function buildUnifiedWorkoutActivitiesPage(
 				'dismissed', ${sensorEvents.metadata}->'dismissed',
 				'sourceRejected', ${sensorEvents.metadata}->'sourceRejected',
 				'preferGps', ${sensorEvents.metadata}->'preferGps',
-				'preferHr', ${sensorEvents.metadata}->'preferHr'
+				'preferHr', ${sensorEvents.metadata}->'preferHr',
+				'clusterGroup', ${sensorEvents.metadata}->'clusterGroup'
 			)`,
 			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints'`,
 		})
@@ -439,46 +507,12 @@ export async function buildUnifiedWorkoutActivitiesPage(
 	// toleransen, ellers slipper en økt i kanten av `since` gjennom.
 	const suppressions = await listWorkoutSuppressions(userId, options.since);
 
-	const clusterWindowMs = CLUSTER_WINDOW_MS;
-	const clusters: Array<{ sportFamily: string; startTime: Date; events: WorkoutEvidenceEvent[] }> = [];
-
-	for (const event of normalizedEvents) {
-		// Kilde-avviste enkeltregistreringer holdes utenfor klyngingen (event-nivå), så en
-		// aktivitet består av sine gjenværende gode kilder. Skiller seg fra `dismissed`, som
-		// skjuler HELE økta (klynge-nivå, lenger ned). Avvises alle kilder, forsvinner økta.
-		if (event.metadata.sourceRejected === true || event.metadata.sourceRejected === 'true') continue;
-		const sport = normalizeSportType(event.data.sportType);
-		const family = clusterSportFamily(sport);
-		let matchIndex = -1;
-		let bestDelta = Number.POSITIVE_INFINITY;
-
-		for (let i = clusters.length - 1; i >= 0; i -= 1) {
-			const cluster = clusters[i];
-			if (cluster.sportFamily !== family) continue;
-			const delta = Math.abs(event.timestamp.getTime() - cluster.startTime.getTime());
-			if (delta <= clusterWindowMs && delta < bestDelta) {
-				bestDelta = delta;
-				matchIndex = i;
-			}
-		}
-
-		if (matchIndex >= 0) {
-			clusters[matchIndex].events.push(event);
-			if (event.timestamp < clusters[matchIndex].startTime) {
-				clusters[matchIndex].startTime = event.timestamp;
-			}
-		} else {
-			clusters.push({
-				sportFamily: family,
-				startTime: event.timestamp,
-				events: [event]
-			});
-		}
-	}
+	const clusters = clusterWorkoutEvents(normalizedEvents);
 
 	const unified = clusters
 		.map((cluster): UnifiedWorkoutActivity => {
 			const events = latestPerSensor(cluster.events);
+			const superseded = cluster.events.filter((event) => !events.includes(event));
 			// **Enheten avgjøres PER HENDELSE, før valget mellom kildene.**
 			// `pickNumericField` kan ta distansen fra én kilde og varigheten fra
 			// en annen, og et par som ikke hører sammen er ikke en fart. Derfor
@@ -527,7 +561,10 @@ export async function buildUnifiedWorkoutActivitiesPage(
 
 			return {
 				activityId: events[0].id,
-				startTime: cluster.startTime.toISOString(),
+				// Fra radene som gjelder, ikke fra klynga: en forkastet versjon med
+				// tidligere start (eller en annen tur fra samme app) skal ikke gi økta
+				// sitt klokkeslett.
+				startTime: new Date(Math.min(...events.map((event) => event.timestamp.getTime()))).toISOString(),
 				sportType,
 				distanceMeters,
 				durationSeconds,
@@ -540,7 +577,8 @@ export async function buildUnifiedWorkoutActivitiesPage(
 				hasManualEvidence,
 				hasHeartRateEvidence,
 				notes,
-				evidence: events.map(buildEvidence)
+				evidence: events.map(buildEvidence),
+				superseded: superseded.map(buildEvidence)
 			};
 		})
 		.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
@@ -681,6 +719,7 @@ export async function readClusterTrackPoints(
 		.select({
 			timestamp: sensorEvents.timestamp,
 			sportType: sql<string | null>`${sensorEvents.data}->>'sportType'`,
+			clusterGroup: sql<string | null>`${sensorEvents.metadata}->>'clusterGroup'`,
 			ownPoints: sql<number>`coalesce(case when jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array'
 				then jsonb_array_length(${sensorEvents.data}->'trackPoints') else 0 end, 0)`
 		})
@@ -712,7 +751,8 @@ export async function readClusterTrackPoints(
 			// nøyaktig de to `preferredEventFor` godtar — de to lagene skal ikke
 			// være uenige om hvem som eier GPS.
 			preferGps: sql<boolean | null>`${sensorEvents.metadata}->>'preferGps' in ('true', 't', '1')`,
-			sourceRejected: sql<boolean | null>`${sensorEvents.metadata}->>'sourceRejected' in ('true', 't', '1')`
+			sourceRejected: sql<boolean | null>`${sensorEvents.metadata}->>'sourceRejected' in ('true', 't', '1')`,
+			clusterGroup: sql<string | null>`${sensorEvents.metadata}->>'clusterGroup'`
 		})
 		.from(sensorEvents)
 		.where(
@@ -733,8 +773,14 @@ export async function readClusterTrackPoints(
 			)
 		);
 
+	// Samme regel som `clusterWorkoutEvents`: en utskilt økt låner ikke spor fra
+	// klynga den ble skilt ut av, og omvendt. Ellers fikk mølleturen kartet fra
+	// uteturen samme ettermiddag.
+	const anchorGroup = row.clusterGroup || null;
 	const sameFamily = siblings.filter(
-		(sibling) => clusterSportFamily(sibling.sportType ?? 'workout') === family
+		(sibling) =>
+			clusterSportFamily(sibling.sportType ?? 'workout') === family &&
+			(sibling.clusterGroup || null) === anchorGroup
 	);
 	if (sameFamily.length === 0) return null;
 
