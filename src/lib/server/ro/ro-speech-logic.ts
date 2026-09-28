@@ -6,26 +6,48 @@
  * den får. Stilen («rolig, lavt, sakte») gis som en leseinstruks foran teksten.
  */
 
-export const DEFAULT_TTS_VOICE = 'Sulafat';
+/**
+ * To settinger, to stemmer. I bevegelse må stemmen bære over vind og pust; i stillhet
+ * (og på yogamatta) er rommet stille og stemmen kan komme nærmere. Uten `setting` er det
+ * bevegelse, så eldre Ekko-versjoner får det de alltid har fått.
+ */
+export type RoSpeechSetting = 'moving' | 'still';
+
+export const DEFAULT_TTS_VOICE: Record<RoSpeechSetting, string> = {
+	moving: 'Sulafat', // «warm» – hørt på løpetur 27. september 2026
+	still: 'Vindemiatrix' // «gentle»
+};
 /** Lengste tekst vi leser. En Ro-linje er to–tre setninger; mer enn dette er ikke en linje. */
 export const MAX_SPEECH_CHARS = 600;
+
+export function parseSpeechSetting(value: unknown): RoSpeechSetting {
+	return value === 'still' ? 'still' : 'moving';
+}
 
 /**
  * Leseinstruksen. På engelsk fordi det er slik TTS-modellene er instruert i Googles egne
  * eksempler; teksten som leses er norsk. «Exactly as written» fordi ordlyden er øvelsen.
+ * Endrer du en av dem, må Ekko bumpe `RoVoice`-versjonen for den settingen.
  */
-export const RO_READING_STYLE =
-	'Read the following Norwegian text aloud exactly as written. Speak calmly, warmly and slowly, ' +
-	'in a low, quiet voice, like a meditation guide speaking to someone who is out running. ' +
-	'Leave small natural pauses between sentences.';
+export const RO_READING_STYLE: Record<RoSpeechSetting, string> = {
+	moving:
+		'Read the following Norwegian text aloud exactly as written. Speak calmly, warmly and slowly, ' +
+		'in a low, quiet voice, like a meditation guide speaking to someone who is out running. ' +
+		'Leave small natural pauses between sentences.',
+	still:
+		'Read the following Norwegian text aloud exactly as written. Speak very softly, gently and slowly, ' +
+		'close and unhurried, like a meditation guide in a quiet room speaking to someone who is sitting, ' +
+		'lying down or doing slow yoga. Let the voice settle at the end of each sentence, ' +
+		'and leave longer pauses between sentences.'
+};
 
-export function buildTtsPrompt(text: string): string {
-	return `${RO_READING_STYLE}\n\n${text}`;
+export function buildTtsPrompt(text: string, setting: RoSpeechSetting = 'moving'): string {
+	return `${RO_READING_STYLE[setting]}\n\n${text}`;
 }
 
-export function buildTtsRequest(text: string, voice: string) {
+export function buildTtsRequest(text: string, voice: string, setting: RoSpeechSetting = 'moving') {
 	return {
-		contents: [{ role: 'user', parts: [{ text: buildTtsPrompt(text) }] }],
+		contents: [{ role: 'user', parts: [{ text: buildTtsPrompt(text, setting) }] }],
 		generationConfig: {
 			responseModalities: ['AUDIO'],
 			speechConfig: {

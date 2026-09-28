@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { MODELS_ENDPOINT, redactApiKeys } from '$lib/domain/ai/gemini-live-token';
-import { buildTtsRequest, DEFAULT_TTS_VOICE, extractAudio, pickTtsModel, toWav } from './ro-speech-logic';
+import { buildTtsRequest, DEFAULT_TTS_VOICE, extractAudio, pickTtsModel, toWav, type RoSpeechSetting } from './ro-speech-logic';
 
 /**
  * Ro-stemmen: Gemini TTS som leser én linje og svarer med WAV. Ekko cacher lyden per
@@ -48,21 +48,26 @@ async function ttsModel(key: string): Promise<string> {
 	return model;
 }
 
-export function ttsVoice(): string {
-	return env.GEMINI_TTS_VOICE?.trim() || DEFAULT_TTS_VOICE;
+/** `GEMINI_TTS_VOICE` (bevegelse) og `GEMINI_TTS_VOICE_STILL` (stillhet og yoga) overstyrer. */
+export function ttsVoice(setting: RoSpeechSetting): string {
+	const configured = setting === 'still' ? env.GEMINI_TTS_VOICE_STILL : env.GEMINI_TTS_VOICE;
+	return configured?.trim() || DEFAULT_TTS_VOICE[setting];
 }
 
-export async function synthesizeRoLine(text: string): Promise<{ wav: Uint8Array; model: string; voice: string }> {
+export async function synthesizeRoLine(
+	text: string,
+	setting: RoSpeechSetting = 'moving'
+): Promise<{ wav: Uint8Array; model: string; voice: string }> {
 	const key = readKey();
 	const model = await ttsModel(key);
-	const voice = ttsVoice();
+	const voice = ttsVoice(setting);
 	const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 	let response: Response;
 	try {
 		response = await fetch(url, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-			body: JSON.stringify(buildTtsRequest(text, voice))
+			body: JSON.stringify(buildTtsRequest(text, voice, setting))
 		});
 	} catch (err) {
 		throw new RoSpeechError(redactApiKeys(`Nådde ikke Google: ${err instanceof Error ? err.message : String(err)}`, key));

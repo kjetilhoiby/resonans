@@ -20,7 +20,7 @@ to ting: velger øvelsen før turen, og tenker med brukeren i ett kort svar ette
 | `POST` | `/sessions/{id}/reflection` | `{ text, durationSec? }` → `reply`, `proposal?`, `theme?`, `next?`, `advanced`, `safety`. Tom `text` registrerer økta uten modellkall. |
 | `POST` | `/proposals/{noteId}` | `{ accept: boolean }` – ja/nei til en foreslått hypotese |
 | `GET` | `/profile` | `overview` (økter siste 30 dager, temaer, det som virker, aksepterte hypoteser, `reviewSuggested`) + `continueTheme` |
-| `POST` | `/speech` | `{ text }` → `audio/wav`: én linje lest av Gemini TTS. 503 = ikke satt opp, 502 = Google feilet. |
+| `POST` | `/speech` | `{ text, setting? }` → `audio/wav`: én linje lest av Gemini TTS, `setting` `moving` (standard) eller `still`. 503 = ikke satt opp, 502 = Google feilet. |
 | `POST` | `/themes/{themeId}/review` | Den lengre gjennomgangen: før/nå/forsøkt/hjulpet/står fast + ett spørsmål |
 
 Bare `mode=theme` på `/plan` bruker en modell (rask, `EKKO_RO_INTAKE_MODEL`, default
@@ -34,8 +34,16 @@ Gemini TTS, ikke Live: Live omformulerer, og i Ro er ordlyden øvelsen. `generat
 
 - **Modellen slås opp i Googles katalog** (`pickTtsModel`: flash foran pro, ikke lite,
   ikke preview, nyeste versjon) og huskes i en time. `GEMINI_TTS_MODEL` overstyrer.
-- **Stemmen** er `GEMINI_TTS_VOICE`, standard `Sulafat` («warm»). Bytter du stemme eller
-  instruks, må Ekkos `RoVoice.version` bumpes, ellers spilles gammel lyd fra appens cache.
+- **To stemmer, etter `setting`.** I bevegelse må stemmen bære over vind og pust; i stillhet
+  og på yogamatta er rommet stille, og stemmen kan komme nærmere.
+  - `moving` (standard, også når `setting` mangler): `GEMINI_TTS_VOICE`, standard `Sulafat`
+    («warm»), og instruksen «… someone who is out running». Hørt og likt på løpetur.
+  - `still`: `GEMINI_TTS_VOICE_STILL`, standard `Vindemiatrix` («gentle»), og en mykere,
+    langsommere instruks for noen som sitter, ligger eller gjør rolig yoga.
+
+  Svaret har `x-ro-voice` (`modell/stemme`) og `x-ro-setting`. Bytter du stemme eller
+  instruks for en setting, må Ekko bumpe versjonen for den settingen (`RoVoice.Setting.version`),
+  ellers spilles gammel lyd fra appens cache.
 - Ingen cache på serveren: Ekko cacher per linje, og de faste linjene er få.
 - Linjer med brukerens egne fraser («planen som ble endret») sendes til Google.
 
