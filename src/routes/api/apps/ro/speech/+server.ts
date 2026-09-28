@@ -1,12 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { MAX_SPEECH_CHARS } from '$lib/server/ro/ro-speech-logic';
+import { MAX_SPEECH_CHARS, parseSpeechSetting } from '$lib/server/ro/ro-speech-logic';
 import { RoSpeechUnavailableError, synthesizeRoLine } from '$lib/server/ro/ro-speech';
 
 /**
  * POST /api/apps/ro/speech — én Ro-linje lest av Gemini TTS, som WAV (docs/ekko-ro.md).
  *
- * Body: { text: string }  →  audio/wav
+ * Body: { text: string, setting?: 'moving' | 'still' }  →  audio/wav
+ *
+ * `setting` velger stemme og leseinstruks: bevegelse (standard) eller stillhet/yoga.
  *
  * 503 betyr «ikke konfigurert» (ingen GEMINI_API_KEY / ingen TTS-modell): Ekko bruker da
  * telefonens stemme for resten av økta og prøver ikke igjen. 502 er en feil hos Google.
@@ -15,7 +17,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
 
-	let body: { text?: unknown };
+	let body: { text?: unknown; setting?: unknown };
 	try {
 		body = await request.json();
 	} catch {
@@ -27,13 +29,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		return json({ error: 'text is too long', code: 'text_too_long' }, { status: 400 });
 	}
 
+	const setting = parseSpeechSetting(body.setting);
+
 	try {
-		const { wav, model, voice } = await synthesizeRoLine(text);
+		const { wav, model, voice } = await synthesizeRoLine(text, setting);
 		return new Response(Buffer.from(wav), {
 			headers: {
 				'content-type': 'audio/wav',
 				'content-length': String(wav.byteLength),
-				'x-ro-voice': `${model}/${voice}`
+				'x-ro-voice': `${model}/${voice}`,
+				'x-ro-setting': setting
 			}
 		});
 	} catch (error) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTtsRequest, extractAudio, pcmSampleRate, pcmToWav, pickTtsModel, toWav } from './ro-speech-logic';
+import { buildTtsRequest, DEFAULT_TTS_VOICE, parseSpeechSetting, RO_READING_STYLE, extractAudio, pcmSampleRate, pcmToWav, pickTtsModel, toWav } from './ro-speech-logic';
 
 describe('pickTtsModel', () => {
 	it('foretrekker flash framfor pro og lite, og nyeste versjon', () => {
@@ -30,6 +30,25 @@ describe('buildTtsRequest', () => {
 		expect(req.generationConfig.speechConfig.languageCode).toBe('nb-NO');
 		expect(req.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Sulafat');
 		expect(req.contents[0].parts[0].text.endsWith('\n\nKjenn føttene.')).toBe(true);
+	});
+	it('bruker løpeinstruksen uten setting, og stillhetens med', () => {
+		expect(buildTtsRequest('Pust.', 'Sulafat').contents[0].parts[0].text.startsWith(RO_READING_STYLE.moving)).toBe(true);
+		const still = buildTtsRequest('Pust.', 'Vindemiatrix', 'still').contents[0].parts[0].text;
+		expect(still.startsWith(RO_READING_STYLE.still)).toBe(true);
+		expect(still).not.toMatch(/running/);
+	});
+});
+
+describe('setting', () => {
+	it('er bevegelse med mindre det står «still»', () => {
+		expect(parseSpeechSetting('still')).toBe('still');
+		expect(parseSpeechSetting('moving')).toBe('moving');
+		expect(parseSpeechSetting(undefined)).toBe('moving');
+		expect(parseSpeechSetting('STILL')).toBe('moving');
+	});
+	it('har hver sin stemme', () => {
+		expect(DEFAULT_TTS_VOICE.moving).toBe('Sulafat');
+		expect(DEFAULT_TTS_VOICE.still).not.toBe(DEFAULT_TTS_VOICE.moving);
 	});
 });
 
