@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { readWorkoutSamples } from '$lib/domain/health/workout-samples';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -31,6 +32,9 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			ele: typeof p.ele === 'number' ? p.ele : null,
 			hr: typeof p.hr === 'number' ? p.hr : null,
 			time: typeof p.time === 'string' ? p.time : null
-		})).filter((p: { lat: number | null; lon: number | null }) => p.lat !== null && p.lon !== null)
+		})).filter((p: { lat: number | null; lon: number | null }) => p.lat !== null && p.lon !== null),
+		// Mølla: puls- og fartskurven uten posisjon. Kortet i aktivitetslista tegner
+		// grafene fra dem når det ikke finnes et spor, som øktsida gjør.
+		samples: readWorkoutSamples(data.samples)
 	});
 };

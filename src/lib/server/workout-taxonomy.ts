@@ -1,8 +1,11 @@
 const WORKOUT_TITLE_BY_SPORT: Record<string, string> = {
 	running: 'Løpetur',
-	indoor_running: 'Løpetur',
-	// Terreng- og innendørsløping er samme vane som løping, og skal ikke vises
-	// som «Treningsøkt» (som var utfallet før — trail_running manglet helt).
+	// Mølla har sitt eget navn, samme ord som i Ekko. Tittelen går også til Strava
+	// («Tredemølle — 27. september 2026»), der typen alt er Run + trainer. Vanen er
+	// den samme som løping; streaks og krydder følger `workoutActivityKind`, ikke tittelen.
+	indoor_running: 'Tredemølle',
+	// Terrengløping er samme vane som løping, og skal ikke vises som
+	// «Treningsøkt» (som var utfallet før — trail_running manglet helt).
 	trail_running: 'Løpetur',
 	cycling: 'Sykkeløkt',
 	// El-sykkel er sin egen tittel. Den har egen MET-verdi (4,5 mot 7), egen

@@ -26,7 +26,8 @@ function event(
 		provider: sensorId === ekko ? 'ekko' : 'withings',
 		sensorType: sensorId === ekko ? 'gps_device' : 'health_tracker',
 		priority: sensorId === ekko ? 4 : 3,
-		hasTrackPoints: false
+		hasTrackPoints: false,
+		hasSamples: false
 	};
 }
 
