@@ -5,6 +5,7 @@ import {
 	parseAnswer,
 	parsePhases,
 	sanitizeModelName,
+	sanitizeRejection,
 	summarizeChatPerf,
 	type ChatPerfSample
 } from '$lib/domain/chat-perf-stats';
@@ -49,7 +50,8 @@ export async function recordChatPerf(
 			totalMs: answer?.totalMs ?? null,
 			toolRounds: answer?.toolRounds ?? null,
 			fallback: answer ? answer.fallback : null,
-			streamed: answer ? answer.streamed : null
+			streamed: answer ? answer.streamed : null,
+			rejection: answer ? sanitizeRejection(answer.rejection) : null
 		});
 
 		if (Math.random() < PRUNE_PROBABILITY) {
@@ -79,7 +81,8 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 			totalMs: chatPerfSamples.totalMs,
 			toolRounds: chatPerfSamples.toolRounds,
 			fallback: chatPerfSamples.fallback,
-			streamed: chatPerfSamples.streamed
+			streamed: chatPerfSamples.streamed,
+			rejection: chatPerfSamples.rejection
 		})
 		.from(chatPerfSamples)
 		.where(

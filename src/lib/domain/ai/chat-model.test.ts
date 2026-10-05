@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	chooseChatModel,
 	completionSizing,
+	describeRejection,
+	rejectedOptionalParams,
 	isLegacyChatModelMode,
 	isReasoningChatModel,
 	resolveDefaultChatModel,
@@ -150,5 +152,42 @@ describe('shouldFallBackToChatModel', () => {
 
 	it('aldri fra reserven til seg selv', () => {
 		expect(shouldFallBackToChatModel(FALLBACK_CHAT_MODEL, 400)).toBe(false);
+	});
+});
+
+describe('describeRejection', () => {
+	it('bygger et maskinnavn av de strukturerte feltene', () => {
+		expect(describeRejection({ status: 400, code: 'unsupported_parameter', param: 'verbosity' })).toBe(
+			'400:unsupported_parameter:verbosity'
+		);
+	});
+
+	it('tåler manglende felt', () => {
+		expect(describeRejection({ status: 404 })).toBe('404::');
+		expect(describeRejection(null)).toBe('::');
+	});
+
+	it('vasker bort alt som ikke er et maskinnavn', () => {
+		expect(describeRejection({ status: 400, code: 'Bad Code!', param: '<script>' })).toBe('400:badcode:script');
+	});
+});
+
+describe('rejectedOptionalParams', () => {
+	const request = { model: 'gpt-5.4', verbosity: 'low', reasoning_effort: 'low' };
+
+	it('dropper bare parameteren OpenAI navngir', () => {
+		expect(rejectedOptionalParams({ status: 400, param: 'verbosity' }, request)).toEqual(['verbosity']);
+	});
+
+	it('dropper alle vi sendte når OpenAI ikke sier hvilken', () => {
+		expect(rejectedOptionalParams({ status: 400 }, request)).toEqual(['verbosity', 'reasoning_effort']);
+	});
+
+	it('dropper ingenting når den navngitte ikke er valgfri — da er det modellen', () => {
+		expect(rejectedOptionalParams({ status: 400, param: 'model' }, request)).toEqual([]);
+	});
+
+	it('dropper ingenting når ingen valgfrie ble sendt', () => {
+		expect(rejectedOptionalParams({ status: 404 }, { model: 'gpt-4o' })).toEqual([]);
 	});
 });

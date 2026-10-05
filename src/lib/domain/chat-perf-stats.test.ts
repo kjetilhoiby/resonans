@@ -5,6 +5,7 @@ import {
 	parseAnswer,
 	parsePhases,
 	sanitizeModelName,
+	sanitizeRejection,
 	summarizeChatAnswers,
 	percentile,
 	summarizeChatPerf,
@@ -218,7 +219,7 @@ describe('parseAnswer', () => {
 	};
 
 	it('leser en hel rad', () => {
-		expect(parseAnswer(row)).toEqual(row);
+		expect(parseAnswer(row)).toEqual({ ...row, rejection: null });
 	});
 
 	it('er null for rader fra før kolonnene fantes', () => {
@@ -229,5 +230,27 @@ describe('parseAnswer', () => {
 
 	it('vasker modellnavnet også ved lesing', () => {
 		expect(parseAnswer({ ...row, model: 'tull med mellomrom' })!.model).toBe('annet');
+	});
+});
+
+describe('avslag i svarmålingen', () => {
+	it('teller avslagene, så «hvorfor svarte reserven» kan leses uten loggen', () => {
+		const stats = summarizeChatAnswers([
+			answered(3000, { rejection: '400:unsupported_parameter:verbosity' }),
+			answered(3000, { rejection: '400:unsupported_parameter:verbosity' }),
+			answered(5000, { model: 'gpt-4o-2024-08-06', fallback: true, rejection: '404:model_not_found:' }),
+			answered(3000)
+		])!;
+		expect(stats.rejections).toEqual([
+			{ reason: '400:unsupported_parameter:verbosity', samples: 2 },
+			{ reason: '404:model_not_found:', samples: 1 }
+		]);
+		expect(stats.summary).toContain('avslag: 400:unsupported_parameter:verbosity ×2');
+	});
+
+	it('vasker avslaget ved lesing — det ligger på et åpent endepunkt', () => {
+		expect(sanitizeRejection('400:unsupported_parameter:verbosity')).toBe('400:unsupported_parameter:verbosity');
+		expect(sanitizeRejection('400: noe fritekst fra en melding')).toBeNull();
+		expect(sanitizeRejection(42)).toBeNull();
 	});
 });

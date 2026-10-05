@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
-import { createChatCompletionWithFallback, type ChatCompletionClient } from './chat-completion';
+import {
+	createChatCompletionWithFallback,
+	ModelRejectionMemory,
+	type ChatCompletionClient
+} from './chat-completion';
 
 type Listener = (props: { delta: string }) => void;
 
@@ -36,7 +40,7 @@ function completion(content: string | null, toolCalls = false, model = 'gpt-5.4-
  * En falsk klient. `streams` er det hver `stream()`-kall skal gjøre, i
  * rekkefølge: ord å sende, så enten et ferdig svar eller en feil.
  */
-function fakeClient(streams: Array<{ deltas?: string[]; result?: ChatCompletion; error?: { status: number } }>) {
+function fakeClient(streams: Array<{ deltas?: string[]; result?: ChatCompletion; error?: { status: number; code?: string; param?: string } }>) {
 	const requests: Array<Record<string, unknown>> = [];
 	const create = vi.fn(async () => completion('ikke strømmet'));
 	const stream = vi.fn((req: Record<string, unknown>) => {
@@ -88,7 +92,7 @@ function hooks() {
 describe('createChatCompletionWithFallback', () => {
 	it('strømmer ikke uten lyttere — POST /api/chat svarer med JSON', async () => {
 		const { client, create, stream } = fakeClient([]);
-		const result = await createChatCompletionWithFallback(client, request, sizing);
+		const result = await createChatCompletionWithFallback(client, request, sizing, { memory: new ModelRejectionMemory() });
 		expect(create).toHaveBeenCalledOnce();
 		expect(stream).not.toHaveBeenCalled();
 		expect(result.choices[0].message.content).toBe('ikke strømmet');
@@ -97,7 +101,7 @@ describe('createChatCompletionWithFallback', () => {
 	it('sender ordene videre og returnerer hele svaret', async () => {
 		const h = hooks();
 		const { client } = fakeClient([{ deltas: ['Ned ', '0,4 kg.'], result: completion('Ned 0,4 kg.') }]);
-		const result = await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream });
+		const result = await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, memory: new ModelRejectionMemory() });
 		expect(h.tokens).toEqual(['Ned ', '0,4 kg.']);
 		expect(h.resets).toBe(0);
 		expect(result.choices[0].message.content).toBe('Ned 0,4 kg.');
@@ -106,7 +110,7 @@ describe('createChatCompletionWithFallback', () => {
 	it('nullstiller praten før et verktøykall — den er ikke svaret', async () => {
 		const h = hooks();
 		const { client } = fakeClient([{ deltas: ['La meg sjekke …'], result: completion('La meg sjekke …', true) }]);
-		const result = await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream });
+		const result = await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, memory: new ModelRejectionMemory() });
 		expect(h.resets).toBe(1);
 		expect(result.choices[0].message.tool_calls).toHaveLength(1);
 	});
@@ -114,27 +118,85 @@ describe('createChatCompletionWithFallback', () => {
 	it('nullstiller ikke et verktøykall uten prat', async () => {
 		const h = hooks();
 		const { client } = fakeClient([{ result: completion(null, true) }]);
-		await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream });
+		await createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, memory: new ModelRejectionMemory() });
 		expect(h.resets).toBe(0);
 	});
 
-	it('faller tilbake på gpt-4o med de gamle parameterne når modellen avvises', async () => {
+	it('prøver samme modell uten parameteren OpenAI navngir — modellen er verdt mer enn parameteren', async () => {
+		const h = hooks();
+		const onFallback = vi.fn();
+		const rejections: string[] = [];
+		const { client, requests } = fakeClient([
+			{ error: { status: 400, code: 'unsupported_parameter', param: 'verbosity' } as never },
+			{ deltas: ['Hei'], result: completion('Hei') }
+		]);
+		const result = await createChatCompletionWithFallback(client, request, sizing, {
+			stream: h.stream,
+			onFallback,
+			onRejection: (r) => rejections.push(r),
+			memory: new ModelRejectionMemory()
+		});
+		expect(onFallback).not.toHaveBeenCalled();
+		expect(result.model).toBe('gpt-5.4-2026-03-05');
+		expect(rejections).toEqual(['400:unsupported_parameter:verbosity']);
+		expect(requests[1]).toMatchObject({ model: 'gpt-5.4', reasoning_effort: 'low' });
+		expect(requests[1]).not.toHaveProperty('verbosity');
+	});
+
+	it('husker parameteren, så neste melding ikke betaler for avslaget', async () => {
+		const memory = new ModelRejectionMemory();
+		const first = fakeClient([
+			{ error: { status: 400, param: 'verbosity' } as never },
+			{ result: completion('Hei') }
+		]);
+		await createChatCompletionWithFallback(first.client, request, sizing, { stream: hooks().stream, memory });
+		const second = fakeClient([{ result: completion('Hei igjen') }]);
+		await createChatCompletionWithFallback(second.client, request, sizing, { stream: hooks().stream, memory });
+		expect(second.stream).toHaveBeenCalledOnce();
+		expect(second.requests[0]).not.toHaveProperty('verbosity');
+	});
+
+	it('faller tilbake på gpt-4o med de gamle parameterne når modellen avvises også uten parameterne', async () => {
 		const h = hooks();
 		const onFallback = vi.fn();
 		const { client, requests } = fakeClient([
 			{ error: { status: 400 } },
+			{ error: { status: 404, code: 'model_not_found' } as never },
 			{ deltas: ['Hei'], result: completion('Hei', false, 'gpt-4o-2024-08-06') }
 		]);
 		const result = await createChatCompletionWithFallback(client, request, sizing, {
 			stream: h.stream,
-			onFallback
+			onFallback,
+			memory: new ModelRejectionMemory()
 		});
-		expect(onFallback).toHaveBeenCalledOnce();
+		expect(onFallback).toHaveBeenCalledWith('404:model_not_found:');
 		expect(result.model).toBe('gpt-4o-2024-08-06');
-		expect(requests[1]).toMatchObject({ model: 'gpt-4o', temperature: 0.8, max_tokens: 1000, stream: true });
-		expect(requests[1]).not.toHaveProperty('reasoning_effort');
 		expect(requests[1]).not.toHaveProperty('verbosity');
-		expect(requests[1]).not.toHaveProperty('max_completion_tokens');
+		expect(requests[1]).not.toHaveProperty('reasoning_effort');
+		expect(requests[2]).toMatchObject({ model: 'gpt-4o', temperature: 0.8, max_tokens: 1000, stream: true });
+		expect(requests[2]).not.toHaveProperty('max_completion_tokens');
+	});
+
+	it('går rett til reserven når modellen alt er merket ubrukelig', async () => {
+		const memory = new ModelRejectionMemory();
+		memory.markUnusable('gpt-5.4');
+		const onFallback = vi.fn();
+		const { client, requests } = fakeClient([{ result: completion('Hei', false, 'gpt-4o-2024-08-06') }]);
+		await createChatCompletionWithFallback(client, request, sizing, { stream: hooks().stream, onFallback, memory });
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).toMatchObject({ model: 'gpt-4o' });
+		expect(onFallback).toHaveBeenCalledWith('husket');
+	});
+
+	it('glemmer avslaget etter tidsgrensen, så en rettet konfigurasjon tas i bruk igjen', () => {
+		let now = 0;
+		const memory = new ModelRejectionMemory(() => now, 1000);
+		memory.markUnusable('gpt-5.4');
+		memory.markUnsupported('gpt-5.4', ['verbosity']);
+		expect(memory.isUnusable('gpt-5.4')).toBe(true);
+		now = 1001;
+		expect(memory.isUnusable('gpt-5.4')).toBe(false);
+		expect(memory.unsupportedParams('gpt-5.4').size).toBe(0);
 	});
 
 	it('faller IKKE tilbake når brukeren alt har sett tekst', async () => {
@@ -142,7 +204,7 @@ describe('createChatCompletionWithFallback', () => {
 		const onFallback = vi.fn();
 		const { client, stream } = fakeClient([{ deltas: ['Halvt svar'], error: { status: 400 } }]);
 		await expect(
-			createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, onFallback })
+			createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, onFallback, memory: new ModelRejectionMemory() })
 		).rejects.toThrow('avvist');
 		expect(onFallback).not.toHaveBeenCalled();
 		expect(stream).toHaveBeenCalledOnce();
@@ -151,7 +213,7 @@ describe('createChatCompletionWithFallback', () => {
 	it('faller ikke tilbake ved rate limit', async () => {
 		const h = hooks();
 		const { client, stream } = fakeClient([{ error: { status: 429 } }]);
-		await expect(createChatCompletionWithFallback(client, request, sizing, { stream: h.stream })).rejects.toThrow();
+		await expect(createChatCompletionWithFallback(client, request, sizing, { stream: h.stream, memory: new ModelRejectionMemory() })).rejects.toThrow();
 		expect(stream).toHaveBeenCalledOnce();
 	});
 });

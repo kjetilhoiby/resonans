@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import OpenAI from 'openai';
-import { createChatCompletionWithFallback } from './chat-completion';
+import { createChatCompletionWithFallback, ModelRejectionMemory } from './chat-completion';
 
 /**
  * Den EKTE OpenAI-SDK-en mot en lokal server som snakker OpenAIs SSE-format.
@@ -80,7 +80,7 @@ describe('createChatCompletionWithFallback mot ekte SDK', () => {
 			client,
 			{ model: 'gpt-5.4', messages: [{ role: 'user', content: 'hei' }], max_completion_tokens: 4000, reasoning_effort: 'low', verbosity: 'low' },
 			sizing,
-			{ stream: h.stream }
+			{ stream: h.stream, memory: new ModelRejectionMemory() }
 		);
 		expect(h.tokens.join('')).toBe('Ned 0,4 kg.');
 		expect(result.choices[0].message.content).toBe('Ned 0,4 kg.');
@@ -94,7 +94,7 @@ describe('createChatCompletionWithFallback mot ekte SDK', () => {
 			client,
 			{ model: 'gpt-5.4', messages: [{ role: 'user', content: 'verktøy' }] },
 			sizing,
-			{ stream: h.stream }
+			{ stream: h.stream, memory: new ModelRejectionMemory() }
 		);
 		expect(h.state.resets).toBe(1);
 		expect(result.choices[0].message.tool_calls?.[0]).toMatchObject({
@@ -103,17 +103,20 @@ describe('createChatCompletionWithFallback mot ekte SDK', () => {
 		});
 	});
 
-	it('et 400-svar gir reserven, uten de nye parameterne', async () => {
+	it('et 400-svar uten parameternavn: samme modell uten de valgfrie, så reserven', async () => {
 		const h = hooks();
 		let fellBack = false;
 		const result = await createChatCompletionWithFallback(
 			client,
 			{ model: 'avvises', messages: [{ role: 'user', content: 'hei' }], verbosity: 'low' },
 			sizing,
-			{ stream: h.stream, onFallback: () => void (fellBack = true) }
+			{ stream: h.stream, onFallback: () => void (fellBack = true), memory: new ModelRejectionMemory() }
 		);
 		expect(fellBack).toBe(true);
 		expect(result.model).toBe('gpt-4o-2026');
+		// Andre forsøk: samme modell, uten verbosity.
+		expect(seen.at(-2)).toMatchObject({ model: 'avvises' });
+		expect(seen.at(-2)).not.toHaveProperty('verbosity');
 		expect(seen.at(-1)).toMatchObject({ model: 'gpt-4o', temperature: 0.8, max_tokens: 1000 });
 		expect(seen.at(-1)).not.toHaveProperty('verbosity');
 	});

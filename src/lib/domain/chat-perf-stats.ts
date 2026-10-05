@@ -63,6 +63,17 @@ export interface ChatAnswerSample {
 	/** Reserven (`gpt-4o`) tok over etter et avslag. */
 	fallback: boolean;
 	streamed: boolean;
+	/**
+	 * Siste avslag fra OpenAI (`400:unsupported_parameter:verbosity`), også
+	 * når samme modell svarte etter at en parameter ble droppet. `null` uten
+	 * avslag.
+	 */
+	rejection?: string | null;
+}
+
+/** Avslaget er bygd av `describeRejection`; ved lesing vaskes det på nytt. */
+export function sanitizeRejection(raw: unknown): string | null {
+	return typeof raw === 'string' && /^[a-z0-9_.:-]{1,124}$/.test(raw) ? raw : null;
 }
 
 /**
@@ -82,6 +93,7 @@ export function parseAnswer(row: {
 	toolRounds: unknown;
 	fallback: unknown;
 	streamed: unknown;
+	rejection?: unknown;
 }): ChatAnswerSample | null {
 	if (typeof row.totalMs !== 'number' || !Number.isFinite(row.totalMs)) return null;
 	return {
@@ -91,7 +103,8 @@ export function parseAnswer(row: {
 		totalMs: row.totalMs,
 		toolRounds: typeof row.toolRounds === 'number' && Number.isFinite(row.toolRounds) ? row.toolRounds : 0,
 		fallback: row.fallback === true,
-		streamed: row.streamed === true
+		streamed: row.streamed === true,
+		rejection: sanitizeRejection(row.rejection)
 	};
 }
 
@@ -169,6 +182,8 @@ export interface ChatAnswerStats {
 	/** Hvilke modeller som faktisk svarte, flest først. */
 	byModel: { model: string; samples: number }[];
 	fallbacks: number;
+	/** Hva OpenAI avviste, flest først — svaret på «hvorfor svarte reserven». */
+	rejections: { reason: string; samples: number }[];
 	/** Median antall verktøyrunder. */
 	toolRoundsMedian: number;
 	summary: string;
@@ -200,6 +215,13 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		.sort((a, b) => b.samples - a.samples || a.model.localeCompare(b.model));
 
 	const fallbacks = answers.filter((a) => a.fallback).length;
+	const rejectionCounts = new Map<string, number>();
+	for (const a of answers) {
+		if (a.rejection) rejectionCounts.set(a.rejection, (rejectionCounts.get(a.rejection) ?? 0) + 1);
+	}
+	const rejections = [...rejectionCounts.entries()]
+		.map(([reason, n]) => ({ reason, samples: n }))
+		.sort((a, b) => b.samples - a.samples || a.reason.localeCompare(b.reason));
 	const toolRoundsMedian = percentile(
 		answers.map((a) => a.toolRounds).sort((a, b) => a - b),
 		0.5
@@ -216,6 +238,9 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		// standardmodellen avvist — og det er en konfigurasjonsfeil å rette.
 		parts.push(`reserven svarte ${fallbacks} gang${fallbacks === 1 ? '' : 'er'} — standardmodellen ble avvist`);
 	}
+	if (rejections.length > 0) {
+		parts.push(`avslag: ${rejections.map((r) => `${r.reason} ×${r.samples}`).join(', ')}`);
+	}
 	if (answers.length < MIN_SAMPLES_FOR_VERDICT) {
 		parts.push(`for få til et mønster (trengs ${MIN_SAMPLES_FOR_VERDICT})`);
 	}
@@ -226,6 +251,7 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		total,
 		byModel,
 		fallbacks,
+		rejections,
 		toolRoundsMedian,
 		summary: parts.join('; ') + '.'
 	};

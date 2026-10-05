@@ -4282,7 +4282,9 @@ export const chatPerfSamples = pgTable('chat_perf_samples', {
 	totalMs: integer('total_ms'),
 	toolRounds: integer('tool_rounds'),
 	fallback: boolean('fallback'),
-	streamed: boolean('streamed')
+	streamed: boolean('streamed'),
+	// Siste avslag fra OpenAI som maskinnavn (migrasjon 0070).
+	rejection: text('rejection')
 }, (table) => ({
 	idxChatPerfMeasuredAt: index('chat_perf_samples_measured_at_idx').on(table.measuredAt)
 }));
