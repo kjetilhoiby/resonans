@@ -33,6 +33,14 @@
  * det riktige grepet.
  */
 
+import {
+	TOOL_GROUP_MAP,
+	TOOL_GROUPS,
+	TOOL_SELECTION_MODES,
+	type ToolGroup,
+	type ToolSelectionMode
+} from '$lib/domain/ai/tool-selection';
+
 export interface PhaseSample {
 	name: string;
 	ms: number;
@@ -87,6 +95,61 @@ export interface ChatAnswerSample {
 	cachedTokens?: number | null;
 	/** Størrelsen på promptens blokker i tegn, navngitt fra `PROMPT_PART_NAMES`. */
 	promptParts?: PromptPart[] | null;
+	/** Verktøyutvalget og om det bommet. `null` når ingen verktøy ble sendt. */
+	toolSelection?: ToolSelectionSample | null;
+}
+
+/**
+ * Hvordan verktøyutvalget gikk for ett svar (`$lib/domain/ai/tool-selection.ts`).
+ * Alle navn er maskinnavn fra kartet; `parseToolSelection` slipper ingenting
+ * annet gjennom, siden kolonnen er jsonb og målingen står på et åpent endepunkt.
+ */
+export interface ToolSelectionSample {
+	mode: ToolSelectionMode;
+	groups: ToolGroup[];
+	sources: { routing: ToolGroup[]; theme: ToolGroup[]; recent: ToolGroup[]; image: ToolGroup[] };
+	/** Verktøy i utvalget, og alle verktøyene som finnes. */
+	selected: number;
+	total: number;
+	/** Verktøyene modellen kalte, og de av dem som IKKE var i utvalget. */
+	called: string[];
+	missed: string[];
+	/** Grupper modellen hentet selv med `load_tools`. */
+	loaded: ToolGroup[];
+}
+
+function knownGroups(raw: unknown): ToolGroup[] {
+	return Array.isArray(raw) ? TOOL_GROUPS.filter((g) => raw.includes(g)) : [];
+}
+
+function knownTools(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	return [...new Set(raw.filter((n): n is string => typeof n === 'string' && Object.hasOwn(TOOL_GROUP_MAP, n)))];
+}
+
+export function parseToolSelection(raw: unknown): ToolSelectionSample | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const r = raw as Record<string, unknown>;
+	if (!(TOOL_SELECTION_MODES as readonly string[]).includes(r.mode as string)) return null;
+	const selected = finiteOrNull(r.selected);
+	const total = finiteOrNull(r.total);
+	if (selected == null || total == null) return null;
+	const src = (r.sources && typeof r.sources === 'object' ? r.sources : {}) as Record<string, unknown>;
+	return {
+		mode: r.mode as ToolSelectionMode,
+		groups: knownGroups(r.groups),
+		sources: {
+			routing: knownGroups(src.routing),
+			theme: knownGroups(src.theme),
+			recent: knownGroups(src.recent),
+			image: knownGroups(src.image)
+		},
+		selected,
+		total,
+		called: knownTools(r.called),
+		missed: knownTools(r.missed),
+		loaded: knownGroups(r.loaded)
+	};
 }
 
 export interface PromptPart {
@@ -162,6 +225,7 @@ export function parseAnswer(row: {
 	promptTokensTotal?: unknown;
 	cachedTokens?: unknown;
 	promptParts?: unknown;
+	toolSelection?: unknown;
 }): ChatAnswerSample | null {
 	if (typeof row.totalMs !== 'number' || !Number.isFinite(row.totalMs)) return null;
 	return {
@@ -179,7 +243,8 @@ export function parseAnswer(row: {
 		reasoningTokens: finiteOrNull(row.reasoningTokens),
 		promptTokensTotal: finiteOrNull(row.promptTokensTotal),
 		cachedTokens: finiteOrNull(row.cachedTokens),
-		promptParts: parsePromptParts(row.promptParts)
+		promptParts: parsePromptParts(row.promptParts),
+		toolSelection: parseToolSelection(row.toolSelection)
 	};
 }
 
@@ -281,7 +346,79 @@ export interface ChatAnswerStats {
 		/** Median tegn per promptblokk, største først. */
 		promptParts: { name: PromptPartName; medianChars: number }[];
 	} | null;
+	/** Verktøyutvalgets treffsikkerhet. `null` uten svar som har feltet. */
+	toolSelection: ToolSelectionStats | null;
 	summary: string;
+}
+
+export interface ToolSelectionStats {
+	samples: number;
+	/** Svar der modellen kalte minst ett verktøy — nevneren i bom-andelen. */
+	withToolCalls: number;
+	/** Svar der minst ett kalt verktøy manglet i utvalget. */
+	withMiss: number;
+	/** `withMiss / withToolCalls`, avrundet til to desimaler. `null` uten verktøykall. */
+	missRate: number | null;
+	selectedMedian: number;
+	total: number;
+	/** Verktøyene som bommet oftest — de som mangler en gruppe eller et ord. */
+	topMissed: { tool: string; samples: number }[];
+	/** Grupper modellen hentet med `load_tools`, flest først. */
+	loaded: { group: ToolGroup; samples: number }[];
+	/** Hvor mange svar hvert signal bidro med en gruppe utover kjernen. */
+	sources: { routing: number; theme: number; recent: number; image: number };
+}
+
+/** Bom-andelen kuttet kan skrus på under — se changeloggen, fase 6. */
+export const MAX_MISS_RATE_FOR_CUT = 0.05;
+
+function countBy<T extends string>(values: T[]): { key: T; samples: number }[] {
+	const counts = new Map<T, number>();
+	for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+	return [...counts.entries()]
+		.map(([key, n]) => ({ key, samples: n }))
+		.sort((a, b) => b.samples - a.samples || a.key.localeCompare(b.key));
+}
+
+export function summarizeToolSelection(answers: ChatAnswerSample[]): ToolSelectionStats | null {
+	const rows = answers.map((a) => a.toolSelection).filter((t): t is ToolSelectionSample => Boolean(t));
+	if (rows.length === 0) return null;
+	const withCalls = rows.filter((r) => r.called.length > 0);
+	const withMiss = withCalls.filter((r) => r.missed.length > 0);
+	return {
+		samples: rows.length,
+		withToolCalls: withCalls.length,
+		withMiss: withMiss.length,
+		missRate: withCalls.length > 0 ? Math.round((withMiss.length / withCalls.length) * 100) / 100 : null,
+		selectedMedian: medianOf(rows.map((r) => r.selected))!,
+		total: Math.max(...rows.map((r) => r.total)),
+		topMissed: countBy(rows.flatMap((r) => r.missed))
+			.slice(0, 10)
+			.map(({ key, samples }) => ({ tool: key, samples })),
+		loaded: countBy(rows.flatMap((r) => r.loaded)).map(({ key, samples }) => ({ group: key, samples })),
+		sources: {
+			routing: rows.filter((r) => r.sources.routing.length > 0).length,
+			theme: rows.filter((r) => r.sources.theme.length > 0).length,
+			recent: rows.filter((r) => r.sources.recent.length > 0).length,
+			image: rows.filter((r) => r.sources.image.length > 0).length
+		}
+	};
+}
+
+function describeToolSelection(t: ToolSelectionStats): string {
+	const base = `verktøyutvalg: median ${t.selectedMedian} av ${t.total} verktøy`;
+	if (t.missRate == null) return `${base}, ingen svar med verktøykall ennå`;
+	const miss =
+		`${t.withMiss} av ${t.withToolCalls} svar med verktøykall bommet (${Math.round(t.missRate * 100)} %)` +
+		(t.topMissed.length > 0 ? `, oftest ${t.topMissed.slice(0, 3).map((m) => m.tool).join(', ')}` : '');
+	// Dommen holdes tilbake under MIN_SAMPLES_FOR_VERDICT, som ellers.
+	if (t.withToolCalls < MIN_SAMPLES_FOR_VERDICT) return `${base}; ${miss}`;
+	return (
+		`${base}; ${miss} — ` +
+		(t.missRate <= MAX_MISS_RATE_FOR_CUT
+			? 'lavt nok til å skru på kuttet'
+			: `over ${Math.round(MAX_MISS_RATE_FOR_CUT * 100)} %: rett gruppene eller ordene før kuttet skrus på`)
+	);
 }
 
 function durationStats(values: number[]): DurationStats | null {
@@ -323,6 +460,7 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 	)!;
 
 	const split = summarizeSplit(samples);
+	const toolSelection = summarizeToolSelection(answers);
 
 	const parts = [
 		`${answers.length} svar: ` +
@@ -351,6 +489,7 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 			parts.push(`største promptblokk er «${biggest.name}» med median ${biggest.medianChars} tegn`);
 		}
 	}
+	if (toolSelection) parts.push(describeToolSelection(toolSelection));
 	if (answers.length < MIN_SAMPLES_FOR_VERDICT) {
 		parts.push(`for få til et mønster (trengs ${MIN_SAMPLES_FOR_VERDICT})`);
 	}
@@ -364,6 +503,7 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		rejections,
 		toolRoundsMedian,
 		split,
+		toolSelection,
 		summary: parts.join('; ') + '.'
 	};
 }

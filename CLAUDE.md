@@ -744,6 +744,9 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
 - **Nye verktøy registreres på BEGGE flater:** `routes/api/chat/+server.ts` og
   `server/assistant/shared-tools.ts` (Ekko). Beskrivelsen bor på verktøymodulen og gjenbrukes,
   ellers får de to flatene ulike instrukser uten at noen ser hvorfor.
+- **Et nytt verktøy i hovedchatten MÅ ha en gruppe i `TOOL_GROUP_MAP`**
+  (`$lib/domain/ai/tool-selection.ts`). En test leser `tools`-lista i ruta og
+  krever samme navnesett. Se «Verktøyutvalget» under.
 - **Skriv ALDRI av et verktøyskjema i `routes/api/chat/+server.ts`.** Bruk
   `openAiFunctionDefinition(tool)` fra `$lib/server/assistant/tool-schema.ts`, som
   genererer skjemaet fra verktøyets zod-parametre. Kopien er ikke en teoretisk fare:
@@ -777,6 +780,25 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
   finnes for domenet.
 - De øvrige dashboardene er ikke kartlagt for samme mønster — `books`, `film`, `travel`,
   `ferie` og helse-mortemaet står igjen.
+
+**Verktøyutvalget: rutingen er et signal, aldri en port.** Se
+`docs/changelog/2026-10-05-coachen-smart-og-rask.md`, fase 6. Verktøylista var
+~89 000 tegn og to tredjedeler av prompten i hvert kall.
+
+- **Utvalget er en UNION**: rutingens domener og ferdigheter, temaets
+  dashboardtype, verktøy og domener i trådens to siste svar (`toolsCalled` i
+  svarets metadata) og et bilde. Regex-rutingen bommet på omtrent halvparten av
+  24 ekte setninger («Sprang meg en tur», «og i fjor?»). Den alene ville tatt fra
+  coachen verktøyet, ikke bare konteksten.
+- **`kjerne` følger alltid med**, og `load_tools` lar modellen hente en gruppe
+  selv når kuttet er på.
+- **Skygge er standard.** Alle verktøyene sendes, og `chat.answer.toolSelection`
+  på `/api/diagnostikk` viser bom-andelen (kalte verktøy som ikke var i
+  utvalget). Skru på med `CHAT_TOOL_SELECTION=on` først når den er under 5 %
+  over minst 20 svar med verktøykall. Bommede verktøy er et ord eller en gruppe
+  som mangler; rett det der.
+- **Navnene modellen kaller er ikke til å stole på**: `parseToolSelection`
+  slipper bare navn fra kartet gjennom, både ved skriving og lesing.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
@@ -3734,6 +3756,8 @@ Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Mo
 `CHAT_AI_ROUTER=true` (slår på det ekstra rutingkallet, som er av fordi det var
 1,3 av 1,65 s før første modellkall), `CHAT_REASONING_EFFORT` (default `low`) og
 `CHAT_VERBOSITY` (default `low`). Alle kan endres i Coolify uten deploy.
+`CHAT_TOOL_SELECTION` (`shadow` default | `on` | `off`) styrer verktøyutvalget —
+se «Verktøyutvalget» under.
 **Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
 skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
 uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med

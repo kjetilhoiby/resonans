@@ -4293,7 +4293,9 @@ export const chatPerfSamples = pgTable('chat_perf_samples', {
 	// Hva prompten består av, og cache-treff (migrasjon 0072).
 	promptTokensTotal: integer('prompt_tokens_total'),
 	cachedTokens: integer('cached_tokens'),
-	promptParts: jsonb('prompt_parts').$type<{ name: string; chars: number }[]>()
+	promptParts: jsonb('prompt_parts').$type<{ name: string; chars: number }[]>(),
+	// Verktøyutvalget og om det bommet (migrasjon 0073).
+	toolSelection: jsonb('tool_selection').$type<object>()
 }, (table) => ({
 	idxChatPerfMeasuredAt: index('chat_perf_samples_measured_at_idx').on(table.measuredAt)
 }));

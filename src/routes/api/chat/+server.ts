@@ -79,17 +79,30 @@ import {
 } from '$lib/flows/widget-creation/flow';
 import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { db } from '$lib/db';
-import { checklists, checklistItems, users } from '$lib/db/schema';
+import { checklists, checklistItems, themes, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { ChatAnswerSample, ChatPerfSample, PromptPart } from '$lib/domain/chat-perf-stats';
+import type { ChatAnswerSample, ChatPerfSample, PromptPart, ToolSelectionSample } from '$lib/domain/chat-perf-stats';
 import {
 	createChatCompletionWithFallback,
 	type ChatStreamHooks
 } from '$lib/server/chat-completion';
 import { env } from '$env/dynamic/private';
+import {
+	evaluateToolSelection,
+	LOAD_TOOLS_DESCRIPTION,
+	LOAD_TOOLS_NAME,
+	LOADABLE_GROUPS,
+	parseToolGroups,
+	recentThreadSignals,
+	resolveToolSelectionMode,
+	selectToolGroups,
+	toolNamesForGroups,
+	type ToolGroup
+} from '$lib/domain/ai/tool-selection';
+import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import {
 	chooseChatModel,
 	completionSizing,
@@ -2021,6 +2034,33 @@ function toolsJsonChars(): number {
 	return toolsJsonCharsCache;
 }
 
+/** Alle verktøynavnene, i lista sin rekkefølge. Kartet i `tool-selection.ts` må dekke dem. */
+const ALL_TOOL_NAMES: string[] = tools.map((t) => t.function.name);
+
+/**
+ * Sikkerhetsnettet når verktøyutvalget er skrudd på (`CHAT_TOOL_SELECTION=on`):
+ * modellen ber om en gruppe, og den følger med fra neste runde. Står ikke i
+ * `tools`, fordi den bare gir mening når lista er kuttet.
+ */
+const loadToolsDefinition = {
+	type: 'function' as const,
+	function: {
+		name: LOAD_TOOLS_NAME,
+		description: LOAD_TOOLS_DESCRIPTION,
+		parameters: {
+			type: 'object',
+			properties: {
+				groups: {
+					type: 'array',
+					items: { type: 'string', enum: [...LOADABLE_GROUPS] },
+					description: 'Gruppene du trenger.'
+				}
+			},
+			required: ['groups']
+		}
+	}
+};
+
 export class _ChatRequestError extends Error {
 	status: number;
 
@@ -2300,7 +2340,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			reasoningTokens: null as number | null,
 			promptTokensTotal: null as number | null,
 			cachedTokens: null as number | null,
-			promptParts: null as PromptPart[] | null
+			promptParts: null as PromptPart[] | null,
+			toolSelection: null as ToolSelectionSample | null
 		};
 		/** Tid og tokens for ett modellkall, lagt til svarmålingen. */
 		const trackModelCall = (startedAtMs: number, usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number }; prompt_tokens_details?: { cached_tokens?: number } } | undefined | null) => {
@@ -2439,8 +2480,19 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		await emitProgress(onProgress, 'message_saved', 'Meldingen er lagret.');
 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
-		const history = await chatPerf.timed('historikk', () =>
-			getConversationHistory(conversation.id, 5)
+		const [history, conversationThemeName] = await chatPerf.timed('historikk', () =>
+			Promise.all([
+				getConversationHistory(conversation.id, 5),
+				// Temaet samtalen ligger på er ett av signalene verktøyutvalget leser.
+				conversation.themeId
+					? db
+							.select({ name: themes.name })
+							.from(themes)
+							.where(and(eq(themes.id, conversation.themeId), eq(themes.userId, userId)))
+							.limit(1)
+							.then((rows) => rows[0]?.name ?? null)
+					: Promise.resolve(null)
+			])
 		);
 
 		// Fallback til siste opplastede bilde i samtalen. Gjør at bilde-baserte verktøy
@@ -2862,8 +2914,36 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const skipTools = legacyChatModels
 			? isSpecializedContext || (isConversationalMode && !hasDataDomain)
 			: isSpecializedContext;
+		/**
+		 * Verktøyutvalget (`$lib/domain/ai/tool-selection.ts`): en union av
+		 * rutingen, temaet, trådens forrige svar og bildet. I skyggemodus
+		 * (standard) sendes ALLE verktøyene som før, og vi måler bare om de
+		 * modellen kalte ville vært med. Med `on` sendes utvalget pluss
+		 * `load_tools`. Legacy-modus rører vi ikke.
+		 */
+		const toolSelectionMode = resolveToolSelectionMode(env.CHAT_TOOL_SELECTION);
+		const threadSignals = recentThreadSignals(history);
+		const toolSelection = selectToolGroups({
+			routedDomains: routingDecision.domains,
+			routedSkills: routingDecision.skills,
+			themeKind: resolveThemeDashboardKind(conversationThemeName),
+			recentToolNames: threadSignals.toolNames,
+			recentDomains: threadSignals.domains,
+			hasImage: Boolean(lastConversationImageUrl)
+		});
+		const selectedToolNames = toolNamesForGroups(ALL_TOOL_NAMES, toolSelection.groups);
+		const cutTools = toolSelectionMode === 'on' && !legacyChatModels && !skipTools;
+		const activeToolNames = new Set(cutTools ? selectedToolNames : ALL_TOOL_NAMES);
+		const loadedToolGroups: ToolGroup[] = [];
+		const toolsCalledThisTurn: string[] = [];
+		const activeTools = () =>
+			cutTools ? [...tools.filter((t) => activeToolNames.has(t.function.name)), loadToolsDefinition] : tools;
+
 		// Verktøyblokken først når vi vet om verktøyene sendes i det hele tatt.
-		answerTrack.promptParts?.unshift({ name: 'verktøy', chars: skipTools ? 0 : toolsJsonChars() });
+		answerTrack.promptParts?.unshift({
+			name: 'verktøy',
+			chars: skipTools ? 0 : cutTools ? JSON.stringify(activeTools()).length : toolsJsonChars()
+		});
 
 		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
 		// verktøy (selv i conversational-modus) og låser første kall til web_search.
@@ -2899,10 +2979,10 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				model: initialModelDecision.model,
 				messages,
 				...(forceWebSearch
-					? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
+					? { tools: activeTools(), tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
 					: skipTools
 						? {}
-						: { tools, tool_choice: 'auto' as const }),
+						: { tools: activeTools(), tool_choice: 'auto' as const }),
 				...completionSizing(initialModelDecision.model, {
 					...initialFallbackSizing,
 					maxTokens: isConversationalMode ? 2000 : initialFallbackSizing.maxTokens,
@@ -2981,8 +3061,28 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					});
 				}
 				const messagesBefore = messages.length;
-				
-				if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
+				if (toolCall.type === 'function') toolsCalledThisTurn.push(toolCall.function.name);
+
+				if (toolCall.type === 'function' && toolCall.function.name === LOAD_TOOLS_NAME) {
+					let groups: ToolGroup[] = [];
+					try {
+						groups = parseToolGroups(JSON.parse(toolCall.function.arguments)?.groups);
+					} catch {
+						groups = [];
+					}
+					const added = [...toolNamesForGroups(ALL_TOOL_NAMES, groups)].filter((n) => !activeToolNames.has(n));
+					for (const n of added) activeToolNames.add(n);
+					loadedToolGroups.push(...groups);
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(
+							groups.length > 0
+								? { success: true, loaded: groups, tools: added, message: 'Verktøyene er tilgjengelige nå. Bruk dem.' }
+								: { success: false, message: `Ingen gyldige grupper. Velg blant: ${LOADABLE_GROUPS.join(', ')}.` }
+						),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const similarGoals = await findSimilarGoals(userId, args.title, 70);
 
@@ -4391,7 +4491,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				{
 					model: followupModelDecision.model,
 					messages,
-					tools,
+					tools: activeTools(),
 					tool_choice: 'auto',
 					...completionSizing(followupModelDecision.model, {
 						...followupFallbackSizing,
@@ -4419,6 +4519,9 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		if (widgetProposal) assistantMetadata.widgetProposal = widgetProposal;
 		if (widgetFlow) assistantMetadata.widgetFlow = widgetFlow;
 		assistantMetadata.routingDecision = routingDecision;
+		// Verktøyene dette svaret kalte — neste meldings verktøyutvalg leser dem.
+		const realToolsCalled = [...new Set(toolsCalledThisTurn.filter((n) => n !== LOAD_TOOLS_NAME))];
+		if (realToolsCalled.length > 0) assistantMetadata.toolsCalled = realToolsCalled;
 		if (statusWidget) assistantMetadata.statusWidget = statusWidget;
 		if (photoAnnotation) assistantMetadata.photoAnnotation = photoAnnotation;
 		if (photoAnnotationImageUrl) assistantMetadata.photoAnnotationImageUrl = photoAnnotationImageUrl;
@@ -4452,7 +4555,18 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			reasoningTokens: answerTrack.reasoningTokens,
 			promptTokensTotal: answerTrack.promptTokensTotal,
 			cachedTokens: answerTrack.cachedTokens,
-			promptParts: answerTrack.promptParts
+			promptParts: answerTrack.promptParts,
+			toolSelection: skipTools
+				? null
+				: {
+						mode: toolSelectionMode,
+						groups: toolSelection.groups,
+						sources: toolSelection.sources,
+						selected: selectedToolNames.size,
+						total: ALL_TOOL_NAMES.length,
+						...evaluateToolSelection(selectedToolNames, toolsCalledThisTurn),
+						loaded: [...new Set(loadedToolGroups)]
+					}
 		});
 
 		return {

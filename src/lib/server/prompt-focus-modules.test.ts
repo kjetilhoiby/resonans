@@ -144,3 +144,47 @@ describe('detectPromptFocusModules — perioder i vektkurven', () => {
 		expect(detectPromptFocusModules('det var en grå dag i dag')).not.toContain('health');
 	});
 });
+
+describe('detectPromptFocusModules — setningene som bommet i oktober 2026', () => {
+	// Prøvd på 24 setninger slik brukeren skriver dem: omtrent halvparten traff
+	// feil domene eller ingen. Så lenge alle verktøyene fulgte med, kostet det bare
+	// konteksten (helsebriefingen); med verktøyutvalget koster det verktøyet.
+	it('kjenner igjen trening uten ordet «trening»', () => {
+		for (const text of [
+			'Sprang meg en tur',
+			'har jeg trent for mye?',
+			'hvordan er formen nå?',
+			'gikk en lang tur med hunden',
+			'jogget 5 km i dag',
+			'hvor mange økter har jeg hatt',
+			'den økta i går var tung'
+		]) {
+			expect(detectPromptFocusModules(text), text).toContain('health');
+		}
+	});
+
+	it('treffer «økter» som eget ord — `\\b` er ASCII og fant ingen grense foran «ø»', () => {
+		expect(detectPromptFocusModules('mange økter')).toContain('health');
+		expect(detectPromptFocusModules('forbruket har økt')).not.toContain('health');
+	});
+
+	it('lar formen på en tekst være i fred', () => {
+		expect(detectPromptFocusModules('formen på teksten er rar')).not.toContain('health');
+		expect(detectPromptFocusModules('tur til Bergen i helgen')).not.toContain('health');
+	});
+
+	it('kjenner igjen penger uten ordet «forbruk»', () => {
+		expect(detectPromptFocusModules('hvor mye har vi brukt på mat')).toContain('economics');
+		expect(detectPromptFocusModules('har jeg råd til ny sykkel?')).toContain('economics');
+		expect(detectPromptFocusModules('hvor mye regnet det i går?')).not.toContain('economics');
+	});
+
+	it('kjenner igjen humør', () => {
+		expect(detectPromptFocusModules('føler meg litt nede')).toContain('self');
+		expect(detectPromptFocusModules('nede i kjelleren er det fuktig')).not.toContain('self');
+	});
+
+	it('kjenner igjen en påminnelse', () => {
+		expect(detectPromptFocusModules('minn meg på å ringe rørleggeren')).toContain('planning');
+	});
+});

@@ -334,14 +334,24 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    // scroller/scrolling/scrollet; «mobilbruk»/«telefonbruk» er ordene folk bruker når
    // de IKKE sier skjermtid.
    if (
-      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk|polaris|sonefordeling|sonetrening|\brolig trening|\bi rute\b|volum|intensitet|kvalitetsminutt/.test(
+      /sovn|søvn|\bsov|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time|belastning|restitusjon|pulsfall|hvilepuls|\bhrv\b|vo2|effort|overtren|måling|maaling|veiing|veide|nedgang|oppgang|g[iå]tt ned|gikk ned|\bkilo\b|\bløp|\bskitur|\bsykl|\bsykkel|\bintervall|treningsøkt|\bøkter\b|\bøkta\b|\bpuls|\bmaraton|\bkondis|\butholden|scroll|mobilbruk|telefonbruk|polaris|sonefordeling|sonetrening|\brolig trening|\bi rute\b|volum|intensitet|kvalitetsminutt|\bsprang\b|\bjogg|\btren(?:e|er|te|t)\b|\bformen (?:min|nå|din)\b|\bhvordan er formen\b|\bformkurv|\bi (?:god |dårlig |bra )?form\b|\b(?:gikk|gått|gå) (?:meg )?(?:en )?(?:[a-zæøå]+ )?tur\b|gåtur|fjelltur|skogstur/.test(
          text
-      )
+      ) ||
+      // «økter»/«økta»: `\bøkter\b` sto i lista over, men `\b` er ASCII i JS, og
+      // det finnes ingen ordgrense mellom et mellomrom og «ø». Ordet traff derfor
+      // bare inni sammensetninger («treningsøkter»), aldri «mange økter». Grensa
+      // skrives som lookaround framfor `\b`.
+      /(?<![a-zæøå])økt(?:er|a|ene)(?![a-zæøå])/.test(text)
    )
       modules.add('health');
    // NB: «spare|buffer|dekning» må stå her, ellers treffer ikke «går sparekontoen ned»
    // eller «hvor lenge holder bufferen» økonomimodulen i det hele tatt.
-   if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank|spare|buffer|dekning|uttak/.test(text)) modules.add('economics');
+   // «brukt på» og «råd til» er det folk sier om penger uten å si «forbruk»:
+   // «hvor mye har vi brukt på mat» rutet til food alene, og «har jeg råd til
+   // ny sykkel?» til health alene (sykkel). Begge får nå økonomi i TILLEGG —
+   // et ord som gir et ekstra domene koster en blokk, et som mangler koster
+   // verktøyet.
+   if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank|spare|buffer|dekning|uttak|brukt på|bruker på|brukte på|\bråd til\b|\bpenger|\bkroner\b|\bbudsjett|\bregning|\bfaktura/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
    // Sult og inntak treffer BEGGE: loggen bor under Helse (Ernæring er undertema),
    // mens forslag om hva man skal spise trenger lager og ukemeny fra food.
@@ -351,11 +361,12 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
       modules.add('food');
    }
    if (/familie|barn|barna|barnet|partner|kone|mann|samboer|datter|sønn|son|svigerfam|svigermor|svigerfar|sviger|forelder|foreldre|svoger|svigerinne|onkel|tante|fetter|kusine|bestemor|bestefar|besteforeldre|barnebarn|familieliv/.test(text)) modules.add('family');
-   if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker|identitet|verdier|selvfølelse|selvbilde|hvem er jeg|formål|meningsfull/.test(text)) modules.add('self');
+   if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker|identitet|verdier|selvfølelse|selvbilde|hvem er jeg|formål|meningsfull|føler meg|kjenner meg|\b(?:er|var|ble) (?:litt |så |veldig |helt )?nede\b|\btrist|motløs|\bdeppa|\bdeppet/.test(text)) modules.add('self');
    if (/\bjobb(?:e[nrt]?)?\b|karriere|arbeid(?:s|et|e)?\b|prosjekt|deadline|leveranse|sprint|standup|kolleg|teamet?\b|presentasjon|kunde|klient|backlog/.test(text)) modules.add('jobb');
    if (/widget|hjemskjerm|oversikt|vis meg|snitt|per dag|per uke|per mnd/.test(text)) modules.add('widgets');
    if (/tema|samliv|helse|foreld|karriere|personlig utvikling/.test(text)) modules.add('themes');
-   if (/plan|uke|todo|sjekkliste|oppgave|maal|mål/.test(text)) modules.add('planning');
+   // «minn meg på å ringe rørleggeren» traff ingenting fram til oktober 2026.
+   if (/plan|uke|todo|sjekkliste|oppgave|maal|mål|minn meg|påminn/.test(text)) modules.add('planning');
 
    return Array.from(modules);
 }
