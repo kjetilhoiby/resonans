@@ -197,6 +197,11 @@ export interface ToolSelectionInput {
 	 */
 	recentDomains: readonly string[];
 	hasImage: boolean;
+	/**
+	 * Fangst fra Én inngang (`$lib/domain/capture.ts`): brukeren har IKKE sagt
+	 * hva det er, så ingen signal kan avgjøre gruppa. Alle verktøyene følger med.
+	 */
+	capture?: boolean;
 }
 
 export interface ToolSelection {
@@ -220,7 +225,9 @@ export function selectToolGroups(input: ToolSelectionInput): ToolSelection {
 
 	const image = new Set<ToolGroup>(input.hasImage ? ['bilde'] : []);
 
-	const all = new Set<ToolGroup>(['kjerne', ...routing, ...theme, ...recent, ...image]);
+	const all = new Set<ToolGroup>(
+		input.capture ? TOOL_GROUPS : ['kjerne', ...routing, ...theme, ...recent, ...image]
+	);
 	return {
 		groups: TOOL_GROUPS.filter((g) => all.has(g)),
 		sources: {

@@ -140,6 +140,14 @@
 							<img class="cm-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
 						{/if}
 					{/if}
+					{#if msg.images && msg.images.length > 1}
+						<!-- Én inngang: flere bilder i én melding. Det første står over som før. -->
+						<div class="cm-bubble-imgs">
+							{#each msg.images.slice(1) as url (url)}
+								<img class="cm-bubble-img-extra" src={url} alt="Vedlagt bilde" />
+							{/each}
+						</div>
+					{/if}
 					{#if msg.attachment && !msg.imageUrl}
 						{@const att = msg.attachment as { kind?: string; name?: string; mimeType?: string }}
 						<div class="cm-attachment">
@@ -358,6 +366,18 @@
 		max-height: 200px;
 		border-radius: 10px;
 		object-fit: cover;
+	}
+	.cm-bubble-imgs {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-bottom: 6px;
+	}
+	.cm-bubble-img-extra {
+		width: 64px;
+		height: 64px;
+		object-fit: cover;
+		border-radius: 8px;
 	}
 	.cm-bubble-img-actionable {
 		cursor: pointer;

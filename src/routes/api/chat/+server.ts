@@ -103,6 +103,7 @@ import {
 	type ToolGroup
 } from '$lib/domain/ai/tool-selection';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+import { CAPTURE_INSTRUCTION, captureDisplayText, pickCaptureAttachments } from '$lib/domain/capture';
 import {
 	chooseChatModel,
 	completionSizing,
@@ -168,6 +169,27 @@ function buildUserMessageForModel(message: string, attachment: AttachmentPayload
 	}
 
 	return `${message}\n\n--- VEDLEGG ---\n${describeAttachment(attachment)}\n--- SLUTT PÅ VEDLEGG ---${ATTACHMENT_FLOW_HINT}`;
+}
+
+/**
+ * Flere vedlegg i én melding (Én inngang). Ett vedlegg gir nøyaktig samme tekst
+ * som før, så de eksisterende flytene ikke merker noe.
+ */
+function buildUserMessageForModelMany(message: string, attachments: AttachmentPayload[]): string {
+	if (attachments.length <= 1) return buildUserMessageForModel(message, attachments[0] ?? null);
+	const blocks = attachments
+		.map((a, i) => `--- VEDLEGG ${i + 1} AV ${attachments.length} ---\n${describeAttachment(a)}`)
+		.join('\n\n');
+	return `${message}\n\n${blocks}\n--- SLUTT PÅ VEDLEGGENE ---${ATTACHMENT_FLOW_HINT}`;
+}
+
+/** Vedleggene en lagret melding bærer: lista fra Én inngang, ellers det ene. */
+function attachmentsFromMetadata(metadata: unknown): AttachmentPayload[] {
+	const meta = (metadata ?? null) as { attachment?: unknown; attachments?: unknown } | null;
+	if (!meta) return [];
+	const list = Array.isArray(meta.attachments) ? meta.attachments.filter(isAttachmentPayload) : [];
+	if (list.length > 0) return list;
+	return isAttachmentPayload(meta.attachment) ? [meta.attachment] : [];
 }
 
 function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string {
@@ -2082,6 +2104,10 @@ export interface _RunChatRequestParams {
 		imageUrl?: string;
 		conversationId?: string;
 		attachment?: unknown;
+		/** Flere vedlegg i én melding (Én inngang). Kommer i tillegg til `attachment`. */
+		attachments?: unknown[];
+		/** Meldingen kom gjennom Én inngang: coachen skal finne ut hva det er og lagre det. */
+		capture?: boolean;
 		forceNewConversation?: boolean;
 		/** Tittel for samtalen når forceNewConversation oppretter den (f.eks. flytens navn). */
 		conversationTitle?: string;
@@ -2241,19 +2267,27 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 		const { message, imageUrl, conversationId: requestedConversationId } = body;
 		const attachment = isAttachmentPayload(body.attachment) ? body.attachment : null;
+		// Én inngang kan sende flere vedlegg. `attachment` er fortsatt det første, så
+		// alt som leste ett vedlegg før leser det samme nå.
+		const allAttachments = pickCaptureAttachments(attachment, body.attachments, isAttachmentPayload);
+		const primaryAttachment = allAttachments[0] ?? null;
+		const isCapture = body.capture === true;
 		const userProfile = await db.query.users.findFirst({
 			columns: { timezone: true },
 			where: eq(users.id, userId)
 		});
 		const userTimezone = userProfile?.timezone ?? 'Europe/Oslo';
-		const effectiveImageUrl =
-			typeof imageUrl === 'string' && imageUrl.length > 0
-				? imageUrl
-				: attachment?.kind === 'image'
-					? attachment.url
-					: undefined;
+		// Alle bildene i meldingen, første først. Med ett bilde er dette nøyaktig den
+		// gamle regelen: `imageUrl`, ellers vedlegget når det er et bilde.
+		const imageUrls = [
+			...new Set([
+				...(typeof imageUrl === 'string' && imageUrl.length > 0 ? [imageUrl] : []),
+				...allAttachments.filter((a) => a.kind === 'image').map((a) => a.url)
+			])
+		];
+		const effectiveImageUrl: string | undefined = imageUrls[0];
 
-		if ((!message || typeof message !== 'string') && !effectiveImageUrl && !attachment) {
+		if ((!message || typeof message !== 'string') && !effectiveImageUrl && allAttachments.length === 0) {
 			throw new _ChatRequestError('Invalid message', 400);
 		}
 
@@ -2307,7 +2341,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// AI routing — must happen before conversation creation to allow early-exit without orphaned data
 		const latestUserInput = typeof message === 'string' && message.trim().length > 0
 			? message
-			: (attachment?.note || attachment?.contentText || '');
+			: (primaryAttachment?.note || primaryAttachment?.contentText || '');
 		// Modellvalg og ruting styres av miljøet, så eksperimentet kan skrus
 		// tilbake i Coolify uten deploy. Se `$lib/domain/ai/chat-model.ts`.
 		const configuredChatModel = env.CHAT_DEFAULT_MODEL;
@@ -2471,9 +2505,20 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			addMessage({
 				conversationId: conversation.id,
 				role: 'user',
-				content: message || getDefaultAttachmentLabel(attachment),
+				content:
+					message ||
+					(allAttachments.length > 1
+						? captureDisplayText('', allAttachments.map((a) => (a.kind === 'image' ? 'image' : 'document')))
+						: getDefaultAttachmentLabel(primaryAttachment)),
 				imageUrl: effectiveImageUrl,
-				metadata: attachment ? { attachment } : undefined
+				metadata:
+					allAttachments.length > 0 || isCapture
+						? {
+								...(primaryAttachment ? { attachment: primaryAttachment } : {}),
+								...(allAttachments.length > 1 ? { attachments: allAttachments } : {}),
+								...(isCapture ? { capture: true } : {})
+							}
+						: undefined
 			})
 		);
 
@@ -2827,38 +2872,41 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			}
 
 			if (msg.role === 'user' || msg.role === 'assistant') {
-				const messageAttachment = isAttachmentPayload((msg.metadata as { attachment?: unknown } | null | undefined)?.attachment)
-					? (msg.metadata as { attachment: AttachmentPayload }).attachment
-					: null;
 				messages.push({
 					role: msg.role,
 					content: msg.role === 'user'
-						? buildUserMessageForModel(msg.content, messageAttachment)
+						? buildUserMessageForModelMany(msg.content, attachmentsFromMetadata(msg.metadata))
 						: msg.content
 				});
 			}
 		}
 
 		// Legg til siste melding - støtt både tekst og vedlegg
+		// Én inngang: instruksen følger meldingen, ikke systemprompten — den gjelder
+		// bare denne fangsten, og en tråd kan blande fangster og vanlig prat.
+		const captureInstruction = isCapture ? `\n\n${CAPTURE_INSTRUCTION}` : '';
 		if (effectiveImageUrl) {
-			// Bruk Vision API format
+			// Bruk Vision API format — ett bilde-element per bilde.
 			messages.push({
 				role: 'user',
 				content: [
-					{
-						type: 'image_url',
-						image_url: { url: effectiveImageUrl }
-					},
+					...imageUrls.map((url) => ({
+						type: 'image_url' as const,
+						image_url: { url }
+					})),
 					{
 						type: 'text',
 						text:
-							buildUserMessageForModel(
+							buildUserMessageForModelMany(
 								typeof message === 'string' && message.trim().length > 0
 									? message
-									: 'Hva ser du på dette bildet, og hva bør vi gjøre videre?',
-								attachment
+									: imageUrls.length > 1
+										? 'Hva ser du på disse bildene, og hva bør vi gjøre videre?'
+										: 'Hva ser du på dette bildet, og hva bør vi gjøre videre?',
+								allAttachments
 							) +
-							'\n\n[System: Hvis bildet er et iOS Skjermtid-skjermbilde (uke- eller dagsbilde), KALL verktøyet record_screen_time for å tolke og lagre det — ikke bare beskriv bildet. Bekreft kort hva som ble lagret etterpå.]'
+							'\n\n[System: Hvis bildet er et iOS Skjermtid-skjermbilde (uke- eller dagsbilde), KALL verktøyet record_screen_time for å tolke og lagre det — ikke bare beskriv bildet. Bekreft kort hva som ble lagret etterpå.]' +
+							captureInstruction
 					}
 				]
 			});
@@ -2873,10 +2921,10 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			messages.push({
 				role: 'user',
 				content:
-					buildUserMessageForModel(
-						typeof message === 'string' ? message : getDefaultAttachmentLabel(attachment),
-						attachment
-					) + screenTimeFollowupHint
+					buildUserMessageForModelMany(
+						typeof message === 'string' ? message : getDefaultAttachmentLabel(primaryAttachment),
+						allAttachments
+					) + screenTimeFollowupHint + captureInstruction
 			});
 		}
 
@@ -2929,7 +2977,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			themeKind: resolveThemeDashboardKind(conversationThemeName),
 			recentToolNames: threadSignals.toolNames,
 			recentDomains: threadSignals.domains,
-			hasImage: Boolean(lastConversationImageUrl)
+			hasImage: Boolean(lastConversationImageUrl),
+			capture: isCapture
 		});
 		const selectedToolNames = toolNamesForGroups(ALL_TOOL_NAMES, toolSelection.groups);
 		const cutTools = toolSelectionMode === 'on' && !legacyChatModels && !skipTools;

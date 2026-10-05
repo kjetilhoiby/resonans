@@ -15,6 +15,8 @@ export interface ThreadRow {
 	timestamp?: string | null;
 	starred?: boolean;
 	imageUrl?: string | null;
+	/** Alle bildene når meldingen har flere (Én inngang). */
+	images?: string[] | null;
 	widgetProposal?: ChatMessage['widgetProposal'];
 	widgetFlow?: ChatMessage['widgetFlow'];
 	statusWidget?: ChatMessage['statusWidget'];
@@ -40,6 +42,7 @@ export function threadRowToMessage(row: ThreadRow): ChatMessage {
 		starred: row.starred ?? false,
 		createdAt: row.timestamp ?? null,
 		imageUrl: row.imageUrl ?? null,
+		images: row.images ?? null,
 		widgetProposal: row.widgetProposal ?? null,
 		widgetFlow: row.widgetFlow ?? null,
 		statusWidget: row.statusWidget ?? null,

@@ -9,6 +9,7 @@ import {
 	resolveToolSelectionMode,
 	selectToolGroups,
 	TOOL_GROUP_MAP,
+	TOOL_GROUPS,
 	toolNamesForGroups,
 	type ToolSelectionInput
 } from './tool-selection';
@@ -115,6 +116,10 @@ describe('selectToolGroups', () => {
 	it('tar med bildeverktøyene når et bilde er vedlagt', () => {
 		const sel = selectToolGroups({ ...empty, hasImage: true });
 		expect(sel.groups).toEqual(['kjerne', 'bilde']);
+	});
+
+	it('sender alle gruppene for en fangst — brukeren har ikke sagt hva det er', () => {
+		expect(selectToolGroups({ ...empty, capture: true }).groups).toEqual([...TOOL_GROUPS]);
 	});
 
 	it('ignorerer ukjente domener og verktøynavn', () => {

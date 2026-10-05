@@ -49,6 +49,8 @@ interface StreamRequest {
 	mode?: 'direct' | 'proxy';
 	imageUrl?: string;
 	attachment?: unknown;
+	attachments?: unknown[];
+	capture?: boolean;
 	preferredModel?: string;
 	forceNewConversation?: boolean;
 	conversationTitle?: string;
@@ -80,6 +82,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 			message = '',
 			imageUrl,
 			attachment,
+			attachments,
+			capture,
 			preferredModel,
 			forceNewConversation,
 			conversationTitle
@@ -108,6 +112,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 									conversationId,
 									imageUrl,
 									attachment,
+									attachments: Array.isArray(attachments) ? attachments : undefined,
+									capture: capture === true,
 									forceNewConversation,
 									conversationTitle
 								},

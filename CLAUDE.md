@@ -800,6 +800,23 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
 - **Navnene modellen kaller er ikke til å stole på**: `parseToolSelection`
   slipper bare navn fra kartet gjennom, både ved skriving og lesing.
 
+**Én inngang: flere vedlegg i én melding, i TILLEGG til de gamle flytene.** Se
+`docs/changelog/2026-10-05-en-inngang.md`. Arket er `CaptureSheet`, og reglene
+står i `$lib/domain/capture.ts`.
+
+- **Kjeden bærer `attachments` ved siden av `attachment`**, fra `SendOptions`
+  til `/api/chat`. Med ett vedlegg er modellteksten byte-lik det den var. Den
+  invarianten er det som gjør utvidelsen trygg for de eksisterende flytene.
+  Rører du `buildUserMessageForModelMany`, hold den.
+- **Les vedleggene til en lagret melding med `attachmentsFromMetadata`**, aldri
+  `metadata.attachment` alene. Den er bare det første vedlegget.
+- **En fangst sender alle verktøyene** (`capture` i `selectToolGroups`).
+  Brukeren har ikke sagt hva det er, så ingen signal kan avgjøre gruppa.
+- **Arket og knappen er mørke uansett systeminnstilling**, som de andre arkene.
+  De portaleres og arver ikke `AppPage`-variablene, så `var(--text-primary)` der
+  gir de LYSE standardverdiene fra `app.css`. Første utgave hadde usynlig
+  tittel. Fargene står som `--cs-*` øverst i stilen.
+
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
 `THEME_DASHBOARD_MATCHERS` — termer ≥5 tegn matcher som delstreng. Se `// NB:`-kommentarene
