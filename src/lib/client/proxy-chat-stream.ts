@@ -11,6 +11,11 @@ interface ProxyChatStreamOptions {
 	signal?: AbortSignal;
 	onStatus?: (message: string) => void;
 	onToken?: (token: string) => void;
+	/**
+	 * Teksten som er strømmet så langt skal bort: modellen snakket før et
+	 * verktøykall, og svaret kommer i neste runde.
+	 */
+	onStreamReset?: () => void;
 	onComplete?: (payload: Record<string, any>) => void;
 	onError?: (message: string) => void;
 	onThemeRouted?: (theme: { themeId: string; themeName: string; confidence: string }) => void;
@@ -31,6 +36,7 @@ export async function streamProxyChat({
 	signal,
 	onStatus,
 	onToken,
+	onStreamReset,
 	onComplete,
 	onError,
 	onThemeRouted,
@@ -85,6 +91,8 @@ export async function streamProxyChat({
 				onStatus?.(event.data?.message ?? 'Resonans tenker...');
 			} else if (event.type === 'token') {
 				onToken?.(event.data?.token ?? '');
+			} else if (event.type === 'stream_reset') {
+				onStreamReset?.();
 			} else if (event.type === 'error') {
 				const errorMessage = event.data?.message ?? 'Streaming feilet';
 				onError?.(errorMessage);

@@ -4274,7 +4274,15 @@ export const chatPerfSamples = pgTable('chat_perf_samples', {
 	measuredAt: timestamp('measured_at').defaultNow().notNull(),
 	wallMs: integer('wall_ms').notNull(),
 	phases: jsonb('phases').$type<{ name: string; ms: number }[]>().notNull().default([]),
-	instance: text('instance')
+	instance: text('instance'),
+	// Selve svaret (migrasjon 0069). NULL for rader fra før og for meldinger
+	// som feilet før svaret.
+	model: text('model'),
+	firstTokenMs: integer('first_token_ms'),
+	totalMs: integer('total_ms'),
+	toolRounds: integer('tool_rounds'),
+	fallback: boolean('fallback'),
+	streamed: boolean('streamed')
 }, (table) => ({
 	idxChatPerfMeasuredAt: index('chat_perf_samples_measured_at_idx').on(table.measuredAt)
 }));

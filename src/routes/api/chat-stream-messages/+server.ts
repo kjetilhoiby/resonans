@@ -99,6 +99,7 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 						controller.enqueue(
 							sendStreamEvent('stream_start', { message: 'Starter strømming...' }, encoder)
 						);
+						let streamedTokens = false;
 
 						try {
 							const payload = await _runChatRequest({
@@ -114,6 +115,22 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								requestUrl: `${url.origin}/api/chat`,
 								requestFetch: fetch,							preferredModel: preferredModel || undefined,								systemPromptPrefix: systemPrompt || undefined,
 								onProgress: async (event) => {
+									// Modellsvaret strømmes ord for ord fra `_runChatRequest`.
+									if (event.stage === 'token') {
+										const token = typeof event.detail?.token === 'string' ? event.detail.token : '';
+										if (!token) return;
+										streamedTokens = true;
+										fullMessage += token;
+										controller.enqueue(sendStreamEvent('token', { token }, encoder));
+										return;
+									}
+									// Teksten så langt var modellens prat før et verktøykall,
+									// ikke svaret — klienten tømmer den.
+									if (event.stage === 'stream_reset') {
+										fullMessage = '';
+										controller.enqueue(sendStreamEvent('stream_reset', {}, encoder));
+										return;
+									}
 									// Routing events must be forwarded with their real type so the client can handle them
 									const routingEventTypes = ['book_routed', 'film_routed', 'theme_routed', 'theme_suggested', 'routing_complete'];
 									if (routingEventTypes.includes(event.stage)) {
@@ -143,14 +160,17 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								sendStreamEvent('status', { stage: 'rendering', message: 'Skriver svar...' }, encoder)
 							);
 
-							// Hele svaret i ÉN token-hendelse. Fram til oktober 2026 ble det
-							// ferdige svaret «skrevet» tegn for tegn med 4 ms pause — ren
-							// ventetid lagt oppå et svar som allerede var ferdig, ~2,5 s for
-							// 600 tegn. Det så ut som strømming og var det motsatte. Ekte
-							// strømming av modellsvaret er neste steg; se
+							// Ble svaret strømmet, har klienten det alt; `complete` bærer den
+							// endelige teksten (med verktøylekkasje strippet) og erstatter det
+							// strømmede. Ble det ikke strømmet — et svar uten modellkall, eller
+							// en feilmelding — sendes det i ÉN hendelse. Aldri tegn for tegn:
+							// fram til oktober 2026 «skrev» denne løkka et ferdig svar med 4 ms
+							// pause per tegn, ~2,5 s ren ventetid for 600 tegn. Se
 							// docs/changelog/2026-10-05-coachen-smart-og-rask.md.
+							if (!streamedTokens) {
+								controller.enqueue(sendStreamEvent('token', { token: responseText }, encoder));
+							}
 							fullMessage = responseText;
-							controller.enqueue(sendStreamEvent('token', { token: responseText }, encoder));
 
 							controller.enqueue(
 								sendStreamEvent('complete', { ...payload, fullMessage: responseText }, encoder)

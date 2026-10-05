@@ -2,7 +2,9 @@ import { and, desc, gte, lte, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { chatPerfSamples } from '$lib/db/schema';
 import {
+	parseAnswer,
 	parsePhases,
+	sanitizeModelName,
 	summarizeChatPerf,
 	type ChatPerfSample
 } from '$lib/domain/chat-perf-stats';
@@ -37,10 +39,17 @@ export async function recordChatPerf(
 	instance: string | null = null
 ): Promise<void> {
 	try {
+		const answer = sample.answer ?? null;
 		await db.insert(chatPerfSamples).values({
 			wallMs: sample.wallMs,
 			phases: sample.phases,
-			instance
+			instance,
+			model: answer ? sanitizeModelName(answer.model) : null,
+			firstTokenMs: answer?.firstTokenMs ?? null,
+			totalMs: answer?.totalMs ?? null,
+			toolRounds: answer?.toolRounds ?? null,
+			fallback: answer ? answer.fallback : null,
+			streamed: answer ? answer.streamed : null
 		});
 
 		if (Math.random() < PRUNE_PROBABILITY) {
@@ -64,7 +73,13 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 		.select({
 			measuredAt: chatPerfSamples.measuredAt,
 			wallMs: chatPerfSamples.wallMs,
-			phases: chatPerfSamples.phases
+			phases: chatPerfSamples.phases,
+			model: chatPerfSamples.model,
+			firstTokenMs: chatPerfSamples.firstTokenMs,
+			totalMs: chatPerfSamples.totalMs,
+			toolRounds: chatPerfSamples.toolRounds,
+			fallback: chatPerfSamples.fallback,
+			streamed: chatPerfSamples.streamed
 		})
 		.from(chatPerfSamples)
 		.where(
@@ -79,7 +94,8 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 	const samples: ChatPerfSample[] = rows.map((r) => ({
 		wallMs: r.wallMs,
 		// Gjennom hvitelisten, ikke rått fra jsonb.
-		phases: parsePhases(r.phases)
+		phases: parsePhases(r.phases),
+		answer: parseAnswer(r)
 	}));
 
 	return {

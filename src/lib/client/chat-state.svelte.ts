@@ -418,6 +418,10 @@ export class ChatState {
 					this.#armWatchdog();
 					this.streamingText += token;
 				},
+				onStreamReset: () => {
+					if (gen !== this.#generation) return;
+					this.streamingText = '';
+				},
 				onThemeRouted: (theme) => {
 					if (gen !== this.#generation) return;
 					this.#opts.onThemeRouted?.(theme);
