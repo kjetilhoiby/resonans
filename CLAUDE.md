@@ -810,6 +810,11 @@ står i `$lib/domain/capture.ts`.
   Rører du `buildUserMessageForModelMany`, hold den.
 - **Les vedleggene til en lagret melding med `attachmentsFromMetadata`**, aldri
   `metadata.attachment` alene. Den er bare det første vedlegget.
+- **Hjemskjermens inngang er chatfeltet, ikke arket.** Der er
+  `pendingAttachments` (en liste) tilstanden, kamera/lyd/fil LEGGER TIL, og
+  `ChatInput`s `onPasteFiles` gjør et innlimt skjermbilde til et vedlegg. Arket
+  (`CaptureSheet`) bor bare bak den flytende knappen på sider uten chatfelt. Legg
+  ikke en andre inngang på hjemskjermen; det var nettopp det brukeren påpekte.
 - **En fangst sender alle verktøyene** (`capture` i `selectToolGroups`).
   Brukeren har ikke sagt hva det er, så ingen signal kan avgjøre gruppa.
 - **Arket og knappen er mørke uansett systeminnstilling**, som de andre arkene.

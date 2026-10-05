@@ -36,7 +36,7 @@ Brukeren ba om at inngangen skulle **legges til, ikke erstatte** det som finnes.
   - Svaret vises i arket gjennom `ChatState` og `ChatThread`, altså ikke et
     femte chat-lag. Et svarfelt under svaret lar brukeren svare på coachens ene
     spørsmål.
-- **To innganger:**
+- **To innganger** (den første er fjernet i fase 2):
   - en «+»-knapp først i hjemskjermens topprad (`HomeTitleZone`),
   - en flytende knapp (`CaptureButton`) fra rot-layouten på sider uten eget
     chatfelt (`showFloatingCapture`).
@@ -63,6 +63,28 @@ Brukeren ba om at inngangen skulle **legges til, ikke erstatte** det som finnes.
 - **Verktøyutvalget sender alle verktøyene for en fangst** (`capture` i
   `selectToolGroups`). Brukeren har ikke sagt hva det er, så ingen signal kan
   avgjøre gruppa.
+
+### Fase 2: hjemskjermen har ÉN inngang, chatfeltet
+
+Brukeren påpekte at hjemskjermen da hadde to innganger: chatfeltet («Hva tenker
+du på?») med kamera, lyd og fil, og den nye «+». Valget ble å slå dem sammen i
+chatfeltet:
+
+- **«+» er fjernet fra toppraden.** Den flytende knappen står fortsatt på sidene
+  uten eget chatfelt.
+- **Chatfeltet tar flere vedlegg i én melding.** `pendingAttachments` (en liste)
+  er tilstanden i `HomeScreen`, og `pendingAttachment`/`pendingImageUrl` er
+  utledet av den. Alt som leste ett vedlegg, leser derfor det samme som før.
+  Kamera, lyd og fil LEGGER TIL i lista i stedet for å erstatte det forrige
+  vedlegget, og hvert vedlegg kan fjernes for seg.
+- **Innliming:** `ChatInput` fikk propen `onPasteFiles`. Uten propen oppfører
+  feltet seg som før. På hjemskjermen lastes et innlimt skjermbilde opp og festes
+  som vedlegg. Mens opplastingen pågår, venter sendingen og sier fra.
+- **Sendingen:** med ett vedlegg er den byte-lik den gamle. Med flere går lista
+  som `attachments`, og boblen sier «📷 3 bilder» når teksten mangler.
+- **Ikke merket som fangst** (`capture`). I chatfeltet snakker brukeren med
+  coachen, og vedlegget får den vanlige vedleggsinstruksen. Fangst-instruksen
+  hører til arket, der brukeren ikke sier hva det er.
 
 ## Beslutninger
 

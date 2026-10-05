@@ -242,7 +242,14 @@ export interface HomeContext {
 	chatPrefill: string;
 	pendingImageUrl: string | null;
 	pendingAttachment: AttachmentRef | null;
+	/** Alle vedleggene i skrivefeltet (Én inngang). `pendingAttachment` er det første. */
+	pendingAttachments: AttachmentRef[];
+	/** Innlimte filer som fortsatt lastes opp. */
+	pendingUploads: number;
+	pendingNotice: string;
 	clearPendingAttachment: () => void;
+	removePendingAttachment: (index: number) => void;
+	addPastedFiles: (files: File[]) => Promise<void>;
 	chatInputAutoFocus: boolean;
 	chatSection: HTMLElement | null;
 	inputExpanded: boolean;

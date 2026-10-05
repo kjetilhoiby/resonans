@@ -160,21 +160,29 @@
 					<span class="theme-link-arrow">→</span>
 				</button>
 			{/if}
-			{#if ctx.pendingImageUrl || ctx.pendingAttachment}
+			<!-- Én inngang: flere vedlegg i én melding — kamera og fil LEGGER TIL, og et
+			     innlimt skjermbilde havner her. Hvert vedlegg kan fjernes for seg. -->
+			{#each ctx.pendingAttachments as att, i (att.url)}
 				<div class="pending-attach">
-					{#if ctx.pendingImageUrl}
-						<img class="pending-thumb" src={ctx.pendingImageUrl} alt="Vedlegg" />
+					{#if att.kind === 'image'}
+						<img class="pending-thumb" src={att.url} alt="Vedlegg" />
 					{:else}
 						<span class="pending-icon" aria-hidden="true">📎</span>
 					{/if}
-					<span class="pending-name">{ctx.pendingAttachment?.name ?? 'Vedlegg'}</span>
+					<span class="pending-name">{att.name || 'Vedlegg'}</span>
 					<button
 						class="pending-remove"
 						aria-label="Fjern vedlegg"
 						data-track="hjem-chat:fjern-vedlegg"
-						onclick={ctx.clearPendingAttachment}
+						onclick={() => ctx.removePendingAttachment(i)}
 					>✕</button>
 				</div>
+			{/each}
+			{#if ctx.pendingUploads > 0}
+				<p class="pending-status" role="status">Laster opp {ctx.pendingUploads} vedlegg…</p>
+			{/if}
+			{#if ctx.pendingNotice}
+				<p class="pending-status pending-status-warn" role="status">{ctx.pendingNotice}</p>
 			{/if}
 			{#key `${ctx.activeQuickAction.id}:${ctx.chatInputAutoFocus ? 'focus' : 'nofocus'}`}
 				<ChatInput
@@ -187,6 +195,7 @@
 					onAttachment={(kind, draft) => ctx.startHomeAttachment(kind, draft, { preserveConversation: true })}
 					onMood={(draft) => ctx.openEgenfrekvensFlow(draft, true)}
 					onTextChange={(text) => (ctx.chatPrefill = text)}
+					onPasteFiles={(files) => void ctx.addPastedFiles(files)}
 					onBackspaceEmpty={ctx.closeChat}
 					onsubmit={ctx.sendChat}
 				/>
@@ -238,6 +247,8 @@
 	.pending-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: #b8b8c0; }
 	.pending-remove { background: none; border: none; color: #7a7a86; font-size: 0.9rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
 	.pending-remove:hover { color: #ddd; }
+	.pending-status { margin: 0; font-size: 0.76rem; color: #8f8f9a; }
+	.pending-status-warn { color: #e2c27a; }
 
 	.chat-input-area { position: sticky; bottom: 0; padding: 10px 14px env(safe-area-inset-bottom, 14px); border-top: 1px solid #1a1a1a; background: linear-gradient(180deg, rgba(15, 15, 15, 0.72) 0%, #0f0f0f 18%); backdrop-filter: blur(10px); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
 

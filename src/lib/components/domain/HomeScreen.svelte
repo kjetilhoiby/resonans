@@ -92,7 +92,9 @@
 		currentSlotFromTime,
 		shouldAutoFocusInput,
 		isRelationshipThemeName,
+		requestAttachmentUpload,
 	} from './home/home-chat';
+	import { captureDisplayText, captureItemKind, fitCaptureItems, MAX_CAPTURE_ITEMS } from '$lib/domain/capture';
 
 	import {
 		computeDropIndex,
@@ -639,9 +641,14 @@
 	// ── Chat-sone ─────────────────────────────────────────────────────────
 	let chatOpen = $state(false);
 	let chatPrefill = $state('');
-	// Vedlegg festet i skrivefeltet (kamera/fil/lyd), sendes med neste melding.
-	let pendingImageUrl = $state<string | null>(null);
-	let pendingAttachment = $state<AttachmentRef | null>(null);
+	// Vedlegg festet i skrivefeltet (kamera/fil/lyd/innlimt), sendes med neste melding.
+	// LISTA er tilstanden (Én inngang: flere bilder i én melding); det første vedlegget
+	// og bildet utledes, så alt som leste ett vedlegg leser det samme som før.
+	let pendingAttachments = $state<AttachmentRef[]>([]);
+	const pendingAttachment = $derived<AttachmentRef | null>(pendingAttachments[0] ?? null);
+	const pendingImageUrl = $derived<string | null>(pendingAttachments.find((a) => a.kind === 'image')?.url ?? null);
+	let pendingUploads = $state(0);
+	let pendingNotice = $state('');
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
 	let launchingThemeId = $state<string | null>(null);
@@ -713,22 +720,78 @@
 		livskompassCoachingPrompt = null; clearPendingAttachment();
 	}
 
-	function clearPendingAttachment() { pendingImageUrl = null; pendingAttachment = null; }
+	function clearPendingAttachment() { pendingAttachments = []; pendingNotice = ''; }
+	function removePendingAttachment(index: number) {
+		pendingAttachments = pendingAttachments.filter((_, i) => i !== index);
+		pendingNotice = '';
+	}
+
+	/**
+	 * Fest et vedlegg til i skrivefeltet. Det LEGGES TIL — fram til Én inngang
+	 * erstattet et nytt bilde det forrige, så tre skjermbilder av samme tur måtte
+	 * bli tre meldinger. Det som ikke får plass sies med ord.
+	 */
+	function appendPendingAttachment(attachment: AttachmentRef): boolean {
+		const { accepted } = fitCaptureItems(pendingAttachments.length + pendingUploads, [attachment]);
+		if (accepted.length === 0) {
+			pendingNotice = `Plass til ${MAX_CAPTURE_ITEMS} vedlegg i én melding.`;
+			return false;
+		}
+		pendingAttachments = [...pendingAttachments, attachment];
+		return true;
+	}
+
+	/** Innlimte filer (skjermbilder) lastes opp og festes i skrivefeltet. */
+	async function addPastedFiles(files: File[]) {
+		const { accepted, rejected } = fitCaptureItems(pendingAttachments.length + pendingUploads, files);
+		pendingNotice = rejected > 0 ? `Plass til ${MAX_CAPTURE_ITEMS} vedlegg i én melding — ${rejected} ble ikke lagt til.` : '';
+		await Promise.all(
+			accepted.map(async (file) => {
+				pendingUploads += 1;
+				try {
+					const ref = await requestAttachmentUpload(file, '', captureItemKind(file) === 'image' ? 'camera' : 'file');
+					pendingAttachments = [...pendingAttachments, ref];
+				} catch (err) {
+					pendingNotice = `Fikk ikke lastet opp ${file.name || 'vedlegget'}: ${err instanceof Error ? err.message : 'ukjent feil'}.`;
+				} finally {
+					pendingUploads -= 1;
+				}
+			})
+		);
+	}
 
 	// Fest et opplastet vedlegg i skrivefeltet og åpne chatten fokusert, med bildeteksten
 	// som utgangspunkt. Brukeren utdyper og sender bilde + tanker som én melding.
 	function stageAttachment(attachment: AttachmentRef, caption: string) {
-		pendingAttachment = attachment;
-		pendingImageUrl = attachment.kind === 'image' ? attachment.url : null;
+		// Bildeteksten starter som utkastet fra feltet (`startHomeAttachment`), så et
+		// vedlegg nummer to tar ikke med seg noe brukeren har skrevet.
+		appendPendingAttachment(attachment);
 		openChat(caption, 'chat', { focusInput: true });
 	}
 
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
 		suggestedTheme = null; routedToTheme = null;
-		const img = imageUrl ?? pendingImageUrl ?? undefined;
-		const att = (attachment ?? pendingAttachment ?? undefined) as Parameters<typeof homeChat.send>[2];
+		if (pendingUploads > 0) {
+			pendingNotice = 'Venter på at vedleggene blir lastet opp.';
+			return;
+		}
+		const list = attachment ? [attachment] : pendingAttachments;
+		const img = imageUrl ?? list.find((a) => a.kind === 'image')?.url;
+		const att = list[0] as Parameters<typeof homeChat.send>[2];
 		clearPendingAttachment();
-		await homeChat.send(text, img, att);
+		// Flere vedlegg går som `attachments` ved siden av det første — med ett er
+		// sendingen byte-lik den gamle.
+		await homeChat.send(
+			text,
+			img,
+			att,
+			list.length > 1
+				? {
+						attachments: list,
+						displayText: captureDisplayText(text, list.map((a) => (a.kind === 'image' ? 'image' : 'document')))
+					}
+				: undefined
+		);
 	}
 
 	function stopChat() { homeChat.stop(); }
@@ -1107,7 +1170,12 @@
 		get chatPrefill() { return chatPrefill; }, set chatPrefill(v) { chatPrefill = v; },
 		get pendingImageUrl() { return pendingImageUrl; },
 		get pendingAttachment() { return pendingAttachment; },
+		get pendingAttachments() { return pendingAttachments; },
+		get pendingUploads() { return pendingUploads; },
+		get pendingNotice() { return pendingNotice; },
 		clearPendingAttachment,
+		removePendingAttachment,
+		addPastedFiles,
 		get chatInputAutoFocus() { return chatInputAutoFocus; }, set chatInputAutoFocus(v) { chatInputAutoFocus = v; },
 		get chatSection() { return chatSection; }, set chatSection(v) { chatSection = v; },
 		get inputExpanded() { return inputExpanded; },

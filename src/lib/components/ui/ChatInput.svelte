@@ -37,6 +37,12 @@
 		 */
 		expandOnFocus?: boolean;
 		onFilesSelected?: (files: File[]) => void;
+		/**
+		 * Filer limt inn i feltet (et skjermbilde fra utklippstavla). Uten propen
+		 * oppfører innlimingen seg som før; med den blir filene vedlegg i stedet for
+		 * ingenting i teksten.
+		 */
+		onPasteFiles?: (files: File[]) => void;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
 		onOpen?: () => void;
@@ -60,6 +66,7 @@
 		attachmentPending = false,
 		expandOnFocus = false,
 		onFilesSelected,
+		onPasteFiles,
 		onAttachment,
 		onMood,
 		onOpen,
@@ -148,6 +155,14 @@
 		if (files.length > 0) onFilesSelected?.(files);
 	}
 
+	function onPaste(e: ClipboardEvent) {
+		if (!onPasteFiles) return;
+		const files = Array.from(e.clipboardData?.files ?? []);
+		if (files.length === 0) return;
+		e.preventDefault();
+		onPasteFiles(files);
+	}
+
 	function triggerMood() {
 		if (disabled) return;
 		onMood?.(text.trim());
@@ -229,6 +244,7 @@
 			onmousedown={onMouseDown}
 			oninput={autoResize}
 			onkeydown={onKeyDown}
+			onpaste={onPaste}
 			aria-label="Melding"
 		></textarea>
 	</div>
