@@ -24,10 +24,13 @@ Brukeren ba om at inngangen skulle **legges til, ikke erstatte** det som finnes.
 
 ### Fase 1: arket, knappene og flere vedlegg
 
-- **`CaptureSheet`** (`components/composed/`) er ett ark med tekst, «Bilder og
-  filer» og «Kamera».
-  - Biblioteket står først og tar flere filer. Kameraet er et eget felt, fordi
-    `capture` tvinger kameraet.
+- **`CaptureSheet`** (`components/composed/`) er ett ark med tekst og én
+  «Legg ved»-knapp.
+  - Velgeren har ikke `capture`, så iOS viser selv menyen «Fotobibliotek / Ta
+    bilde / Velg fil», og den tar flere filer. Første utgave hadde i tillegg en
+    egen «Kamera»-knapp. Brukeren påpekte at kameraet alt sto i menyen, så
+    knappen var dobbelt opp og er fjernet. Ernæringsflatens to knapper er en
+    annen sak: der finnes knappen for å tvinge kameraet raskest mulig.
   - Et skjermbilde som limes inn blir et vedlegg (`onpaste`).
   - Opplastingen går gjennom den eksisterende `requestAttachmentUpload`.
   - Svaret vises i arket gjennom `ChatState` og `ChatThread`, altså ikke et
