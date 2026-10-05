@@ -4,6 +4,7 @@ import { chatPerfSamples } from '$lib/db/schema';
 import {
 	parseAnswer,
 	parsePhases,
+	parseToolSelection,
 	sanitizeModelName,
 	sanitizeRejection,
 	summarizeChatPerf,
@@ -58,7 +59,9 @@ export async function recordChatPerf(
 			reasoningTokens: answer?.reasoningTokens ?? null,
 			promptTokensTotal: answer?.promptTokensTotal ?? null,
 			cachedTokens: answer?.cachedTokens ?? null,
-			promptParts: answer?.promptParts ?? null
+			promptParts: answer?.promptParts ?? null,
+			// Modellen kan kalle et navn som ikke finnes; bare kjente navn lagres.
+			toolSelection: answer?.toolSelection ? parseToolSelection(answer.toolSelection) : null
 		});
 
 		if (Math.random() < PRUNE_PROBABILITY) {
@@ -96,7 +99,8 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 			reasoningTokens: chatPerfSamples.reasoningTokens,
 			promptTokensTotal: chatPerfSamples.promptTokensTotal,
 			cachedTokens: chatPerfSamples.cachedTokens,
-			promptParts: chatPerfSamples.promptParts
+			promptParts: chatPerfSamples.promptParts,
+			toolSelection: chatPerfSamples.toolSelection
 		})
 		.from(chatPerfSamples)
 		.where(

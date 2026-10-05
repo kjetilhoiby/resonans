@@ -170,6 +170,70 @@ så de BØR treffe cachen. Denne fasen måler om de gjør det (migrasjon 0072):
 - `prompt_tokens_total` og `cached_tokens` summeres over kallene, og
   `chat.answer.split.cachedShareMedian` viser andelen.
 
+Svaret i prod: verktøy 89 261 tegn, grunnprompt 23 816, minne 9 666, mål 4 181,
+helse 1 734. Bare **~20 %** av prompten kom fra cachen. Verktøylista er altså
+den store posten, og den koster tid.
+
+### Fase 6: verktøyutvalget, og hvorfor rutingen ikke kan være porten
+
+Spørsmålet var om rutingens regelsett er godt nok til å bestemme hvilke verktøy
+modellen får se. Det er det ikke. Prøvd på 24 setninger slik brukeren faktisk
+skriver dem, rutet omtrent halvparten feil eller til `general`:
+
+| Melding | Rutet til | Burde vært |
+|---|---|---|
+| Sprang meg en tur | general | health |
+| har jeg trent for mye? | general | health |
+| hvordan er formen nå? | general | health |
+| gikk en lang tur med hunden | general | health |
+| hvor mange økter har jeg hatt | general | health |
+| føler meg litt nede | general | self |
+| minn meg på å ringe rørleggeren | general | planning |
+| hvor mye har vi brukt på mat | food | + economics |
+| har jeg råd til ny sykkel? | health | + economics |
+| og i fjor? | general | (forrige tema) |
+
+Så lenge alle verktøyene fulgte med, kostet en bom bare konteksten. Det var
+heller ikke gratis: siden AI-ruteren ble slått av i fase 1, har helsebriefingen
+manglet for nettopp disse meldingene utenfor et helsetema. Som PORT for
+verktøyene ville en bom koste selve verktøyet, og da svarer coachen uten
+brukerens tall. Rutingen er derfor gjort robust i fire lag:
+
+1. **Utvalget er en UNION av fire signaler**
+   (`$lib/domain/ai/tool-selection.ts`). Ingen av dem er alene om å avgjøre:
+   rutingens domener og ferdigheter, temaet samtalen ligger på
+   (`resolveThemeDashboardKind`, samme signal som helsebriefingens gate),
+   verktøyene og domenene i trådens to siste svar (`toolsCalled` lagres nå i
+   svarets metadata), og et bilde i tråden. `kjerne` følger alltid med: dag,
+   uke, oppgaver, sjekklister, minne, mål, vær, websøk og refleksjoner, altså
+   det en dagboksmelding trenger.
+2. **Ordene som bommet er lagt til** i `detectPromptFocusModules`, med tester på
+   begge sider (`prompt-focus-modules.test.ts`). Underveis dukket det opp en
+   feil som har ligget der lenge: `\bøkter\b` traff ALDRI «mange økter», fordi
+   `\b` er ASCII i JS og det ikke finnes noen ordgrense mellom et mellomrom og
+   «ø». Ordet traff bare inni «treningsøkter». Grensa er nå en lookaround.
+3. **`load_tools` er sikkerhetsnettet.** Med kuttet på kan modellen be om en
+   gruppe selv, og den følger med fra neste runde. Beskrivelsen ber den gjøre
+   det FØR den sier at den ikke kan noe.
+4. **Skygge først.** `CHAT_TOOL_SELECTION` er `shadow` som standard: alle
+   verktøyene sendes som før, og hvert svar lagrer hva utvalget ville vært,
+   hvilke verktøy modellen kalte, og hvilke av dem som MANGLET
+   (`tool_selection`, migrasjon 0073). `/api/diagnostikk` viser
+   `chat.answer.toolSelection` med bom-andel, de oftest bommede verktøyene og
+   hvilke signaler som bidro. Kuttet skrus på med `on` når bom-andelen er under
+   `MAX_MISS_RATE_FOR_CUT` (5 %) over minst 20 svar med verktøykall. `off`
+   slår av målingen.
+
+Anslått fra målingen per verktøy: en dagboksmelding går fra 89 000 til ~21 000
+tegn verktøy (24 %), en økonomimelding til ~24 000, en helsemelding til ~54 000
+(helsegruppa er tung: `query_training` alene er 5,3 kB).
+
+En test leser `tools`-lista i chat-ruta, i alle fire skrivemåtene der, og krever
+at den og kartet har nøyaktig de samme navnene. Et nytt verktøy uten gruppe
+ville ellers forsvunnet stille den dagen kuttet skrus på. I drift holdes et
+ukjent navn INNE (`toolNamesForGroups`), så testen er porten og driften er
+sikringen.
+
 ## Beslutninger
 
 - **Miljøvariabler, ikke kode, styrer eksperimentet.** `CHAT_DEFAULT_MODEL`
@@ -207,6 +271,12 @@ så de BØR treffe cachen. Denne fasen måler om de gjør det (migrasjon 0072):
   mot OpenAI herfra, men `chat.answer.byModel` og `fallbacks` på
   `/api/diagnostikk` svarer på det etter første melding.
 
+- Fase 6: `tool-selection.test.ts` (union, tråd, tema, bilde, kartet mot ruta),
+  `chat-perf-stats.test.ts` (vasking av navn modellen kan finne på, bom-andel,
+  dom holdt tilbake under 20) og `prompt-focus-modules.test.ts` (setningene i
+  tabellen, og at «formen på teksten», «forbruket har økt» og «nede i
+  kjelleren» ikke treffer). `npm test`: 5 192 grønne; `svelte-check` 0 feil.
+
 ## Kjent rest
 
 - Ekko-assistenten (`shared-tools.ts`) har sitt eget modellvalg og strømmer ikke.
@@ -214,3 +284,9 @@ så de BØR treffe cachen. Denne fasen måler om de gjør det (migrasjon 0072):
 - Første ord måles fra rutingen, ikke fra når forespørselen kom inn; validering
   og samtaleoppslag før det er ute av tallet.
 - Avbryter brukeren, går modellkallet videre på serveren, som før.
+- Verktøyutvalget gjelder bare hovedchatten. Ekko (`shared-tools.ts`) sender
+  sin egen liste.
+- Kuttet er ikke skrudd på. Det avgjøres av bom-andelen i prod, ikke herfra.
+- `mat` i matmønsteret treffer fortsatt «automat» og «format». Det er et ekstra
+  domene, ikke et manglende, og er latt stå.
+- Grunnprompten (23 800 tegn) er neste post, og cache-andelen er ikke bedret.

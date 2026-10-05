@@ -5,12 +5,14 @@ import {
 	parseAnswer,
 	parsePhases,
 	parsePromptParts,
+	parseToolSelection,
 	sanitizeModelName,
 	sanitizeRejection,
 	summarizeChatAnswers,
 	percentile,
 	summarizeChatPerf,
-	type ChatPerfSample
+	type ChatPerfSample,
+	type ToolSelectionSample
 } from './chat-perf-stats';
 
 /** n målinger der «helsebriefing» dominerer, og én utligger til slutt. */
@@ -229,7 +231,8 @@ describe('parseAnswer', () => {
 			reasoningTokens: null,
 			promptTokensTotal: null,
 			cachedTokens: null,
-			promptParts: null
+			promptParts: null,
+			toolSelection: null
 		});
 	});
 
@@ -329,5 +332,119 @@ describe('promptens anatomi', () => {
 			{ name: 'minne', chars: 3 }
 		]);
 		expect(parsePromptParts('tull')).toBeNull();
+	});
+});
+
+describe('verktøyutvalget i svarmålingen', () => {
+	function selection(opts: Partial<ToolSelectionSample> = {}): ToolSelectionSample {
+		return {
+			mode: 'shadow',
+			groups: ['kjerne'],
+			sources: { routing: [], theme: [], recent: [], image: [] },
+			selected: 18,
+			total: 67,
+			called: [],
+			missed: [],
+			loaded: [],
+			...opts
+		};
+	}
+
+	it('vasker navnene — modellen kan kalle et verktøy som ikke finnes', () => {
+		const parsed = parseToolSelection({
+			mode: 'shadow',
+			groups: ['kjerne', 'helse', '<script>'],
+			sources: { routing: ['helse', 'tull'], theme: 'helse' },
+			selected: 30,
+			total: 67,
+			called: ['query_training', 'slett_alt', 'query_training'],
+			missed: ['slett_alt', 'query_economics'],
+			loaded: ['okonomi', 'kjerne!'],
+			ekstra: 'skal ikke ut'
+		});
+		expect(parsed).toEqual({
+			mode: 'shadow',
+			groups: ['kjerne', 'helse'],
+			sources: { routing: ['helse'], theme: [], recent: [], image: [] },
+			selected: 30,
+			total: 67,
+			called: ['query_training'],
+			missed: ['query_economics'],
+			loaded: ['okonomi']
+		});
+	});
+
+	it('forkaster en rad uten gyldig modus eller tall', () => {
+		expect(parseToolSelection({ mode: 'kanskje', selected: 1, total: 2 })).toBeNull();
+		expect(parseToolSelection({ mode: 'on', selected: 'mange', total: 2 })).toBeNull();
+		expect(parseToolSelection(null)).toBeNull();
+	});
+
+	it('leses fra radkolonnen', () => {
+		const answer = parseAnswer({
+			model: 'gpt-5.4',
+			firstTokenMs: 1,
+			totalMs: 2,
+			toolRounds: 0,
+			fallback: false,
+			streamed: true,
+			toolSelection: selection({ called: ['query_weight'] })
+		});
+		expect(answer?.toolSelection?.called).toEqual(['query_weight']);
+	});
+
+	it('regner bom-andelen bare over svar som kalte verktøy', () => {
+		const samples = [
+			answered(1000, { toolSelection: selection() }),
+			answered(1000, { toolSelection: selection({ called: ['query_training'] }) }),
+			answered(1000, {
+				toolSelection: selection({
+					called: ['query_economics', 'query_training'],
+					missed: ['query_economics'],
+					sources: { routing: ['helse'], theme: [], recent: [], image: [] }
+				})
+			}),
+			answered(1000, { toolSelection: selection({ called: ['query_economics'], missed: ['query_economics'], loaded: ['okonomi'] }) }),
+			answered(1000)
+		];
+		const stats = summarizeChatAnswers(samples)!.toolSelection!;
+		expect(stats).toMatchObject({
+			samples: 4,
+			withToolCalls: 3,
+			withMiss: 2,
+			missRate: 0.67,
+			selectedMedian: 18,
+			total: 67,
+			topMissed: [{ tool: 'query_economics', samples: 2 }],
+			loaded: [{ group: 'okonomi', samples: 1 }],
+			sources: { routing: 1, theme: 0, recent: 0, image: 0 }
+		});
+	});
+
+	it('holder dommen tilbake til det finnes nok svar med verktøykall', () => {
+		const few = Array.from({ length: 3 }, () => answered(1000, { toolSelection: selection({ called: ['query_weight'] }) }));
+		const summary = summarizeChatAnswers(few)!.summary;
+		expect(summary).toContain('0 av 3 svar med verktøykall bommet');
+		expect(summary).not.toContain('skru på kuttet');
+	});
+
+	it('sier fra når bom-andelen er lav nok til kuttet', () => {
+		const many = Array.from({ length: MIN_SAMPLES_FOR_VERDICT }, () =>
+			answered(1000, { toolSelection: selection({ called: ['query_weight'] }) })
+		);
+		expect(summarizeChatAnswers(many)!.summary).toContain('lavt nok til å skru på kuttet');
+	});
+
+	it('sier fra når bom-andelen er for høy', () => {
+		const many = Array.from({ length: MIN_SAMPLES_FOR_VERDICT }, (_, i) =>
+			answered(1000, {
+				toolSelection: selection({ called: ['query_economics'], missed: i % 2 === 0 ? ['query_economics'] : [] })
+			})
+		);
+		expect(summarizeChatAnswers(many)!.summary).toContain('rett gruppene eller ordene før kuttet skrus på');
+	});
+
+	it('er null uten svar som har feltet', () => {
+		expect(summarizeChatAnswers([answered(1000)])!.toolSelection).toBeNull();
 	});
 });
