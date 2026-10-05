@@ -219,7 +219,14 @@ describe('parseAnswer', () => {
 	};
 
 	it('leser en hel rad', () => {
-		expect(parseAnswer(row)).toEqual({ ...row, rejection: null });
+		expect(parseAnswer(row)).toEqual({
+			...row,
+			rejection: null,
+			modelMs: null,
+			promptTokens: null,
+			completionTokens: null,
+			reasoningTokens: null
+		});
 	});
 
 	it('er null for rader fra før kolonnene fantes', () => {
@@ -252,5 +259,34 @@ describe('avslag i svarmålingen', () => {
 		expect(sanitizeRejection('400:unsupported_parameter:verbosity')).toBe('400:unsupported_parameter:verbosity');
 		expect(sanitizeRejection('400: noe fritekst fra en melding')).toBeNull();
 		expect(sanitizeRejection(42)).toBeNull();
+	});
+});
+
+describe('hvor tida i svaret går', () => {
+	it('deler svartida i modellkall og resten, og tar med tenketokens', () => {
+		// wallMs 100 i answered(): 15 000 totalt − 100 kontekst − 12 000 modell = 2 900 annet.
+		const stats = summarizeChatAnswers([
+			answered(15000, { modelMs: 12000, promptTokens: 9000, completionTokens: 900, reasoningTokens: 700 }),
+			answered(15000, { modelMs: 12000, promptTokens: 9000, completionTokens: 900, reasoningTokens: 700 })
+		])!;
+		expect(stats.split).toEqual({
+			samples: 2,
+			modelMedianMs: 12000,
+			otherMedianMs: 2900,
+			promptTokensMedian: 9000,
+			completionTokensMedian: 900,
+			reasoningTokensMedian: 700
+		});
+		expect(stats.summary).toContain('12000 ms modellkall og 2900 ms verktøy og annet; 700 tenketokens');
+	});
+
+	it('er null når ingen svar har feltet — rader fra før skal ikke dra medianen mot null', () => {
+		expect(summarizeChatAnswers([answered(3000)])!.split).toBeNull();
+	});
+
+	it('teller bare svarene som har feltet', () => {
+		const stats = summarizeChatAnswers([answered(3000), answered(9000, { modelMs: 6000 })])!;
+		expect(stats.split?.samples).toBe(1);
+		expect(stats.split?.reasoningTokensMedian).toBeNull();
 	});
 });

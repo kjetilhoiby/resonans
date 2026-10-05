@@ -135,7 +135,13 @@ export async function createChatCompletionWithFallback(
 
 	const run = async (req: ChatCompletionCreateParamsNonStreaming): Promise<ChatCompletion> => {
 		if (!hooks) return client.chat.completions.create(req);
-		const stream = client.chat.completions.stream({ ...req, stream: true });
+		// `include_usage` gir tokentallene i siste bit; uten den har et strømmet
+		// svar ingen `usage`, og vi vet ikke om tida gikk til tenking.
+		const stream = client.chat.completions.stream({
+			...req,
+			stream: true,
+			stream_options: { include_usage: true }
+		});
 		// Uten en lytter kan en feil bli en ubehandlet hendelse; vi venter på
 		// `finalChatCompletion()`, som kaster den samme feilen.
 		stream.on('error', () => {});

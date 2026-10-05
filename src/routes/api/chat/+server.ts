@@ -2286,7 +2286,26 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			toolRounds: 0,
 			fallback: false,
 			streamed: false,
-			rejection: null as string | null
+			rejection: null as string | null,
+			modelMs: 0,
+			promptTokens: null as number | null,
+			completionTokens: null as number | null,
+			reasoningTokens: null as number | null
+		};
+		/** Tid og tokens for ett modellkall, lagt til svarmålingen. */
+		const trackModelCall = (startedAtMs: number, usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } | undefined | null) => {
+			answerTrack.modelMs += chatPerf.wallMs() - startedAtMs;
+			if (!usage) return;
+			if (typeof usage.prompt_tokens === 'number') {
+				answerTrack.promptTokens = Math.max(answerTrack.promptTokens ?? 0, usage.prompt_tokens);
+			}
+			if (typeof usage.completion_tokens === 'number') {
+				answerTrack.completionTokens = (answerTrack.completionTokens ?? 0) + usage.completion_tokens;
+			}
+			const reasoning = usage.completion_tokens_details?.reasoning_tokens;
+			if (typeof reasoning === 'number') {
+				answerTrack.reasoningTokens = (answerTrack.reasoningTokens ?? 0) + reasoning;
+			}
 		};
 		// Strømmes bare når noen lytter (SSE-proxyen). `POST /api/chat` svarer
 		// med JSON og får ingenting ut av ord som kommer underveis.
@@ -2833,6 +2852,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			reason: initialModelDecision.reason
 		});
 		console.log('🧠 Model selected (initial):', initialModelDecision.model, `(${initialModelDecision.reason})`);
+		const initialCallStartedAt = chatPerf.wallMs();
 		let completion = await createChatCompletionWithFallback(
 			openai,
 			{
@@ -2854,6 +2874,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			{ stream: streamHooks, ...modelHooks }
 		);
 		answerTrack.model = completion.model ?? initialModelDecision.model;
+		trackModelCall(initialCallStartedAt, completion.usage);
 
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
@@ -4324,6 +4345,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				`(${followupModelDecision.reason}, round ${toolRound + 1})`
 			);
 			const followupFallbackSizing = { temperature: 0.3, maxTokens: 1000 };
+			const followupCallStartedAt = chatPerf.wallMs();
 			completion = await createChatCompletionWithFallback(
 				openai,
 				{
@@ -4342,6 +4364,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			);
 			answerTrack.model = completion.model ?? followupModelDecision.model;
 			answerTrack.toolRounds += 1;
+			trackModelCall(followupCallStartedAt, completion.usage);
 
 			responseMessage = completion.choices[0]?.message;
 			await emitProgress(onProgress, 'model_followup_response', 'Modellen svarte etter verktøyrunden.', {
@@ -4382,7 +4405,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			toolRounds: answerTrack.toolRounds,
 			fallback: answerTrack.fallback,
 			streamed: answerTrack.streamed,
-			rejection: answerTrack.rejection
+			rejection: answerTrack.rejection,
+			modelMs: answerTrack.modelMs,
+			promptTokens: answerTrack.promptTokens,
+			completionTokens: answerTrack.completionTokens,
+			reasoningTokens: answerTrack.reasoningTokens
 		});
 
 		return {

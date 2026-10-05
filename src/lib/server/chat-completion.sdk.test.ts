@@ -51,7 +51,9 @@ beforeAll(async () => {
 				sse([
 					{ ...base, model, choices: [{ index: 0, delta: { role: 'assistant', content: 'Ned ' }, finish_reason: null }] },
 					{ ...base, model, choices: [{ index: 0, delta: { content: '0,4 kg.' }, finish_reason: null }] },
-					{ ...base, model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }
+					{ ...base, model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+					// Med include_usage kommer tokentallene i en egen siste bit uten choices.
+					{ ...base, model, choices: [], usage: { prompt_tokens: 9000, completion_tokens: 900, total_tokens: 9900, completion_tokens_details: { reasoning_tokens: 700 } } }
 				])
 			);
 		});
@@ -85,7 +87,14 @@ describe('createChatCompletionWithFallback mot ekte SDK', () => {
 		expect(h.tokens.join('')).toBe('Ned 0,4 kg.');
 		expect(result.choices[0].message.content).toBe('Ned 0,4 kg.');
 		expect(result.model).toBe('gpt-5.4-2026');
-		expect(seen.at(-1)).toMatchObject({ stream: true, reasoning_effort: 'low', verbosity: 'low', max_completion_tokens: 4000 });
+		expect(seen.at(-1)).toMatchObject({
+			stream: true,
+			stream_options: { include_usage: true },
+			reasoning_effort: 'low',
+			verbosity: 'low',
+			max_completion_tokens: 4000
+		});
+		expect(result.usage).toMatchObject({ prompt_tokens: 9000, completion_tokens_details: { reasoning_tokens: 700 } });
 	});
 
 	it('setter sammen verktøykallet og nullstiller praten foran det', async () => {
