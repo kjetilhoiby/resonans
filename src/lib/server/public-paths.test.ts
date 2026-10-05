@@ -18,6 +18,13 @@ describe('isPublicPath — /api/diagnostikk er eksakt match', () => {
 	it('treffer ikke et navn som bare begynner likt', () => {
 		expect(isPublicPath('/api/diagnostikk-intern')).toBe(false);
 	});
+
+	it('/api/diagnostikk/bruk er åpen fordi den står der selv — også eksakt', () => {
+		expect(isPublicPath('/api/diagnostikk/bruk')).toBe(true);
+		expect(isPublicPath('/api/diagnostikk/bruk/')).toBe(true);
+		expect(isPublicPath('/api/diagnostikk/bruk/detaljer')).toBe(false);
+		expect(isPublicPath('/api/diagnostikk/brukere')).toBe(false);
+	});
 });
 
 describe('isPublicPath — /api/health er eksakt match', () => {

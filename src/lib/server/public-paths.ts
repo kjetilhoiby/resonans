@@ -55,8 +55,12 @@ const PUBLIC_API_PREFIXES = [
  * `/api/diagnostikk/detaljer` skal måtte be om tilgang selv. Hva den får si
  * er hvitelistet og testet i `$lib/domain/diagnostics.ts` — legger du til noe
  * her, les den fila først.
+ *
+ * `/api/diagnostikk/bruk` er nettopp en slik underside, og den ber om
+ * tilgang selv ved å stå her — også eksakt. Hva den får si er hvitelistet og
+ * testet i `$lib/domain/usage-public.ts`.
  */
-const PUBLIC_API_EXACT = ['/api/health', '/api/diagnostikk'];
+const PUBLIC_API_EXACT = ['/api/health', '/api/diagnostikk', '/api/diagnostikk/bruk'];
 
 const PUBLIC_EXACT = ['/robots.txt', '/favicon.ico'];
 
