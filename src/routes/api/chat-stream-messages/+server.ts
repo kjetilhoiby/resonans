@@ -143,11 +143,14 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								sendStreamEvent('status', { stage: 'rendering', message: 'Skriver svar...' }, encoder)
 							);
 
-							for (const ch of responseText) {
-								fullMessage += ch;
-								controller.enqueue(sendStreamEvent('token', { token: ch }, encoder));
-								await new Promise((resolve) => setTimeout(resolve, 4));
-							}
+							// Hele svaret i ÉN token-hendelse. Fram til oktober 2026 ble det
+							// ferdige svaret «skrevet» tegn for tegn med 4 ms pause — ren
+							// ventetid lagt oppå et svar som allerede var ferdig, ~2,5 s for
+							// 600 tegn. Det så ut som strømming og var det motsatte. Ekte
+							// strømming av modellsvaret er neste steg; se
+							// docs/changelog/2026-10-05-coachen-smart-og-rask.md.
+							fullMessage = responseText;
+							controller.enqueue(sendStreamEvent('token', { token: responseText }, encoder));
 
 							controller.enqueue(
 								sendStreamEvent('complete', { ...payload, fullMessage: responseText }, encoder)

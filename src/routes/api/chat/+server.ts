@@ -83,7 +83,20 @@ import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type {
+	ChatCompletionCreateParamsNonStreaming,
+	ChatCompletionMessageParam
+} from 'openai/resources/chat/completions';
+import { env } from '$env/dynamic/private';
+import {
+	chooseChatModel,
+	completionSizing,
+	isLegacyChatModelMode,
+	resolveReasoningEffort,
+	resolveVerbosity,
+	shouldFallBackToChatModel,
+	FALLBACK_CHAT_MODEL
+} from '$lib/domain/ai/chat-model';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
 
@@ -2093,8 +2106,6 @@ async function emitProgress(
 	await onProgress?.({ stage, message, detail });
 }
 
-type ChatModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4.1' | 'gpt-5.4';
-
 function inferStartYearFromText(input: string): string | null {
 	const matches = input.match(/\b(19|20)\d{2}\b/g);
 	if (!matches || matches.length === 0) return null;
@@ -2166,41 +2177,40 @@ function inferEconomicsArgsFromText(input: string): {
 	return filterCategory ? { filterCategory } : {};
 }
 
-interface ModelDecision {
-	model: ChatModel;
-	reason: string;
-}
-
-function chooseChatModel(params: {
-	phase: 'initial' | 'followup';
-	hasImage: boolean;
-	userInput: string;
-	toolCallCount?: number;
-	toolRound?: number;
-}): ModelDecision {
-	const normalizedInput = params.userInput.toLowerCase();
-	const isTimeSensitiveQuestion = /nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|valg|politikk|børs|marked/.test(normalizedInput);
-	const isComparisonOrPlanning = /sammenlign|analyse|strategi|plan|vei opp|fordeler|ulemper|hva bør jeg/.test(normalizedInput);
-
-	if (params.hasImage) {
-		return { model: 'gpt-4o', reason: 'image_input' };
+/**
+ * Ett modellkall, med reserve. Avviser OpenAI forespørselen (ukjent modell,
+ * en parameter modellen ikke tar), prøves den ÉN gang til med
+ * `FALLBACK_CHAT_MODEL` og de gamle parameterne, og det logges som
+ * `[chat-model]`. Uten reserven ville en feilskrevet `CHAT_DEFAULT_MODEL`
+ * eller en modell som forsvinner fra katalogen gjort hele chatten død.
+ */
+async function createChatCompletionWithFallback(
+	request: ChatCompletionCreateParamsNonStreaming,
+	fallbackSizing: { temperature: number; maxTokens: number }
+) {
+	try {
+		return await openai.chat.completions.create(request);
+	} catch (err) {
+		const status = (err as { status?: number } | null)?.status;
+		if (!shouldFallBackToChatModel(String(request.model), status)) throw err;
+		console.warn(
+			`[chat-model] ${request.model} avvist (${status}), prøver ${FALLBACK_CHAT_MODEL}:`,
+			err instanceof Error ? err.message : err
+		);
+		const {
+			max_completion_tokens: _maxCompletionTokens,
+			reasoning_effort: _reasoningEffort,
+			verbosity: _verbosity,
+			temperature: _temperature,
+			max_tokens: _maxTokens,
+			...rest
+		} = request;
+		return await openai.chat.completions.create({
+			...rest,
+			model: FALLBACK_CHAT_MODEL,
+			...completionSizing(FALLBACK_CHAT_MODEL, fallbackSizing)
+		});
 	}
-
-	if (params.phase === 'initial') {
-		if (isTimeSensitiveQuestion) {
-			return { model: 'gpt-4o', reason: 'time_sensitive_question' };
-		}
-		if (isComparisonOrPlanning) {
-			return { model: 'gpt-4o', reason: 'complex_reasoning_prompt' };
-		}
-		return { model: 'gpt-4o-mini', reason: 'default_fast_path' };
-	}
-
-	if ((params.toolCallCount ?? 0) >= 3 && (params.toolRound ?? 0) <= 1) {
-		return { model: 'gpt-4o', reason: 'high_tool_fanout_followup' };
-	}
-
-	return { model: 'gpt-4o-mini', reason: 'default_followup_fast_path' };
 }
 
 export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress, systemPromptPrefix, preferredModel }: _RunChatRequestParams) {
@@ -2276,10 +2286,29 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const latestUserInput = typeof message === 'string' && message.trim().length > 0
 			? message
 			: (attachment?.note || attachment?.contentText || '');
+		// Modellvalg og ruting styres av miljøet, så eksperimentet kan skrus
+		// tilbake i Coolify uten deploy. Se `$lib/domain/ai/chat-model.ts`.
+		const configuredChatModel = env.CHAT_DEFAULT_MODEL;
+		const legacyChatModels = isLegacyChatModelMode(configuredChatModel);
+		const reasoningEffort = resolveReasoningEffort(env.CHAT_REASONING_EFFORT);
+		const verbosity = resolveVerbosity(env.CHAT_VERBOSITY);
+		/**
+		 * AI-ruteren er AV som standard. Den var et eget `gpt-4o-mini`-kall FØR
+		 * konteksten bygges, og den tyngste fasen i [chat-perf]: median 1,3 s av
+		 * 1,65 s fram til første modellkall (oktober 2026). Den valgte modus,
+		 * domener og modellforslag; med en sterk standardmodell som alltid får
+		 * verktøyene, velger modellen selv. Regex-rutingen beholdes for
+		 * kontekstmodulene. Bok-/filmnavigeringen («Åpner «Stoner»…» framfor et
+		 * svar) fantes bare i AI-ruteren og forsvinner med den.
+		 * `CHAT_AI_ROUTER=true` slår den på igjen.
+		 */
+		const useAiRouter = env.CHAT_AI_ROUTER === 'true';
 		// Fasemåling fram til første modellkall — én [chat-perf]-linje per melding.
 		const chatPerf = createChatPerf();
-		const routingDecision = await chatPerf.timed('ruting', () =>
-			aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms })
+		const routingDecision = await chatPerf.timed('ruting', async () =>
+			useAiRouter
+				? aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms })
+				: routeChatRequest(latestUserInput)
 		);
 
 		// Book routing: navigate without creating a conversation or saving a message
@@ -2764,22 +2793,34 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const hasDataDomain = routingDecision.domains.some((d) =>
 			['health', 'economics', 'food', 'family', 'self', 'home', 'jobb', 'planning', 'themes'].includes(d)
 		);
-		const skipTools = isSpecializedContext || (isConversationalMode && !hasDataDomain);
+		// Med en sterk standardmodell skjules verktøyene bare for de spesialiserte
+		// flatene: modellen velger selv om den trenger dem (`tool_choice: 'auto'`).
+		// Regex-rutingen gir `conversation` for alt den ikke kjenner igjen, og den
+		// gamle regelen ville da tatt fra coachen både tallene og websøket.
+		const skipTools = legacyChatModels
+			? isSpecializedContext || (isConversationalMode && !hasDataDomain)
+			: isSpecializedContext;
 
 		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
 		// verktøy (selv i conversational-modus) og låser første kall til web_search.
 		const forceWebSearch = Boolean(routingDecision.forceWebSearch) && !isSpecializedContext;
 
-		const resolvedModel = preferredModel
-			?? (isConversationalMode ? (routingDecision.modelSuggestion ?? 'gpt-5.4') : undefined);
+		// Legacy beholder rutingens modellforslag for samtale-modus; ellers gjelder
+		// brukerens valg, så standardmodellen.
+		const legacyResolvedModel = legacyChatModels && !preferredModel && isConversationalMode
+			? (routingDecision.modelSuggestion ?? 'gpt-5.4')
+			: undefined;
 
-		const initialModelDecision = resolvedModel
-			? { model: resolvedModel as ChatModel, reason: preferredModel ? 'user_preferred_model' : `ai_routed_${routingDecision.mode}` }
+		const initialModelDecision = legacyResolvedModel
+			? { model: legacyResolvedModel, reason: `ai_routed_${routingDecision.mode}` }
 			: chooseChatModel({
 				phase: 'initial',
+				preferredModel,
+				configuredDefault: configuredChatModel,
 				hasImage: Boolean(effectiveImageUrl),
 				userInput: latestUserInput
 			});
+		const initialFallbackSizing = { temperature: 0.8, maxTokens: effectiveImageUrl ? 1500 : 1000 };
 
 		// Første kall til OpenAI med tools
 		await emitProgress(onProgress, 'model_request', 'Sender forespørsel til modellen...', {
@@ -2787,19 +2828,24 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			reason: initialModelDecision.reason
 		});
 		console.log('🧠 Model selected (initial):', initialModelDecision.model, `(${initialModelDecision.reason})`);
-		let completion = await openai.chat.completions.create({
-			model: initialModelDecision.model,
-			messages,
-			...(forceWebSearch
-				? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
-				: skipTools
-					? {}
-					: { tools, tool_choice: 'auto' as const }),
-			temperature: 0.8,
-			...(initialModelDecision.model.startsWith('gpt-5')
-				? { max_completion_tokens: isConversationalMode ? 2000 : 1000 }
-				: { max_tokens: effectiveImageUrl ? 1500 : 1000 })
-		});
+		let completion = await createChatCompletionWithFallback(
+			{
+				model: initialModelDecision.model,
+				messages,
+				...(forceWebSearch
+					? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
+					: skipTools
+						? {}
+						: { tools, tool_choice: 'auto' as const }),
+				...completionSizing(initialModelDecision.model, {
+					...initialFallbackSizing,
+					maxTokens: isConversationalMode ? 2000 : initialFallbackSizing.maxTokens,
+					reasoningEffort,
+					verbosity
+				})
+			},
+			initialFallbackSizing
+		);
 
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
@@ -4252,6 +4298,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			// Ny runde der modellen kan bruke tool-resultatene til flere oppslag eller gi slutt-svar.
 			const followupModelDecision = chooseChatModel({
 				phase: 'followup',
+				preferredModel,
+				configuredDefault: configuredChatModel,
 				hasImage: Boolean(effectiveImageUrl),
 				userInput: latestUserInput,
 				toolCallCount: responseMessage.tool_calls.length,
@@ -4267,14 +4315,21 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				followupModelDecision.model,
 				`(${followupModelDecision.reason}, round ${toolRound + 1})`
 			);
-			completion = await openai.chat.completions.create({
-				model: followupModelDecision.model,
-				messages,
-				tools,
-				tool_choice: 'auto',
-				temperature: 0.3,
-				max_tokens: 1000
-			});
+			const followupFallbackSizing = { temperature: 0.3, maxTokens: 1000 };
+			completion = await createChatCompletionWithFallback(
+				{
+					model: followupModelDecision.model,
+					messages,
+					tools,
+					tool_choice: 'auto',
+					...completionSizing(followupModelDecision.model, {
+						...followupFallbackSizing,
+						reasoningEffort,
+						verbosity
+					})
+				},
+				followupFallbackSizing
+			);
 
 			responseMessage = completion.choices[0]?.message;
 			await emitProgress(onProgress, 'model_followup_response', 'Modellen svarte etter verktøyrunden.', {
