@@ -30,9 +30,19 @@ import {
  * aldri — det er telling, ikke lesing. Samme to-skanser-regel som
  * `$lib/server/diagnostics.ts`.
  *
- * Tidsstemplene er `timestamp` uten sone, skrevet i UTC. Oslo-dag og -time
- * regnes derfor med `AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Oslo'` — én
- * `AT TIME ZONE` alene ville tolket UTC-verdien som Oslo-tid.
+ * **De to tabellene har ULIKE tidstyper, og `schema.ts` sier feil om den ene.**
+ * `usage_events.created_at` er `TIMESTAMPTZ` (migrasjon 0015, som er det som
+ * faktisk laget tabellen — drizzle push kjøres ikke i containeren), mens
+ * `schema.ts` deklarerer `timestamp`. `messages.created_at` har ingen
+ * migrasjon og er `timestamp` uten sone, skrevet i UTC. Oslo-tid regnes derfor
+ * med `::timestamptz AT TIME ZONE 'Europe/Oslo'`, som er riktig for begge: en
+ * no-op på den første, og UTC-tolkning (sesjonens sone) på den andre.
+ *
+ * Første utgave brukte `AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Oslo'`, lest av
+ * `schema.ts`. På en `timestamptz` gir det UTC MINUS Oslo-avviket, altså
+ * Oslo-tid fire timer for tidlig om sommeren: brukeren så ut til å være mest
+ * aktiv kl. 03–05 og stille kl. 21–23. Testene gikk mot pglite med drizzle-
+ * skjemaet, altså mot feil kolonnetype, og var grønne.
  *
  * Vindusgrensa sendes som ISO-STRENG, ikke `Date`: drizzle setter
  * dato-serializerne på sin klient til identiteten (se CLAUDE.md, «Del ALDRI
@@ -44,7 +54,7 @@ const MAX_INTERACTION_ROWS = 5_000;
 const MAX_CHAT_ROWS = 20_000;
 const MAX_THEME_LOOKUPS = 500;
 
-const OSLO = sql.raw(`AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Oslo'`);
+const OSLO = sql.raw(`::timestamptz AT TIME ZONE 'Europe/Oslo'`);
 
 function num(value: unknown): number {
 	const n = Number(value);

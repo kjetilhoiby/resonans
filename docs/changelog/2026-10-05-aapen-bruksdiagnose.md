@@ -98,7 +98,31 @@ skrevet. `?days=` (default 30, tak 180, `window.clamped` sier fra).
   `durationMs` ignorert, navnetema slått opp med stor forbokstav, rader utenfor
   vinduet ute.
 
+## Rettelse samme dag: timene var fire timer for tidlige
+
+Første utgave regnet Oslo-tid med `AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Oslo'`
+og antok at `created_at` er `timestamp` uten sone, slik `schema.ts` sier. Men
+`usage_events` ble laget av migrasjon 0015, og der er kolonnen `TIMESTAMPTZ`.
+På en `timestamptz` gir det uttrykket UTC minus Oslo-avviket, altså fire timer
+for tidlig om sommeren. Det første kallet mot prod viste toppen kl. 03–05 og
+nesten ingenting kl. 21–23. Svaret så ellers plausibelt ut, og det er det som
+gjør feilen farlig.
+
+- **Uttrykket er nå `::timestamptz AT TIME ZONE 'Europe/Oslo'`.** Det er riktig
+  for begge tabellene: en no-op på `usage_events`, og en UTC-tolkning av
+  `messages.created_at`, som er `timestamp` uten sone (ingen migrasjon, laget av
+  drizzle push).
+- **Pglite-verifiseringen bommet fordi den kjørte mot drizzle-skjemaet**, altså
+  mot feil kolonnetype. `schema.ts` og basen er uenige om `usage_events`; det er
+  ikke rettet her.
+- `usage-diagnostics.test.ts` leser kildefila og migrasjonen og feiler hvis den
+  doble `AT TIME ZONE` kommer tilbake.
+
 ## Kjent rest
+
+- `schema.ts` deklarerer `usage_events.created_at` som `timestamp`, mens basen
+  har `TIMESTAMPTZ`. Rettes det, må `npm run db:push` fra en utviklermaskin
+  ikke prøve å endre kolonnen.
 
 - Ingen indeks på `usage_events.created_at` / `messages.created_at` alene.
 - Historiske stier til sider som er slettet kollapses til `[param]`.
