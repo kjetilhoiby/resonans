@@ -1,7 +1,7 @@
 # Coachen: smart og rask
 
 Dato: 2026-10-05
-Status: pågår (fase 1 ferdig)
+Status: ferdig (fase 1 og 2)
 
 ## Kontekst
 
@@ -53,17 +53,47 @@ Målt i koden:
   - Modellkallene går gjennom `createChatCompletionWithFallback`. Avviser OpenAI
     forespørselen (400/404), prøves den én gang med `gpt-4o`, og det logges som
     `[chat-model]`.
-- `chat-stream-messages`: hele svaret sendes i én token-hendelse.
+- `chat-stream-messages`: hele svaret sendes i én token-hendelse (erstattet av
+  ekte strømming i fase 2).
 - `BASE_PROMPT`: «Lengden følger spørsmålet.» Et enkelt spørsmål får et svar på én
   til fire setninger. Det kan bli lengre bare når brukeren tenker høyt, ber om en
   plan eller ber om mer.
 
-### Fase 2: ekte strømming og måling (neste)
+### Fase 2: ekte strømming og måling
 
-- Strøm modellsvaret i den siste runden, så første ord kommer mens resten skrives.
-- Mål modellfasen og hvilken modell som faktisk svarte (inkludert reserve) i
-  `chat_perf_samples`, så før og etter kan sammenlignes på `/api/diagnostikk`.
-  I dag måles bare tiden FRAM TIL første modellkall.
+Brukeren etter fase 1: «Raskere og bedre». Målt på første melding: rutingen fra
+1 308 ms til 2 ms, og tiden fram til første modellkall fra 1 650 ms til 106 ms.
+Men svaret kom fortsatt i ett, først når modellen var helt ferdig.
+
+- **`$lib/server/chat-completion.ts`** (ny) eier modellkallet: strømmet gjennom
+  SDK-ens `chat.completions.stream()` når noen lytter, ellers `create()`, og med
+  reserven fra fase 1. Klienten sendes inn, så løkka kan testes.
+  - **Verktøyløkka er uendret.** Strømmen gir det samme `ChatCompletion` tilbake
+    (SDK-en setter sammen verktøykallene av bitene), og strømmingen er en
+    bieffekt for den som ser på.
+  - **Prat før et verktøykall nullstilles** (`stream_reset`). Sier modellen «la
+    meg sjekke …» og kaller et verktøy, er det ikke svaret, og teksten tømmes
+    før neste runde strømmer det ekte svaret.
+  - **Reserven prøves bare før det første ordet.** Har brukeren sett tekst,
+    ville et nytt forsøk skrevet et annet svar oppå det første.
+- **`chat-stream-messages`** sender `token` videre fortløpende, og sender det
+  ferdige svaret i én hendelse bare når ingenting ble strømmet. `complete` bærer
+  fortsatt den endelige teksten (verktøylekkasje strippet), og klienten bygger
+  boblen av den, så det strømmede blir erstattet av det lagrede.
+- **`proxy-chat-stream`/`ChatState`** fikk `onStreamReset`. Ingen ny SSE-løkke.
+- **Selve svaret måles** (migrasjon `0069_chat_perf_answer.sql`):
+  `chat_perf_samples` fikk `model`, `first_token_ms`, `total_ms`,
+  `tool_rounds`, `fallback` og `streamed`. Målingen skrives nå ÉN gang når
+  svaret er ferdig, eller uten svarfeltene når meldingen feiler — før ble den
+  skrevet ved første modellkall. `/api/diagnostikk` viser `chat.answer` med
+  persentiler for første ord og ferdig svar, hvilke modeller som svarte, og
+  hvor mange ganger reserven tok over.
+  - **Modellen er den OpenAI sier svarte** (`completion.model`), ikke den vi ba
+    om. Det er den eneste måten å se at reserven tok over, uten admin-tilgang
+    til loggen.
+  - **Modellnavnet går gjennom `sanitizeModelName`** ved både skriving og
+    lesing: det ligger på et åpent endepunkt, og `preferredModel` kommer fra
+    klienten.
 
 ## Beslutninger
 
@@ -89,13 +119,23 @@ Målt i koden:
   parameterformene per familie, gulvet, ugyldige miljøverdier og når reserven slår
   til.
 - `npm test`: 5 117 tester grønne. `svelte-check`: 0 feil.
-- Ikke verifisert mot OpenAI herfra (ingen nøkkel i utviklingsmiljøet). At
-  `gpt-5.4` tar `reasoning_effort` og `verbosity` i Chat Completions er antatt ut
-  fra gpt-5-familien. Tar den dem ikke, svarer `gpt-4o` via reserven, og
-  `[chat-model]` i loggen sier fra.
+- Fase 1 i prod: rutingen falt fra 1 308 ms til 2 ms, og tiden fram til første
+  modellkall fra 1 650 til 106 ms (to målinger). Brukeren: «raskere og bedre».
+- Fase 2: `chat-completion.test.ts` beviser rekkefølgen med en falsk klient
+  (strømming, nullstilling, reserve bare før første ord, ingen reserve ved 429).
+  `chat-completion.sdk.test.ts` kjører den EKTE SDK-en mot en lokal server i
+  OpenAIs SSE-format og beviser at kontrakten den falske antar holder:
+  `content.delta`, verktøykall satt sammen av biter, `completion.model`, og et
+  400-svar som feil med `status`. `chat-perf-stats.test.ts` dekker svarmålingen
+  og vaskingen av modellnavnet. `npm test`: 5 137 grønne; `svelte-check` 0 feil.
+- At `gpt-5.4` tar `reasoning_effort` og `verbosity` er fortsatt ikke verifisert
+  mot OpenAI herfra, men `chat.answer.byModel` og `fallbacks` på
+  `/api/diagnostikk` svarer på det etter første melding.
 
 ## Kjent rest
 
-- Hvilken modell som faktisk svarte er ikke synlig uten admin-tilgang til loggen
-  (fase 2).
-- Ekko-assistenten (`shared-tools.ts`) har sitt eget modellvalg og er ikke rørt.
+- Ekko-assistenten (`shared-tools.ts`) har sitt eget modellvalg og strømmer ikke.
+- `POST /api/chat` (JSON) strømmer ikke, med vilje.
+- Første ord måles fra rutingen, ikke fra når forespørselen kom inn; validering
+  og samtaleoppslag før det er ute av tallet.
+- Avbryter brukeren, går modellkallet videre på serveren, som før.

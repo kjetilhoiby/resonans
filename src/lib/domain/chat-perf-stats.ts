@@ -41,6 +41,58 @@ export interface PhaseSample {
 export interface ChatPerfSample {
 	wallMs: number;
 	phases: PhaseSample[];
+	/**
+	 * Selve svaret, målt fra samme klokke som `wallMs`. Fram til oktober 2026
+	 * stoppet målingen ved FØRSTE modellkall, så «raskere» etter et modellbytte
+	 * kunne ikke etterprøves: kontekstfasen var målt, modelltiden ikke, og
+	 * hvilken modell som faktisk svarte (reserven inkludert) sto bare i loggen.
+	 * `null` for meldinger som feilet før svaret, og for rader fra før feltet.
+	 */
+	answer?: ChatAnswerSample | null;
+}
+
+export interface ChatAnswerSample {
+	/** Modellen OpenAI sier svarte (`completion.model`), gjennom `sanitizeModelName`. */
+	model: string;
+	/** Fram til første strømmede ord. `null` når svaret ikke ble strømmet. */
+	firstTokenMs: number | null;
+	/** Fram til det ferdige svaret. */
+	totalMs: number;
+	/** Antall verktøyrunder etter førsterunden. */
+	toolRounds: number;
+	/** Reserven (`gpt-4o`) tok over etter et avslag. */
+	fallback: boolean;
+	streamed: boolean;
+}
+
+/**
+ * Modellnavnet går ut på et ÅPENT endepunkt, og `preferredModel` kommer fra
+ * klienten. Et navn er et maskinnavn (`gpt-5.4-2026-03-05`); alt annet blir
+ * `annet` framfor å bli speilet tilbake.
+ */
+export function sanitizeModelName(raw: unknown): string {
+	return typeof raw === 'string' && /^[a-z0-9][a-z0-9.\-]{0,47}$/i.test(raw) ? raw : 'annet';
+}
+
+/** Leser svarfeltene fra rad-kolonnene; `null` når raden er fra før de fantes. */
+export function parseAnswer(row: {
+	model: unknown;
+	firstTokenMs: unknown;
+	totalMs: unknown;
+	toolRounds: unknown;
+	fallback: unknown;
+	streamed: unknown;
+}): ChatAnswerSample | null {
+	if (typeof row.totalMs !== 'number' || !Number.isFinite(row.totalMs)) return null;
+	return {
+		model: sanitizeModelName(row.model),
+		firstTokenMs:
+			typeof row.firstTokenMs === 'number' && Number.isFinite(row.firstTokenMs) ? row.firstTokenMs : null,
+		totalMs: row.totalMs,
+		toolRounds: typeof row.toolRounds === 'number' && Number.isFinite(row.toolRounds) ? row.toolRounds : 0,
+		fallback: row.fallback === true,
+		streamed: row.streamed === true
+	};
 }
 
 /**
@@ -99,6 +151,84 @@ export interface ChatPerfStats {
 	phases: PhaseStats[];
 	/** Hva tallene betyr, med forbeholdene. */
 	summary: string;
+	/** Selve svaret: tid til første ord, total tid, modell. `null` uten målinger. */
+	answer: ChatAnswerStats | null;
+}
+
+export interface DurationStats {
+	medianMs: number;
+	p95Ms: number;
+	maxMs: number;
+}
+
+export interface ChatAnswerStats {
+	samples: number;
+	/** Bare over strømmede svar — et ikke-strømmet svar har ingen «første ord». */
+	firstToken: DurationStats | null;
+	total: DurationStats;
+	/** Hvilke modeller som faktisk svarte, flest først. */
+	byModel: { model: string; samples: number }[];
+	fallbacks: number;
+	/** Median antall verktøyrunder. */
+	toolRoundsMedian: number;
+	summary: string;
+}
+
+function durationStats(values: number[]): DurationStats | null {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((a, b) => a - b);
+	return {
+		medianMs: percentile(sorted, 0.5)!,
+		p95Ms: percentile(sorted, 0.95)!,
+		maxMs: sorted[sorted.length - 1]
+	};
+}
+
+export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats | null {
+	const answers = samples.map((s) => s.answer).filter((a): a is ChatAnswerSample => Boolean(a));
+	if (answers.length === 0) return null;
+
+	const total = durationStats(answers.map((a) => a.totalMs))!;
+	const firstToken = durationStats(
+		answers.filter((a) => a.streamed && a.firstTokenMs != null).map((a) => a.firstTokenMs!)
+	);
+
+	const counts = new Map<string, number>();
+	for (const a of answers) counts.set(a.model, (counts.get(a.model) ?? 0) + 1);
+	const byModel = [...counts.entries()]
+		.map(([model, n]) => ({ model, samples: n }))
+		.sort((a, b) => b.samples - a.samples || a.model.localeCompare(b.model));
+
+	const fallbacks = answers.filter((a) => a.fallback).length;
+	const toolRoundsMedian = percentile(
+		answers.map((a) => a.toolRounds).sort((a, b) => a - b),
+		0.5
+	)!;
+
+	const parts = [
+		`${answers.length} svar: ` +
+			(firstToken ? `første ord etter median ${firstToken.medianMs} ms (p95 ${firstToken.p95Ms}), ` : '') +
+			`ferdig svar etter median ${total.medianMs} ms (p95 ${total.p95Ms})`
+	];
+	parts.push(`modell: ${byModel.map((m) => `${m.model} ×${m.samples}`).join(', ')}`);
+	if (fallbacks > 0) {
+		// Reserven er en sikring, ikke en modus. Står den i tallene, ble
+		// standardmodellen avvist — og det er en konfigurasjonsfeil å rette.
+		parts.push(`reserven svarte ${fallbacks} gang${fallbacks === 1 ? '' : 'er'} — standardmodellen ble avvist`);
+	}
+	if (answers.length < MIN_SAMPLES_FOR_VERDICT) {
+		parts.push(`for få til et mønster (trengs ${MIN_SAMPLES_FOR_VERDICT})`);
+	}
+
+	return {
+		samples: answers.length,
+		firstToken,
+		total,
+		byModel,
+		fallbacks,
+		toolRoundsMedian,
+		summary: parts.join('; ') + '.'
+	};
 }
 
 /**
@@ -121,7 +251,8 @@ export function summarizeChatPerf(samples: ChatPerfSample[]): ChatPerfStats {
 			sumMedianMs: null,
 			parallelismRatio: null,
 			phases: [],
-			summary: 'Ingen målinger i vinduet.'
+			summary: 'Ingen målinger i vinduet.',
+			answer: null
 		};
 	}
 
@@ -162,7 +293,8 @@ export function summarizeChatPerf(samples: ChatPerfSample[]): ChatPerfStats {
 		sumMedianMs: sumMedian,
 		parallelismRatio: ratio == null ? null : Math.round(ratio * 100) / 100,
 		phases,
-		summary: describe(samples.length, wallMedian, sumMedian, ratio, phases)
+		summary: describe(samples.length, wallMedian, sumMedian, ratio, phases),
+		answer: summarizeChatAnswers(samples)
 	};
 }
 

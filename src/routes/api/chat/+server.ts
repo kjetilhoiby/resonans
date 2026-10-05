@@ -83,19 +83,19 @@ import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
-import type {
-	ChatCompletionCreateParamsNonStreaming,
-	ChatCompletionMessageParam
-} from 'openai/resources/chat/completions';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type { ChatAnswerSample, ChatPerfSample } from '$lib/domain/chat-perf-stats';
+import {
+	createChatCompletionWithFallback,
+	type ChatStreamHooks
+} from '$lib/server/chat-completion';
 import { env } from '$env/dynamic/private';
 import {
 	chooseChatModel,
 	completionSizing,
 	isLegacyChatModelMode,
 	resolveReasoningEffort,
-	resolveVerbosity,
-	shouldFallBackToChatModel,
-	FALLBACK_CHAT_MODEL
+	resolveVerbosity
 } from '$lib/domain/ai/chat-model';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
@@ -2177,43 +2177,18 @@ function inferEconomicsArgsFromText(input: string): {
 	return filterCategory ? { filterCategory } : {};
 }
 
-/**
- * Ett modellkall, med reserve. Avviser OpenAI forespørselen (ukjent modell,
- * en parameter modellen ikke tar), prøves den ÉN gang til med
- * `FALLBACK_CHAT_MODEL` og de gamle parameterne, og det logges som
- * `[chat-model]`. Uten reserven ville en feilskrevet `CHAT_DEFAULT_MODEL`
- * eller en modell som forsvinner fra katalogen gjort hele chatten død.
- */
-async function createChatCompletionWithFallback(
-	request: ChatCompletionCreateParamsNonStreaming,
-	fallbackSizing: { temperature: number; maxTokens: number }
-) {
-	try {
-		return await openai.chat.completions.create(request);
-	} catch (err) {
-		const status = (err as { status?: number } | null)?.status;
-		if (!shouldFallBackToChatModel(String(request.model), status)) throw err;
-		console.warn(
-			`[chat-model] ${request.model} avvist (${status}), prøver ${FALLBACK_CHAT_MODEL}:`,
-			err instanceof Error ? err.message : err
-		);
-		const {
-			max_completion_tokens: _maxCompletionTokens,
-			reasoning_effort: _reasoningEffort,
-			verbosity: _verbosity,
-			temperature: _temperature,
-			max_tokens: _maxTokens,
-			...rest
-		} = request;
-		return await openai.chat.completions.create({
-			...rest,
-			model: FALLBACK_CHAT_MODEL,
-			...completionSizing(FALLBACK_CHAT_MODEL, fallbackSizing)
-		});
-	}
-}
-
 export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress, systemPromptPrefix, preferredModel }: _RunChatRequestParams) {
+	/**
+	 * Målingen skrives ÉN gang, når svaret er ferdig — eller når meldingen
+	 * feiler. Fram til oktober 2026 ble den skrevet ved første modellkall, så
+	 * selve svaret (modelltid, hvilken modell, reserve) ble aldri målt.
+	 */
+	let pendingPerf: ChatPerfSample | null = null;
+	const flushPerf = (answer: ChatAnswerSample | null) => {
+		if (!pendingPerf) return;
+		runInBackground(recordChatPerf({ ...pendingPerf, answer }));
+		pendingPerf = null;
+	};
 	try {
 		await emitProgress(onProgress, 'validating', 'Validerer forespørsel...');
 
@@ -2305,6 +2280,24 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const useAiRouter = env.CHAT_AI_ROUTER === 'true';
 		// Fasemåling fram til første modellkall — én [chat-perf]-linje per melding.
 		const chatPerf = createChatPerf();
+		const answerTrack = { model: null as string | null, firstTokenMs: null as number | null, toolRounds: 0, fallback: false, streamed: false };
+		// Strømmes bare når noen lytter (SSE-proxyen). `POST /api/chat` svarer
+		// med JSON og får ingenting ut av ord som kommer underveis.
+		const streamHooks: ChatStreamHooks | null = onProgress
+			? {
+				onDelta: (token) => {
+					if (answerTrack.firstTokenMs === null) answerTrack.firstTokenMs = chatPerf.wallMs();
+					answerTrack.streamed = true;
+					void emitProgress(onProgress, 'token', '', { token });
+				},
+				onReset: () => {
+					void emitProgress(onProgress, 'stream_reset', '');
+				}
+			}
+			: null;
+		const markFallback = () => {
+			answerTrack.fallback = true;
+		};
 		const routingDecision = await chatPerf.timed('ruting', async () =>
 			useAiRouter
 				? aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms })
@@ -2636,7 +2629,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// restart. Lagringen feiler stille og ventes ikke på.
 		const perfSample = { wallMs: chatPerf.wallMs(), phases: chatPerf.phases };
 		console.log(formatChatPerfLine(perfSample));
-		runInBackground(recordChatPerf(perfSample));
+		pendingPerf = perfSample;
 
 		// Bygg kontekst-melding med aktive mål
 		let goalsContext = '\n\n--- BRUKERENS AKTIVE MÅL OG OPPGAVER ---\n';
@@ -2829,6 +2822,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 		console.log('🧠 Model selected (initial):', initialModelDecision.model, `(${initialModelDecision.reason})`);
 		let completion = await createChatCompletionWithFallback(
+			openai,
 			{
 				model: initialModelDecision.model,
 				messages,
@@ -2844,8 +2838,10 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					verbosity
 				})
 			},
-			initialFallbackSizing
+			initialFallbackSizing,
+			{ stream: streamHooks, onFallback: markFallback }
 		);
+		answerTrack.model = completion.model ?? initialModelDecision.model;
 
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
@@ -4317,6 +4313,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			);
 			const followupFallbackSizing = { temperature: 0.3, maxTokens: 1000 };
 			completion = await createChatCompletionWithFallback(
+				openai,
 				{
 					model: followupModelDecision.model,
 					messages,
@@ -4328,8 +4325,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						verbosity
 					})
 				},
-				followupFallbackSizing
+				followupFallbackSizing,
+				{ stream: streamHooks, onFallback: markFallback }
 			);
+			answerTrack.model = completion.model ?? followupModelDecision.model;
+			answerTrack.toolRounds += 1;
 
 			responseMessage = completion.choices[0]?.message;
 			await emitProgress(onProgress, 'model_followup_response', 'Modellen svarte etter verktøyrunden.', {
@@ -4363,6 +4363,15 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			conversationId: conversation.id
 		});
 
+		flushPerf({
+			model: answerTrack.model ?? initialModelDecision.model,
+			firstTokenMs: answerTrack.firstTokenMs,
+			totalMs: chatPerf.wallMs(),
+			toolRounds: answerTrack.toolRounds,
+			fallback: answerTrack.fallback,
+			streamed: answerTrack.streamed
+		});
+
 		return {
 			message: finalMessage,
 			conversationId: conversation.id,
@@ -4387,6 +4396,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			researchCard,
 		};
 	} catch (error) {
+		flushPerf(null);
 		console.error('Error in chat API:', error);
 		
 		if (error instanceof _ChatRequestError) {

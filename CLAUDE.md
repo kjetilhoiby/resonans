@@ -282,6 +282,11 @@ fram til første modellkall, tyngste fase først) OG lagrer en rad i
 - **Aggregatet ligger på `/api/diagnostikk` som `chat`** — persentiler per
   fase, aldri snitt, med dommen i ord. Se
   `docs/changelog/2026-09-04-chat-perf-lagret.md`.
+- **Selve svaret måles også** (`chat.answer`: første ord, ferdig svar, hvilken
+  modell som FAKTISK svarte og hvor ofte reserven tok over). Raden skrives når
+  svaret er ferdig, ikke ved første modellkall — fram til oktober 2026 stoppet
+  målingen der, og et modellbytte kunne ikke etterprøves. Modellnavnet går
+  gjennom `sanitizeModelName`, siden det ligger på et åpent endepunkt.
 - **Logglinja er for ÉN melding, tabellen for mønsteret.** Ringbufferen tømmes
   ved hver restart, så linja alene var et vindu på noen timer bak
   admin-secret — og ble aldri lest.
@@ -3732,9 +3737,13 @@ Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Mo
 **Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
 skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
 uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med
-`gpt-4o` og logges som `[chat-model]`. **Ikke legg kunstig «skriving» tilbake i
-`chat-stream-messages`:** tegn-for-tegn med 4 ms pause var ~2,5 s ren ventetid oppå
-et ferdig svar.
+`gpt-4o` og logges som `[chat-model]`, men bare før første ord er strømmet.
+**Svaret STRØMMES** gjennom `$lib/server/chat-completion.ts` (SDK-ens `stream()`,
+samme `ChatCompletion` tilbake, så verktøyløkka er uendret); prat før et
+verktøykall nullstilles med `stream_reset`. **Ikke legg kunstig «skriving»
+tilbake i `chat-stream-messages`:** tegn-for-tegn med 4 ms pause var ~2,5 s ren
+ventetid oppå et ferdig svar. `chat-completion.sdk.test.ts` kjører den ekte SDK-en
+mot en lokal SSE-server — feiler den etter en oppgradering, har kontrakten flyttet seg.
 
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 

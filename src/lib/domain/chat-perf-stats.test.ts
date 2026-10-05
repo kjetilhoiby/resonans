@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
 	MIN_SAMPLES_FOR_VERDICT,
 	SLOW_PHASE_MS,
+	parseAnswer,
 	parsePhases,
+	sanitizeModelName,
+	summarizeChatAnswers,
 	percentile,
 	summarizeChatPerf,
 	type ChatPerfSample
@@ -127,5 +130,104 @@ describe('summarizeChatPerf', () => {
 		const s = summarizeChatPerf([{ wallMs: 5, phases: [{ name: 'a', ms: 0 }] }]);
 		expect(s.parallelismRatio).toBeNull();
 		expect(s.summary).not.toContain('NaN');
+	});
+});
+
+
+function answered(totalMs: number, opts: Partial<NonNullable<ChatPerfSample['answer']>> = {}): ChatPerfSample {
+	return {
+		wallMs: 100,
+		phases: [{ name: 'ruting', ms: 2 }],
+		answer: {
+			model: 'gpt-5.4-2026-03-05',
+			firstTokenMs: Math.round(totalMs / 3),
+			totalMs,
+			toolRounds: 0,
+			fallback: false,
+			streamed: true,
+			...opts
+		}
+	};
+}
+
+describe('summarizeChatAnswers', () => {
+	it('er null uten svarmålinger — rader fra før feltet fantes teller ikke', () => {
+		expect(summarizeChatAnswers(manySamples(5))).toBeNull();
+		expect(summarizeChatPerf(manySamples(5)).answer).toBeNull();
+	});
+
+	it('gir median og p95 for første ord og ferdig svar', () => {
+		const stats = summarizeChatAnswers([answered(3000), answered(6000), answered(9000)])!;
+		expect(stats.samples).toBe(3);
+		expect(stats.total).toEqual({ medianMs: 6000, p95Ms: 9000, maxMs: 9000 });
+		expect(stats.firstToken).toEqual({ medianMs: 2000, p95Ms: 3000, maxMs: 3000 });
+	});
+
+	it('første ord regnes bare over strømmede svar', () => {
+		const stats = summarizeChatAnswers([
+			answered(3000),
+			answered(9000, { streamed: false, firstTokenMs: null })
+		])!;
+		expect(stats.firstToken).toEqual({ medianMs: 1000, p95Ms: 1000, maxMs: 1000 });
+		expect(stats.total.maxMs).toBe(9000);
+	});
+
+	it('sier hvilken modell som faktisk svarte, og at reserven tok over', () => {
+		const stats = summarizeChatAnswers([
+			answered(3000),
+			answered(4000),
+			answered(5000, { model: 'gpt-4o-2024-08-06', fallback: true })
+		])!;
+		expect(stats.byModel).toEqual([
+			{ model: 'gpt-5.4-2026-03-05', samples: 2 },
+			{ model: 'gpt-4o-2024-08-06', samples: 1 }
+		]);
+		expect(stats.fallbacks).toBe(1);
+		expect(stats.summary).toContain('reserven svarte 1 gang');
+	});
+
+	it('holder dommen tilbake under terskelen', () => {
+		expect(summarizeChatAnswers([answered(3000)])!.summary).toContain(`trengs ${MIN_SAMPLES_FOR_VERDICT}`);
+		const many = Array.from({ length: MIN_SAMPLES_FOR_VERDICT }, () => answered(3000));
+		expect(summarizeChatAnswers(many)!.summary).not.toContain('for få');
+	});
+});
+
+describe('sanitizeModelName', () => {
+	it('slipper gjennom maskinnavn', () => {
+		expect(sanitizeModelName('gpt-5.4-2026-03-05')).toBe('gpt-5.4-2026-03-05');
+		expect(sanitizeModelName('o3-mini')).toBe('o3-mini');
+	});
+
+	it('gjør alt annet til «annet» — navnet går ut på et åpent endepunkt', () => {
+		expect(sanitizeModelName('<script>alert(1)</script>')).toBe('annet');
+		expect(sanitizeModelName('gpt 5')).toBe('annet');
+		expect(sanitizeModelName('a'.repeat(60))).toBe('annet');
+		expect(sanitizeModelName(null)).toBe('annet');
+	});
+});
+
+describe('parseAnswer', () => {
+	const row = {
+		model: 'gpt-5.4',
+		firstTokenMs: 900,
+		totalMs: 4200,
+		toolRounds: 1,
+		fallback: false,
+		streamed: true
+	};
+
+	it('leser en hel rad', () => {
+		expect(parseAnswer(row)).toEqual(row);
+	});
+
+	it('er null for rader fra før kolonnene fantes', () => {
+		expect(
+			parseAnswer({ model: null, firstTokenMs: null, totalMs: null, toolRounds: null, fallback: null, streamed: null })
+		).toBeNull();
+	});
+
+	it('vasker modellnavnet også ved lesing', () => {
+		expect(parseAnswer({ ...row, model: 'tull med mellomrom' })!.model).toBe('annet');
 	});
 });
