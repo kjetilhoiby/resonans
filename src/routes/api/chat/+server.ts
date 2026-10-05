@@ -2280,7 +2280,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const useAiRouter = env.CHAT_AI_ROUTER === 'true';
 		// Fasemåling fram til første modellkall — én [chat-perf]-linje per melding.
 		const chatPerf = createChatPerf();
-		const answerTrack = { model: null as string | null, firstTokenMs: null as number | null, toolRounds: 0, fallback: false, streamed: false };
+		const answerTrack = {
+			model: null as string | null,
+			firstTokenMs: null as number | null,
+			toolRounds: 0,
+			fallback: false,
+			streamed: false,
+			rejection: null as string | null
+		};
 		// Strømmes bare når noen lytter (SSE-proxyen). `POST /api/chat` svarer
 		// med JSON og får ingenting ut av ord som kommer underveis.
 		const streamHooks: ChatStreamHooks | null = onProgress
@@ -2295,8 +2302,13 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				}
 			}
 			: null;
-		const markFallback = () => {
-			answerTrack.fallback = true;
+		const modelHooks = {
+			onFallback: () => {
+				answerTrack.fallback = true;
+			},
+			onRejection: (reason: string) => {
+				answerTrack.rejection = reason;
+			}
 		};
 		const routingDecision = await chatPerf.timed('ruting', async () =>
 			useAiRouter
@@ -2839,7 +2851,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				})
 			},
 			initialFallbackSizing,
-			{ stream: streamHooks, onFallback: markFallback }
+			{ stream: streamHooks, ...modelHooks }
 		);
 		answerTrack.model = completion.model ?? initialModelDecision.model;
 
@@ -4326,7 +4338,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					})
 				},
 				followupFallbackSizing,
-				{ stream: streamHooks, onFallback: markFallback }
+				{ stream: streamHooks, ...modelHooks }
 			);
 			answerTrack.model = completion.model ?? followupModelDecision.model;
 			answerTrack.toolRounds += 1;
@@ -4369,7 +4381,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			totalMs: chatPerf.wallMs(),
 			toolRounds: answerTrack.toolRounds,
 			fallback: answerTrack.fallback,
-			streamed: answerTrack.streamed
+			streamed: answerTrack.streamed,
+			rejection: answerTrack.rejection
 		});
 
 		return {

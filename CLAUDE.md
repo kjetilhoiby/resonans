@@ -3737,7 +3737,14 @@ Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Mo
 **Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
 skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
 uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med
-`gpt-4o` og logges som `[chat-model]`, men bare før første ord er strømmet.
+`gpt-4o` og logges som `[chat-model]`, men bare før første ord er strømmet — og
+FØR reserven prøves samme modell uten `verbosity`/`reasoning_effort`
+(parameteren er verdt mindre enn modellen). **Avslaget huskes i prosessen**
+(`ModelRejectionMemory`, 30 min), så det betales én gang per deploy og ikke per
+runde: fram til det sto prod på 14,5 s til første ord, fordi hver runde ventet på
+det samme avslaget. Årsaken står som maskinnavn i `chat.answer.rejections`
+(`400:unsupported_parameter:verbosity`), bygd av OpenAIs strukturerte felt, aldri
+av meldingsteksten.
 **Svaret STRØMMES** gjennom `$lib/server/chat-completion.ts` (SDK-ens `stream()`,
 samme `ChatCompletion` tilbake, så verktøyløkka er uendret); prat før et
 verktøykall nullstilles med `stream_reset`. **Ikke legg kunstig «skriving»

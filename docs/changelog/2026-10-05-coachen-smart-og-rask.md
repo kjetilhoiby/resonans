@@ -1,7 +1,7 @@
 # Coachen: smart og rask
 
 Dato: 2026-10-05
-Status: ferdig (fase 1 og 2)
+Status: ferdig (fase 1–3)
 
 ## Kontekst
 
@@ -94,6 +94,34 @@ Men svaret kom fortsatt i ett, først når modellen var helt ferdig.
   - **Modellnavnet går gjennom `sanitizeModelName`** ved både skriving og
     lesing: det ligger på et åpent endepunkt, og `preferredModel` kommer fra
     klienten.
+
+### Fase 3: avslaget betales én gang, og årsaken synes
+
+Første svarmåling i prod etter fase 2 (`chat.answer` på `/api/diagnostikk`):
+
+> 1 svar: første ord etter 14 484 ms, ferdig etter 15 088 ms; modell:
+> gpt-4o-2024-08-06 ×1; reserven svarte 1 gang.
+
+`gpt-5.4` ble avvist, og reserven svarte. Hva som ble avvist sto bare i loggen.
+Og hver runde prøvde modellen på nytt: med én verktøyrunde betyr det to avslag
+per melding, for alltid. Strømmingen virket, men det første ordet kom etter
+fjorten sekunder.
+
+- **Samme modell uten parameteren før reserven.** Avvises `verbosity` eller
+  `reasoning_effort` (`OPTIONAL_MODEL_PARAMS`), prøves samme modell uten den
+  parameteren OpenAI navngir, eller uten begge hvis den ikke sier hvilken. Den
+  første reserven byttet bort modellen for å redde en parameter, altså feil vei.
+- **`ModelRejectionMemory` husker avslaget i prosessen** (30 minutter): en droppet
+  parameter sendes ikke igjen, og en ubrukelig modell hoppes over. Et avslag er
+  en egenskap ved konfigurasjonen, ikke ved meldingen, og skal betales én gang
+  per deploy, ikke per runde. Tidsgrensa gjør at en rettet konfigurasjon tas i
+  bruk igjen uten restart. Dette er kodebasens første in-process-hukommelse, og
+  den er målt fram: avslaget kostet en hel modellrunde hver gang.
+- **Årsaken lagres** (`rejection`, migrasjon 0070) som et maskinnavn bygd av
+  OpenAIs strukturerte felt: `400:unsupported_parameter:verbosity`
+  (`describeRejection`). Det bygges aldri av meldingsteksten, siden målingen
+  ligger på et åpent endepunkt. Teksten vaskes igjen ved lesing
+  (`sanitizeRejection`), og `chat.answer.rejections` teller dem.
 
 ## Beslutninger
 

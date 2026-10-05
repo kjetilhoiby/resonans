@@ -153,3 +153,45 @@ export function shouldFallBackToChatModel(model: string, status: number | undefi
 	if (model === FALLBACK_CHAT_MODEL) return false;
 	return status === 400 || status === 404;
 }
+
+/**
+ * Parametere vi sender til reasoning-modeller, men som modellen ikke MÅ ha.
+ * Første svarmåling i prod (5. oktober 2026) viste at `gpt-5.4` ble avvist og
+ * reserven `gpt-4o` svarte — og vi visste ikke hvorfor, for årsaken sto bare
+ * i loggen. Er det én av disse som avvises, skal vi beholde modellen og miste
+ * parameteren, ikke omvendt.
+ */
+export const OPTIONAL_MODEL_PARAMS = ['verbosity', 'reasoning_effort'] as const;
+export type OptionalModelParam = (typeof OPTIONAL_MODEL_PARAMS)[number];
+
+type RejectionLike = { status?: unknown; code?: unknown; param?: unknown } | null | undefined;
+
+function token(value: unknown): string {
+	return typeof value === 'string' || typeof value === 'number'
+		? String(value).toLowerCase().replace(/[^a-z0-9_.-]/g, '').slice(0, 40)
+		: '';
+}
+
+/**
+ * Avslaget som et maskinnavn: `400:unsupported_parameter:verbosity`. Bygd av
+ * OpenAIs STRUKTURERTE felt, aldri av meldingsteksten — den kan i prinsippet
+ * gjenta innhold, og målingen ligger på et åpent endepunkt.
+ */
+export function describeRejection(err: RejectionLike): string {
+	return [token(err?.status), token(err?.code), token(err?.param)].join(':');
+}
+
+/**
+ * Hvilke valgfrie parametere skal vi prøve uten? Navngir OpenAI parameteren,
+ * bare den. Gjør den ikke det, alle vi sendte — vi vet ikke hvilken, og et
+ * forsøk til er billigere enn å miste modellen.
+ */
+export function rejectedOptionalParams(
+	err: RejectionLike,
+	request: Record<string, unknown>
+): OptionalModelParam[] {
+	const sent = OPTIONAL_MODEL_PARAMS.filter((p) => request[p] !== undefined);
+	const named = typeof err?.param === 'string' ? err.param : null;
+	if (named) return sent.filter((p) => p === named);
+	return sent;
+}
