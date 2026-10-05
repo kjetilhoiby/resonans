@@ -201,6 +201,20 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
     skrevet et øyeblikk senere utenfor, og «siste time» mangler den ferskeste
     målingen. Et EKSPLISITT `until` er et historisk spørsmål og respekteres
     presis. Fanget av en flakete test: 25 skrevne rader ble lest som 24.
+  - **`/api/diagnostikk/bruk` er bruksstatistikken, også ÅPEN** (`?days=`,
+    default 30, tak 180) — for en UX-analyse uten legitimasjon. Står i
+    `PUBLIC_API_EXACT` for seg selv. Hvitelista bor i
+    `$lib/domain/usage-public.ts`; se
+    `docs/changelog/2026-10-05-aapen-bruksdiagnose.md`.
+    Aggregert over ALLE brukere (`userCount`), aldri userId eller metadata.
+    **Stier går ut som rutemønstre** mot `PAGE_ROUTE_PATTERNS` (en test
+    krever at lista er lik `+page.svelte`-filene); ukjente segmenter blir
+    `[param]` — også `/tema/helse`, siden et temanavn i adressen er innhold.
+    Temaer brytes ned på DASHBOARDTYPE, aldri navn eller id. **Klikk-etiketter
+    må bevise at de er utviklernavn:** bare `data-track`-formen
+    (`område:handling`) og en fast liste generiske knappeord slipper ut;
+    resten er `anonymous`, fordi knappeteksten kan være en oppgavetittel.
+    Chat er bare tellinger av `role='user'` — `content` er ikke i spørringen.
 - **`host_samples` måler VERTEN hvert minutt** (`$lib/domain/host-metrics.ts`,
   samplet i cron-dispatcherens tikk, eksponert på `/api/diagnostikk`). Se
   `docs/changelog/2026-09-04-vertsmaaling.md`.
