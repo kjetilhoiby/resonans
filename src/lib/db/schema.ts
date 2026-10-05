@@ -4289,7 +4289,11 @@ export const chatPerfSamples = pgTable('chat_perf_samples', {
 	modelMs: integer('model_ms'),
 	promptTokens: integer('prompt_tokens'),
 	completionTokens: integer('completion_tokens'),
-	reasoningTokens: integer('reasoning_tokens')
+	reasoningTokens: integer('reasoning_tokens'),
+	// Hva prompten består av, og cache-treff (migrasjon 0072).
+	promptTokensTotal: integer('prompt_tokens_total'),
+	cachedTokens: integer('cached_tokens'),
+	promptParts: jsonb('prompt_parts').$type<{ name: string; chars: number }[]>()
 }, (table) => ({
 	idxChatPerfMeasuredAt: index('chat_perf_samples_measured_at_idx').on(table.measuredAt)
 }));

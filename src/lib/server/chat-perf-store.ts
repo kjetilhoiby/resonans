@@ -55,7 +55,10 @@ export async function recordChatPerf(
 			modelMs: answer?.modelMs ?? null,
 			promptTokens: answer?.promptTokens ?? null,
 			completionTokens: answer?.completionTokens ?? null,
-			reasoningTokens: answer?.reasoningTokens ?? null
+			reasoningTokens: answer?.reasoningTokens ?? null,
+			promptTokensTotal: answer?.promptTokensTotal ?? null,
+			cachedTokens: answer?.cachedTokens ?? null,
+			promptParts: answer?.promptParts ?? null
 		});
 
 		if (Math.random() < PRUNE_PROBABILITY) {
@@ -90,7 +93,10 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 			modelMs: chatPerfSamples.modelMs,
 			promptTokens: chatPerfSamples.promptTokens,
 			completionTokens: chatPerfSamples.completionTokens,
-			reasoningTokens: chatPerfSamples.reasoningTokens
+			reasoningTokens: chatPerfSamples.reasoningTokens,
+			promptTokensTotal: chatPerfSamples.promptTokensTotal,
+			cachedTokens: chatPerfSamples.cachedTokens,
+			promptParts: chatPerfSamples.promptParts
 		})
 		.from(chatPerfSamples)
 		.where(

@@ -84,7 +84,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import { PARENT_THEME_SUGGESTIONS } from '$lib/domain/health-subthemes';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { ChatAnswerSample, ChatPerfSample } from '$lib/domain/chat-perf-stats';
+import type { ChatAnswerSample, ChatPerfSample, PromptPart } from '$lib/domain/chat-perf-stats';
 import {
 	createChatCompletionWithFallback,
 	type ChatStreamHooks
@@ -2014,6 +2014,13 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 	}
 ];
 
+/** Verktøylistas lengde som JSON, regnet én gang — lista er en modulkonstant. */
+let toolsJsonCharsCache: number | null = null;
+function toolsJsonChars(): number {
+	toolsJsonCharsCache ??= JSON.stringify(tools).length;
+	return toolsJsonCharsCache;
+}
+
 export class _ChatRequestError extends Error {
 	status: number;
 
@@ -2290,14 +2297,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			modelMs: 0,
 			promptTokens: null as number | null,
 			completionTokens: null as number | null,
-			reasoningTokens: null as number | null
+			reasoningTokens: null as number | null,
+			promptTokensTotal: null as number | null,
+			cachedTokens: null as number | null,
+			promptParts: null as PromptPart[] | null
 		};
 		/** Tid og tokens for ett modellkall, lagt til svarmålingen. */
-		const trackModelCall = (startedAtMs: number, usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } | undefined | null) => {
+		const trackModelCall = (startedAtMs: number, usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number }; prompt_tokens_details?: { cached_tokens?: number } } | undefined | null) => {
 			answerTrack.modelMs += chatPerf.wallMs() - startedAtMs;
 			if (!usage) return;
 			if (typeof usage.prompt_tokens === 'number') {
 				answerTrack.promptTokens = Math.max(answerTrack.promptTokens ?? 0, usage.prompt_tokens);
+				answerTrack.promptTokensTotal = (answerTrack.promptTokensTotal ?? 0) + usage.prompt_tokens;
+			}
+			const cached = usage.prompt_tokens_details?.cached_tokens;
+			if (typeof cached === 'number') {
+				answerTrack.cachedTokens = (answerTrack.cachedTokens ?? 0) + cached;
 			}
 			if (typeof usage.completion_tokens === 'number') {
 				answerTrack.completionTokens = (answerTrack.completionTokens ?? 0) + usage.completion_tokens;
@@ -2730,6 +2745,29 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + contactsContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext + healthContext }
 		];
 
+		// Promptens anatomi: lengden på hver blokk, aldri innholdet. Svaret på
+		// «hva er de 34 000 tokenene» (fase 5 i changelogen).
+		const historyChars = history
+			.filter((m) => m.id !== savedUserMessage.id && (m.role === 'user' || m.role === 'assistant'))
+			.reduce((acc, m) => acc + (m.content?.length ?? 0), 0);
+		answerTrack.promptParts = [
+			{ name: 'grunnprompt', chars: systemPrompt.length },
+			{ name: 'prefiks', chars: promptPrefix.length },
+			{ name: 'minne', chars: memoryContext.length },
+			{ name: 'personer', chars: personContext.length },
+			{ name: 'mål', chars: goalsContext.length },
+			{ name: 'sjekklister', chars: checklistContext.length },
+			{ name: 'kontakter', chars: contactsContext.length },
+			{ name: 'fremgangsmåter', chars: procedureContext.length },
+			{ name: 'kilde', chars: sourceContextPrompt.length },
+			{ name: 'dato', chars: dateContext.length },
+			{ name: 'dag', chars: dayContext.length },
+			{ name: 'ferie', chars: ferieContext.length },
+			{ name: 'helse', chars: healthContext.length },
+			{ name: 'historikk', chars: historyChars },
+			{ name: 'melding', chars: latestUserInput.length }
+		];
+
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
 		for (const msg of history) {
 			if (msg.id === savedUserMessage.id) {
@@ -2824,6 +2862,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const skipTools = legacyChatModels
 			? isSpecializedContext || (isConversationalMode && !hasDataDomain)
 			: isSpecializedContext;
+		// Verktøyblokken først når vi vet om verktøyene sendes i det hele tatt.
+		answerTrack.promptParts?.unshift({ name: 'verktøy', chars: skipTools ? 0 : toolsJsonChars() });
 
 		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
 		// verktøy (selv i conversational-modus) og låser første kall til web_search.
@@ -4409,7 +4449,10 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			modelMs: answerTrack.modelMs,
 			promptTokens: answerTrack.promptTokens,
 			completionTokens: answerTrack.completionTokens,
-			reasoningTokens: answerTrack.reasoningTokens
+			reasoningTokens: answerTrack.reasoningTokens,
+			promptTokensTotal: answerTrack.promptTokensTotal,
+			cachedTokens: answerTrack.cachedTokens,
+			promptParts: answerTrack.promptParts
 		});
 
 		return {

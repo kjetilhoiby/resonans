@@ -79,6 +79,57 @@ export interface ChatAnswerSample {
 	promptTokens?: number | null;
 	completionTokens?: number | null;
 	reasoningTokens?: number | null;
+	/**
+	 * Prompt-tokens SUMMERT over kallene, og hvor mange av dem OpenAI hentet fra
+	 * prompt-cachen. Andelen er det som avgjør om en stor prompt koster tid.
+	 */
+	promptTokensTotal?: number | null;
+	cachedTokens?: number | null;
+	/** Størrelsen på promptens blokker i tegn, navngitt fra `PROMPT_PART_NAMES`. */
+	promptParts?: PromptPart[] | null;
+}
+
+export interface PromptPart {
+	name: PromptPartName;
+	chars: number;
+}
+
+/**
+ * Blokkene i hovedchattens prompt. Navnene er kode-literaler; `parsePromptParts`
+ * slipper bare disse gjennom, siden kolonnen er jsonb og målingen ligger på et
+ * åpent endepunkt.
+ */
+export const PROMPT_PART_NAMES = [
+	'verktøy',
+	'grunnprompt',
+	'prefiks',
+	'minne',
+	'personer',
+	'mål',
+	'sjekklister',
+	'kontakter',
+	'fremgangsmåter',
+	'kilde',
+	'dato',
+	'dag',
+	'ferie',
+	'helse',
+	'historikk',
+	'melding'
+] as const;
+export type PromptPartName = (typeof PROMPT_PART_NAMES)[number];
+
+export function parsePromptParts(raw: unknown): PromptPart[] | null {
+	if (!Array.isArray(raw)) return null;
+	const out: PromptPart[] = [];
+	for (const item of raw) {
+		if (!item || typeof item !== 'object') continue;
+		const { name, chars } = item as Record<string, unknown>;
+		if (!(PROMPT_PART_NAMES as readonly string[]).includes(name as string)) continue;
+		if (typeof chars !== 'number' || !Number.isFinite(chars) || chars < 0) continue;
+		out.push({ name: name as PromptPartName, chars });
+	}
+	return out;
 }
 
 /** Avslaget er bygd av `describeRejection`; ved lesing vaskes det på nytt. */
@@ -108,6 +159,9 @@ export function parseAnswer(row: {
 	promptTokens?: unknown;
 	completionTokens?: unknown;
 	reasoningTokens?: unknown;
+	promptTokensTotal?: unknown;
+	cachedTokens?: unknown;
+	promptParts?: unknown;
 }): ChatAnswerSample | null {
 	if (typeof row.totalMs !== 'number' || !Number.isFinite(row.totalMs)) return null;
 	return {
@@ -122,7 +176,10 @@ export function parseAnswer(row: {
 		modelMs: finiteOrNull(row.modelMs),
 		promptTokens: finiteOrNull(row.promptTokens),
 		completionTokens: finiteOrNull(row.completionTokens),
-		reasoningTokens: finiteOrNull(row.reasoningTokens)
+		reasoningTokens: finiteOrNull(row.reasoningTokens),
+		promptTokensTotal: finiteOrNull(row.promptTokensTotal),
+		cachedTokens: finiteOrNull(row.cachedTokens),
+		promptParts: parsePromptParts(row.promptParts)
 	};
 }
 
@@ -219,6 +276,10 @@ export interface ChatAnswerStats {
 		promptTokensMedian: number | null;
 		completionTokensMedian: number | null;
 		reasoningTokensMedian: number | null;
+		/** Median andel av prompt-tokens OpenAI hentet fra cachen (0–1). */
+		cachedShareMedian: number | null;
+		/** Median tegn per promptblokk, største først. */
+		promptParts: { name: PromptPartName; medianChars: number }[];
 	} | null;
 	summary: string;
 }
@@ -280,8 +341,15 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 	if (split) {
 		parts.push(
 			`av svartida er median ${split.modelMedianMs} ms modellkall og ${split.otherMedianMs} ms verktøy og annet` +
-				(split.reasoningTokensMedian != null ? `; ${split.reasoningTokensMedian} tenketokens per svar` : '')
+				(split.reasoningTokensMedian != null ? `; ${split.reasoningTokensMedian} tenketokens per svar` : '') +
+				(split.cachedShareMedian != null
+					? `; ${Math.round(split.cachedShareMedian * 100)} % av prompten fra cachen`
+					: '')
 		);
+		const biggest = split.promptParts[0];
+		if (biggest) {
+			parts.push(`største promptblokk er «${biggest.name}» med median ${biggest.medianChars} tegn`);
+		}
 	}
 	if (answers.length < MIN_SAMPLES_FOR_VERDICT) {
 		parts.push(`for få til et mønster (trengs ${MIN_SAMPLES_FOR_VERDICT})`);
@@ -432,6 +500,27 @@ function summarizeSplit(samples: ChatPerfSample[]): ChatAnswerStats['split'] {
 		otherMedianMs: medianOf(rows.map((r) => Math.max(0, r.answer.totalMs - r.wallMs - r.answer.modelMs)))!,
 		promptTokensMedian: medianOf(nums((a) => a.promptTokens)),
 		completionTokensMedian: medianOf(nums((a) => a.completionTokens)),
-		reasoningTokensMedian: medianOf(nums((a) => a.reasoningTokens))
+		reasoningTokensMedian: medianOf(nums((a) => a.reasoningTokens)),
+		cachedShareMedian: medianOf(
+			rows
+				.map((r) => r.answer)
+				.filter((a) => (a.promptTokensTotal ?? 0) > 0 && a.cachedTokens != null)
+				.map((a) => Math.round((a.cachedTokens! / a.promptTokensTotal!) * 100) / 100)
+		),
+		promptParts: summarizePromptParts(rows.map((r) => r.answer.promptParts ?? []))
 	};
+}
+
+function summarizePromptParts(perAnswer: PromptPart[][]): { name: PromptPartName; medianChars: number }[] {
+	const byName = new Map<PromptPartName, number[]>();
+	for (const parts of perAnswer) {
+		for (const p of parts) {
+			const list = byName.get(p.name);
+			if (list) list.push(p.chars);
+			else byName.set(p.name, [p.chars]);
+		}
+	}
+	return [...byName.entries()]
+		.map(([name, list]) => ({ name, medianChars: medianOf(list)! }))
+		.sort((a, b) => b.medianChars - a.medianChars);
 }

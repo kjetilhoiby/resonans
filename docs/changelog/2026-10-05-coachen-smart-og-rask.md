@@ -1,7 +1,7 @@
 # Coachen: smart og rask
 
 Dato: 2026-10-05
-Status: pågår (fase 1–3 ferdig, fase 4 måler)
+Status: pågår (fase 1–4 ferdig, fase 5 måler)
 
 ## Kontekst
 
@@ -145,6 +145,30 @@ Ingen av dem kan velges uten å måle, så denne fasen bare måler (migrasjon 00
   har et strømmet svar ingen tokentall.
 - `chat.answer.split` på `/api/diagnostikk` viser medianene, og setningen sier
   dem i ord.
+
+**Svaret på fase 4** (fire svar etter deploy): første ord etter median 6,6 s,
+ferdig svar etter 7,1 s. Det er under halvparten av 14,5 s. Modellkallene tok
+median 2,9 s, og verktøy og annet 1,6 s. **0 tenketokens**, så tenkingen var
+ikke synderen. Derimot var prompten på **median 34 200 tokens per kall**, og hver
+melding har typisk to kall.
+
+### Fase 5: promptens anatomi og cache-treff
+
+Lokalt målt er verktøylista **67 verktøy og ~89 000 tegn som JSON, ≈22–25 000
+tokens**. Det er rundt to tredjedeler av prompten, og den sendes i hvert kall.
+VISION sa «48 verktøy ≈ 7 000 tokens», og det har ikke stemt på lenge.
+Størst: `query_training` (5,3 kB), `query_weight`, `create_goal`,
+`create_widget`, `query_nutrition` og `propose_widget`.
+
+Om det koster tid avhenger av OpenAIs prompt-cache: et identisk prefiks er
+raskere og billigere. Verktøyene ligger først i prefikset og er like hver gang,
+så de BØR treffe cachen. Denne fasen måler om de gjør det (migrasjon 0072):
+
+- `prompt_parts` er lengden på hver promptblokk i tegn (verktøy, grunnprompt,
+  minne, mål, helse, historikk, …), aldri innholdet. Navnene går gjennom en
+  hviteliste (`PROMPT_PART_NAMES`).
+- `prompt_tokens_total` og `cached_tokens` summeres over kallene, og
+  `chat.answer.split.cachedShareMedian` viser andelen.
 
 ## Beslutninger
 

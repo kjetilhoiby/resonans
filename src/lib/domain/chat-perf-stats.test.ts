@@ -4,6 +4,7 @@ import {
 	SLOW_PHASE_MS,
 	parseAnswer,
 	parsePhases,
+	parsePromptParts,
 	sanitizeModelName,
 	sanitizeRejection,
 	summarizeChatAnswers,
@@ -225,7 +226,10 @@ describe('parseAnswer', () => {
 			modelMs: null,
 			promptTokens: null,
 			completionTokens: null,
-			reasoningTokens: null
+			reasoningTokens: null,
+			promptTokensTotal: null,
+			cachedTokens: null,
+			promptParts: null
 		});
 	});
 
@@ -275,7 +279,9 @@ describe('hvor tida i svaret går', () => {
 			otherMedianMs: 2900,
 			promptTokensMedian: 9000,
 			completionTokensMedian: 900,
-			reasoningTokensMedian: 700
+			reasoningTokensMedian: 700,
+			cachedShareMedian: null,
+			promptParts: []
 		});
 		expect(stats.summary).toContain('12000 ms modellkall og 2900 ms verktøy og annet; 700 tenketokens');
 	});
@@ -288,5 +294,40 @@ describe('hvor tida i svaret går', () => {
 		const stats = summarizeChatAnswers([answered(3000), answered(9000, { modelMs: 6000 })])!;
 		expect(stats.split?.samples).toBe(1);
 		expect(stats.split?.reasoningTokensMedian).toBeNull();
+	});
+});
+
+describe('promptens anatomi', () => {
+	it('gir median tegn per blokk, største først, og cache-andelen', () => {
+		const parts = [
+			{ name: 'verktøy' as const, chars: 89000 },
+			{ name: 'helse' as const, chars: 12000 },
+			{ name: 'minne' as const, chars: 3000 }
+		];
+		const stats = summarizeChatAnswers([
+			answered(7000, { modelMs: 3000, promptTokensTotal: 60000, cachedTokens: 45000, promptParts: parts }),
+			answered(7000, { modelMs: 3000, promptTokensTotal: 60000, cachedTokens: 15000, promptParts: parts })
+		])!;
+		expect(stats.split?.promptParts.map((p) => p.name)).toEqual(['verktøy', 'helse', 'minne']);
+		expect(stats.split?.promptParts[0].medianChars).toBe(89000);
+		// Nærmeste rang: medianen av [0,25, 0,75] er 0,25.
+		expect(stats.split?.cachedShareMedian).toBe(0.25);
+		expect(stats.summary).toContain('25 % av prompten fra cachen');
+		expect(stats.summary).toContain('største promptblokk er «verktøy»');
+	});
+
+	it('slipper bare kjente blokknavn gjennom — kolonnen er jsonb og endepunktet åpent', () => {
+		expect(
+			parsePromptParts([
+				{ name: 'verktøy', chars: 10 },
+				{ name: 'hemmelig', chars: 5 },
+				{ name: 'helse', chars: -1 },
+				{ name: 'minne', chars: 3, innhold: 'brukertekst' }
+			])
+		).toEqual([
+			{ name: 'verktøy', chars: 10 },
+			{ name: 'minne', chars: 3 }
+		]);
+		expect(parsePromptParts('tull')).toBeNull();
 	});
 });
