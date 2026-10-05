@@ -10,11 +10,8 @@
 	import Icon from '../../ui/Icon.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
 	import { HOME_CTX, type HomeContext } from './home-context';
-	import CaptureSheet from '../../composed/CaptureSheet.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
-	// Én inngang: i TILLEGG til kamera/lyd/fil i chatfeltet, ikke i stedet for.
-	let captureOpen = $state(false);
 </script>
 
 {#if !ctx.inputExpanded}
@@ -39,15 +36,6 @@
 				     sekunder ledig, mens et skriveprosjekt er noe man setter seg ned
 				     med. Det er fangst-øyeblikket denne funksjonen skal vinne. Veien
 				     videre til prosjektene ligger på /notater. -->
-				<!-- Én inngang: tekst, flere bilder og filer i ett ark, og coachen
-				     sorterer. Står først fordi det er den raskeste veien inn. -->
-				<button
-					type="button"
-					class="icon-link"
-					aria-label="Legg inn"
-					data-track="inngang:apne-hjem"
-					onclick={() => (captureOpen = true)}
-				><Icon name="plus" size={18} /></button>
 				<a href="/notater" class="icon-link" aria-label="Notatblokk"><Icon name="file" size={18} /></a>
 				<a href="/funn" class="icon-link" aria-label="Funn"><Icon name="star" size={18} /></a>
 				<!-- Arrangementer: billetter kjøpt i god tid. Ligger her og ikke under
@@ -59,10 +47,6 @@
 			{/snippet}
 		</PageHeader>
 	</section>
-{/if}
-
-{#if captureOpen}
-	<CaptureSheet onclose={() => (captureOpen = false)} />
 {/if}
 
 <style>
@@ -94,10 +78,6 @@
 		color: #8a99c4;
 		text-decoration: none;
 		transition: background 0.12s, color 0.12s, border-color 0.12s;
-		/* Også på <button> (Én inngang), som ellers arver nettleserens padding og font. */
-		padding: 0;
-		font: inherit;
-		cursor: pointer;
 	}
 
 	.icon-link:hover {
