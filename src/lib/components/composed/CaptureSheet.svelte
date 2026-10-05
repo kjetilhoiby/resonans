@@ -53,7 +53,6 @@
 	let uploaded = $state(0);
 	let notice = $state('');
 	let libraryInput = $state<HTMLInputElement | null>(null);
-	let cameraInput = $state<HTMLInputElement | null>(null);
 
 	const chat = new ChatState({});
 	const canSend = $derived(phase === 'compose' && (text.trim().length > 0 || items.length > 0));
@@ -222,17 +221,13 @@
 
 			{#if notice}<p class="cs-notice" role="status">{notice}</p>{/if}
 
-			<!-- Biblioteket står først: det er den diskré veien inn, og den eneste som
-			     tar flere bilder. `capture` tvinger kameraet, så det trengs et eget felt. -->
+			<!-- ÉN velger, uten `capture`: iOS gir da selv menyen «Fotobibliotek / Ta
+			     bilde / Velg fil». En egen kameraknapp ved siden av var dobbelt opp. -->
 			<input class="cs-hidden" type="file" multiple accept={CAPTURE_ACCEPT} bind:this={libraryInput} onchange={onPicked} tabindex="-1" aria-hidden="true" />
-			<input class="cs-hidden" type="file" accept="image/*" capture="environment" bind:this={cameraInput} onchange={onPicked} tabindex="-1" aria-hidden="true" />
 
 			<div class="cs-actions">
 				<button class="cs-pick" type="button" data-track="inngang:bibliotek" disabled={phase !== 'compose' || items.length >= MAX_CAPTURE_ITEMS} onclick={() => libraryInput?.click()}>
-					<Icon name="attach" size={17} /> Bilder og filer
-				</button>
-				<button class="cs-pick" type="button" data-track="inngang:kamera" disabled={phase !== 'compose' || items.length >= MAX_CAPTURE_ITEMS} onclick={() => cameraInput?.click()}>
-					<Icon name="camera" size={17} /> Kamera
+					<Icon name="attach" size={17} /> Legg ved
 				</button>
 				<button class="cs-send" type="button" data-track="inngang:send" disabled={!canSend} onclick={send}>
 					{#if phase === 'uploading'}
