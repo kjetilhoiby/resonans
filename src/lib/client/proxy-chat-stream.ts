@@ -6,6 +6,10 @@ interface ProxyChatStreamOptions {
 	conversationTitle?: string;
 	imageUrl?: string;
 	attachment?: unknown;
+	/** Flere vedlegg i én melding (Én inngang). */
+	attachments?: unknown[];
+	/** Meldingen kom gjennom Én inngang. */
+	capture?: boolean;
 	preferredModel?: string;
 	systemPrompt?: string;
 	signal?: AbortSignal;
@@ -31,6 +35,8 @@ export async function streamProxyChat({
 	conversationTitle,
 	imageUrl,
 	attachment,
+	attachments,
+	capture,
 	preferredModel,
 	systemPrompt,
 	signal,
@@ -55,6 +61,8 @@ export async function streamProxyChat({
 			conversationTitle,
 			imageUrl,
 			attachment,
+			...(attachments && attachments.length > 0 ? { attachments } : {}),
+			...(capture ? { capture: true } : {}),
 			preferredModel,
 			routing: {},
 			systemPrompt: systemPrompt ?? '',

@@ -6,6 +6,7 @@ import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema
 import { getConversationMessagesPage } from '$lib/server/conversations';
 import { escapeLike } from '$lib/utils/like-escape';
 import type { RequestHandler } from './$types';
+import { captureImageUrls } from '$lib/domain/capture';
 
 type MessageRow = typeof messages.$inferSelect;
 
@@ -18,6 +19,7 @@ function serialize(m: MessageRow) {
 		starred: m.starred,
 		timestamp: m.createdAt.toISOString(),
 		imageUrl: m.imageUrl,
+		images: captureImageUrls(meta?.attachments),
 		widgetProposal: meta?.widgetProposal ?? null,
 		widgetFlow: meta?.widgetFlow ?? null,
 		statusWidget: meta?.statusWidget ?? null,

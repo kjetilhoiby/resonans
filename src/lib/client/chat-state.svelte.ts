@@ -21,6 +21,7 @@ import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 import type { ChatEventCard } from '$lib/chat/event-cards';
 import type { ResearchCard } from '$lib/chat/research-card';
+import { captureImageUrls as imagesOf } from '$lib/domain/capture';
 
 export interface ChatAction {
 	id: string;
@@ -40,6 +41,8 @@ export interface ChatMessage {
 	 *  tråden. Valgfritt — kontekster uten tidsstempel viser ingen dato-spacere. */
 	createdAt?: string | Date | null;
 	imageUrl?: string | null;
+	/** Alle bildene i meldingen når det er flere (Én inngang). `imageUrl` er det første. */
+	images?: string[] | null;
 	attachment?: unknown;
 	actions?: ChatAction[];
 	widgetProposal?: WidgetDraft | null;
@@ -57,6 +60,10 @@ export interface ChatMessage {
 export interface SendOptions {
 	/** Teksten som VISES i brukerboblen når den skiller seg fra det modellen får. */
 	displayText?: string;
+	/** Flere vedlegg i én melding (Én inngang). Kommer i tillegg til `attachment`. */
+	attachments?: unknown[];
+	/** Meldingen kom gjennom Én inngang: coachen finner ut hva det er og lagrer det. */
+	capture?: boolean;
 }
 
 export interface ChatStateOptions {
@@ -355,7 +362,16 @@ export class ChatState {
 		const msgId = crypto.randomUUID();
 		this.messages = [
 			...this.messages,
-			{ id: msgId, role: 'user', text: displayText, starred: false, createdAt: new Date(), imageUrl: imageUrl ?? null, attachment }
+			{
+				id: msgId,
+				role: 'user',
+				text: displayText,
+				starred: false,
+				createdAt: new Date(),
+				imageUrl: imageUrl ?? null,
+				images: imagesOf(opts?.attachments),
+				attachment
+			}
 		];
 		this.loading = true;
 		this.streamingText = '';
@@ -401,6 +417,8 @@ export class ChatState {
 					: this.#opts.conversationTitle,
 				imageUrl,
 				attachment: effectiveAttachment,
+				attachments: opts?.attachments,
+				capture: opts?.capture,
 				preferredModel: typeof this.#opts.preferredModel === 'function'
 					? this.#opts.preferredModel()
 					: this.#opts.preferredModel,

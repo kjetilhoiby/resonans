@@ -45,9 +45,9 @@ rask»).
 | Spor | Status | Neste steg |
 |---|---|---|
 | 1. Coachen | Fase 1–6 ferdig, kuttet måles i skygge | **▶ Ta opp igjen her** (se under) |
-| 2. Én inngang | Ikke startet | Kan startes nå |
+| 2. Én inngang | Fase 1 ute til utprøving | Se hva som brukes — `inngang:*` i bruksdataene |
 | 3. Hjemskjerm etter døgnet | Skissert (A1–A3) | Kan startes nå |
-| 4. Visuelt uttrykk | Skissert (A–D) | **Venter på et valg fra brukeren** |
+| 4. Visuelt uttrykk | **Besluttet: A** | Klar til å tegnes ut |
 | 5. Tre rom (struktur) | Foreslått | Etter spor 2 og 3 |
 
 ### 1. Coachen — ▶ ta opp igjen tråden her
@@ -86,7 +86,14 @@ langt er dette:
 6. **Ekko** (`shared-tools.ts`) har verken modellvalget, strømmingen eller
    verktøyutvalget. Det er en egen runde, og den må koordineres med ekko-repoet.
 
-### 2. Én inngang — kan startes nå
+### 2. Én inngang — ute til utprøving
+
+Fase 1 er bygget **i tillegg til** kamera/lyd/fil i chatfeltet, som brukeren
+ba om. Se `2026-10-05-en-inngang.md`. Neste steg er å se i bruksdataene
+(`inngang:*`-etikettene) om den nye veien tar over for den gamle, før noe
+fjernes.
+
+Opprinnelig beskrivelse:
 
 Tekst, stemme, bilde og fil skal gå gjennom samme knapp og samme skrivevei.
 Coachen sorterer etterpå i måltid, sult, symptom, økt, billett og hodedump. Det
@@ -119,10 +126,12 @@ skifter med tiden:
 - Første versjon kan bygges i dagens visuelle språk, så sporet venter ikke på
   spor 4.
 
-### 4. Visuelt uttrykk — venter på et valg
+### 4. Visuelt uttrykk — besluttet: A
 
-Anbefalingen er **A (døgnrytme) som hovedretning, med B sin avistypografi i
-dybdelagene**, blekk på krem og nattmodus. Den er ikke besluttet.
+Brukeren valgte **A (døgnrytme)**, blekk på krem med nattmodus. Svaret var
+«enig, men mest A». B sin avistypografi er derfor **ikke** med som standard i
+dybdelagene, slik anbefalingen foreslo. Den kan vurderes i en enkelt flate der
+den gjør jobben, men ikke som et system.
 
 - **NB:** `docs/DESIGN.md` og CLAUDE.md sier «Alltid mørk». En lys krem-modus er
   derfor en endring av et designprinsipp, ikke bare et tema. Begge filene må
@@ -150,9 +159,8 @@ dashboardtyper.
 
 ## Forslag til rekkefølge mens chatten måles
 
-1. **Brukeren velger visuell retning** (spor 4). Det er en kort beslutning, og
-   den låser opp alt det visuelle.
-2. **Én inngang** (spor 2). Den gir mest igjen, og den avhenger av minst.
+1. ~~**Brukeren velger visuell retning** (spor 4).~~ A er besluttet.
+2. ~~**Én inngang** (spor 2).~~ Fase 1 er ute til utprøving.
 3. **Hjemskjerm v1** (spor 3) i dagens uttrykk.
 4. **Tilbake til coachen** når tallene fra skyggemålingen er inne (spor 1,
    punkt 1).

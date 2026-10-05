@@ -1,9 +1,11 @@
 <script lang="ts">
 	import '../app.css';
 	import { afterNavigate, beforeNavigate, goto, onNavigate } from '$app/navigation';
-	import { updated } from '$app/state';
+	import { page, updated } from '$app/state';
 	import { onMount } from 'svelte';
 	import { initUsageTracking, trackPageView } from '$lib/client/usage-logger';
+	import CaptureButton from '$lib/components/composed/CaptureButton.svelte';
+	import { showFloatingCapture } from '$lib/domain/capture';
 
 	let { children } = $props();
 
@@ -97,4 +99,10 @@
 </svelte:head>
 
 {@render children?.()}
+
+<!-- Én inngang overalt der det ikke alt ligger et chatfelt nederst. Se
+     `showFloatingCapture`. Uinnloggede sider er utelatt i regelen. -->
+{#if showFloatingCapture(page.url.pathname)}
+	<CaptureButton />
+{/if}
 
