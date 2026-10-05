@@ -3723,6 +3723,19 @@ Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Mo
 
 **Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
 
+**Chat-modell** (`$lib/domain/ai/chat-model.ts`, se
+`docs/changelog/2026-10-05-coachen-smart-og-rask.md`): `CHAT_DEFAULT_MODEL`
+(default `gpt-5.4`; `legacy` gir mini-heuristikken fra før oktober 2026),
+`CHAT_AI_ROUTER=true` (slår på det ekstra rutingkallet, som er av fordi det var
+1,3 av 1,65 s før første modellkall), `CHAT_REASONING_EFFORT` (default `low`) og
+`CHAT_VERBOSITY` (default `low`). Alle kan endres i Coolify uten deploy.
+**Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
+skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
+uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med
+`gpt-4o` og logges som `[chat-model]`. **Ikke legg kunstig «skriving» tilbake i
+`chat-stream-messages`:** tegn-for-tegn med 4 ms pause var ~2,5 s ren ventetid oppå
+et ferdig svar.
+
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
