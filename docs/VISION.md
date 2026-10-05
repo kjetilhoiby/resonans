@@ -73,7 +73,8 @@ Tre avveiinger som følger av dette, og som bør avgjøres før stemmeflaten vok
   `confidence`-feltet er kroken som alt finnes; beslutningen er om lavkonfidens-
   oppføringer skal merkes og holdes utenfor tallene som krever presisjon.
 - **Verktøyantall er ikke det som gjør stemme stort.** Deklarasjoner koster kontekst
-  (våre 48 chat-verktøy er ≈7 000 tokens; 100 ville vært ≈14 600) og treffsikkerheten
+  (målt oktober 2026: 67 chat-verktøy er ~89 000 tegn, ≈22–25 000 tokens, altså rundt
+  to tredjedeler av en prompt på 34 000 tokens, sendt i HVERT kall) og treffsikkerheten
   faller med antallet — vår egen `query_food` mot `query_nutrition`-forvirring er
   vanskelig med tre verktøy og håpløs med hundre. Det kvalitative spranget er at
   modellen kjenner konteksten: en meny kan ikke spørre «hvor sulten er du?» i riktig
