@@ -51,7 +51,11 @@ export async function recordChatPerf(
 			toolRounds: answer?.toolRounds ?? null,
 			fallback: answer ? answer.fallback : null,
 			streamed: answer ? answer.streamed : null,
-			rejection: answer ? sanitizeRejection(answer.rejection) : null
+			rejection: answer ? sanitizeRejection(answer.rejection) : null,
+			modelMs: answer?.modelMs ?? null,
+			promptTokens: answer?.promptTokens ?? null,
+			completionTokens: answer?.completionTokens ?? null,
+			reasoningTokens: answer?.reasoningTokens ?? null
 		});
 
 		if (Math.random() < PRUNE_PROBABILITY) {
@@ -82,7 +86,11 @@ export async function loadChatPerfWindow(fromMs: number, toMs: number) {
 			toolRounds: chatPerfSamples.toolRounds,
 			fallback: chatPerfSamples.fallback,
 			streamed: chatPerfSamples.streamed,
-			rejection: chatPerfSamples.rejection
+			rejection: chatPerfSamples.rejection,
+			modelMs: chatPerfSamples.modelMs,
+			promptTokens: chatPerfSamples.promptTokens,
+			completionTokens: chatPerfSamples.completionTokens,
+			reasoningTokens: chatPerfSamples.reasoningTokens
 		})
 		.from(chatPerfSamples)
 		.where(

@@ -69,6 +69,16 @@ export interface ChatAnswerSample {
 	 * avslag.
 	 */
 	rejection?: string | null;
+	/**
+	 * Samlet tid i modellkallene (alle runder). `totalMs − wallMs − modelMs`
+	 * er verktøyene og resten. Fra OpenAIs `usage`: største prompt (den vokser
+	 * med verktøysvarene), og svar- og tenketokens summert over rundene.
+	 * `null` på rader fra før feltene fantes.
+	 */
+	modelMs?: number | null;
+	promptTokens?: number | null;
+	completionTokens?: number | null;
+	reasoningTokens?: number | null;
 }
 
 /** Avslaget er bygd av `describeRejection`; ved lesing vaskes det på nytt. */
@@ -94,6 +104,10 @@ export function parseAnswer(row: {
 	fallback: unknown;
 	streamed: unknown;
 	rejection?: unknown;
+	modelMs?: unknown;
+	promptTokens?: unknown;
+	completionTokens?: unknown;
+	reasoningTokens?: unknown;
 }): ChatAnswerSample | null {
 	if (typeof row.totalMs !== 'number' || !Number.isFinite(row.totalMs)) return null;
 	return {
@@ -104,8 +118,16 @@ export function parseAnswer(row: {
 		toolRounds: typeof row.toolRounds === 'number' && Number.isFinite(row.toolRounds) ? row.toolRounds : 0,
 		fallback: row.fallback === true,
 		streamed: row.streamed === true,
-		rejection: sanitizeRejection(row.rejection)
+		rejection: sanitizeRejection(row.rejection),
+		modelMs: finiteOrNull(row.modelMs),
+		promptTokens: finiteOrNull(row.promptTokens),
+		completionTokens: finiteOrNull(row.completionTokens),
+		reasoningTokens: finiteOrNull(row.reasoningTokens)
 	};
+}
+
+function finiteOrNull(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -186,6 +208,18 @@ export interface ChatAnswerStats {
 	rejections: { reason: string; samples: number }[];
 	/** Median antall verktøyrunder. */
 	toolRoundsMedian: number;
+	/**
+	 * Hvor tida i svaret går, som medianer over svarene som har feltene:
+	 * modellkallene, og alt annet etter konteksten (verktøyene, lagring).
+	 */
+	split: {
+		samples: number;
+		modelMedianMs: number;
+		otherMedianMs: number;
+		promptTokensMedian: number | null;
+		completionTokensMedian: number | null;
+		reasoningTokensMedian: number | null;
+	} | null;
 	summary: string;
 }
 
@@ -227,6 +261,8 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		0.5
 	)!;
 
+	const split = summarizeSplit(samples);
+
 	const parts = [
 		`${answers.length} svar: ` +
 			(firstToken ? `første ord etter median ${firstToken.medianMs} ms (p95 ${firstToken.p95Ms}), ` : '') +
@@ -241,6 +277,12 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 	if (rejections.length > 0) {
 		parts.push(`avslag: ${rejections.map((r) => `${r.reason} ×${r.samples}`).join(', ')}`);
 	}
+	if (split) {
+		parts.push(
+			`av svartida er median ${split.modelMedianMs} ms modellkall og ${split.otherMedianMs} ms verktøy og annet` +
+				(split.reasoningTokensMedian != null ? `; ${split.reasoningTokensMedian} tenketokens per svar` : '')
+		);
+	}
 	if (answers.length < MIN_SAMPLES_FOR_VERDICT) {
 		parts.push(`for få til et mønster (trengs ${MIN_SAMPLES_FOR_VERDICT})`);
 	}
@@ -253,6 +295,7 @@ export function summarizeChatAnswers(samples: ChatPerfSample[]): ChatAnswerStats
 		fallbacks,
 		rejections,
 		toolRoundsMedian,
+		split,
 		summary: parts.join('; ') + '.'
 	};
 }
@@ -364,4 +407,31 @@ function describe(
 	}
 
 	return parts.join('; ') + '.';
+}
+
+function medianOf(values: number[]): number | null {
+	if (values.length === 0) return null;
+	return percentile([...values].sort((a, b) => a - b), 0.5);
+}
+
+/**
+ * Tida i svaret, delt i modellkall og resten. Bare svar med `modelMs` teller,
+ * så rader fra før feltet ikke drar medianen mot null.
+ */
+function summarizeSplit(samples: ChatPerfSample[]): ChatAnswerStats['split'] {
+	const rows = samples.filter(
+		(s): s is ChatPerfSample & { answer: ChatAnswerSample & { modelMs: number } } =>
+			s.answer?.modelMs != null
+	);
+	if (rows.length === 0) return null;
+	const nums = (pick: (a: ChatAnswerSample) => number | null | undefined) =>
+		rows.map((r) => pick(r.answer)).filter((v): v is number => typeof v === 'number');
+	return {
+		samples: rows.length,
+		modelMedianMs: medianOf(rows.map((r) => r.answer.modelMs))!,
+		otherMedianMs: medianOf(rows.map((r) => Math.max(0, r.answer.totalMs - r.wallMs - r.answer.modelMs)))!,
+		promptTokensMedian: medianOf(nums((a) => a.promptTokens)),
+		completionTokensMedian: medianOf(nums((a) => a.completionTokens)),
+		reasoningTokensMedian: medianOf(nums((a) => a.reasoningTokens))
+	};
 }

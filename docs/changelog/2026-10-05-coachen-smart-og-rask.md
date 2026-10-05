@@ -1,7 +1,7 @@
 # Coachen: smart og rask
 
 Dato: 2026-10-05
-Status: ferdig (fase 1–3)
+Status: pågår (fase 1–3 ferdig, fase 4 måler)
 
 ## Kontekst
 
@@ -122,6 +122,29 @@ fjorten sekunder.
   (`describeRejection`). Det bygges aldri av meldingsteksten, siden målingen
   ligger på et åpent endepunkt. Teksten vaskes igjen ved lesing
   (`sanitizeRejection`), og `chat.answer.rejections` teller dem.
+
+### Fase 4: hvor tida i svaret går
+
+Etter fase 3 (fem svar, de tre siste fra gpt-5.4): avslaget var
+`400::reasoning_effort`, og uten parameteren svarer `gpt-5.4`. Men første ord
+kom fortsatt etter median 14,7 s, med 17,8 s til ferdig svar og én verktøyrunde
+per melding. Tre forklaringer med tre ulike rettelser:
+
+1. **Tenking.** Uten `reasoning_effort` tenker modellen på standardnivået, og to
+   modellkall per melding betyr to runder tenking.
+2. **Verktøyene.** Tida går i oppslagene, ikke i modellen.
+3. **Prompten.** 48 verktøydefinisjoner pluss konteksten er tusenvis av tokens
+   per kall.
+
+Ingen av dem kan velges uten å måle, så denne fasen bare måler (migrasjon 0071):
+
+- `model_ms` er samlet tid i modellkallene. `totalMs − wallMs − modelMs` er
+  verktøyene og resten.
+- `prompt_tokens` (største prompt), `completion_tokens` og `reasoning_tokens`
+  (summert) kommer fra OpenAIs `usage`. Strømmen ber om `include_usage`, ellers
+  har et strømmet svar ingen tokentall.
+- `chat.answer.split` på `/api/diagnostikk` viser medianene, og setningen sier
+  dem i ord.
 
 ## Beslutninger
 
