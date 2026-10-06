@@ -52,7 +52,7 @@
 					Bruk lokal fil i stedet
 				</button>
 				<button class="flow-submit" onclick={ctx.submitSheetSnapshot} disabled={ctx.sheetFlowUploading}>
-					{ctx.sheetFlowUploading ? 'Henter…' : 'Hent og triager →'}
+					{ctx.sheetFlowUploading ? 'Henter…' : 'Hent regnearket →'}
 				</button>
 			</div>
 		{:else if !ctx.fileFlowSelected}
@@ -123,9 +123,9 @@
 				{#if ctx.fileFlowUploading}
 					{ctx.fileFlowProgress > 0 && ctx.fileFlowProgress < 1
 						? `Laster opp… ${Math.round(ctx.fileFlowProgress * 100)}%`
-						: 'Triagerer…'}
+						: 'Leser filen…'}
 				{:else}
-					Last opp og triager →
+					Legg ved →
 				{/if}
 			</button>
 			<button class="flow-ghost" onclick={() => {
