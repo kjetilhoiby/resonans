@@ -16,6 +16,8 @@ import { localIsoDay } from './nudge-time';
 import { dayContextForDate, addDaysIso } from './iso-week';
 import { computeStaysFromDayPlans, formatStayRange } from './stays';
 import { dayWindowInfo } from './trip-geo';
+import { readMovement } from './movement/movement-read';
+import { summarizeDay, type DaySummary } from '$lib/domain/movement/movement-summary';
 import {
 	isLocationItem,
 	locationDisplayName,
@@ -68,6 +70,12 @@ export interface DayContext {
 	locations: string[]; // distinkte sted-navn for dagen
 	stay: DayStay | null; // flerdagers opphold som dekker dagen
 	movement: DayMovement[]; // reisesegmenter (kjøre/båt/fly)
+	/**
+	 * Det som FAKTISK skjedde, fra Akser — bare for en dag som er over (Akser sender
+	 * ferdige dager). Utelatt når Akser ikke er koblet til eller dagen mangler.
+	 * Nytt felt i oktober 2026; Ekko leser det ikke ennå.
+	 */
+	observed?: Pick<DaySummary, 'entries' | 'kmByMode'>;
 }
 
 /**
@@ -90,7 +98,30 @@ export async function gatherDayContext(
 		tz = user?.timezone ?? 'Europe/Oslo';
 	}
 
-	const day = date ?? localIsoDay(tz, new Date());
+	const today = localIsoDay(tz, new Date());
+	const day = date ?? today;
+	const [planned, observed] = await Promise.all([
+		gatherPlannedDay(userId, day),
+		day < today ? readObservedDay(userId, day) : Promise.resolve(undefined)
+	]);
+	return observed ? { ...planned, observed } : planned;
+}
+
+/** Akser-tidslinjen for en dag som er over. Feiler stille: planen skal komme fram uansett. */
+async function readObservedDay(userId: string, day: string): Promise<DayContext['observed']> {
+	try {
+		const read = await readMovement(userId, day, day);
+		if (!read.connected) return undefined;
+		const summary = summarizeDay(day, read.data);
+		if (summary.entries.length === 0) return undefined;
+		return { entries: summary.entries, kmByMode: summary.kmByMode };
+	} catch (err) {
+		console.warn('[day-context] kunne ikke lese Akser-tidslinjen:', err instanceof Error ? err.message : err);
+		return undefined;
+	}
+}
+
+async function gatherPlannedDay(userId: string, day: string): Promise<DayContext> {
 	const ctx = dayContextForDate(day);
 	const empty: DayContext = { date: day, locations: [], stay: null, movement: [] };
 

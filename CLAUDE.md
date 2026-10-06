@@ -583,6 +583,12 @@ eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
   `/api/admin/logs`).
 - **En ukjent transportform eller et ukjent sted avvises per dag**, aldri gjettet. Avviste
   dager står i `lastError` på sensoren, så de synes i monitoreringen.
+- **Chatten leser tidslinjen med `query_movement`**, i verktøygruppa `kjerne`: «når kom jeg
+  på jobb» ser ut som hverdagsprat og ruter til `general`. Reglene (ankomst, stedsmatching)
+  bor i `$lib/domain/movement/movement-summary.ts`. Svaret bærer aldri koordinater.
+- **Aksers hjem er Resonans' hjem.** `weather_forecast` uten koordinater bruker det
+  (`readHomeLocation`, avrundet til ~1 km før det går til MET), og en Akser-dag inne i et
+  reise-tema skriver `geoByDay` med kilde `observed`.
 
 ### Pulssoner: én modell, to repoer
 

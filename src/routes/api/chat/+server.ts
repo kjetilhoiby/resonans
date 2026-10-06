@@ -40,6 +40,7 @@ import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
 import { queryWritingTool } from '$lib/ai/tools/query-writing';
 import { queryTrainingTool } from '$lib/ai/tools/query-training';
 import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { queryMovementTool } from '$lib/ai/tools/query-movement';
 import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { querySleepTool } from '$lib/ai/tools/query-sleep';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
@@ -674,6 +675,7 @@ const tools = [
 		}
 	},
 	openAiFunctionDefinition(queryWeightTool),
+	openAiFunctionDefinition(queryMovementTool),
 	{
 		type: 'function' as const,
 		function: {
@@ -1611,7 +1613,7 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'weather_forecast',
-					description: 'Hent værprognose fra MET.no basert på koordinater. Brukes når bruker spør om vær, eller når du vil berike svar med lokalt vær nå og neste time.',
+					description: 'Hent værprognose fra MET.no basert på koordinater. Uten koordinater brukes brukerens hjem (fra Akser), ellers Oslo — oppgi koordinater bare for et ANNET sted enn hjemme. Brukes når bruker spør om vær, eller når du vil berike svar med lokalt vær nå og neste time.',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -2133,6 +2135,7 @@ function getToolProgressMessage(toolName: string) {
 		query_sensor_data: 'Henter sensordata...',
 		query_training: 'Leser treningsbelastning...',
 		query_weight: 'Leser vekttrend...',
+		query_movement: 'Leser bevegelsene dine...',
 		manage_weight_measurement: 'Slår opp vektmålinger...',
 		query_sleep: 'Leser søvndata...',
 		query_egenfrekvens: 'Leser innsjekk...',
@@ -3339,6 +3342,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🏃 Query training:', args.queryType ?? 'load');
 					const result = await queryTrainingTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_movement') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					console.log('  🧭 Query movement:', args.queryType);
+					const result = await queryMovementTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_weight') {
 					const args = JSON.parse(toolCall.function.arguments || '{}');
 					console.log('  ⚖️ Query weight:', args.queryType ?? 'trend');
@@ -3883,7 +3891,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						const { weatherForecastTool } = await import('$lib/ai/tools/weather-forecast');
 						const result = await weatherForecastTool.execute({
 							timezone: userTimezone,
-							...args
+							...args,
+							userId
 						});
 
 						if (result.success && result.widget) {

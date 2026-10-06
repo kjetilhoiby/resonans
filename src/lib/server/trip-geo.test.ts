@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	buildAkserDayGeo,
 	shouldReplaceDayGeo,
 	buildObservedDayGeo,
 	applyDayGeo,
@@ -227,5 +228,54 @@ describe('osloDayKey', () => {
 
 	it('gir ISO-format', () => {
 		expect(osloDayKey(new Date('2026-07-15T12:00:00Z'))).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+	});
+});
+
+describe('buildAkserDayGeo — hvor brukeren sov, fra Akser', () => {
+	const cabin = { name: 'Hytta', named: true, latitude: 61.123456, longitude: 9.987654 };
+	const places = new Map([['c', cabin], ['auto', { ...cabin, name: 'Nytt sted', named: false }]]);
+	const day = (stays: Array<{ from: string; to: string; placeId: string | null }>) => ({
+		date: '2026-07-24',
+		generatedAt: '2026-07-25T06:00:00.000Z',
+		detectorVersion: null,
+		journeys: [],
+		stays: stays.map((s) => ({
+			date: '2026-07-24',
+			startedAt: s.from,
+			endedAt: s.to,
+			placeId: s.placeId,
+			center: s.placeId ? null : { lat: 60.5, lon: 8.2 }
+		}))
+	});
+
+	it('velger oppholdet som varer til midnatt', () => {
+		const geo = buildAkserDayGeo(
+			day([
+				{ from: '2026-07-23T22:00:00.000Z', to: '2026-07-24T08:00:00.000Z', placeId: null },
+				{ from: '2026-07-24T12:00:00.000Z', to: '2026-07-24T22:00:00.000Z', placeId: 'c' }
+			]),
+			places
+		);
+		expect(geo).toEqual({ place: 'Hytta', lat: 61.123, lon: 9.988, source: 'observed' });
+	});
+
+	it('faller tilbake på det lengste oppholdet, med avrundet sentrum', () => {
+		const geo = buildAkserDayGeo(
+			day([
+				{ from: '2026-07-23T22:00:00.000Z', to: '2026-07-24T09:00:00.000Z', placeId: null },
+				{ from: '2026-07-24T12:00:00.000Z', to: '2026-07-24T13:00:00.000Z', placeId: 'c' }
+			]),
+			places
+		);
+		expect(geo).toEqual({ lat: 60.5, lon: 8.2, source: 'observed' });
+	});
+
+	it('navngir aldri et automatisk sted', () => {
+		const geo = buildAkserDayGeo(day([{ from: '2026-07-24T12:00:00.000Z', to: '2026-07-24T22:00:00.000Z', placeId: 'auto' }]), places);
+		expect(geo?.place).toBeUndefined();
+	});
+
+	it('gir ingenting for en dag uten opphold', () => {
+		expect(buildAkserDayGeo(day([]), places)).toBeNull();
 	});
 });
