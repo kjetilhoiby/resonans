@@ -780,17 +780,18 @@
 		const att = list[0] as Parameters<typeof homeChat.send>[2];
 		clearPendingAttachment();
 		// Flere vedlegg går som `attachments` ved siden av det første — med ett er
-		// sendingen byte-lik den gamle.
+		// sendingen byte-lik den gamle. Uten tekst sier boblen hva som ble sendt;
+		// et enkelt bilde trenger det ikke, det står i boblen selv.
+		const displayText = captureDisplayText(text, list.map((a) => (a.kind === 'image' ? 'image' : 'document')));
 		await homeChat.send(
 			text,
 			img,
 			att,
 			list.length > 1
-				? {
-						attachments: list,
-						displayText: captureDisplayText(text, list.map((a) => (a.kind === 'image' ? 'image' : 'document')))
-					}
-				: undefined
+				? { attachments: list, displayText }
+				: !text.trim() && list.length === 1 && list[0].kind !== 'image'
+					? { displayText }
+					: undefined
 		);
 	}
 

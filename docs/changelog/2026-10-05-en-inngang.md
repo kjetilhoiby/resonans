@@ -150,3 +150,12 @@ og «langpress på bildet» som kommentaren lovte finnes ikke.
   står urørt. Regnearkflyten bruker fortsatt formen til å vise forslagene sine.
   Endepunktet kan slettes når det er bekreftet ubrukt, fordi det ligger utenfor
   `/api/apps/*`.
+
+## Etterarbeid: et vedlegg kan sendes alene
+
+Chatfeltets handlingsrad viste bare send-knappen når det sto tekst i feltet. Med
+et vedlegg og tomt felt fantes ingen måte å sende på, selv om `submit` og
+`/api/chat` begge godtok det. Nå vises send-knappen også når et vedlegg venter
+(`attachmentPending`), og hjemskjermen sender propen. Uten tekst sier boblen hva
+som ble sendt («📄 Fil», «📷 3 bilder»). Et enkelt bilde får ingen tekst, fordi
+bildet står i boblen selv.

@@ -196,6 +196,7 @@
 					onMood={(draft) => ctx.openEgenfrekvensFlow(draft, true)}
 					onTextChange={(text) => (ctx.chatPrefill = text)}
 					onPasteFiles={(files) => void ctx.addPastedFiles(files)}
+					attachmentPending={ctx.pendingAttachments.length > 0}
 					onBackspaceEmpty={ctx.closeChat}
 					onsubmit={ctx.sendChat}
 				/>
