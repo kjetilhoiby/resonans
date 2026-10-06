@@ -13,6 +13,7 @@ import { getAppConfig } from '$lib/server/app-registry';
 import { getOrCreateAppSensorId } from '$lib/server/app-sensor';
 import { normalizePlaces } from '$lib/domain/movement/places';
 import { AKSER_APP_ID, recordContact, savePlaces } from '$lib/server/movement/akser-store';
+import { reconcilePlaceLinks } from '$lib/server/movement/place-links-store';
 
 export const PUT: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
@@ -32,7 +33,15 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 	const sensorId = await getOrCreateAppSensorId(userId, app);
 	const { stored, archived } = await savePlaces(userId, parsed.places);
 	await recordContact(sensorId, null);
+	// Mot Ekkos steder, om brukeren har dem. Best-effort: stedene er lagret uansett.
+	const links = await reconcilePlaceLinks(userId).catch((err) => {
+		console.warn('[akser] stedskobling feilet:', err instanceof Error ? err.message : err);
+		return null;
+	});
 
-	console.log(`[akser] steder user=${userId} lagret=${stored} arkivert=${archived}`);
+	console.log(
+		`[akser] steder user=${userId} lagret=${stored} arkivert=${archived}` +
+			(links ? ` koblet=${links.auto} forslag=${links.suggested}` : '')
+	);
 	return json({ ok: true, stored, archived });
 };

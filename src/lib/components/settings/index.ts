@@ -16,3 +16,4 @@ export { default as BookedDuplicateCleanupCard } from './BookedDuplicateCleanupC
 export { default as MerchantTable } from './MerchantTable.svelte';
 export { default as MerchantEditForm } from './MerchantEditForm.svelte';
 export { default as MerchantAnalysisPanel } from './MerchantAnalysisPanel.svelte';
+export { default as PlaceLinksCard } from './PlaceLinksCard.svelte';

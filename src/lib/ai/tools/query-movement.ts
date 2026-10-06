@@ -100,7 +100,11 @@ Om tallene:
 			};
 		}
 		const ids = new Set(match.places.map((p) => p.id));
-		const label = match.places.filter((p) => p.named).map((p) => p.name).join(' / ') || args.place;
+		const label =
+			match.places
+				.map((p) => (p.named ? p.name : p.aliases?.[0]))
+				.filter((name): name is string => Boolean(name))
+				.join(' / ') || args.place;
 
 		if (args.queryType === 'arrivals') {
 			return { from, to: yesterday, ...summarizeArrivals(ids, label, read.data), dataFrom: read.firstDate };

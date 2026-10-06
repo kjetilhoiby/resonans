@@ -1,7 +1,7 @@
 # Akser inn i Resonans
 
 Dato: 2026-10-06
-Status: pågår (fase 1 og 4 i drift 6. oktober 2026, fase 2 skrevet og ikke bygget)
+Status: pågår (fase 1, 4 og Resonans-delen av 5 i drift 6. oktober 2026; app-delene av 2, 3 og 5 skrevet og ikke bygget)
 
 ## Kontekst
 
@@ -73,11 +73,16 @@ Swift-verktøykjede: verken kompilert eller kjørt.**
 - En rettelse er en ny opplasting av samme dag, men bare innenfor de sju siste dagene. Eldre
   rettelser når Resonans først når detektorversjonen bumpes.
 
-### Fase 3: Fasit fra Resonans
+### Fase 3: Fasit fra Resonans (skrevet, ikke bygget)
 
-Akser leser `GET /api/apps/workouts` og bruker overlappende økter som etiketter på etapper.
-Akser blir da en ny konsument av `/api/apps/*`, ved siden av Ekko, og CLAUDE.md-avsnittet
-«Ekstern API-flate» må si det når fasen er bygget.
+Akser leser `GET /api/apps/workouts` én gang per synkrunde (`WorkoutLabeler` i
+`AkserKit/Sources/Akser/Resonans/`). En etappe som ligger minst 80 % inne i en økt og dekker
+minst halve den, sendes med øktas transportform, `modeSource: label` og `labelRef`. Brukerens
+rettelse vinner fortsatt, og tidene er alltid Aksers. Etikettene lagres ikke lokalt; en ny økt
+endrer dagens avtrykk, så dagen sendes på nytt innenfor de sju siste dagene. Appens egen
+tidslinjevisning viser fortsatt bare Aksers gjetning. Ingen endring i Resonans:
+`/api/apps/workouts` hadde alt den formen som trengtes, og CLAUDE.md sier at lista har to
+konsumenter.
 
 ### Fase 4: Resonans bruker dataene (ferdig)
 
@@ -106,11 +111,31 @@ Akser blir da en ny konsument av `/api/apps/*`, ved siden av Ekko, og CLAUDE.md-
   det lengste. Samme presedens som Ekkos kjøretur; det sist skrevne vinner. Best-effort i
   opplastingen — en feil her gjør ikke opplastingen mislykket.
 
-### Fase 5: Ekko og stedene
+### Fase 5: Ekko og stedene (Resonans ferdig, Ekko skrevet og ikke bygget)
 
-- Ekko laster opp `SavedPlace` (krever et endepunkt og en Ekko-endring).
-- Resonans kobler Akser- og Ekko-steder.
-- Rutegjenkjenning og pendling-ghosts i Ekko, bygget på Aksers akser (Ekkos `PLAN.md`, fase 6).
+- **Ekko laster opp `SavedPlace`** (`PUT /api/apps/ekko/places`, samme form som Aksers) ved
+  hver lagring og ved oppstart. Ekko har ingen kategori og sender `unknown`.
+- **Resonans kobler** (`app_place_links`, migrasjon `0075`; regelen i
+  `$lib/domain/movement/place-links.ts`, lagringen i `$lib/server/movement/place-links-store.ts`).
+  - Overlapp (avstand under summen av radiene) og samme kategori eller samme navn → `auto`.
+    Overlapp ellers → `suggested`, besvart med «Samme sted» / «Ikke samme sted» på
+    `/settings/sources` (`PlaceLinksCard`, `/api/steder/koblinger`).
+  - **Ekkos kategori utledes av navnet** («Hjem», «Jobben», «Hos svigers»). Et navn som ikke
+    sier noe gir `unknown`, som aldri er «samme kategori» som noe.
+  - **Hvert sted kobles høyst én gang**, automatiske par først og deretter nærmeste. Akser
+    hadde 22 «Nytt sted» innenfor 300 m fra hjemmet; uten grensa ville Ekkos «Hjem» fått 22
+    forslag.
+  - Brukerens valg står: et avvist par foreslås ikke igjen, og et sted med en bekreftet
+    kobling får ikke en til. `auto` og `suggested` regnes ut på nytt ved hver stedsliste.
+  - Nøklene er appenes egne id-er, så et sted som arkiveres og kommer tilbake beholder
+    koblingen. «Slett alt» fra Akser sletter også koblingene.
+- **Bruken:** et koblet Ekko-navn er et alias for Akser-stedet i `query_movement`. Et sted Akser
+  kaller «Nytt sted» heter da «Barnehagen» i svaret og kan spørres etter.
+- Ekko fikk samtidig standardadressen `resonans.apps.hoi.by`; en lagret Vercel-adresse eller et
+  tomt felt faller tilbake på den.
+- Gjenstår: navnet fra appen man sist rettet i skal vinne i Resonans (i dag vinner Akser-navnet
+  når stedet er navngitt der), og rutegjenkjenning og pendling-ghosts i Ekko, bygget på Aksers
+  akser (Ekkos `PLAN.md`, fase 6).
 
 ### Senere: pendling
 
@@ -173,6 +198,15 @@ Fase 4: `npm test` (5265) og `npm run check` grønne, med 30 nye tester. Mot en 
 Postgres med hele skjemaet (ikke committet): lesing av dager og steder, alle fire utsnittene
 av `query_movement` inkludert ukjent sted og ikke tilkoblet, hjemmet, `observed` i
 dagskonteksten (og fravær for i dag), og `geoByDay` på et reise-tema.
+
+Fase 5 (Resonans): `npm test` (5284) og `npm run check` grønne, 15 nye tester for koblingen
+og aliasene. Mot lokal Postgres: migrasjonen to ganger, automatisk kobling og forslag,
+bekreftelse (og at en annen bruker ikke kan bekrefte), at valget overlever en ny beregning,
+aliasene, og at et arkivert Ekko-sted mister aliaset mens valget står. `PlaceLinksCard` er ikke
+sett i en nettleser, og `/settings/sources` er ikke i den visuelle testsuiten. Ekko-delen er
+ukompilert (tre nye tester i `PlaceSyncTests`).
+
+Fase 3: ingenting kjørt (sju nye XCTest-er i `WorkoutLabelerTests`).
 
 Fase 2: ingenting kjørt. 21 nye XCTest-er for mapperen og planleggeren ligger klare
 (`ResonansTimelineMapperTests`); første verifisering er `swift test` og et bygg til telefonen,

@@ -22,7 +22,7 @@
 
 import { and, eq, gte, inArray, lte, max, notInArray, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { appPlaces, sensorEvents, sensors } from '$lib/db/schema';
+import { appPlaceLinks, appPlaces, sensorEvents, sensors } from '$lib/db/schema';
 import { osloDayBounds, type NormalizedDay } from '$lib/domain/movement/timeline';
 import type { NormalizedPlace } from '$lib/domain/movement/places';
 
@@ -41,12 +41,13 @@ export async function listKnownPlaceIds(userId: string): Promise<Set<string>> {
 }
 
 /**
- * Lagrer hele stedslista. Steder som ikke er med arkiveres; ingenting slettes,
- * siden gamle dager peker på dem.
+ * Lagrer hele stedslista fra én app. Steder som ikke er med arkiveres; ingenting
+ * slettes, siden gamle dager peker på dem. `app` er `akser` eller `ekko`.
  */
 export async function savePlaces(
 	userId: string,
-	places: NormalizedPlace[]
+	places: NormalizedPlace[],
+	app: string = AKSER_APP_ID
 ): Promise<{ stored: number; archived: number }> {
 	return db.transaction(async (tx) => {
 		const now = new Date();
@@ -56,7 +57,7 @@ export async function savePlaces(
 				.values(
 					places.map((place) => ({
 						userId,
-						app: AKSER_APP_ID,
+						app,
 						externalId: place.externalId,
 						name: place.name,
 						category: place.category,
@@ -85,7 +86,7 @@ export async function savePlaces(
 
 		const missing = [
 			eq(appPlaces.userId, userId),
-			eq(appPlaces.app, AKSER_APP_ID),
+			eq(appPlaces.app, app),
 			eq(appPlaces.archived, false)
 		];
 		if (places.length > 0) {
@@ -193,7 +194,10 @@ export async function deleteDay(userId: string, sensorId: string, date: string):
 	return deleted.length;
 }
 
-/** Sletter hele tidslinjen og alle stedene fra Akser for brukeren. */
+/**
+ * Sletter hele tidslinjen og alle stedene fra Akser for brukeren, og koblingene mot
+ * Ekkos steder — også de bekreftede, siden de bare finnes for Aksers steder.
+ */
 export async function deleteEverything(
 	userId: string,
 	sensorId: string | null
@@ -215,6 +219,7 @@ export async function deleteEverything(
 			.delete(appPlaces)
 			.where(and(eq(appPlaces.userId, userId), eq(appPlaces.app, AKSER_APP_ID)))
 			.returning({ id: appPlaces.id });
+		await tx.delete(appPlaceLinks).where(eq(appPlaceLinks.userId, userId));
 		return { events: events.length, places: places.length };
 	});
 }

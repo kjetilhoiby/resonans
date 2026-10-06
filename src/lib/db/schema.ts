@@ -2202,6 +2202,30 @@ export const appPlaces = pgTable('app_places', {
 	)
 }));
 
+/**
+ * Koblinger mellom Aksers og Ekkos steder (`app_places`). Resonans kobler, slår aldri
+ * sammen. `confirmed`/`rejected` er brukerens valg og regnes aldri ut på nytt; `auto` og
+ * `suggested` erstattes hver gang en stedsliste kommer inn. Reglene i
+ * `$lib/domain/movement/place-links.ts`.
+ */
+export const appPlaceLinks = pgTable('app_place_links', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	akserPlaceId: text('akser_place_id').notNull(),
+	ekkoPlaceId: text('ekko_place_id').notNull(),
+	/** 'auto' | 'suggested' | 'confirmed' | 'rejected' */
+	status: text('status').notNull(),
+	distanceMeters: integer('distance_meters'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserPair: uniqueIndex('app_place_links_user_pair_idx').on(
+		table.userId,
+		table.akserPlaceId,
+		table.ekkoPlaceId
+	)
+}));
+
 // Raw observed bank-transaction versions from providers (append-only evidence stream).
 export const rawBankTransactionVersions = pgTable('raw_bank_transaction_versions', {
 	id: uuid('id').primaryKey().defaultRandom(),

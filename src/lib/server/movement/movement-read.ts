@@ -17,6 +17,7 @@ import { osloDayBounds, type StoredJourney, type StoredStay } from '$lib/domain/
 import type { MovementData, MovementPlace } from '$lib/domain/movement/movement-summary';
 import type { PlaceCategory } from '$lib/domain/movement/places';
 import { AKSER_APP_ID } from './akser-store';
+import { readLinkedEkkoNames } from './place-links-store';
 
 export type MovementRead =
 	| { connected: false }
@@ -70,9 +71,22 @@ export async function readMovement(userId: string, from: string, to: string): Pr
 	return { connected: true, data: { stays, journeys, places: placeRows }, firstDate: first[0]?.date ?? null };
 }
 
-/** Aksers steder, arkiverte med: gamle dager peker på dem. Aldri koordinatene. */
+/**
+ * Aksers steder, arkiverte med: gamle dager peker på dem. Med Ekko-navnene som er
+ * koblet til dem (`aliases`). Aldri koordinatene.
+ */
 export async function readAkserPlaces(userId: string): Promise<MovementPlace[]> {
-	const rows = await db
+	const [rows, aliases] = await Promise.all([readAkserPlaceRows(userId), readLinkedEkkoNames(userId)]);
+	return rows.map((row) => {
+		const place: MovementPlace = { ...row, category: row.category as PlaceCategory };
+		const names = aliases.get(row.id);
+		if (names?.length) place.aliases = names;
+		return place;
+	});
+}
+
+function readAkserPlaceRows(userId: string) {
+	return db
 		.select({
 			id: appPlaces.externalId,
 			name: appPlaces.name,
@@ -82,5 +96,4 @@ export async function readAkserPlaces(userId: string): Promise<MovementPlace[]> 
 		})
 		.from(appPlaces)
 		.where(and(eq(appPlaces.userId, userId), eq(appPlaces.app, AKSER_APP_ID)));
-	return rows.map((row) => ({ ...row, category: row.category as PlaceCategory }));
 }
