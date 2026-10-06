@@ -1,7 +1,8 @@
 # Kontrakt: Akser → Resonans (tidslinje og steder)
 
 Dato: 2026-10-06
-Status: **bygget i Resonans** (fase 1, 6. oktober 2026). Akser-klienten gjenstår. Planen og
+Status: **bygget i Resonans** (fase 1, 6. oktober 2026). Akser-klienten er skrevet
+(`resonans-lab/akser`, `AkserKit/Sources/Akser/Resonans/`), men ikke bygget eller kjørt ennå. Planen og
 beslutningene bak står i `docs/changelog/2026-10-06-akser-integrasjon.md`.
 
 Koden: validering i `$lib/domain/movement/` (`timeline.ts`, `places.ts`), lagring i
@@ -150,11 +151,14 @@ siste 60 dager fram til i dag, og vinduet er høyst 400 dager.
 **Felt:**
 
 - `date` er en **Oslo-dato**. Alle tidspunkter er ISO 8601 med offset.
-- `entries` er dagens fulle tidslinje, sortert og uten overlapp. Et opphold over midnatt
-  **klippes** til dagen av Akser (det gjør `buildTimeline` alt) og står da i begge dagene.
+- `entries` er dagens fulle tidslinje, sortert og uten overlapp. Et opphold **eller en reise**
+  over midnatt **klippes** til dagen av Akser og står da i begge dagene. En klippet reise og
+  dens etapper får distansen fordelt etter tid.
 - `generatedAt` er når Akser bygde dagen. Er det vi har lagret nyere, ignoreres opplastingen
   (`stale`), slik at et gammelt forsøk som kommer fram sent ikke overskriver en rettelse.
-- `detectorVersion` er fritekst og lagres bare, så en endring i algoritmen kan spores.
+- `detectorVersion` er fritekst og lagres bare, så en endring i algoritmen kan spores. Akser
+  bumper den (`TimelineDetector.version`) når deteksjonen endres, og bygger dager som står med
+  en eldre versjon i statussvaret på nytt.
 - Et opphold har `placeId` når det ligger på et kjent sted. Ellers har det `center`, **avrundet
   til tre desimaler** (~100 m). Det er det eneste koordinatet i tidslinjen, og grunnen til at
   det er med er at et ukjent sted er nettopp det ferie- og hytteflatene trenger.
@@ -225,7 +229,9 @@ rettelser gjort i Ekko er alt med.
 
 - **`center` på ukjente steder** er det eneste koordinatet i tidslinjen. Avrundingen til
   ~100 m er et forslag, ikke en beslutning.
-- **Hvor ofte laster Akser opp?** iOS vekker ikke appen på et klokkeslett. Forslaget er ved
-  hver bakgrunnsoppvåkning, for dager som er ferdige (i går og bakover) og for i dag hvis den
-  er endret.
+- **Hvor ofte laster Akser opp?** Klienten synker når appen åpnes og når den går i
+  bakgrunnen, høyst hver 30. minutt, og på «Synk nå». Bare ferdige dager (i går og bakover);
+  de sju siste bygges hver gang, eldre dager bare når Resonans mangler dem eller har dem fra en
+  eldre detektor. Backfillen tar 31 dager per runde. Synk ved bakgrunnsoppvåkning fra
+  posisjon er ikke bygget.
 - **Tesla som fasit for bil** krever et nytt endepunkt og er ikke med her.

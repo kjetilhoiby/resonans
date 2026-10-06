@@ -1,7 +1,7 @@
 # Akser inn i Resonans
 
 Dato: 2026-10-06
-Status: pågår (fase 1 ferdig 6. oktober 2026)
+Status: pågår (fase 1 i drift 6. oktober 2026, fase 2 skrevet og ikke bygget)
 
 ## Kontekst
 
@@ -55,10 +55,23 @@ Kontrakten mot Akser står i `docs/akser-tidslinje.md`.
 - `$lib/server/app-sensor.ts` er en delt get-or-create for appsensorer. `/api/apps/event`,
   `/api/apps/upload` og `healthkit/*` har fortsatt hver sin private kopi.
 
-### Fase 2: Akser sender
+### Fase 2: Akser sender (skrevet, ikke bygget)
 
-Opplasting av ferdige dager med kø og nye forsøk; steder først. En rettelse er en ny
-opplasting av samme dag.
+I `resonans-lab/akser`, beskrevet i Aksers `DATAFLOW.md`, fase 6. **Skrevet uten
+Swift-verktøykjede: verken kompilert eller kjørt.**
+
+- «Koble til Resonans» i Aksers innstillinger: `ASWebAuthenticationSession` mot
+  `/api/apps/authorize?app=akser`, hemmeligheten i nøkkelringen, URL-skjemaet `akser`.
+- `ResonansTimelineMapper` (ren, med tester) oversetter tidslinjen: Oslo-døgn uavhengig av
+  telefonens tidssone, klipping over midnatt med distansen fordelt etter tid, `still`/`noise`
+  ut, steder som ikke er i lista blir ukjente steder med avrundet sentrum, tidspunkter rundet
+  ned til hele sekunder før klipping.
+- `ResonansSync` bruker statussvaret i stedet for en lokal kø: de sju siste dagene bygges hver
+  runde, deretter dager Resonans mangler (nyeste først, 31 per runde) og dager fra en eldre
+  detektor. Et avtrykk per dag hindrer at uendret innhold sendes igjen, og en avvist dag
+  prøves ikke igjen før innholdet endres.
+- En rettelse er en ny opplasting av samme dag, men bare innenfor de sju siste dagene. Eldre
+  rettelser når Resonans først når detektorversjonen bumpes.
 
 ### Fase 3: Fasit fra Resonans
 
@@ -136,6 +149,10 @@ Notert her fordi det avgjør hvilke data Akser trenger fra Resonans:
 - Mengde, ikke ett punkt: én nedoverbakke på 55 km/t skal ikke gjøre en elsykkeltur til bil.
 
 ## Verifisering
+
+Fase 2: ingenting kjørt. 21 nye XCTest-er for mapperen og planleggeren ligger klare
+(`ResonansTimelineMapperTests`); første verifisering er `swift test` og et bygg til telefonen,
+og deretter at `GET /api/apps/akser/status` viser dagene.
 
 Fase 1: `npm test` (5235 tester, 28 nye) og `npm run check` grønne. Endepunktene ble i tillegg
 kjørt mot en lokal Postgres med hele skjemaet (ni scenarioer: steder og arkivering, erstatt
