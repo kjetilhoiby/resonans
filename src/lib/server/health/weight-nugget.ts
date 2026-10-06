@@ -11,7 +11,11 @@
  */
 
 import { osloDayKey } from '$lib/domain/oslo-time';
-import { buildWeightPush, type WeightPushCopy } from '$lib/domain/health/weight-nugget-rules';
+import {
+	buildWeightPush,
+	type WeightNuggetInput,
+	type WeightPushCopy
+} from '$lib/domain/health/weight-nugget-rules';
 import { readWeightDays } from '$lib/server/health/weight-history';
 import { readActiveWeightGoal } from '$lib/server/health/weight-goal-track';
 import { readHealthMetricSettings, readMetricNumber } from '$lib/server/health/metric-settings';
@@ -30,7 +34,19 @@ export async function computeWeightPush(args: {
 	/** Settes i tester; ellers dagens Oslo-dato. */
 	now?: Date;
 }): Promise<WeightPushCopy> {
-	const { userId, latestKg } = args;
+	const input = await gatherWeightNuggetInput(args);
+	return buildWeightPush({ ...input, latestKg: args.latestKg });
+}
+
+/**
+ * Inngangen til vektreglene, uten å velge blant dem. Delt av pushen og
+ * hjemskjermens brev (`$lib/server/home-letter.ts`).
+ */
+export async function gatherWeightNuggetInput(args: {
+	userId: string;
+	now?: Date;
+}): Promise<WeightNuggetInput> {
+	const { userId } = args;
 	const now = args.now ?? new Date();
 	const today = osloDayKey(now);
 
@@ -48,11 +64,10 @@ export async function computeWeightPush(args: {
 		return null;
 	});
 
-	return buildWeightPush({
+	return {
 		days,
 		today,
 		goalKg: readMetricNumber(metricSettings, 'weight', 'goal'),
-		goal,
-		latestKg
-	});
+		goal
+	};
 }

@@ -92,6 +92,7 @@ export const PAGE_ROUTE_PATTERNS: readonly string[] = [
 	'/apparat/[navn]',
 	'/arrangementer',
 	'/auth',
+	'/brev',
 	'/design',
 	'/design-exploration',
 	'/design/flater',
