@@ -2174,6 +2174,34 @@ export const sensorEvents = pgTable('sensor_events', {
 	uniqBankBalance: uniqueIndex('sensor_events_bank_balance_unique').on(table.sensorId, table.dataType, table.timestamp, sql`(data->>'accountId')`).where(sql`data_type = 'bank_balance'`)
 }));
 
+// Kjente steder fra en ekstern app (i dag Akser). Hver app eier sine; Resonans
+// skriver aldri tilbake. Se scripts/db-migrations/0074_app_places.sql.
+export const appPlaces = pgTable('app_places', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	/** 'akser' (senere 'ekko'). Samme id som i APP_REGISTRY. */
+	app: text('app').notNull(),
+	/** Appens egen id for stedet — tidslinjen peker på denne. */
+	externalId: text('external_id').notNull(),
+	name: text('name').notNull(),
+	/** En av `PLACE_CATEGORIES` i `$lib/domain/movement/places.ts`. */
+	category: text('category').notNull(),
+	latitude: doublePrecision('latitude').notNull(),
+	longitude: doublePrecision('longitude').notNull(),
+	radiusMeters: integer('radius_meters').notNull(),
+	/** false er appens automatiske «Nytt sted». */
+	named: boolean('named').notNull().default(false),
+	archived: boolean('archived').notNull().default(false),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserAppExternal: uniqueIndex('app_places_user_app_external_idx').on(
+		table.userId,
+		table.app,
+		table.externalId
+	)
+}));
+
 // Raw observed bank-transaction versions from providers (append-only evidence stream).
 export const rawBankTransactionVersions = pgTable('raw_bank_transaction_versions', {
 	id: uuid('id').primaryKey().defaultRandom(),

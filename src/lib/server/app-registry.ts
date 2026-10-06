@@ -16,6 +16,18 @@ const APP_REGISTRY: Record<string, ExternalAppConfig> = {
 		sensorType: 'gps_device',
 		sensorSubtype: 'iphone'
 	},
+	/**
+	 * Bevegelse i bakgrunnen: opphold, reiser og transportform. Sender bare den
+	 * utledede tidslinjen, aldri rå GPS. Kontrakten står i docs/akser-tidslinje.md.
+	 */
+	akser: {
+		id: 'akser',
+		label: 'Akser',
+		deepLinkScheme: 'akser',
+		sensorProvider: 'akser',
+		sensorType: 'location_tracker',
+		sensorSubtype: 'iphone'
+	},
 	ping: {
 		id: 'ping',
 		label: 'Ping',

@@ -1,7 +1,7 @@
 # Akser inn i Resonans
 
 Dato: 2026-10-06
-Status: planlagt
+Status: pågår (fase 1 ferdig 6. oktober 2026)
 
 ## Kontekst
 
@@ -36,18 +36,24 @@ Kontrakten mot Akser står i `docs/akser-tidslinje.md`.
 - Gjenstår: Xcode Cloud-workflow og TestFlight, en testplan som faktisk har tester, og å
   arkivere det gamle repoet.
 
-### Fase 1: Resonans tar imot
+### Fase 1: Resonans tar imot (ferdig)
 
-- `akser` i `APP_REGISTRY`.
-- `GET /api/apps/akser/status`, `PUT /api/apps/akser/places`, `POST`/`DELETE
-  /api/apps/akser/timeline`.
-- Validering rent i `$lib/domain/movement/`, med tester.
-- Lagring i `sensor_events` med egne datatyper (`movement_day`, `movement_stay`,
-  `movement_journey`), erstattet per (sensor, Oslo-dag) i én transaksjon. `movement_day`
-  bærer `generatedAt` og `detectorVersion`, og finnes også for en dag uten bevegelse.
-- Steder i en egen tabell (de kan redigeres og arkiveres; de er ikke hendelser).
-- `lastSync`/`lastError` på sensoren, og `akser` i `FRESHNESS_THRESHOLDS`. Den generiske
-  `/api/apps/event` oppdaterer ikke `lastSync`, og det er en grunn til ikke å bruke den.
+- `akser` i `APP_REGISTRY` (`location_tracker`/`iphone`, deep link `akser://`). Innloggingen
+  (`/api/apps/authorize?app=akser`) virker da uten mer kode.
+- Endepunktene under `src/routes/api/apps/akser/`: `GET status`, `PUT places`,
+  `POST`/`DELETE timeline`.
+- Validering rent i `$lib/domain/movement/timeline.ts` og `places.ts`, 28 tester. Felt for
+  felt, aldri med en spread; ukjent transportform eller sted avvises.
+- Lagring i `$lib/server/movement/akser-store.ts`: `sensor_events` med datatypene
+  `movement_day`, `movement_stay` og `movement_journey`, erstattet per (sensor, Oslo-dag) i
+  én transaksjon. `movement_day` bærer `generatedAt` og `detectorVersion`, og finnes også for
+  en dag uten bevegelse.
+- Steder i den nye tabellen `app_places` (migrasjon `0074_app_places.sql`), med `app` som
+  kolonne så Ekkos steder kan legges ved siden av senere.
+- `lastSync` og `lastError` skrives i samme oppdatering ved hver kontakt; avviste dager står
+  i `lastError`. `akser` i `FRESHNESS_THRESHOLDS` med 48 timer.
+- `$lib/server/app-sensor.ts` er en delt get-or-create for appsensorer. `/api/apps/event`,
+  `/api/apps/upload` og `healthkit/*` har fortsatt hver sin private kopi.
 
 ### Fase 2: Akser sender
 
@@ -107,6 +113,14 @@ runde, når fase 1 har samlet noen uker med reiser mellom kjente steder.
   slettes per dag og i sin helhet.
 - **Pendling venter.** Hva et pendlingsflagg skal endre er en egen avgjørelse, tatt på ekte
   data.
+- **Resonans er navet, og begge appene «kobler til Resonans».** Akser fungerer fullt ut uten:
+  uten tilkobling sender den ingenting, legger ingenting i kø og henter ingen fasit. Ekko og
+  Akser kjenner ikke hverandre (ingen app group, ingen delt iCloud), så synk mellom dem krever
+  en Resonans-konto — i dag en Google-innlogging på allowlisten. Direkte synk tas eventuelt
+  opp igjen ved et ekstremt behov.
+- **Tidspunkter må ha offset.** Uten den tolkes de i serverens tidssone (UTC i drift).
+- **Sentrum avrundes også på serveren.** Akser avrunder selv, men grensa håndheves der
+  dataene lagres.
 
 ### Retning for Aksers deteksjon (ikke bygget)
 
@@ -123,6 +137,11 @@ Notert her fordi det avgjør hvilke data Akser trenger fra Resonans:
 
 ## Verifisering
 
-Ingenting er bygget i Resonans ennå. Akser-endringene (flyttingen og `e_bike`) er skrevet
+Fase 1: `npm test` (5235 tester, 28 nye) og `npm run check` grønne. Endepunktene ble i tillegg
+kjørt mot en lokal Postgres med hele skjemaet (ni scenarioer: steder og arkivering, erstatt
+dagen uten duplikater når starttidene flytter seg, foreldet generering, én avvist dag ved siden
+av en lagret, `lastError` satt og nullstilt, arkiverte steder godtatt og andres steder avvist,
+status, sletting av én dag og av alt). Det oppsettet er ikke committet. Migrasjonen er kjørt to
+ganger mot samme base. Ikke kjørt mot prod. Akser-endringene (flyttingen og `e_bike`) er skrevet
 uten Swift-verktøykjede; flyttingen er bekreftet ved et lokalt bygg til telefon, `e_bike` er
 ukompilert.

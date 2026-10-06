@@ -1,8 +1,11 @@
 # Kontrakt: Akser → Resonans (tidslinje og steder)
 
 Dato: 2026-10-06
-Status: **utkast.** Ingenting er bygget, verken her eller i Akser. Planen og beslutningene
-bak står i `docs/changelog/2026-10-06-akser-integrasjon.md`.
+Status: **bygget i Resonans** (fase 1, 6. oktober 2026). Akser-klienten gjenstår. Planen og
+beslutningene bak står i `docs/changelog/2026-10-06-akser-integrasjon.md`.
+
+Koden: validering i `$lib/domain/movement/` (`timeline.ts`, `places.ts`), lagring i
+`$lib/server/movement/akser-store.ts`, endepunktene under `src/routes/api/apps/akser/`.
 
 ## Kort sagt
 
@@ -66,7 +69,7 @@ serveren ikke har fått, avvises.
 
 Akser bruker svaret til å finne dager som mangler eller er generert av en eldre detektor,
 samme mønster som `/api/apps/healthkit/coverage`. `from`/`to` er Oslo-datoer; default er
-siste 60 dager.
+siste 60 dager fram til i dag, og vinduet er høyst 400 dager.
 
 ### `PUT /api/apps/akser/places`
 
@@ -185,9 +188,15 @@ siste 60 dager.
 | `stale` | Vi har en nyere generering | regner dagen som levert |
 | `rejected` | Valideringsfeil, dagen er urørt | logger `message`; prøver ikke igjen før dagen er bygget på nytt |
 
-Feilkoder: `invalid_date`, `outside_day` (en oppføring ligger utenfor dagen), `overlap`,
-`unknown_mode`, `unknown_place`, `invalid_leg` (en etappe utenfor sin reise, eller slutt før
-start). Selve konvolutten feil (ikke JSON, over 31 dager) gir 400 for hele kallet.
+Feilkoder: `invalid_date` (også samme dato to ganger i ett kall), `invalid_entry` (et felt
+mangler eller har feil form — meldingen navngir det), `outside_day` (en oppføring ligger
+utenfor dagen), `overlap`, `unknown_mode`, `unknown_place`, `invalid_leg` (en etappe utenfor
+sin reise, eller slutt før start). Selve konvolutten feil (ikke JSON, over 31 dager) gir 400
+for hele kallet.
+
+Tidspunkter **må** ha offset (`Z` eller `+02:00`). Uten den tolkes de i serverens tidssone,
+som er UTC i drift — et opphold kl. 08 ville landet kl. 10. Avviste dager skrives i
+`lastError` på sensoren, så de synes i monitoreringen.
 
 ## Fasit: økter fra Resonans
 

@@ -554,6 +554,36 @@ Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ek
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
 *innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.
 
+### Ekstern API-flate (Akser)
+
+iOS-appen **Akser** (`resonans-lab/akser`) sporer bevegelse i bakgrunnen og laster opp
+den UTLEDEDE tidslinjen — opphold, reiser og etapper — aldri rå GPS. Kontrakten i
+`docs/akser-tidslinje.md`, planen i `docs/changelog/2026-10-06-akser-integrasjon.md`.
+Endepunktene: `GET /api/apps/akser/status`, `PUT /api/apps/akser/places`,
+`POST`/`DELETE /api/apps/akser/timeline`. Fasit for transportform henter den fra den
+eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
+
+- **Resonans er navet.** Akser og Ekko kjenner ikke hverandre; alt de deler, deler de
+  her, og bare når begge er koblet til samme bruker. Akser fungerer fullt ut uten.
+- **En opplasting ERSTATTER én Oslo-dag** (`replaceDay` i
+  `$lib/server/movement/akser-store.ts`): sletting og innsetting i én transaksjon,
+  avgrenset til den dagen og den sensoren. Akser bygger dagen på nytt etter rettelser og
+  algoritmeendringer, starttidene flytter seg, og unikhetsindeksen på `sensor_events`
+  ville gjort hver revisjon til en duplikat. En eldre `generatedAt` enn den lagrede er
+  `stale` og skriver ingenting.
+- **Datatypene er `movement_day`/`movement_stay`/`movement_journey`, ALDRI `workout`.**
+  Samme tur skrives alt av opptil tre kilder; en fjerde ville telt med i kilometer, effort
+  og streaks.
+- **Steder bor i `app_places`**, nøklet på (bruker, app, appens id). Lista sendes HEL;
+  et sted som mangler ARKIVERES, siden gamle dager peker på det. Resonans skriver aldri
+  tilbake til appen.
+- **Personvernsgrensa håndheves ved lagring:** validering felt for felt
+  (`$lib/domain/movement/`), ingen spread, sentrum på ukjente steder avrundet til ~100 m
+  på serveren også, og ingen koordinater i logglinjer (`[akser]`-linjene kan leses over
+  `/api/admin/logs`).
+- **En ukjent transportform eller et ukjent sted avvises per dag**, aldri gjettet. Avviste
+  dager står i `lastError` på sensoren, så de synes i monitoreringen.
+
 ### Pulssoner: én modell, to repoer
 
 Se `docs/changelog/2026-08-30-pulssoner-en-modell.md` og `docs/ekko-pulssoner.md`.
