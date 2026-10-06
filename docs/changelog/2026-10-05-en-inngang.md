@@ -132,3 +132,21 @@ chatfeltet:
 - **Temasidene får ikke den flytende knappen.** Chatfanen ligger nederst, og
   ruta sier ikke hvilken fane som er åpen.
 - **Ekko** kjenner ikke `attachments`.
+
+## Etterarbeid: «Last opp og triager» sa noe som ikke skjer
+
+Kamera-, lyd- og filpanelene på hjemskjermen hadde knappen «Last opp og
+triager →» og ventetilstanden «Triagerer…». Brukeren spurte om vi faktisk
+triagerer. Det gjør vi ikke: alle tre går gjennom `requestAttachmentUpload`
+(`/api/attachment-extract`), som laster opp og trekker ut tekst eller et
+transkript. Vedlegget festes så i chatfeltet, og coachen tolker det i samtalen.
+`requestAttachmentTriage` (`/api/attachment-triage`) har ingen kallere lenger,
+og «langpress på bildet» som kommentaren lovte finnes ikke.
+
+- Knappene heter nå «Legg ved →». Ventetilstandene sier hva som faktisk skjer:
+  «Leser bildet…», «Leser filen…» og «Transkriberer…».
+- Regnearkknappen heter «Hent regnearket →».
+- Den kalde triagen (endepunktet og hjelperne rundt `AttachmentTriageResponse`)
+  står urørt. Regnearkflyten bruker fortsatt formen til å vise forslagene sine.
+  Endepunktet kan slettes når det er bekreftet ubrukt, fordi det ligger utenfor
+  `/api/apps/*`.

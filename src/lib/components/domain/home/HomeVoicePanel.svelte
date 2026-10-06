@@ -97,9 +97,9 @@
 				{#if ctx.voiceUploading}
 					{ctx.voiceProgress > 0 && ctx.voiceProgress < 1
 						? `Laster opp… ${Math.round(ctx.voiceProgress * 100)}%`
-						: 'Triagerer…'}
+						: 'Transkriberer…'}
 				{:else}
-					Last opp og triager →
+					Legg ved →
 				{/if}
 			</button>
 		{/if}

@@ -175,7 +175,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
 		id: 'file',
 		label: 'Fil',
 		icon: 'file',
-		description: 'Ta inn dokumenter, video eller annet innhold som bør triageres videre.',
+		description: 'Legg ved dokumenter, video eller annet innhold, og snakk med coachen om det.',
 		placeholder: 'Hva inneholder filen, og hva vil du at vi skal gjøre med den?',
 		helper: 'Kan være PDF, eksport, skjermdump, video eller annet materiale du vil rute til riktig tema.'
 	}
@@ -202,10 +202,10 @@ export async function requestAttachmentTriage(
 
 /**
  * Slank opplasting uten triage: laster kun opp + trekker ut innhold via
- * /api/attachment-extract. Brukes for «pen visning i tråden»-flyten der bildet
- * vises med en valgfri bildetekst, og chatturen selv håndterer konteksten —
- * ingen kald LLM-triage, ingen auto-registrering. (Triage kan fortsatt kjøres
- * på forespørsel via langpress på bildet.)
+ * /api/attachment-extract (tekst, transkripsjon). Vedlegget festes i chatfeltet,
+ * og chatturen selv tolker det — ingen kald LLM-triage, ingen auto-registrering.
+ * Knappene sier derfor «Legg ved», ikke «triager»: det var en løgn fra tida
+ * `requestAttachmentTriage` ble kalt, og den har ingen kallere lenger.
  */
 export async function requestAttachmentUpload(
 	file: File,

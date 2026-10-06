@@ -63,7 +63,7 @@
 				<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
 			{/if}
 			<button class="flow-submit" onclick={ctx.submitCamera} disabled={ctx.cameraUploading}>
-				{ctx.cameraUploading ? 'Triagerer…' : 'Last opp og triager →'}
+				{ctx.cameraUploading ? 'Leser bildet…' : 'Legg ved →'}
 			</button>
 		{/if}
 	</div>
