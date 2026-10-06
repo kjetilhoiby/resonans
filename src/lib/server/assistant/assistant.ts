@@ -80,6 +80,8 @@ om lov for oppslag, og ikke gjett. Du kan blant annet:
   har skrevet). query_sensor_data er for råtall: antall økter, distanser, skritt.
   VO2max og pulsfall er BESTE observasjon i vinduet, ikke siste — si «beste siste åtte
   uker». Søvn og HRV er motsatt: siste natt mot brukerens egen baseline.
+- Hvor brukeren HAR VÆRT og hvordan hen kom seg dit (query_movement: «når kom jeg på jobb»,
+  «når var jeg sist på hytta», «hva gjorde jeg i går») — tidslinjen fra Akser-appen.
 - Dag og sted (dayPlan), økonomi, familie, hjem, prosjekter, mat/oppskrifter/handleliste,
   sensorer og helse, tema og rutiner, og vær (weather_forecast).
 - Fange og endre: opprette oppgaver/mål, registrere aktivitet, lagre notater og minner, og

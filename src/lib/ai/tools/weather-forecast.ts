@@ -1,4 +1,6 @@
 export interface WeatherToolArgs {
+	/** Gir hjemmet fra Akser som default når modellen ikke oppgir koordinater. */
+	userId?: string;
 	latitude?: number;
 	longitude?: number;
 	locationName?: string;
@@ -24,6 +26,16 @@ const DEFAULT_LOCATION = {
 	longitude: 10.7522,
 	timezone: 'Europe/Oslo'
 };
+
+async function homeOrNull(userId: string) {
+	try {
+		const { readHomeLocation } = await import('$lib/server/movement/home-location');
+		return await readHomeLocation(userId);
+	} catch (error) {
+		console.warn('[weather] kunne ikke lese hjemmet fra Akser:', error instanceof Error ? error.message : error);
+		return null;
+	}
+}
 
 function clampCoordinate(value: unknown, min: number, max: number) {
 	if (typeof value !== 'number' || Number.isNaN(value)) return null;
@@ -61,12 +73,19 @@ function toConditionLabel(code: string) {
 export const weatherForecastTool = {
 	name: 'weather_forecast',
 	description:
-		'Hent værprognose fra MET.no Locationforecast API basert på koordinater. Bruk for spørsmål om vær nå, neste timer eller når svar bør berikes med lokalt vær.',
+		'Hent værprognose fra MET.no Locationforecast API basert på koordinater. Uten koordinater brukes brukerens hjem (fra Akser), ellers Oslo. Bruk for spørsmål om vær nå, neste timer eller når svar bør berikes med lokalt vær.',
 
 	execute: async (args: WeatherToolArgs) => {
-		const fallback = fallbackFromTimezone(args.timezone);
-		const latitude = clampCoordinate(args.latitude, -90, 90) ?? fallback.latitude;
-		const longitude = clampCoordinate(args.longitude, -180, 180) ?? fallback.longitude;
+		const givenLatitude = clampCoordinate(args.latitude, -90, 90);
+		const givenLongitude = clampCoordinate(args.longitude, -180, 180);
+		const hasCoordinates = givenLatitude !== null && givenLongitude !== null;
+		// Uten koordinater: brukerens hjem fra Akser, ellers Oslo sentrum.
+		const home = !hasCoordinates && args.userId ? await homeOrNull(args.userId) : null;
+		const fallback = home
+			? { name: home.name, latitude: home.latitude, longitude: home.longitude }
+			: fallbackFromTimezone(args.timezone);
+		const latitude = hasCoordinates ? givenLatitude : fallback.latitude;
+		const longitude = hasCoordinates ? givenLongitude : fallback.longitude;
 		const locationLabel = typeof args.locationName === 'string' && args.locationName.trim().length > 0
 			? args.locationName.trim().slice(0, 80)
 			: fallback.name;
@@ -123,11 +142,10 @@ export const weatherForecastTool = {
 
 		return {
 			success: true,
-			location: {
-				name: locationLabel,
-				latitude,
-				longitude
-			},
+			// Hjemmets koordinater gis ikke videre til modellen; den trenger navnet.
+			location: home
+				? { name: locationLabel, source: 'home' as const }
+				: { name: locationLabel, latitude, longitude },
 			current: {
 				temperatureC,
 				windMps,

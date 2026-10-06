@@ -31,6 +31,7 @@ import {
 	recordContact,
 	replaceDay
 } from '$lib/server/movement/akser-store';
+import { enrichTripsFromAkser } from '$lib/server/movement/akser-trip-geo';
 
 type DayOutcome =
 	| { date: string | null; status: 'stored'; stays: number; journeys: number }
@@ -103,6 +104,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		};
 	}
 
+	// Hvor brukeren var på reisedager, inn i reise-temaene. Best-effort: dagene er
+	// alt lagret, og en feil her skal ikke se ut som en mislykket opplasting.
+	const storedDays = accepted.filter((day) => results.some((r) => r.date === day.date && r.status === 'stored'));
+	let tripDays = 0;
+	try {
+		tripDays = await enrichTripsFromAkser(userId, storedDays);
+	} catch (err) {
+		console.warn('[akser] reise-geo feilet:', err instanceof Error ? err.message : err);
+	}
+
 	const rejected = results.filter((r) => r.status === 'rejected');
 	await recordContact(
 		sensorId,
@@ -114,7 +125,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	console.log(
 		`[akser] tidslinje user=${userId} lagret=${results.filter((r) => r.status === 'stored').length}` +
-			` foreldet=${results.filter((r) => r.status === 'stale').length} avvist=${rejected.length}`
+			` foreldet=${results.filter((r) => r.status === 'stale').length} avvist=${rejected.length}` +
+			(tripDays > 0 ? ` reisedager=${tripDays}` : '')
 	);
 	return json({ ok: true, results });
 };

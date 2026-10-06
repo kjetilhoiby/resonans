@@ -1,7 +1,7 @@
 # Akser inn i Resonans
 
 Dato: 2026-10-06
-Status: pågår (fase 1 i drift 6. oktober 2026, fase 2 skrevet og ikke bygget)
+Status: pågår (fase 1 og 4 i drift 6. oktober 2026, fase 2 skrevet og ikke bygget)
 
 ## Kontekst
 
@@ -79,13 +79,32 @@ Akser leser `GET /api/apps/workouts` og bruker overlappende økter som etiketter
 Akser blir da en ny konsument av `/api/apps/*`, ved siden av Ekko, og CLAUDE.md-avsnittet
 «Ekstern API-flate» må si det når fasen er bygget.
 
-### Fase 4: Resonans bruker dataene
+### Fase 4: Resonans bruker dataene (ferdig)
 
-- Observert opphold som kilde i `trip-geo`, og en hjemadresse for vær.
-- Plan mot faktisk i `gatherDayContext` og `/api/apps/day`.
-- `query_movement` på begge chatflatene (`routes/api/chat/+server.ts` og
-  `server/assistant/shared-tools.ts`), med gruppe i `TOOL_GROUP_MAP` og ordene brukeren
-  faktisk skriver i `detectPromptFocusModules`.
+- **`query_movement`** (`$lib/ai/tools/query-movement.ts`) på begge chatflatene, reglene rent
+  i `$lib/domain/movement/movement-summary.ts`, lesingen i `$lib/server/movement/movement-read.ts`.
+  Fire utsnitt: `day`, `arrivals` («når kom jeg på jobb, og hvordan»), `last_visit` («når var
+  jeg sist på hytta») og `places`. Svaret bærer aldri koordinater.
+  - **Gruppe `kjerne`, ikke `helse`.** Spørsmålene ser ut som hverdagsprat og ruter til
+    `general`; da ville verktøyet falt ut idet utvalget skrus på. Derfor ingen nye ord i
+    `detectPromptFocusModules` heller — kjernen følger alltid med. Prompten nevner verktøyet i
+    `BASE_PROMPT` og i Ekko-assistentens systemprompt.
+  - **Et opphold fra 00:00 er ikke en ankomst.** Akser klipper natta til dagen, så «når kom
+    jeg hjem» ville ellers svart 00:00 hver dag.
+  - **Reisen dit er den siste som sluttet innen 15 minutter før oppholdet**, ikke bare en
+    eksakt match: en kort pause skal ikke gjøre ankomsten transportløs.
+  - **Steder matches på navn før kategori**, med norske bøyninger («hytta»/«hytte») og
+    stoppord. Treffer ingenting, svarer verktøyet med stedene som finnes — det gjetter ikke.
+- **Hjemmet til været.** `weather_forecast` uten koordinater brukte Oslo sentrum; nå brukes
+  Aksers `home`-sted (`$lib/domain/movement/home-place.ts`), avrundet til to desimaler (~1 km)
+  før det sendes til MET, og koordinatene gis ikke videre til modellen.
+- **Faktisk dag i dagskonteksten.** `gatherDayContext` har et nytt felt `observed` for en dag
+  som er over (Akser sender ferdige dager, så i dag har det aldri). Det følger med i
+  `/api/apps/day` og Ekko-assistentens `dayPlan`; Ekko-appen leser det ikke ennå.
+- **Reisedager i `trip-geo`.** En lagret Akser-dag inne i et reise-tema skriver
+  `geoByDay` med kilde `observed`: oppholdet som varer til midnatt (der brukeren sov), ellers
+  det lengste. Samme presedens som Ekkos kjøretur; det sist skrevne vinner. Best-effort i
+  opplastingen — en feil her gjør ikke opplastingen mislykket.
 
 ### Fase 5: Ekko og stedene
 
@@ -149,6 +168,11 @@ Notert her fordi det avgjør hvilke data Akser trenger fra Resonans:
 - Mengde, ikke ett punkt: én nedoverbakke på 55 km/t skal ikke gjøre en elsykkeltur til bil.
 
 ## Verifisering
+
+Fase 4: `npm test` (5265) og `npm run check` grønne, med 30 nye tester. Mot en lokal
+Postgres med hele skjemaet (ikke committet): lesing av dager og steder, alle fire utsnittene
+av `query_movement` inkludert ukjent sted og ikke tilkoblet, hjemmet, `observed` i
+dagskonteksten (og fravær for i dag), og `geoByDay` på et reise-tema.
 
 Fase 2: ingenting kjørt. 21 nye XCTest-er for mapperen og planleggeren ligger klare
 (`ResonansTimelineMapperTests`); første verifisering er `swift test` og et bygg til telefonen,

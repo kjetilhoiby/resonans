@@ -11,6 +11,7 @@ import { queryProjectsTool } from '$lib/ai/tools/query-projects';
 import { querySensorDataTool } from '$lib/ai/tools/query-sensor-data';
 import { queryTrainingTool } from '$lib/ai/tools/query-training';
 import { queryWeightTool } from '$lib/ai/tools/query-weight';
+import { queryMovementTool } from '$lib/ai/tools/query-movement';
 import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { querySleepTool } from '$lib/ai/tools/query-sleep';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
@@ -157,6 +158,8 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(querySleepTool),
 	adaptSharedTool(queryEgenfrekvensTool),
 	adaptSharedTool(queryTeslaVehicleTool),
+	// Bevegelser fra Akser: opphold, reiser og transportform
+	adaptSharedTool(queryMovementTool),
 	// Mat
 	adaptSharedTool(manageRecipeTool),
 	adaptSharedTool(manageMealPlanTool),
@@ -213,10 +216,10 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 		description: MANAGE_TRAINING_PROGRAM_DESCRIPTION,
 		parametersSchema: MANAGE_TRAINING_PROGRAM_SCHEMA
 	}),
-	// Vær (verktøyet tar ikke userId; locationName/koordinater fra modellen)
+	// Vær. userId gir hjemmet fra Akser som default; locationName/koordinater fra modellen
 	adaptSharedTool(weatherForecastTool, {
 		description:
-			'Værprognose (MET.no) for et sted. Oppgi koordinater når du har dem (f.eks. fra et reisemål via driving_route), ellers default Oslo. Bruk for vær på reisemålet eller underveis.',
+			'Værprognose (MET.no) for et sted. Oppgi koordinater når du har dem (f.eks. fra et reisemål via driving_route); uten koordinater brukes brukerens hjem (fra Akser), ellers Oslo. Bruk for vær på reisemålet eller underveis.',
 		parametersSchema: WEATHER_SCHEMA
 	}),
 	// Refleksjoner og notater (lesing)

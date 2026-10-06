@@ -13,6 +13,8 @@
  * kandidater og persisterer resultatet i themes.tripProfile.geoByDay.
  */
 
+import { osloDayBounds, roundCoordinate, type NormalizedDay } from '$lib/domain/movement/timeline';
+
 export type GeoSource = 'observed' | 'declared' | 'overnight';
 
 export interface DayGeo {
@@ -85,6 +87,42 @@ export function applyDayGeo(
 		next[dateKey] = candidate;
 	}
 	return next;
+}
+
+/** Det Akser vet om et sted, uten mer presisjon enn tidslinjen ellers bærer. */
+export interface AkserPlaceGeo {
+	name: string;
+	named: boolean;
+	latitude: number;
+	longitude: number;
+}
+
+/**
+ * Observert dags-geo fra en Akser-dag: hvor brukeren SOV. Det er oppholdet som varer
+ * til midnatt; finnes ikke det (telefonen var av, eller dagen sluttet på en reise),
+ * det lengste oppholdet. Koordinatene avrundes til ~100 m, som sentrum i tidslinjen.
+ *
+ * Samme presedens som en observert kjøretur. Kjøreturen sier hvor bilen stoppet;
+ * Akser sier hvor brukeren ble — og skrives den sist, vinner den.
+ */
+export function buildAkserDayGeo(day: NormalizedDay, places: ReadonlyMap<string, AkserPlaceGeo>): DayGeo | null {
+	if (day.stays.length === 0) return null;
+	const end = osloDayBounds(day.date)?.end.getTime();
+	const length = (s: NormalizedDay['stays'][number]) => Date.parse(s.endedAt) - Date.parse(s.startedAt);
+	const overnight = day.stays.find((s) => Date.parse(s.endedAt) === end);
+	const chosen = overnight ?? [...day.stays].sort((a, b) => length(b) - length(a))[0];
+
+	const place = chosen.placeId ? places.get(chosen.placeId) : undefined;
+	if (place) {
+		return {
+			place: place.named ? place.name : undefined,
+			lat: roundCoordinate(place.latitude),
+			lon: roundCoordinate(place.longitude),
+			source: 'observed'
+		};
+	}
+	if (chosen.center) return { lat: chosen.center.lat, lon: chosen.center.lon, source: 'observed' };
+	return null;
 }
 
 /** Et ønsket deklarert dags-sted utledet fra en dagsoppgave («Kjøre til Volda»). */

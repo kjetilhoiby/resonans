@@ -77,6 +77,9 @@ export const TOOL_GROUP_MAP: Record<string, readonly ToolGroup[]> = {
 	update_goal: ['kjerne'],
 	check_similar_goals: ['kjerne'],
 	search_metrics: ['kjerne'],
+	// Kjerne, ikke helse: «når kom jeg på jobb» og «når var jeg sist på hytta» ser ut
+	// som hverdagsspørsmål og ruter til `general`. En reise er forflytning, ikke trening.
+	query_movement: ['kjerne'],
 	// Helse
 	query_training: ['helse'],
 	query_weight: ['helse'],
