@@ -46,7 +46,7 @@ rask»).
 |---|---|---|
 | 1. Coachen | Fase 1–6 ferdig, kuttet måles i skygge | **▶ Ta opp igjen her** (se under) |
 | 2. Én inngang | Fase 1–2 ute til utprøving | Hjem: chatfeltet tar flere vedlegg og innliming. Andre sider: flytende «+» |
-| 3. Hjemskjerm etter døgnet | Skissert (A1–A3) | Kan startes nå |
+| 3. Hjemskjerm etter døgnet | Prototype på `/brev` (✉ på hjemskjermen) | Brukeren prøver den; se `2026-10-06-brev-prototype.md` |
 | 4. Visuelt uttrykk | **Besluttet: A** | Klar til å tegnes ut |
 | 5. Tre rom (struktur) | Foreslått | Etter spor 2 og 3 |
 

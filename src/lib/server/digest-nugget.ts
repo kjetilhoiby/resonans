@@ -16,6 +16,7 @@
 import { osloDayKey } from '$lib/domain/oslo-time';
 import {
 	buildDigestPush,
+	type DigestNuggetInput,
 	type DigestPushCopy,
 	type DigestStreak,
 	type DigestWeek
@@ -72,6 +73,19 @@ export async function computeDigestPush(args: {
 	/** Settes i tester; ellers dagens Oslo-dato. */
 	now?: Date;
 }): Promise<DigestPushCopy | null> {
+	return buildDigestPush(await gatherDigestInput(args));
+}
+
+/**
+ * Inngangen til dagsreglene, uten å velge blant dem. Delt av pushen og
+ * hjemskjermens brev (`$lib/server/home-letter.ts`), så de to leser de samme
+ * tallene på samme måte.
+ */
+export async function gatherDigestInput(args: {
+	userId: string;
+	carryover: readonly string[];
+	now?: Date;
+}): Promise<DigestNuggetInput> {
 	const { userId, carryover } = args;
 	const now = args.now ?? new Date();
 
@@ -87,7 +101,7 @@ export async function computeDigestPush(args: {
 		state
 	}));
 
-	return buildDigestPush({
+	return {
 		today: osloDayKey(now),
 		/**
 		 * Både en ekte periode og det gamle nå-flagget slår varselet av.
@@ -102,5 +116,5 @@ export async function computeDigestPush(args: {
 		carryover,
 		weightDays,
 		week
-	});
+	};
 }

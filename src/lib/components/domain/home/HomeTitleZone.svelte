@@ -36,6 +36,11 @@
 				     sekunder ledig, mens et skriveprosjekt er noe man setter seg ned
 				     med. Det er fangst-øyeblikket denne funksjonen skal vinne. Veien
 				     videre til prosjektene ligger på /notater. -->
+				<!-- MIDLERTIDIG: inngangen til brev-prototypen (/brev). En PWA har ingen
+				     adresselinje, så uten en lenke her kan den ikke prøves på telefonen.
+				     Fjernes sammen med siden, eller når brevet flytter inn på hjemskjermen.
+				     Se docs/changelog/2026-10-06-brev-prototype.md. -->
+				<a href="/brev" class="icon-link brev-link" aria-label="Brev (prototype)" data-track="hjem:brev-prototype">✉</a>
 				<a href="/notater" class="icon-link" aria-label="Notatblokk"><Icon name="file" size={18} /></a>
 				<a href="/funn" class="icon-link" aria-label="Funn"><Icon name="star" size={18} /></a>
 				<!-- Arrangementer: billetter kjøpt i god tid. Ligger her og ikke under
@@ -86,6 +91,10 @@
 		border-color: #2e3660;
 	}
 
+	.brev-link {
+		font-size: 1rem;
+		line-height: 1;
+	}
 	/* Ferie-snarvei: emoji i stedet for ikon, litt varmere ramme. */
 	.ferie-link {
 		font-size: 1.1rem;

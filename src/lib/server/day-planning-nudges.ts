@@ -239,7 +239,7 @@ async function findChecklistByContext(userId: string, context: string) {
  * tallet, og «Overliggere: 1» tvinger brukeren til å åpne appen for å finne ut
  * om det ene punktet var verdt å bli varslet om.
  */
-async function openItemsFromDay(userId: string, dayIso: string) {
+export async function openItemsFromDay(userId: string, dayIso: string) {
 	const context = contextForDay(dayIso);
 	if (!context) return { titles: [] as string[], count: 0 };
 	const checklist = await findChecklistByContext(userId, context);
