@@ -510,7 +510,8 @@ iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, 
 `/api/apps/upload` (logging/opplasting av økter), `/api/apps/programs*`, `/api/apps/coach`,
 `/api/apps/assistant`, `/api/apps/day`, `/api/apps/workouts*` (liste, analyse og
 skjuling), `/api/apps/heart-rate-baseline` (pulssoner), `/api/apps/strava/*`,
-`/api/apps/tesla/*`, `/api/apps/gemini/*` (kortlevde Gemini Live-tokens) og `/api/apps/ro/*`
+`/api/apps/tesla/*`, `/api/apps/ekko/places` (stedene, koblet mot Aksers),
+`/api/apps/gemini/*` (kortlevde Gemini Live-tokens) og `/api/apps/ro/*`
 (Ro, refleksjons- og ekvanimitetsmodusen – se `docs/ekko-ro.md`).
 
 **NB om navn:** `/api/apps/live-session` er posisjonsdeling under løpetur, ikke en
@@ -586,6 +587,12 @@ eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
 - **Chatten leser tidslinjen med `query_movement`**, i verktøygruppa `kjerne`: «når kom jeg
   på jobb» ser ut som hverdagsprat og ruter til `general`. Reglene (ankomst, stedsmatching)
   bor i `$lib/domain/movement/movement-summary.ts`. Svaret bærer aldri koordinater.
+- **Akser- og Ekko-steder kobles, de slås aldri sammen** (`app_place_links`, regelen i
+  `$lib/domain/movement/place-links.ts`). Overlapp og samme kategori eller navn → `auto`,
+  overlapp ellers → `suggested`, besvart på `/settings/sources`. Ekko har ingen kategori, så
+  den utledes av navnet. Hvert sted kobles høyst én gang, nærmeste først — Akser hadde 22
+  automatiske steder rundt hjemmet. Brukerens `confirmed`/`rejected` regnes aldri ut på nytt.
+  Et koblet Ekko-navn er et alias i `query_movement`.
 - **Aksers hjem er Resonans' hjem.** `weather_forecast` uten koordinater bruker det
   (`readHomeLocation`, avrundet til ~1 km før det går til MET), og en Akser-dag inne i et
   reise-tema skriver `geoByDay` med kilde `observed`.

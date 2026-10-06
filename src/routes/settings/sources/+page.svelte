@@ -15,7 +15,8 @@
 		HrTrustCard,
 		EconomyDiagnosticsCard,
 		ReservationCleanupCard,
-		BookedDuplicateCleanupCard
+		BookedDuplicateCleanupCard,
+		PlaceLinksCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
 
@@ -113,6 +114,8 @@
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
+		<!-- Akser og Ekko: stedene kobles i Resonans, og forslagene besvares her. -->
+		<PlaceLinksCard />
 		<StravaSourceCard />
 		<!--
 			Arkivimporten står MELLOM Strava-kilden og jobbene som rydder etter den:

@@ -198,3 +198,22 @@ describe('summarizePlaces', () => {
 		expect(result.unnamedPlaces).toBe(1);
 	});
 });
+
+describe('Ekko-navn som alias', () => {
+	const kindergarten: MovementPlace = { ...AUTO, id: 'k', aliases: ['Barnehagen'] };
+	const withAlias = [HOME, WORK, CABIN, kindergarten];
+
+	it('et automatisk sted får Ekkos navn', () => {
+		expect(placeLabel('k', new Map(withAlias.map((p) => [p.id, p])))).toBe('Barnehagen');
+	});
+
+	it('finnes på Ekkos navn', () => {
+		expect(matchPlaces('barnehagen', withAlias)).toMatchObject({ kind: 'name', places: [kindergarten] });
+	});
+
+	it('står i stedslista, og telles ikke som et sted uten navn', () => {
+		const result = summarizePlaces({ stays: [], journeys: [], places: [...withAlias, AUTO] });
+		expect(result.places.map((p) => p.name)).toContain('Barnehagen');
+		expect(result.unnamedPlaces).toBe(1);
+	});
+});

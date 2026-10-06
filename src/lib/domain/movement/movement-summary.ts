@@ -27,6 +27,11 @@ export interface MovementPlace {
 	category: PlaceCategory;
 	named: boolean;
 	archived: boolean;
+	/**
+	 * Navn på det samme stedet i Ekko (koblet automatisk eller bekreftet). Et sted Akser
+	 * kaller «Nytt sted» kan hete «Barnehagen» i Ekko, og da er det det brukeren sier.
+	 */
+	aliases?: string[];
 }
 
 export interface MovementData {
@@ -106,6 +111,7 @@ export function placeLabel(placeId: string | null, places: ReadonlyMap<string, M
 	const place = places.get(placeId);
 	if (!place) return CATEGORY_LABELS.unknown;
 	if (place.named) return place.name;
+	if (place.aliases?.length) return place.aliases[0];
 	return place.category === 'unknown' ? CATEGORY_LABELS.unknown : `${CATEGORY_LABELS[place.category]} (uten navn)`;
 }
 
@@ -149,13 +155,14 @@ export function matchPlaces(query: string, places: readonly MovementPlace[]): Pl
 	if (words.length === 0) return { kind: 'none' };
 	const stems = words.map(stem);
 
-	const byName = places.filter((place) => {
-		if (!place.named) return false;
-		const nameWords = normalizePlaceText(place.name).split(/\s+/).map(stem);
-		const whole = normalizePlaceText(place.name);
-		if (whole === normalizePlaceText(query)) return true;
+	const nameMatches = (name: string) => {
+		const nameWords = normalizePlaceText(name).split(/\s+/).map(stem);
+		if (normalizePlaceText(name) === normalizePlaceText(query)) return true;
 		return stems.every((s) => nameWords.some((w) => w.startsWith(s) || (s.startsWith(w) && w.length >= 4)));
-	});
+	};
+	const byName = places.filter(
+		(place) => (place.named && nameMatches(place.name)) || (place.aliases ?? []).some(nameMatches)
+	);
 	if (byName.length > 0) return { kind: 'name', places: byName };
 
 	for (const word of words) {
@@ -435,19 +442,19 @@ export function summarizePlaces(data: MovementData): { places: PlaceOverview[]; 
 		set.add(stay.date);
 		visits.set(stay.placeId, set);
 	}
-	const named = data.places.filter((p) => p.named && !p.archived);
+	const named = data.places.filter((p) => (p.named || p.aliases?.length) && !p.archived);
 	return {
 		places: named
 			.map((p) => {
 				const days = visits.get(p.id) ?? new Set<string>();
 				return {
-					name: p.name,
+					name: p.named ? p.name : p.aliases![0],
 					category: CATEGORY_LABELS[p.category],
 					visitDays: days.size,
 					lastDate: [...days].sort().at(-1) ?? null
 				};
 			})
 			.sort((a, b) => b.visitDays - a.visitDays || a.name.localeCompare(b.name, 'nb')),
-		unnamedPlaces: data.places.filter((p) => !p.named && !p.archived).length
+		unnamedPlaces: data.places.filter((p) => !p.named && !p.aliases?.length && !p.archived).length
 	};
 }
