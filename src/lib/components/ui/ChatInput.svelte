@@ -306,7 +306,7 @@
 		<div class="ci-actions-rig" aria-label="Input-handlinger">
 			{#if streaming}
 				<button class="ci-icon-btn ci-stop-btn" type="button" title="Stopp" onmousedown={(e) => e.preventDefault()} onclick={onStop}>■</button>
-			{:else if hasDraft}
+			{:else if hasDraft || attachmentPending}
 				<button class="ci-icon-btn" type="button" title="Legg til bilde til samtale" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('camera')} disabled={disabled}>
 					<Icon name="camera" size={18} />
 				</button>
