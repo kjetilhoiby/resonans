@@ -559,6 +559,12 @@ Konsekvens for opprydding: endepunkter **utenfor** disse prefiksene har ingen ek
 konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer du noe
 *innenfor* `/api/apps/*`, må det koordineres med ekko-repoet.
 
+**Et nytt `/api/apps/*`-endepunkt plasseres i gruppe A, B eller C FØR det bygges** — se
+`resonans-lab/RESONANS_GRENSER.md`. Appene skal kunne stå uten Resonans: A trenger bare
+*en* server (en hemmelighet eller en offentlig adresse — Gemini-tokens, Strava/Tesla-OAuth,
+live-delingen), B er en Resonans-funksjon vist i appen, C er data inn til navet. A holdes
+flyttbart under eget prefiks, uten avhengigheter til tabeller funksjonen ikke eier.
+
 ### Ekstern API-flate (Akser)
 
 iOS-appen **Akser** (`resonans-lab/akser`) sporer bevegelse i bakgrunnen og laster opp
