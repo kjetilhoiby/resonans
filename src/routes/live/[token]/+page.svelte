@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '$lib/components/charts/mapStyle';
+	import { page } from '$app/state';
+	import { describeLiveShare } from '$lib/domain/live-share';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -23,6 +25,8 @@
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
 
 	const isActive = $derived(!endedAt);
+	// Forhåndsvisningen sier det samme som /share (se $lib/domain/live-share.ts).
+	const shareSummary = $derived(describeLiveShare(data));
 	const hasPosition = $derived(lat !== null && lng !== null);
 	const hasDest = $derived(data.destLat !== null && data.destLon !== null);
 	const speedKmh = $derived(speedMps !== null ? Math.round(speedMps * 3.6) : null);
@@ -212,13 +216,11 @@
 </script>
 
 <svelte:head>
-	<title>{data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon'}</title>
+	<title>{shareSummary.title}</title>
 	<meta name="robots" content="noindex" />
-	<meta property="og:title" content={data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon'} />
-	<meta property="og:description" content={data.destLabel
-		? `På vei til ${data.destLabel}${etaSeconds ? ` · ankomst ${formatEta(etaSeconds)}` : ''}`
-		: 'Se live posisjon'} />
-	<meta property="og:image" content={`/api/live/${data.token}/og.png`} />
+	<meta property="og:title" content={shareSummary.title} />
+	<meta property="og:description" content={shareSummary.description} />
+	<meta property="og:image" content={`${page.url.origin}/api/live/${data.token}/og.png`} />
 	<meta property="og:image:width" content="1200" />
 	<meta property="og:image:height" content="630" />
 </svelte:head>
