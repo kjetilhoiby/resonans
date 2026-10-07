@@ -5,6 +5,7 @@ import {
 	formatDistanceLeft,
 	formatMinutesLeft,
 	formatOsloClock,
+	splitRouteAtPosition,
 	type LiveShareInput
 } from './live-share';
 
@@ -108,5 +109,19 @@ describe('formatering', () => {
 		expect(formatDistanceLeft(12_600)).toBe('13 km');
 		expect(formatDistanceLeft(846)).toBe('850 m');
 		expect(formatDistanceLeft(null)).toBeNull();
+	});
+});
+
+describe('splitRouteAtPosition', () => {
+	it('deler ved nærmeste punkt og skjøter posisjonen inn i begge', () => {
+		const route: [number, number][] = [
+			[0, 0],
+			[0, 1],
+			[0, 2],
+			[0, 3]
+		];
+		const { done, remaining } = splitRouteAtPosition(route, 0.1, 1.1);
+		expect(done).toEqual([[0, 0], [0, 1], [0.1, 1.1]]);
+		expect(remaining).toEqual([[0.1, 1.1], [0, 2], [0, 3]]);
 	});
 });

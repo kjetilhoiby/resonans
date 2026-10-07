@@ -148,3 +148,31 @@ export function formatUpdatedAgo(seconds: number): string {
 	if (seconds < 60) return `${seconds} sek siden`;
 	return `${Math.round(seconds / 60)} min siden`;
 }
+
+/**
+ * Del ruta i tilbakelagt og gjenstående ved nærmeste rutepunkt. Posisjonen
+ * skjøtes inn i begge, så de to strekene møtes i prikken. Punktene er [lat, lon].
+ */
+export function splitRouteAtPosition(
+	route: ReadonlyArray<readonly [number, number]>,
+	lat: number,
+	lon: number
+): { done: [number, number][]; remaining: [number, number][] } {
+	if (route.length < 2) return { done: [], remaining: route.map(([a, b]) => [a, b]) };
+	let nearest = 0;
+	let best = Infinity;
+	for (let i = 0; i < route.length; i++) {
+		const dLat = route[i][0] - lat;
+		const dLon = route[i][1] - lon;
+		const d = dLat * dLat + dLon * dLon;
+		if (d < best) {
+			best = d;
+			nearest = i;
+		}
+	}
+	const here: [number, number] = [lat, lon];
+	return {
+		done: [...route.slice(0, nearest + 1).map(([a, b]) => [a, b] as [number, number]), here],
+		remaining: [here, ...route.slice(nearest + 1).map(([a, b]) => [a, b] as [number, number])]
+	};
+}
