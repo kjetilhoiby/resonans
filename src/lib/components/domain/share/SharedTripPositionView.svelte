@@ -8,8 +8,10 @@
 		formatDistanceLeft,
 		formatMinutesLeft,
 		formatUpdatedAgo,
-		splitRouteAtPosition
+		splitRouteAtPosition,
+		tripProgress
 	} from '$lib/domain/live-share';
+	import TripProgressStrip from './TripProgressStrip.svelte';
 
 	/**
 	 * «Jeg er på vei» — den delte live-posisjonen fra Ekko. Lys, rolig og med
@@ -91,6 +93,18 @@
 			},
 			new Date(nowMs)
 		)
+	);
+	const progress = $derived(
+		tripProgress({
+			destLabel: resource.destLabel,
+			etaSeconds,
+			lastPingAt,
+			lastLat: lat,
+			lastLon: lng,
+			endedAt,
+			endedReason,
+			startedAt: resource.startedAt
+		})
 	);
 	const isActive = $derived(summary.state === 'active' || summary.state === 'waiting');
 	const dest = $derived(resource.destLabel?.trim() || null);
@@ -336,6 +350,7 @@
 			{:else}
 				<p class="note">Ankomsttida kommer når appen har regnet den ut.</p>
 			{/if}
+			{#if progress}<TripProgressStrip {progress} />{/if}
 
 			{#if distanceLeft || speedKmh !== null}
 				<dl class="facts">
@@ -362,6 +377,7 @@
 				<span class="eta-label">Framme kl.</span>
 				<span class="eta-clock">{summary.arrivalClock ?? '—'}</span>
 			</div>
+			{#if progress}<TripProgressStrip {progress} />{/if}
 		{:else}
 			<p class="note">{summary.description}</p>
 		{/if}

@@ -56,6 +56,22 @@ ankomsttida som det største elementet, «om N min» i aksentfargen, igjen/fart 
 og en dempet linje når signalet er borte. Trip-visningen rendres utenfor det
 generiske share-skallet (som walk og quiz).
 
+### Fase 5: tidsstripa
+«16:49 ●━━━○┄┄◯ ca. 17:42» — startet, hvor langt på vei og framme, på siden
+(`TripProgressStrip`) og i forhåndsbildet. Samme prikk og samme mål-ring som på
+kartet. Regelen bor i `tripProgress` (`$lib/domain/live-share.ts`).
+
+- **Stripa er en TIDSakse, og prikken plasseres i tid**: tid gått av forventet
+  totaltid, målt ved siste ping. Endene er klokkeslett, så en prikk plassert etter
+  distanse ville stått på et klokkeslett den ikke svarer til. Distansen står i
+  tallene under.
+- **Ingen stripe uten ankomsttid**, og ingen på en avbrutt tur — en stripe uten høyre
+  ende er bare en strek.
+- Startklokka er `live_sessions.startedAt`, altså da delingen startet. Ekko starter
+  delingen når sporingen starter, så de er i praksis det samme.
+- Forhåndsbildet legger ruta der den får mest plass, over tekstfeltet eller til høyre
+  for det — feltet ble høyere med stripa og skjulte ellers starten av ruta.
+
 ## Beslutninger
 
 - **Klokkeslett framfor nedtelling.** En lenke leses minutter etter at den ble sendt.

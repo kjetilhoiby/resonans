@@ -21,7 +21,8 @@ export const GET: RequestHandler = async ({ params }) => {
 		etaSeconds: session.etaSeconds,
 		lastPingAt: session.lastPingAt,
 		endedAt: session.endedAt,
-		endedReason: session.endedReason
+		endedReason: session.endedReason,
+		startedAt: session.startedAt
 	});
 
 	return new Response(png as BodyInit, {

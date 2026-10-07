@@ -176,3 +176,61 @@ export function splitRouteAtPosition(
 		remaining: [here, ...route.slice(nearest + 1).map(([a, b]) => [a, b] as [number, number])]
 	};
 }
+
+export interface TripProgress {
+	/** «16:49» — da delingen startet. */
+	startClock: string;
+	/** Forventet ankomst mens turen pågår, faktisk ankomst når den er over. */
+	endClock: string;
+	/** Er `endClock` et anslag («ca.») eller et faktum? */
+	endIsEstimate: boolean;
+	/** 0–1: hvor langt prikken står mellom start og framme. */
+	fraction: number;
+}
+
+/**
+ * Tidsstripa «startet ─●── framme»: start og ankomst som klokkeslett i hver ende,
+ * prikken der turen står.
+ *
+ * **Stripa er en TIDSakse, og prikken plasseres i tid** — tid gått av forventet
+ * totaltid, målt ved siste ping (samme øyeblikk som ETA-en ble regnet). Endene
+ * er klokkeslett; en prikk plassert etter distanse ville stått på et klokkeslett
+ * den ikke svarer til, og på en tur med motbakke først ville den løpe foran
+ * klokka. Distansen står i tallene under stripa.
+ *
+ * Null uten ankomsttid: en stripe uten høyre ende er bare en strek. En avbrutt
+ * tur har ingen ankomst og får heller ingen stripe.
+ */
+export function tripProgress(
+	input: LiveShareInput & { startedAt: string | Date | null }
+): TripProgress | null {
+	const start = toDate(input.startedAt);
+	if (!start) return null;
+	const state = liveShareState(input);
+
+	if (state === 'arrived') {
+		const end = toDate(input.endedAt);
+		if (!end) return null;
+		return {
+			startClock: formatOsloClock(start),
+			endClock: formatOsloClock(end),
+			endIsEstimate: false,
+			fraction: 1
+		};
+	}
+	if (state !== 'active') return null;
+
+	const ping = toDate(input.lastPingAt);
+	const arrival = estimatedArrival(input.etaSeconds, input.lastPingAt);
+	if (!ping || !arrival) return null;
+
+	const total = arrival.getTime() - start.getTime();
+	const elapsed = ping.getTime() - start.getTime();
+	const fraction = total > 0 ? Math.min(1, Math.max(0, elapsed / total)) : 0;
+	return {
+		startClock: formatOsloClock(start),
+		endClock: formatOsloClock(arrival),
+		endIsEstimate: true,
+		fraction
+	};
+}
