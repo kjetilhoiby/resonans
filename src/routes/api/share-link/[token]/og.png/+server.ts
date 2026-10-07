@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { liveSessions } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { resolveShareToken } from '$lib/server/share-tokens';
-import { renderLiveSessionOgPng } from '$lib/server/live-og';
+import { liveSessionOgPng } from '$lib/server/live-og-cache';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params }) => {
@@ -15,13 +15,14 @@ export const GET: RequestHandler = async ({ params }) => {
 	});
 	if (!session || session.userId !== share.ownerUserId) throw error(404);
 
-	const png = await renderLiveSessionOgPng({
+	const png = await liveSessionOgPng(session.id, {
 		routeCoordinates: session.routeCoordinates as [number, number][] | null,
 		lastLat: session.lastLat,
 		lastLon: session.lastLon,
 		destLat: session.destLat,
 		destLon: session.destLon,
-		endedReason: session.endedReason
+		endedReason: session.endedReason,
+		endedAt: session.endedAt
 	});
 
 	return new Response(png as BodyInit, {

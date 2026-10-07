@@ -75,6 +75,20 @@ kartet. Regelen bor i `tripProgress` (`$lib/domain/live-share.ts`).
 - Startklokka er `live_sessions.startedAt`, altså da delingen startet. Ekko starter
   delingen når sporingen starter, så de er i praksis det samme.
 
+### Fase 6: bildet må være ferdig før Messenger spør
+Første ekte deling i Messenger fikk kort uten bilde. Endepunktet svarte riktig (200,
+PNG, 450 kB), men brukte **2,5–3,5 s** per henting i prod, og meldingsappen henter
+og:image i det lenka sendes — sekunder etter at Ekko har startet delingen. Kommer
+bildet for sent, lagres kortet uten bilde. (En deling tidligere samme dag hadde i
+tillegg den gamle relative og:image-adressen.)
+
+- `$lib/server/live-og-cache.ts`: bildet tegnes i bakgrunnen når delingen starter
+  (POST) og når første posisjon kommer (PUT, de første fem minuttene). Et bilde under
+  ett minutt leveres direkte; eldre (opptil 15 min) leveres og fornyes i bakgrunnen.
+  Maks 40 bilder.
+- `vector-basemap.ts` holder 120 dekodede fliser — samme strøk tegnes igjen og igjen.
+- `og:image:type` og `og:image:alt` er med, så bildet kan vises på første henting.
+
 ## Beslutninger
 
 - **Klokkeslett framfor nedtelling.** En lenke leses minutter etter at den ble sendt.

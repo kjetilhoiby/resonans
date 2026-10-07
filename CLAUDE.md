@@ -297,9 +297,13 @@ fram til første modellkall, tyngste fase først) OG lagrer en rad i
   da er svaret å faktisk starte dem parallelt — ikke å cache. Dommen sier det,
   så ingen cacher seg forbi et rekkefølgeproblem.
 - Dommen holdes tilbake under 20 målinger: tallene sies, mønsteret ikke.
-- **Kodebasen har ikke én in-process cache.** Det var rasjonelt under
+- **Kodebasen har nesten ingen in-process cache.** Det var rasjonelt under
   serverless (kald invokasjon hver gang) og er den største uutnyttede spaken på
   en container — men mål før du cacher. Denne tabellen er målingen.
+  Unntaket er forhåndsbildet til delt posisjon (`$lib/server/live-og-cache.ts`
+  og flisene i `vector-basemap.ts`): målt 2,5–3,5 s per bilde i prod, og
+  Messenger ga opp før det kom, så kortet ble stående uten bilde. Begge har
+  fast tak.
 
 **Loggene kan leses over API** (`GET /api/admin/logs?grep=chat-perf&limit=100`,
 admin-gatet): prosessen holder en ringbuffer over egne logglinjer
