@@ -6,6 +6,8 @@
 	import SharedWalkPlaybackView from '$lib/components/domain/share/SharedWalkPlaybackView.svelte';
 	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
 	import QuizBoard from '$lib/components/domain/quiz/QuizBoard.svelte';
+	import { page } from '$app/state';
+	import { describeLiveShare } from '$lib/domain/live-share';
 
 	let { data }: { data: PageData } = $props();
 
@@ -19,29 +21,31 @@
 		data.status === 'ok' && data.resource.kind === 'quizSession' ? data.resource.board : null
 	);
 
-	// Rikt forhåndsvisningskort for delt live posisjon (kart-OG via satori).
+	// Delt live posisjon: egen lys fullskjermsvisning med kart øverst, og et rikt
+	// forhåndsvisningskort (kart-OG via satori). Tittelen er i første person —
+	// det er den som deler som snakker, og navnet står allerede på avsenderen.
 	const trip = $derived(
 		data.status === 'ok' && data.resource.kind === 'tripPosition' ? data.resource : null
 	);
-	const tripTitle = $derived(
-		trip ? (data.status === 'ok' && data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon') : null
-	);
+	const tripSummary = $derived(trip ? describeLiveShare(trip) : null);
 	const tripToken = $derived(data.status === 'ok' ? data.token : '');
+	// Meldingsappene henter og:image utenfra og løser ikke relative adresser.
+	const tripImage = $derived(`${page.url.origin}/api/share-link/${tripToken}/og.png`);
 </script>
 
 <svelte:head>
 	{#if walk}
 		<title>{walk.title} — 3D-avspilling</title>
 		<meta name="robots" content="noindex" />
-	{:else if trip}
-		<title>{tripTitle}</title>
+	{:else if trip && tripSummary}
+		<title>{tripSummary.title}</title>
 		<meta name="robots" content="noindex" />
-		<meta property="og:title" content={tripTitle} />
-		<meta
-			property="og:description"
-			content={trip.destLabel ? `På vei til ${trip.destLabel}` : 'Se live posisjon'}
-		/>
-		<meta property="og:image" content={`/api/share-link/${tripToken}/og.png`} />
+		<meta name="description" content={tripSummary.description} />
+		<meta property="og:title" content={tripSummary.title} />
+		<meta property="og:description" content={tripSummary.description} />
+		<meta property="og:url" content={page.url.href} />
+		<meta property="og:image" content={tripImage} />
+		<meta name="twitter:card" content="summary_large_image" />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
 	{:else}
@@ -52,6 +56,12 @@
 
 {#if walk}
 	<SharedWalkPlaybackView resource={walk} />
+{:else if trip}
+	<SharedTripPositionView
+		resource={trip}
+		token={tripToken}
+		viewerIsOwner={data.status === 'ok' && data.viewerIsOwner}
+	/>
 {:else if quiz}
 	<AppPage>
 		<PageSection>
@@ -94,8 +104,6 @@
 				resource={data.resource}
 				accessMode={data.accessMode}
 			/>
-		{:else if data.resource.kind === 'tripPosition'}
-			<SharedTripPositionView resource={data.resource} token={data.token} />
 		{/if}
 
 		{#if data.viewerIsOwner}

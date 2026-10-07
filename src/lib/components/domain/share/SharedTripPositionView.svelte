@@ -1,6 +1,25 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '$lib/components/charts/mapStyle';
+	import {
+		KARTVERKET_GRAY_STYLE,
+		OPENFREEMAP_LIGHT_STYLE,
+		mapTransformRequest
+	} from '$lib/components/charts/mapStyle';
+	import {
+		STALE_AFTER_SECONDS,
+		describeLiveShare,
+		formatDistanceLeft,
+		formatMinutesLeft,
+		formatUpdatedAgo
+	} from '$lib/domain/live-share';
+	import { allInMainlandNorway } from '$lib/domain/norway-coverage';
+
+	/**
+	 * «Jeg er på vei» — den delte live-posisjonen fra Ekko. Lys, rolig og med
+	 * ankomsttida som det største på siden: det er det mottakeren åpner lenka for.
+	 * Ordene kommer fra `$lib/domain/live-share.ts`, så siden, forhåndsvisningen og
+	 * OG-bildet sier det samme.
+	 */
 
 	type Resource = {
 		kind: 'tripPosition';
@@ -24,7 +43,11 @@
 		endedReason: string | null;
 	};
 
-	let { resource, token }: { resource: Resource; token: string } = $props();
+	let {
+		resource,
+		token,
+		viewerIsOwner = false
+	}: { resource: Resource; token: string; viewerIsOwner?: boolean } = $props();
 
 	// Maks-lengder speiler serveren (src/lib/server/services/live-messages.ts).
 	const MAX_SENDER_LEN = 40;
@@ -45,67 +68,55 @@
 	let speedMps = $state(resource.lastSpeedMps);
 	let etaSeconds = $state(resource.etaSeconds);
 	let distanceRemainingM = $state(resource.distanceRemainingM);
-	let progressFraction = $state(resource.progressFraction);
 	let lastPingAt = $state(resource.lastPingAt);
 	let endedAt = $state(resource.endedAt);
 	let endedReason = $state(resource.endedReason);
-	let secondsSinceUpdate = $state(0);
+	let nowMs = $state(Date.now());
 
+	let mapEl: HTMLDivElement | undefined = $state();
 	let map: maplibregl.Map | null = null;
 	let posMarker: maplibregl.Marker | null = null;
-	let destMarker: maplibregl.Marker | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
 	let incomingInterval: ReturnType<typeof setInterval> | null = null;
 
-	const isActive = $derived(!endedAt);
-	const hasPosition = $derived(lat !== null && lng !== null);
-	const hasDest = $derived(resource.destLat !== null && resource.destLon !== null);
+	const summary = $derived(
+		describeLiveShare(
+			{
+				destLabel: resource.destLabel,
+				etaSeconds,
+				lastPingAt,
+				lastLat: lat,
+				lastLon: lng,
+				endedAt,
+				endedReason
+			},
+			new Date(nowMs)
+		)
+	);
+	const isActive = $derived(summary.state === 'active' || summary.state === 'waiting');
+	const dest = $derived(resource.destLabel?.trim() || null);
 	const speedKmh = $derived(speedMps !== null ? Math.round(speedMps * 3.6) : null);
-	const isStale = $derived(secondsSinceUpdate > 120);
-	const hasArrived = $derived(!isActive && endedReason === 'arrived');
-	// Ankomsttidspunkt (klokkeslett) når turen er fullført. endedAt settes når
-	// appen registrerer ankomst (DELETE med reason 'arrived').
-	const arrivalClock = $derived(hasArrived && endedAt ? formatClock(endedAt) : null);
+	const distanceLeft = $derived(formatDistanceLeft(distanceRemainingM));
+	const minutesLeftText = $derived(formatMinutesLeft(summary.minutesLeft));
+	const secondsSinceUpdate = $derived(
+		lastPingAt ? Math.max(0, Math.round((nowMs - new Date(lastPingAt).getTime()) / 1000)) : null
+	);
+	const isStale = $derived(secondsSinceUpdate !== null && secondsSinceUpdate > STALE_AFTER_SECONDS);
 
-	function formatClock(ts: string): string {
-		try {
-			return new Date(ts).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
-		} catch {
-			return '';
-		}
-	}
-
-	function formatEta(secs: number | null): string {
-		if (secs === null) return '—';
-		const min = Math.round(secs / 60);
-		if (min < 1) return 'snart fremme';
-		if (min < 60) return `ca. ${min} min`;
-		const h = Math.floor(min / 60);
-		const m = min % 60;
-		return m === 0 ? `ca. ${h} t` : `ca. ${h} t ${m} min`;
-	}
-
-	function formatUpdated(secs: number): string {
-		if (secs < 10) return 'akkurat nå';
-		if (secs < 60) return `${secs} sek siden`;
-		return `${Math.round(secs / 60)} min siden`;
-	}
-
-	function calcSecondsSince(ts: string | null): number {
-		if (!ts) return 999;
-		return Math.round((Date.now() - new Date(ts).getTime()) / 1000);
-	}
+	const ACCENT = '#2f5f8f';
+	const INK = '#1d2733';
 
 	function createPositionDot(): HTMLDivElement {
 		const el = document.createElement('div');
-		el.style.cssText = 'width:20px;height:20px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(66,133,244,.3);';
+		el.className = 'trip-pos-dot';
+		el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${ACCENT};border:3px solid #fff;box-shadow:0 0 0 7px rgba(47,95,143,.18),0 1px 4px rgba(29,39,51,.35);`;
 		return el;
 	}
 
 	function createDestPin(): HTMLDivElement {
 		const el = document.createElement('div');
-		el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);';
+		el.style.cssText = `width:16px;height:16px;border-radius:50%;background:#fff;border:4px solid ${INK};box-shadow:0 1px 4px rgba(29,39,51,.3);`;
 		return el;
 	}
 
@@ -136,15 +147,14 @@
 			speedMps = d.lastSpeedMps;
 			etaSeconds = d.etaSeconds;
 			distanceRemainingM = d.distanceRemainingM;
-			progressFraction = d.progressFraction;
 			lastPingAt = d.lastPingAt;
 			endedAt = d.endedAt;
 			endedReason = d.endedReason;
-			secondsSinceUpdate = calcSecondsSince(d.lastPingAt);
-			if (lat !== null && lng !== null) {
-				posMarker?.setLngLat([lng, lat]);
+			if (lat !== null && lng !== null && map) {
+				if (posMarker) posMarker.setLngLat([lng, lat]);
+				else void addPositionMarker();
 				updateRouteProgress();
-				map?.easeTo({ center: [lng, lat], duration: 1000 });
+				map.easeTo({ center: [lng, lat], duration: 1000 });
 			}
 			if (endedAt) {
 				if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
@@ -156,6 +166,12 @@
 				}
 			}
 		} catch { /* neste poll prøver igjen */ }
+	}
+
+	async function addPositionMarker() {
+		if (!map || lat === null || lng === null || posMarker) return;
+		const maplibregl = await import('maplibre-gl');
+		posMarker = new maplibregl.Marker({ element: createPositionDot() }).setLngLat([lng, lat]).addTo(map);
 	}
 
 	function updateRouteProgress() {
@@ -215,17 +231,29 @@
 	}
 
 	onMount(async () => {
-		secondsSinceUpdate = calcSecondsSince(lastPingAt);
-
 		try {
 			senderName = localStorage.getItem(SENDER_STORAGE_KEY) ?? '';
 		} catch { /* private mode e.l. */ }
 
+		void pollIncoming();
+		if (isActive) {
+			pollInterval = setInterval(poll, 10_000);
+			incomingInterval = setInterval(pollIncoming, 2_000);
+		}
+		tickInterval = setInterval(() => {
+			nowMs = Date.now();
+		}, 1000);
+
 		const maplibregl = await import('maplibre-gl');
 		await import('maplibre-gl/dist/maplibre-gl.css');
-
-		const mapEl = document.getElementById('live-map');
 		if (!mapEl) return;
+
+		const routeCoords = resource.routeCoordinates;
+		const points: [number, number][] = [...(routeCoords ?? [])];
+		if (lat !== null && lng !== null) points.push([lat, lng]);
+		if (resource.destLat !== null && resource.destLon !== null) {
+			points.push([resource.destLat, resource.destLon]);
+		}
 
 		const center: [number, number] =
 			lat !== null && lng !== null ? [lng, lat]
@@ -234,16 +262,16 @@
 
 		map = new maplibregl.Map({
 			container: mapEl,
-			style: RESONANS_DARK_MAP_STYLE,
+			style: allInMainlandNorway(points) ? KARTVERKET_GRAY_STYLE : OPENFREEMAP_LIGHT_STYLE,
 			transformRequest: mapTransformRequest,
-			center, zoom: 13,
-			attributionControl: false
+			center,
+			zoom: 13,
+			attributionControl: { compact: true }
 		});
 
 		map.on('load', () => {
 			if (!map) return;
 
-			const routeCoords = resource.routeCoordinates;
 			if (routeCoords && routeCoords.length >= 2) {
 				map.addSource('route', {
 					type: 'geojson',
@@ -253,8 +281,14 @@
 					}
 				});
 				map.addLayer({
+					id: 'route-casing', type: 'line', source: 'route',
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.9 }
+				});
+				map.addLayer({
 					id: 'route', type: 'line', source: 'route',
-					paint: { 'line-color': '#94a3b8', 'line-width': 4, 'line-opacity': 0.5 }
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: { 'line-color': ACCENT, 'line-width': 5, 'line-opacity': 0.35 }
 				});
 
 				map.addSource('route-progress', {
@@ -263,42 +297,26 @@
 				});
 				map.addLayer({
 					id: 'route-progress', type: 'line', source: 'route-progress',
-					paint: { 'line-color': '#4285f4', 'line-width': 4, 'line-opacity': 0.85 }
+					layout: { 'line-cap': 'round', 'line-join': 'round' },
+					paint: { 'line-color': ACCENT, 'line-width': 5 }
 				});
 				updateRouteProgress();
 			}
 
-			if (hasDest && resource.destLon !== null && resource.destLat !== null) {
-				destMarker = new maplibregl.Marker({ element: createDestPin() })
-					.setLngLat([resource.destLon, resource.destLat]).addTo(map);
-				if (resource.destLabel) {
-					destMarker.setPopup(new maplibregl.Popup({ offset: 12, closeButton: false }).setText(resource.destLabel));
-					destMarker.togglePopup();
-				}
+			if (resource.destLon !== null && resource.destLat !== null) {
+				new maplibregl.Marker({ element: createDestPin() })
+					.setLngLat([resource.destLon, resource.destLat])
+					.addTo(map);
 			}
 
-			if (hasPosition && lng !== null && lat !== null) {
-				posMarker = new maplibregl.Marker({ element: createPositionDot() })
-					.setLngLat([lng, lat]).addTo(map);
-			}
+			void addPositionMarker();
 
-			if (hasPosition && hasDest && lng !== null && lat !== null && resource.destLon !== null && resource.destLat !== null) {
-				const bounds = new maplibregl.LngLatBounds([lng, lat], [resource.destLon, resource.destLat]);
-				if (routeCoords) {
-					for (const c of routeCoords) bounds.extend([c[1], c[0]]);
-				}
-				map.fitBounds(bounds, { padding: 60 });
+			if (points.length >= 2) {
+				const bounds = new maplibregl.LngLatBounds([points[0][1], points[0][0]], [points[0][1], points[0][0]]);
+				for (const [pLat, pLon] of points) bounds.extend([pLon, pLat]);
+				map.fitBounds(bounds, { padding: { top: 48, bottom: 64, left: 40, right: 40 }, maxZoom: 15, duration: 0 });
 			}
 		});
-
-		void pollIncoming();
-		if (isActive) {
-			pollInterval = setInterval(poll, 10_000);
-			incomingInterval = setInterval(pollIncoming, 2_000);
-		}
-		tickInterval = setInterval(() => {
-			secondsSinceUpdate = calcSecondsSince(lastPingAt);
-		}, 1000);
 	});
 
 	onDestroy(() => {
@@ -309,65 +327,63 @@
 	});
 </script>
 
-<section class="trip-position">
-	{#if !isActive}
-		<div class="ended-banner">
-			{#if hasArrived}
-				Framme{#if arrivalClock} kl. {arrivalClock}{/if}!
+<main class="trip">
+	<div class="map-wrap">
+		<div bind:this={mapEl} class="map" aria-label="Kart over turen"></div>
+	</div>
+
+	<article class="card">
+		{#if resource.ownerName}<p class="who">{resource.ownerName}</p>{/if}
+		<h1>{summary.title}</h1>
+		{#if dest}<p class="dest">{isActive ? `til ${dest}` : dest}</p>{/if}
+
+		{#if summary.state === 'waiting'}
+			<p class="note">Venter på første posisjon fra appen …</p>
+		{:else if summary.state === 'active'}
+			{#if summary.arrivalClock}
+				<div class="eta">
+					<span class="eta-label">Framme ca. kl.</span>
+					<span class="eta-clock">{summary.arrivalClock}</span>
+					{#if minutesLeftText}<span class="eta-rel">{minutesLeftText}</span>{/if}
+				</div>
 			{:else}
-				Turen er avsluttet
+				<p class="note">Ankomsttida kommer når appen har regnet den ut.</p>
 			{/if}
-		</div>
-	{/if}
 
-	<div id="live-map" class="map"></div>
-
-	<div class="info-card">
-		<header>
-			{#if resource.ownerName}<div class="owner">{resource.ownerName}</div>{/if}
-			{#if resource.routeLabel}
-				<h1>{resource.routeLabel}</h1>
+			{#if distanceLeft || speedKmh !== null}
+				<dl class="facts">
+					{#if distanceLeft}
+						<div><dt>Igjen</dt><dd>{distanceLeft}</dd></div>
+					{/if}
+					{#if speedKmh !== null}
+						<div><dt>Fart</dt><dd>{speedKmh} km/t</dd></div>
+					{/if}
+				</dl>
 			{/if}
-			{#if resource.destLabel}
-				<p class="dest">→ {resource.destLabel}</p>
-			{/if}
-		</header>
 
-		{#if !hasPosition && isActive}
-			<p class="empty">Venter på posisjon fra appen …</p>
-		{:else if isActive}
-			<div class="stats">
-				<div class="stat">
-					<span class="label">Ankomst</span>
-					<span class="value">{formatEta(etaSeconds)}</span>
-				</div>
-				<div class="stat">
-					<span class="label">Igjen</span>
-					<span class="value">
-						{distanceRemainingM !== null ? `${(distanceRemainingM / 1000).toFixed(1)} km` : '—'}
-					</span>
-				</div>
-				<div class="stat">
-					<span class="label">Fart</span>
-					<span class="value">{speedKmh !== null ? `${speedKmh} km/t` : '—'}</span>
-				</div>
+			{#if secondsSinceUpdate !== null}
+				<p class="updated" class:stale={isStale}>
+					{#if isStale}
+						Ingen ny posisjon på {Math.round(secondsSinceUpdate / 60)} min — signalet kan være borte.
+					{:else}
+						Oppdatert {formatUpdatedAgo(secondsSinceUpdate)}
+					{/if}
+				</p>
+			{/if}
+		{:else if summary.state === 'arrived'}
+			<div class="eta arrived">
+				<span class="eta-label">Framme kl.</span>
+				<span class="eta-clock">{summary.arrivalClock ?? '—'}</span>
 			</div>
-			<p class="updated" class:stale={isStale}>
-				{formatUpdated(secondsSinceUpdate)}
-				{#if isStale}<span class="stale-tag">· signal mistet</span>{/if}
-			</p>
-		{:else if hasArrived}
-			<div class="arrived-summary">
-				<span class="arrived-label">Framme</span>
-				<span class="arrived-time">{arrivalClock ?? '—'}</span>
-			</div>
+		{:else}
+			<p class="note">{summary.description}</p>
 		{/if}
 
 		{#if incomingMessages.length > 0}
 			<div class="incoming">
 				{#each incomingMessages as msg (msg.id)}
 					<div class="incoming-msg">
-						<span class="incoming-from">{msg.sender || resource.ownerName || 'Løperen'}</span>
+						<span class="incoming-from">{msg.sender || resource.ownerName || 'Svar'}</span>
 						<span class="incoming-text">{msg.text}</span>
 					</div>
 				{/each}
@@ -377,10 +393,10 @@
 		{#if isActive}
 			<form class="composer" onsubmit={sendMessage}>
 				<p class="composer-hint">
-					Send en heiarop — {resource.ownerName ?? 'løperen'} får den lest opp.
+					Send en hilsen — {resource.ownerName ?? 'den som er på vei'} får den lest opp.
 				</p>
 				<input
-					class="sender-input"
+					class="field"
 					type="text"
 					placeholder="Navnet ditt (valgfritt)"
 					bind:value={senderName}
@@ -390,7 +406,7 @@
 				/>
 				<div class="message-row">
 					<input
-						class="message-input"
+						class="field"
 						type="text"
 						placeholder="Skriv en melding …"
 						bind:value={messageText}
@@ -416,107 +432,154 @@
 				{/if}
 			</form>
 		{/if}
-	</div>
-</section>
+
+		{#if viewerIsOwner}
+			<p class="owner-note">
+				Du deler denne. Stopp eller begrens delingen i
+				<a href="/settings/sharing">Innstillinger → Deling</a>.
+			</p>
+		{/if}
+	</article>
+</main>
 
 <style>
-	.trip-position {
+	.trip {
+		--ink: #1d2733;
+		--muted: #5f6b76;
+		--line: #e4e2dc;
+		--accent: #2f5f8f;
+		--paper: #f4f3ef;
+		--warn: #8a5a12;
+
+		min-height: 100dvh;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 		display: flex;
 		flex-direction: column;
-		height: calc(100dvh - 3rem);
+	}
+	.map-wrap {
 		position: relative;
+		height: 52dvh;
+		min-height: 280px;
+		max-height: 620px;
 	}
 	.map {
+		position: absolute;
+		inset: 0;
+	}
+	.card {
+		position: relative;
+		z-index: 1;
+		box-sizing: border-box;
+		width: 100%;
+		max-width: 560px;
+		margin: -28px auto 0;
+		padding: 1.4rem 1.25rem 2rem;
+		background: #fff;
+		border-radius: 20px 20px 0 0;
+		box-shadow: 0 -4px 18px rgba(29, 39, 51, 0.08);
 		flex: 1;
-		min-height: 200px;
-		border-radius: 12px;
-		z-index: 0;
 	}
-	.info-card {
-		padding: 1rem;
+	@media (min-width: 600px) {
+		.card {
+			flex: none;
+			margin-bottom: 2rem;
+			border-radius: 20px;
+			box-shadow: 0 6px 24px rgba(29, 39, 51, 0.1);
+		}
 	}
-	.owner {
-		font-size: 0.8rem;
-		color: #999;
-		margin-bottom: 0.15rem;
+	.who {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--muted);
 	}
-	.info-card h1 {
-		font-size: 1.3rem;
-		margin: 0 0 0.1rem;
+	h1 {
+		margin: 0.1rem 0 0;
+		font-size: 1.6rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
 	}
 	.dest {
-		color: #555;
-		margin: 0 0 0.75rem;
-		font-size: 0.95rem;
+		margin: 0.15rem 0 0;
+		font-size: 1rem;
+		color: var(--muted);
 	}
-	.empty {
-		color: #777;
-		text-align: center;
-		padding: 1rem 0;
-	}
-	.stats {
+	.eta {
+		margin-top: 1.1rem;
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
+		grid-template-columns: auto 1fr;
+		grid-template-areas:
+			'label label'
+			'clock rel';
+		align-items: baseline;
+		column-gap: 0.75rem;
 	}
-	.stat {
-		background: #f4f5f9;
-		border-radius: 8px;
-		padding: 0.6rem;
+	.eta-label {
+		grid-area: label;
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+	.eta-clock {
+		grid-area: clock;
+		font-size: 3.4rem;
+		line-height: 1;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		font-variant-numeric: tabular-nums;
+	}
+	.eta-rel {
+		grid-area: rel;
+		font-size: 1rem;
+		color: var(--muted);
+	}
+	.eta.arrived .eta-clock {
+		color: var(--ink);
+	}
+	.note {
+		margin: 1rem 0 0;
+		color: var(--muted);
+	}
+	.facts {
+		margin: 1.1rem 0 0;
+		display: flex;
+		gap: 1.75rem;
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--line);
+	}
+	.facts div {
 		display: flex;
 		flex-direction: column;
-		gap: 0.15rem;
+		gap: 0.1rem;
 	}
-	.stat .label {
-		font-size: 0.65rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #777;
+	.facts dt {
+		font-size: 0.75rem;
+		color: var(--muted);
 	}
-	.stat .value {
+	.facts dd {
+		margin: 0;
 		font-size: 1.1rem;
 		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 	}
 	.updated {
+		margin: 0.8rem 0 0;
 		font-size: 0.8rem;
-		color: #999;
-		text-align: center;
+		color: var(--muted);
 	}
-	.updated.stale { color: #b16a00; }
-	.stale-tag { margin-left: 0.2rem; }
-	.arrived-summary {
-		display: flex;
-		align-items: baseline;
-		justify-content: center;
-		gap: 0.5rem;
-		background: #ecfdf3;
-		border: 1px solid #abefc6;
-		border-radius: 8px;
-		padding: 0.7rem;
-	}
-	.arrived-label {
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #1a9c4f;
-		font-weight: 600;
-	}
-	.arrived-time {
-		font-size: 1.3rem;
-		font-weight: 700;
-		color: #1a1a1a;
+	.updated.stale {
+		color: var(--warn);
 	}
 	.incoming {
-		margin-top: 0.85rem;
+		margin-top: 1.1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 	}
 	.incoming-msg {
-		background: #eef2ff;
-		border-radius: 10px 10px 10px 2px;
-		padding: 0.5rem 0.7rem;
+		background: #eef2f6;
+		border-radius: 12px 12px 12px 3px;
+		padding: 0.5rem 0.75rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.1rem;
@@ -524,84 +587,73 @@
 		max-width: 85%;
 	}
 	.incoming-from {
-		font-size: 0.7rem;
+		font-size: 0.72rem;
 		font-weight: 600;
-		color: #4f5bd5;
+		color: var(--accent);
 	}
 	.incoming-text {
 		font-size: 0.95rem;
-		color: #1a1a1a;
 		word-break: break-word;
 	}
 	.composer {
-		margin-top: 0.85rem;
-		padding-top: 0.85rem;
-		border-top: 1px solid #ececf1;
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--line);
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
 	.composer-hint {
 		margin: 0;
-		font-size: 0.8rem;
-		color: #777;
+		font-size: 0.82rem;
+		color: var(--muted);
 	}
-	.sender-input,
-	.message-input {
+	.field {
 		width: 100%;
 		box-sizing: border-box;
-		padding: 0.6rem 0.7rem;
-		border: 1px solid #d9dae2;
-		border-radius: 8px;
-		font-size: 0.95rem;
-		background: #fff;
-		color: #1a1a1a;
+		padding: 0.65rem 0.75rem;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		font-size: 1rem;
+		background: #fafaf8;
+		color: var(--ink);
 	}
-	.sender-input:focus,
-	.message-input:focus {
+	.field:focus {
 		outline: none;
-		border-color: #4285f4;
+		border-color: var(--accent);
+		background: #fff;
 	}
 	.message-row {
 		display: flex;
 		gap: 0.5rem;
 	}
-	.message-row .message-input {
-		flex: 1;
-	}
 	.send-btn {
 		flex-shrink: 0;
-		padding: 0.6rem 1rem;
+		padding: 0.65rem 1.1rem;
 		border: none;
-		border-radius: 8px;
-		background: #4285f4;
+		border-radius: 10px;
+		background: var(--ink);
 		color: #fff;
 		font-weight: 600;
 		font-size: 0.95rem;
 		cursor: pointer;
 	}
 	.send-btn:disabled {
-		opacity: 0.5;
+		opacity: 0.35;
 		cursor: default;
 	}
 	.composer-status {
 		margin: 0;
 		font-size: 0.82rem;
 	}
-	.composer-status.ok { color: #1a9c4f; }
-	.composer-status.err { color: #c2410c; }
-	.ended-banner {
-		position: absolute;
-		top: 1rem;
-		left: 50%;
-		transform: translateX(-50%);
-		background: #22c55e;
-		color: white;
-		padding: 0.6rem 1.5rem;
-		border-radius: 999px;
-		font-weight: 600;
-		font-size: 1.1rem;
-		z-index: 1000;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	.composer-status.ok { color: #3d7a5a; }
+	.composer-status.err { color: #a2401f; }
+	.owner-note {
+		margin: 1.5rem 0 0;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.owner-note a {
+		color: var(--accent);
 	}
 </style>
