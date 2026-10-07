@@ -11,6 +11,7 @@ import {
 	revokeShareTokensForResource,
 	ShareTokensStorageNotReadyError
 } from '$lib/server/share-tokens';
+import { prewarmLiveSessionOg, prewarmOnPing } from '$lib/server/live-og-cache';
 
 /**
  * Posisjonsdeling går nå gjennom den generiske share-token-infrastrukturen
@@ -136,6 +137,17 @@ async function inferTripThemeId(userId: string, dateKey: string): Promise<string
 	return pickTripForDate(candidates, dateKey);
 }
 
+function ogInput(session: typeof liveSessions.$inferSelect) {
+	return {
+		routeCoordinates: session.routeCoordinates as [number, number][] | null,
+		lastLat: session.lastLat,
+		lastLon: session.lastLon,
+		destLat: session.destLat,
+		destLon: session.destLon,
+		endedReason: session.endedReason
+	};
+}
+
 export const GET: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
@@ -195,6 +207,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	const shareUrl = await buildShareUrl(origin, userId, session.id, token);
 
+	// Lenka deles sekunder etter dette svaret, og meldingsappen henter
+	// forhåndsbildet straks. Er det ikke ferdig, blir kortet stående uten bilde.
+	prewarmLiveSessionOg(session.id, ogInput(session));
+
 	return json({
 		ok: true,
 		token,
@@ -230,6 +246,10 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
 		.returning();
 
 	if (result.length === 0) return json({ error: 'Sesjon ikke funnet' }, { status: 404 });
+
+	// Første posisjon kommer ofte etter at lenka er sendt; hold bildet ferskt de
+	// første minuttene, så crawleren får prikken med.
+	prewarmOnPing(result[0].id, ogInput(result[0]), result[0].startedAt);
 
 	return json({ ok: true });
 };

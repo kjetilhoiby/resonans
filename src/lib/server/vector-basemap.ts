@@ -38,17 +38,37 @@ async function currentTileTemplate(): Promise<string | null> {
 	}
 }
 
+/**
+ * Dekodede fliser, nøklet på URL (som bærer OpenFreeMaps daterte utgave, så en
+ * ny utgave er nye nøkler). Samme strøk tegnes igjen og igjen — hjem, jobb,
+ * banen — og flisehentingen var mesteparten av tida bildet tok. Taket er fast:
+ * en flis er ~50–150 kB, og containeren har vært OOM-drept før.
+ */
+const TILE_CACHE_MAX = 120;
+const tileCache = new Map<string, VectorTile>();
+
 async function fetchTile(template: string, z: number, x: number, y: number): Promise<VectorTile | null> {
 	const n = 2 ** z;
 	if (y < 0 || y >= n) return null;
 	const wx = ((x % n) + n) % n;
+	const url = template.replace('{z}', String(z)).replace('{x}', String(wx)).replace('{y}', String(y));
+	const cached = tileCache.get(url);
+	if (cached) {
+		tileCache.delete(url);
+		tileCache.set(url, cached);
+		return cached;
+	}
 	try {
-		const res = await fetch(
-			template.replace('{z}', String(z)).replace('{x}', String(wx)).replace('{y}', String(y)),
-			{ signal: AbortSignal.timeout(5000) }
-		);
+		const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
 		if (!res.ok) return null;
-		return new VectorTile(new PbfReader(new Uint8Array(await res.arrayBuffer())));
+		const tile = new VectorTile(new PbfReader(new Uint8Array(await res.arrayBuffer())));
+		tileCache.set(url, tile);
+		while (tileCache.size > TILE_CACHE_MAX) {
+			const oldest = tileCache.keys().next().value;
+			if (oldest === undefined) break;
+			tileCache.delete(oldest);
+		}
+		return tile;
 	} catch {
 		return null;
 	}

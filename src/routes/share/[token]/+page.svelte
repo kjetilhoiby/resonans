@@ -45,6 +45,8 @@
 		<meta property="og:description" content={tripSummary.description} />
 		<meta property="og:url" content={page.url.href} />
 		<meta property="og:image" content={tripImage} />
+		<meta property="og:image:type" content="image/png" />
+		<meta property="og:image:alt" content={trip.destLabel ? `Kart over turen til ${trip.destLabel}` : 'Kart over turen'} />
 		<meta name="twitter:card" content="summary_large_image" />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
