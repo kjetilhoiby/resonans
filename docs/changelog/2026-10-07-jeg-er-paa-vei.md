@@ -25,24 +25,36 @@ var galt med den:
 framme» / «Turen er avsluttet»), forhåndsvisningslinja og ankomsten som KLOKKESLETT i
 Oslo-tid. Siden, og:title/og:description og OG-bildet leser alle derfra.
 
-### Fase 2: bakgrunnskart valgt per tur
-`$lib/domain/norway-coverage.ts`: grovt polygon rundt fastlands-Norge. Ligger hele turen
-innenfor: Kartverkets `topograatone` (ferskt, stier, høydekurver, rolig). Ellers: Esris
-lysegrå Canvas i OG-bildet og OpenFreeMaps `positron` på siden. Kartverkets fliser er
-BLANKE utenfor Norge, derfor valget.
+### Fase 2: én varm kartstil, tegnet to steder
+`$lib/components/charts/warmMapStyle.ts` eier paletten (`WARM`) og MapLibre-stilen
+(`WARM_MAP_STYLE`) på OpenFreeMaps vektorfliser: papirvarm grunn, salviegrønn skog og
+park, dempet blågrønt vann, og ruta i aksentfargen fra «blekk på krem»
+(`/design/moodboard`, #EC5A2E) som eneste mettede farge. Målet er en mørk furugrønn
+ring, posisjonen en aksentprikk med hvit kant og lys glorie.
+
+`$lib/server/vector-basemap.ts` tegner de SAMME flisene som SVG på serveren (dekodet
+med `@mapbox/vector-tile` + `pbf`), med samme palett og samme linjebredder. Dermed er
+miniatyren og siden samme kart — globalt, uten nøkkel og uten en tredje leverandør.
+Ingen tekst i serverkartet; bildet har sitt eget tekstfelt.
+
+**Første forsøk var Kartverkets gråtonekart** (i Norge) med Esris lysegrå utenfor. Det
+var ferskt og rolig, men tilbakemeldingen var «grått, kjedelig, lite harmoniske
+markørfarger — kommunalt». Et plankart er ikke noe man har lyst til å sende til noen.
+Det krevde dessuten et Norge-polygon, siden Kartverkets fliser er blanke utenfor
+landet; det er slettet sammen med Kartverket-stien.
 
 ### Fase 3: OG-bildet
-`$lib/server/live-og.ts`: nytt kartlag, rolige farger (blekkblå rute med hvit kant,
-mål som hvit ring), og tekstfelt i bildet med «Framme ca. kl. 17:42». Inter (via
-`@fontsource/inter`, importert med `?inline`) bakes inn i serverbundelen — satori kan
-ikke tegne tekst uten en font. `og:image` er nå en ABSOLUTT adresse; meldingsappene
-løser ikke relative.
+`$lib/server/live-og.ts`: kartet over, ruta delt i tilbakelagt (heltrukket) og
+gjenstående (dempet) ved posisjonen (`splitRouteAtPosition`, delt med siden), og et
+kremfarget tekstfelt med «Framme ca. kl. 17:42». Inter (via `@fontsource/inter`,
+importert med `?inline`) bakes inn i serverbundelen — satori kan ikke tegne tekst uten
+en font. `og:image` er nå en ABSOLUTT adresse; meldingsappene løser ikke relative.
 
 ### Fase 4: siden
-`SharedTripPositionView` er skrevet om: lys fullskjerm, kartet øverst, kort under med
-ankomsttida som det største elementet, «om N min» ved siden av, igjen/fart under, og
-en dempet linje når signalet er borte. Trip-visningen rendres utenfor det generiske
-share-skallet (som walk og quiz).
+`SharedTripPositionView` er skrevet om: kartet øverst, kremkort under med
+ankomsttida som det største elementet, «om N min» i aksentfargen, igjen/fart under,
+og en dempet linje når signalet er borte. Trip-visningen rendres utenfor det
+generiske share-skallet (som walk og quiz).
 
 ## Beslutninger
 
@@ -58,8 +70,8 @@ share-skallet (som walk og quiz).
 
 ## Verifisering
 
-- Enhetstester for ordene, Oslo-klokka, ETA-regningen og Norge-polygonet (byer på begge
-  sider av grensa).
-- OG-bildet rendret lokalt i Oslo (Kartverket) og Stockholm (Esri), og siden
-  skjermdumpet i fire tilstander (aktiv, signal borte, uten ETA, framme).
+- Enhetstester for ordene, Oslo-klokka, ETA-regningen og rutedelingen.
+- OG-bildet rendret lokalt for en kort tur (gatenivå), en bytur og en lang tur
+  (Oslo–Lillehammer), og siden skjermdumpet i fire tilstander (aktiv, signal borte,
+  uten ETA, framme) på mobil og desktop.
 - `npm run build` grønt; fonten ligger i `live-og`-chunken.

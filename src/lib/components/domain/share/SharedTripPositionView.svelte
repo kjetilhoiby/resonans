@@ -1,24 +1,22 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		KARTVERKET_GRAY_STYLE,
-		OPENFREEMAP_LIGHT_STYLE,
-		mapTransformRequest
-	} from '$lib/components/charts/mapStyle';
+	import { mapTransformRequest } from '$lib/components/charts/mapStyle';
+	import { WARM, WARM_MAP_STYLE } from '$lib/components/charts/warmMapStyle';
 	import {
 		STALE_AFTER_SECONDS,
 		describeLiveShare,
 		formatDistanceLeft,
 		formatMinutesLeft,
-		formatUpdatedAgo
+		formatUpdatedAgo,
+		splitRouteAtPosition
 	} from '$lib/domain/live-share';
-	import { allInMainlandNorway } from '$lib/domain/norway-coverage';
 
 	/**
 	 * «Jeg er på vei» — den delte live-posisjonen fra Ekko. Lys, rolig og med
 	 * ankomsttida som det største på siden: det er det mottakeren åpner lenka for.
 	 * Ordene kommer fra `$lib/domain/live-share.ts`, så siden, forhåndsvisningen og
-	 * OG-bildet sier det samme.
+	 * OG-bildet sier det samme; kartet og markørfargene fra `warmMapStyle.ts`, som
+	 * OG-bildet også tegner med.
 	 */
 
 	type Resource = {
@@ -104,19 +102,15 @@
 	);
 	const isStale = $derived(secondsSinceUpdate !== null && secondsSinceUpdate > STALE_AFTER_SECONDS);
 
-	const ACCENT = '#2f5f8f';
-	const INK = '#1d2733';
-
 	function createPositionDot(): HTMLDivElement {
 		const el = document.createElement('div');
-		el.className = 'trip-pos-dot';
-		el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${ACCENT};border:3px solid #fff;box-shadow:0 0 0 7px rgba(47,95,143,.18),0 1px 4px rgba(29,39,51,.35);`;
+		el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${WARM.route};border:3px solid #fff;box-shadow:0 0 0 8px rgba(236,90,46,.18),0 1px 4px rgba(74,58,40,.35);`;
 		return el;
 	}
 
 	function createDestPin(): HTMLDivElement {
 		const el = document.createElement('div');
-		el.style.cssText = `width:16px;height:16px;border-radius:50%;background:#fff;border:4px solid ${INK};box-shadow:0 1px 4px rgba(29,39,51,.3);`;
+		el.style.cssText = `width:16px;height:16px;border-radius:50%;background:#fff;border:4px solid ${WARM.destination};box-shadow:0 1px 4px rgba(74,58,40,.3);`;
 		return el;
 	}
 
@@ -179,17 +173,7 @@
 		const routeCoords = resource.routeCoordinates;
 		if (!routeCoords || routeCoords.length < 2 || !map.getSource('route-progress')) return;
 
-		let nearestIdx = 0;
-		let nearestDist = Infinity;
-		for (let i = 0; i < routeCoords.length; i++) {
-			const dlat = routeCoords[i][0] - lat;
-			const dlng = routeCoords[i][1] - lng;
-			const dist = dlat * dlat + dlng * dlng;
-			if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
-		}
-
-		const completed = routeCoords.slice(0, nearestIdx + 1).map((c) => [c[1], c[0]]);
-		completed.push([lng, lat]);
+		const completed = splitRouteAtPosition(routeCoords, lat, lng).done.map(([a, b]) => [b, a]);
 
 		(map.getSource('route-progress') as maplibregl.GeoJSONSource).setData({
 			type: 'Feature', properties: {},
@@ -262,7 +246,7 @@
 
 		map = new maplibregl.Map({
 			container: mapEl,
-			style: allInMainlandNorway(points) ? KARTVERKET_GRAY_STYLE : OPENFREEMAP_LIGHT_STYLE,
+			style: WARM_MAP_STYLE,
 			transformRequest: mapTransformRequest,
 			center,
 			zoom: 13,
@@ -271,6 +255,9 @@
 
 		map.on('load', () => {
 			if (!map) return;
+			// Kildehenvisningen starter utvidet i MapLibre og ligger da over kanten av
+			// kortet; (i)-knappen åpner den.
+			mapEl?.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
 
 			if (routeCoords && routeCoords.length >= 2) {
 				map.addSource('route', {
@@ -283,12 +270,12 @@
 				map.addLayer({
 					id: 'route-casing', type: 'line', source: 'route',
 					layout: { 'line-cap': 'round', 'line-join': 'round' },
-					paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.9 }
+					paint: { 'line-color': WARM.routeCasing, 'line-width': 9, 'line-opacity': 0.95 }
 				});
 				map.addLayer({
 					id: 'route', type: 'line', source: 'route',
 					layout: { 'line-cap': 'round', 'line-join': 'round' },
-					paint: { 'line-color': ACCENT, 'line-width': 5, 'line-opacity': 0.35 }
+					paint: { 'line-color': WARM.route, 'line-width': 5, 'line-opacity': 0.4 }
 				});
 
 				map.addSource('route-progress', {
@@ -298,7 +285,7 @@
 				map.addLayer({
 					id: 'route-progress', type: 'line', source: 'route-progress',
 					layout: { 'line-cap': 'round', 'line-join': 'round' },
-					paint: { 'line-color': ACCENT, 'line-width': 5 }
+					paint: { 'line-color': WARM.route, 'line-width': 5 }
 				});
 				updateRouteProgress();
 			}
@@ -443,13 +430,17 @@
 </main>
 
 <style>
+	/* Fargene speiler WARM i warmMapStyle.ts — kortet skal se ut som det hører
+	   til kartet, ikke som et skjema lagt oppå det. */
 	.trip {
-		--ink: #1d2733;
-		--muted: #5f6b76;
-		--line: #e4e2dc;
-		--accent: #2f5f8f;
-		--paper: #f4f3ef;
-		--warn: #8a5a12;
+		--ink: #1b1a17;
+		--muted: #786c5e;
+		--line: #e7dfd1;
+		--accent: #ec5a2e;
+		--pine: #23443d;
+		--paper: #f2ede3;
+		--card: #fffdf8;
+		--warn: #a0521c;
 
 		min-height: 100dvh;
 		background: var(--paper);
@@ -468,6 +459,10 @@
 		position: absolute;
 		inset: 0;
 	}
+	/* Kortet ligger 28 px inn over kartet; kildeknappen skal ikke gjemme seg bak det. */
+	.map :global(.maplibregl-ctrl-bottom-right) {
+		bottom: 30px;
+	}
 	.card {
 		position: relative;
 		z-index: 1;
@@ -476,23 +471,24 @@
 		max-width: 560px;
 		margin: -28px auto 0;
 		padding: 1.4rem 1.25rem 2rem;
-		background: #fff;
-		border-radius: 20px 20px 0 0;
-		box-shadow: 0 -4px 18px rgba(29, 39, 51, 0.08);
+		background: var(--card);
+		border-radius: 22px 22px 0 0;
+		box-shadow: 0 -6px 20px rgba(74, 58, 40, 0.1);
 		flex: 1;
 	}
 	@media (min-width: 600px) {
 		.card {
 			flex: none;
 			margin-bottom: 2rem;
-			border-radius: 20px;
-			box-shadow: 0 6px 24px rgba(29, 39, 51, 0.1);
+			border-radius: 22px;
+			box-shadow: 0 8px 30px rgba(74, 58, 40, 0.14);
 		}
 	}
 	.who {
 		margin: 0;
 		font-size: 0.85rem;
-		color: var(--muted);
+		font-weight: 600;
+		color: var(--accent);
 	}
 	h1 {
 		margin: 0.1rem 0 0;
@@ -531,7 +527,8 @@
 	.eta-rel {
 		grid-area: rel;
 		font-size: 1rem;
-		color: var(--muted);
+		font-weight: 600;
+		color: var(--accent);
 	}
 	.eta.arrived .eta-clock {
 		color: var(--ink);
@@ -577,7 +574,7 @@
 		gap: 0.4rem;
 	}
 	.incoming-msg {
-		background: #eef2f6;
+		background: #f1e9dc;
 		border-radius: 12px 12px 12px 3px;
 		padding: 0.5rem 0.75rem;
 		display: flex;
@@ -615,7 +612,7 @@
 		border: 1px solid var(--line);
 		border-radius: 10px;
 		font-size: 1rem;
-		background: #fafaf8;
+		background: #faf6ef;
 		color: var(--ink);
 	}
 	.field:focus {
@@ -632,7 +629,7 @@
 		padding: 0.65rem 1.1rem;
 		border: none;
 		border-radius: 10px;
-		background: var(--ink);
+		background: var(--pine);
 		color: #fff;
 		font-weight: 600;
 		font-size: 0.95rem;
@@ -646,7 +643,7 @@
 		margin: 0;
 		font-size: 0.82rem;
 	}
-	.composer-status.ok { color: #3d7a5a; }
+	.composer-status.ok { color: var(--pine); }
 	.composer-status.err { color: #a2401f; }
 	.owner-note {
 		margin: 1.5rem 0 0;

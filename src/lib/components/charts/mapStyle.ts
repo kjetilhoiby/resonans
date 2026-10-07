@@ -36,38 +36,3 @@ export function mapTransformRequest(url: string): { url: string } | undefined {
 	return undefined;
 }
 
-/**
- * Lyse bakgrunnskart for delingssiden («Jeg er på vei»), som er lys — den mørke
- * stilen over ble et svart hull midt på en hvit side.
- *
- * I Norge: Kartverkets topografiske gråtonekart (raster), samme kart som
- * forhåndsvisningsbildet (`$lib/server/live-og.ts`) — ferskt, med stier og
- * høydekurver, og rolig nok til at ruta og posisjonen er det man ser. Utenfor
- * Norge er Kartverkets fliser blanke, så der brukes OpenFreeMaps lyse «positron».
- * Valget gjøres per tur med `allInMainlandNorway`.
- */
-export const KARTVERKET_GRAY_STYLE = {
-	version: 8 as const,
-	sources: {
-		kartverket: {
-			type: 'raster' as const,
-			tiles: [
-				'https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png'
-			],
-			tileSize: 256,
-			maxzoom: 17,
-			attribution: '© Kartverket'
-		}
-	},
-	layers: [
-		{ id: 'paper', type: 'background' as const, paint: { 'background-color': '#f4f3ef' } },
-		{
-			id: 'kartverket',
-			type: 'raster' as const,
-			source: 'kartverket',
-			paint: { 'raster-opacity': 0.78 }
-		}
-	]
-};
-
-export const OPENFREEMAP_LIGHT_STYLE = 'https://tiles.openfreemap.org/styles/positron';
