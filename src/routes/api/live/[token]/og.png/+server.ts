@@ -17,12 +17,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		lastLon: session.lastLon,
 		destLat: session.destLat,
 		destLon: session.destLon,
-		destLabel: session.destLabel,
-		etaSeconds: session.etaSeconds,
-		lastPingAt: session.lastPingAt,
-		endedAt: session.endedAt,
-		endedReason: session.endedReason,
-		startedAt: session.startedAt
+		endedReason: session.endedReason
 	});
 
 	return new Response(png as BodyInit, {

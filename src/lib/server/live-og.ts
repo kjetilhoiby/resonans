@@ -1,13 +1,12 @@
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import interRegular from '@fontsource/inter/files/inter-latin-500-normal.woff?inline';
-import interBold from '@fontsource/inter/files/inter-latin-700-normal.woff?inline';
-import { describeLiveShare, splitRouteAtPosition, tripProgress, type TripProgress } from '$lib/domain/live-share';
+import { splitRouteAtPosition } from '$lib/domain/live-share';
 import { WARM } from '$lib/components/charts/warmMapStyle';
 import { renderVectorBasemap } from '$lib/server/vector-basemap';
 
 /**
- * OG-forhåndsvisningen (kart + rute + posisjon + ankomsttid) for en delt
+ * OG-forhåndsvisningen (kart + rute + posisjon + mål) for en delt
  * live-sesjon. Delt mellom /api/live/[token]/og.png (eldre lenker) og
  * /api/share-link/[token]/og.png (nye delelenker).
  *
@@ -19,8 +18,10 @@ import { renderVectorBasemap } from '$lib/server/vector-basemap';
  * ingenting feilet. Kartverkets gråtonekart tok over én dag, og ble forkastet som
  * grått og kommunalt; det var også blankt utenfor Norge.
  *
- * Teksten står I bildet også, ikke bare i og:title: mange meldingsapper viser
- * bare bildet, og da er ankomsttida det mottakeren ser først.
+ * Bildet er BARE kart: rute, posisjon og mål. Teksten — «Jeg er på vei», ankomsttid,
+ * mål — står i og:title/og:description under bildet og i delingsteksten fra Ekko,
+ * og tidsstripa bor på delingssiden. Et tekstfelt i bildet ble prøvd og tatt ut:
+ * det gjentok det som står rett under, og tok plassen fra kartet.
  */
 
 const IMG_W = 1200;
@@ -33,12 +34,7 @@ export interface LiveOgSession {
 	lastLon: number | null;
 	destLat: number | null;
 	destLon: number | null;
-	destLabel: string | null;
-	etaSeconds: number | null;
-	lastPingAt: Date | null;
-	endedAt: Date | null;
 	endedReason: string | null;
-	startedAt: Date;
 }
 
 function worldX(lon: number, z: number) {
@@ -54,145 +50,13 @@ function dataUriToBuffer(uri: string): Buffer {
 }
 
 const FONTS = [
-	{ name: 'Inter', data: dataUriToBuffer(interRegular), weight: 500 as const, style: 'normal' as const },
-	{ name: 'Inter', data: dataUriToBuffer(interBold), weight: 700 as const, style: 'normal' as const }
+	{ name: 'Inter', data: dataUriToBuffer(interRegular), weight: 500 as const, style: 'normal' as const }
 ];
 
 type SatoriNode = {
 	type: string;
 	props: Record<string, unknown>;
 };
-
-const STRIP_W = 560;
-
-const abs = (style: Record<string, unknown>, children?: SatoriNode[]): SatoriNode => ({
-	type: 'div',
-	props: { style: { position: 'absolute', display: 'flex', ...style }, children }
-});
-
-/** Tidsstripa «16:49 ●━━━○┄┄◯ 17:42» — samme prikk og mål-ring som på kartet. */
-function progressStrip(p: TripProgress): SatoriNode {
-	const trackW = STRIP_W - 20;
-	const x = Math.round(p.fraction * trackW);
-	const arrived = !p.endIsEstimate;
-	const track: SatoriNode[] = [
-		abs({ left: 0, top: 15, width: trackW, height: 6, borderRadius: 3, background: WARM.route, opacity: 0.25 }),
-		abs({ left: 0, top: 15, width: x, height: 6, borderRadius: 3, background: WARM.route }),
-		abs({ left: -7, top: 11, width: 14, height: 14, borderRadius: 7, background: WARM.route, border: '3px solid #fff' }),
-		abs({
-			left: trackW - 10, top: 8, width: 20, height: 20, borderRadius: 10,
-			background: arrived ? WARM.route : '#fff', border: `5px solid ${WARM.destination}`
-		})
-	];
-	if (!arrived) {
-		track.push(
-			abs({ left: x - 19, top: -1, width: 38, height: 38, borderRadius: 19, background: WARM.route, opacity: 0.18 }),
-			abs({ left: x - 12, top: 6, width: 24, height: 24, borderRadius: 12, background: WARM.route, border: '4px solid #fff' })
-		);
-	}
-	return {
-		type: 'div',
-		props: {
-			style: { display: 'flex', flexDirection: 'column', width: STRIP_W, marginTop: 22 },
-			children: [
-				{
-					type: 'div',
-					props: {
-						style: { display: 'flex', justifyContent: 'space-between', fontSize: 22, fontWeight: 700, color: WARM.ink },
-						children: [
-							{ type: 'div', props: { children: p.startClock } },
-							{ type: 'div', props: { children: p.endIsEstimate ? `ca. ${p.endClock}` : p.endClock } }
-						]
-					}
-				},
-				{
-					type: 'div',
-					props: {
-						style: { position: 'relative', display: 'flex', height: 36, marginLeft: 10, marginRight: 10, marginTop: 4 },
-						children: track
-					}
-				}
-			]
-		}
-	};
-}
-
-/** Tekstfeltet nede til venstre: ankomsttida er det største. */
-function textPanel(session: LiveOgSession, progress: TripProgress | null): SatoriNode {
-	const summary = describeLiveShare(session);
-	const dest = session.destLabel?.trim() || null;
-
-	let kicker: string | null;
-	let headline: string;
-	let sub: string | null;
-	if (summary.state === 'arrived') {
-		kicker = null;
-		headline = 'Jeg er framme';
-		// Stripa viser ankomsttida; da står den ikke to ganger.
-		sub = progress
-			? dest
-			: [summary.arrivalClock ? `kl. ${summary.arrivalClock}` : null, dest].filter(Boolean).join(' · ') || null;
-	} else if (summary.state === 'ended') {
-		kicker = null;
-		headline = summary.title;
-		sub = dest;
-	} else if (summary.arrivalClock) {
-		kicker = 'Jeg er på vei';
-		headline = `Framme ca. kl. ${summary.arrivalClock}`;
-		sub = dest ? `til ${dest}` : null;
-	} else {
-		kicker = null;
-		headline = 'Jeg er på vei';
-		sub = dest ? `til ${dest}` : 'Følg turen live';
-	}
-
-	const children: SatoriNode[] = [];
-	if (kicker) {
-		children.push({
-			type: 'div',
-			props: {
-				style: { fontSize: 26, fontWeight: 700, color: WARM.route, marginBottom: 6 },
-				children: kicker
-			}
-		});
-	}
-	children.push({
-		type: 'div',
-		props: {
-			style: { fontSize: 54, fontWeight: 700, color: WARM.ink, letterSpacing: '-0.02em', lineHeight: 1.1 },
-			children: headline
-		}
-	});
-	if (sub) {
-		children.push({
-			type: 'div',
-			props: {
-				style: { fontSize: 28, fontWeight: 500, color: WARM.muted, marginTop: 10 },
-				children: sub
-			}
-		});
-	}
-	if (progress) children.push(progressStrip(progress));
-
-	return {
-		type: 'div',
-		props: {
-			style: {
-				position: 'absolute',
-				left: 40,
-				bottom: 40,
-				maxWidth: 760,
-				display: 'flex',
-				flexDirection: 'column',
-				padding: '26px 34px 28px',
-				background: '#fffdf8',
-				borderRadius: 24,
-				boxShadow: '0 8px 30px rgba(74,58,40,0.18)'
-			},
-			children
-		}
-	};
-}
 
 function polyline(points: string, stroke: string, width: number, opacity = 1): string {
 	return `<polyline points="${points}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -216,41 +80,22 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 	if (dest) points.push(dest);
 	if (points.length === 0) points.push([59.91, 10.75]);
 
-	const progress = tripProgress(session);
-
-	// Innholdet skal ligge utenfor tekstfeltet, ikke bak det. To ledige felt:
-	// OVER panelet (bredt og lavt) og TIL HØYRE for det (smalt og høyt). Ruta
-	// legges i det som gir størst zoom — en nord–sør-tur passer til høyre, en
-	// øst–vest-tur over.
-	const panelTop = IMG_H - 40 - (progress ? 290 : 190);
-	const panelRight = progress ? 700 : 640;
-	const regions = [
-		{ x0: 0, y0: 0, x1: IMG_W, y1: panelTop },
-		{ x0: panelRight, y0: 0, x1: IMG_W, y1: IMG_H - 30 }
-	];
-
-	const fits = (z: number, r: (typeof regions)[number]) => {
-		const xs = points.map(([, lon]) => worldX(lon, z));
-		const ys = points.map(([lat]) => worldY(lat, z));
-		return (
-			Math.max(...xs) - Math.min(...xs) <= (r.x1 - r.x0) * 0.8 &&
-			Math.max(...ys) - Math.min(...ys) <= (r.y1 - r.y0) * 0.8
-		);
-	};
-	const bestZoom = (r: (typeof regions)[number]) => {
-		if (points.length === 1) return 14;
-		for (let z = 16; z >= 3; z--) if (fits(z, r)) return z;
-		return 3;
-	};
-	const zooms = regions.map(bestZoom);
-	const regionIdx = zooms[1] > zooms[0] ? 1 : 0;
-	const region = regions[regionIdx];
-	const zoom = zooms[regionIdx];
+	// Hele bildet er kart; ruta fyller 80 % av flaten og ligger midt i. Zoomen er
+	// en brøk, ikke et heltall — hele trinn er doblinger, og et trinn for langt ut
+	// ga en rute som fylte en firedel av bildet. Kartet tåler det: tilene skaleres.
+	let zoom = 14;
+	if (points.length > 1) {
+		const spanX = Math.max(...points.map(([, lon]) => worldX(lon, 0))) - Math.min(...points.map(([, lon]) => worldX(lon, 0)));
+		const spanY = Math.max(...points.map(([lat]) => worldY(lat, 0))) - Math.min(...points.map(([lat]) => worldY(lat, 0)));
+		const fitX = spanX > 0 ? Math.log2((IMG_W * 0.8) / spanX) : 16;
+		const fitY = spanY > 0 ? Math.log2((IMG_H * 0.8) / spanY) : 16;
+		zoom = Math.max(3, Math.min(16, fitX, fitY));
+	}
 
 	const xs = points.map(([, lon]) => worldX(lon, zoom));
 	const ys = points.map(([lat]) => worldY(lat, zoom));
-	const originX = (Math.min(...xs) + Math.max(...xs)) / 2 - (region.x0 + region.x1) / 2;
-	const originY = (Math.min(...ys) + Math.max(...ys)) / 2 - (region.y0 + region.y1) / 2;
+	const originX = (Math.min(...xs) + Math.max(...xs)) / 2 - IMG_W / 2;
+	const originY = (Math.min(...ys) + Math.max(...ys)) / 2 - IMG_H / 2;
 	const toXY = ([lat, lon]: readonly [number, number]): [string, string] => [
 		(worldX(lon, zoom) - originX).toFixed(1),
 		(worldY(lat, zoom) - originY).toFixed(1)
@@ -319,7 +164,6 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 							style: { position: 'absolute', left: 0, top: 0 }
 						}
 					},
-					textPanel(session, progress),
 					credit
 				]
 			}

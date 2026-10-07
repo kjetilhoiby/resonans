@@ -44,11 +44,16 @@ Det krevde dessuten et Norge-polygon, siden Kartverkets fliser er blanke utenfor
 landet; det er slettet sammen med Kartverket-stien.
 
 ### Fase 3: OG-bildet
-`$lib/server/live-og.ts`: kartet over, ruta delt i tilbakelagt (heltrukket) og
-gjenstående (dempet) ved posisjonen (`splitRouteAtPosition`, delt med siden), og et
-kremfarget tekstfelt med «Framme ca. kl. 17:42». Inter (via `@fontsource/inter`,
-importert med `?inline`) bakes inn i serverbundelen — satori kan ikke tegne tekst uten
-en font. `og:image` er nå en ABSOLUTT adresse; meldingsappene løser ikke relative.
+`$lib/server/live-og.ts`: BARE kart — rute delt i tilbakelagt (heltrukket) og
+gjenstående (dempet) ved posisjonen (`splitRouteAtPosition`, delt med siden),
+posisjonsprikk og mål-ring. Ruta fyller 80 % av bildet med brøkdelszoom. `og:image` er
+nå en ABSOLUTT adresse; meldingsappene løser ikke relative.
+
+Et tekstfelt med «Framme ca. kl. 17:42» (og en periode tidsstripa) lå i bildet en
+stund og ble tatt ut: teksten står i og:title/og:description rett under bildet og i
+delingsteksten, og stripa hører på siden. Bildet skal vise HVOR, siden HVOR LANGT.
+Inter (via `@fontsource/inter`, `?inline`) er beholdt for kildehenvisningen —
+satori tegner ingen tekst uten en font.
 
 ### Fase 4: siden
 `SharedTripPositionView` er skrevet om: kartet øverst, kremkort under med
@@ -58,7 +63,7 @@ generiske share-skallet (som walk og quiz).
 
 ### Fase 5: tidsstripa
 «16:49 ●━━━○┄┄◯ ca. 17:42» — startet, hvor langt på vei og framme, på siden
-(`TripProgressStrip`) og i forhåndsbildet. Samme prikk og samme mål-ring som på
+(`TripProgressStrip`), IKKE i forhåndsbildet. Samme prikk og samme mål-ring som på
 kartet. Regelen bor i `tripProgress` (`$lib/domain/live-share.ts`).
 
 - **Stripa er en TIDSakse, og prikken plasseres i tid**: tid gått av forventet
@@ -69,8 +74,6 @@ kartet. Regelen bor i `tripProgress` (`$lib/domain/live-share.ts`).
   ende er bare en strek.
 - Startklokka er `live_sessions.startedAt`, altså da delingen startet. Ekko starter
   delingen når sporingen starter, så de er i praksis det samme.
-- Forhåndsbildet legger ruta der den får mest plass, over tekstfeltet eller til høyre
-  for det — feltet ble høyere med stripa og skjulte ellers starten av ruta.
 
 ## Beslutninger
 
