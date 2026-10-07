@@ -6,6 +6,7 @@ import {
 	formatMinutesLeft,
 	formatOsloClock,
 	splitRouteAtPosition,
+	tripProgress,
 	type LiveShareInput
 } from './live-share';
 
@@ -123,5 +124,31 @@ describe('splitRouteAtPosition', () => {
 		const { done, remaining } = splitRouteAtPosition(route, 0.1, 1.1);
 		expect(done).toEqual([[0, 0], [0, 1], [0.1, 1.1]]);
 		expect(remaining).toEqual([[0.1, 1.1], [0, 2], [0, 3]]);
+	});
+});
+
+describe('tripProgress', () => {
+	// Startet 16:49 Oslo, siste ping 17:19, 23 min igjen → framme 17:42.
+	const startedAt = '2026-08-14T14:49:00Z';
+
+	it('plasserer prikken i tid: gått av forventet totaltid ved siste ping', () => {
+		const p = tripProgress({ ...base, startedAt });
+		expect(p).toEqual({ startClock: '16:49', endClock: '17:42', endIsEstimate: true, fraction: 30 / 53 });
+	});
+
+	it('framme: full stripe og faktisk ankomsttid', () => {
+		const p = tripProgress({ ...base, startedAt, endedAt: '2026-08-14T15:40:00Z', endedReason: 'arrived' });
+		expect(p).toEqual({ startClock: '16:49', endClock: '17:40', endIsEstimate: false, fraction: 1 });
+	});
+
+	it('ingen stripe uten ankomsttid, før første posisjon eller på en avbrutt tur', () => {
+		expect(tripProgress({ ...base, startedAt, etaSeconds: null })).toBeNull();
+		expect(tripProgress({ ...base, startedAt, lastLat: null, lastLon: null })).toBeNull();
+		expect(tripProgress({ ...base, startedAt, endedAt: '2026-08-14T15:40:00Z', endedReason: 'stopped' })).toBeNull();
+	});
+
+	it('holder prikken innenfor stripa', () => {
+		const p = tripProgress({ ...base, startedAt: '2026-08-14T15:30:00Z' });
+		expect(p?.fraction).toBe(0);
 	});
 });

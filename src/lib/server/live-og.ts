@@ -2,7 +2,7 @@ import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import interRegular from '@fontsource/inter/files/inter-latin-500-normal.woff?inline';
 import interBold from '@fontsource/inter/files/inter-latin-700-normal.woff?inline';
-import { describeLiveShare, splitRouteAtPosition } from '$lib/domain/live-share';
+import { describeLiveShare, splitRouteAtPosition, tripProgress, type TripProgress } from '$lib/domain/live-share';
 import { WARM } from '$lib/components/charts/warmMapStyle';
 import { renderVectorBasemap } from '$lib/server/vector-basemap';
 
@@ -38,6 +38,7 @@ export interface LiveOgSession {
 	lastPingAt: Date | null;
 	endedAt: Date | null;
 	endedReason: string | null;
+	startedAt: Date;
 }
 
 function worldX(lon: number, z: number) {
@@ -62,8 +63,62 @@ type SatoriNode = {
 	props: Record<string, unknown>;
 };
 
+const STRIP_W = 560;
+
+const abs = (style: Record<string, unknown>, children?: SatoriNode[]): SatoriNode => ({
+	type: 'div',
+	props: { style: { position: 'absolute', display: 'flex', ...style }, children }
+});
+
+/** Tidsstripa «16:49 ●━━━○┄┄◯ 17:42» — samme prikk og mål-ring som på kartet. */
+function progressStrip(p: TripProgress): SatoriNode {
+	const trackW = STRIP_W - 20;
+	const x = Math.round(p.fraction * trackW);
+	const arrived = !p.endIsEstimate;
+	const track: SatoriNode[] = [
+		abs({ left: 0, top: 15, width: trackW, height: 6, borderRadius: 3, background: WARM.route, opacity: 0.25 }),
+		abs({ left: 0, top: 15, width: x, height: 6, borderRadius: 3, background: WARM.route }),
+		abs({ left: -7, top: 11, width: 14, height: 14, borderRadius: 7, background: WARM.route, border: '3px solid #fff' }),
+		abs({
+			left: trackW - 10, top: 8, width: 20, height: 20, borderRadius: 10,
+			background: arrived ? WARM.route : '#fff', border: `5px solid ${WARM.destination}`
+		})
+	];
+	if (!arrived) {
+		track.push(
+			abs({ left: x - 19, top: -1, width: 38, height: 38, borderRadius: 19, background: WARM.route, opacity: 0.18 }),
+			abs({ left: x - 12, top: 6, width: 24, height: 24, borderRadius: 12, background: WARM.route, border: '4px solid #fff' })
+		);
+	}
+	return {
+		type: 'div',
+		props: {
+			style: { display: 'flex', flexDirection: 'column', width: STRIP_W, marginTop: 22 },
+			children: [
+				{
+					type: 'div',
+					props: {
+						style: { display: 'flex', justifyContent: 'space-between', fontSize: 22, fontWeight: 700, color: WARM.ink },
+						children: [
+							{ type: 'div', props: { children: p.startClock } },
+							{ type: 'div', props: { children: p.endIsEstimate ? `ca. ${p.endClock}` : p.endClock } }
+						]
+					}
+				},
+				{
+					type: 'div',
+					props: {
+						style: { position: 'relative', display: 'flex', height: 36, marginLeft: 10, marginRight: 10, marginTop: 4 },
+						children: track
+					}
+				}
+			]
+		}
+	};
+}
+
 /** Tekstfeltet nede til venstre: ankomsttida er det største. */
-function textPanel(session: LiveOgSession): SatoriNode {
+function textPanel(session: LiveOgSession, progress: TripProgress | null): SatoriNode {
 	const summary = describeLiveShare(session);
 	const dest = session.destLabel?.trim() || null;
 
@@ -73,7 +128,10 @@ function textPanel(session: LiveOgSession): SatoriNode {
 	if (summary.state === 'arrived') {
 		kicker = null;
 		headline = 'Jeg er framme';
-		sub = [summary.arrivalClock ? `kl. ${summary.arrivalClock}` : null, dest].filter(Boolean).join(' · ') || null;
+		// Stripa viser ankomsttida; da står den ikke to ganger.
+		sub = progress
+			? dest
+			: [summary.arrivalClock ? `kl. ${summary.arrivalClock}` : null, dest].filter(Boolean).join(' · ') || null;
 	} else if (summary.state === 'ended') {
 		kicker = null;
 		headline = summary.title;
@@ -114,6 +172,7 @@ function textPanel(session: LiveOgSession): SatoriNode {
 			}
 		});
 	}
+	if (progress) children.push(progressStrip(progress));
 
 	return {
 		type: 'div',
@@ -157,28 +216,41 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 	if (dest) points.push(dest);
 	if (points.length === 0) points.push([59.91, 10.75]);
 
-	// Innholdet skal ligge OVER tekstfeltet, ikke bak det.
-	const panelReserve = 190;
-	const fitW = IMG_W * 0.72;
-	const fitH = (IMG_H - panelReserve) * 0.78;
+	const progress = tripProgress(session);
 
-	let zoom = 14;
-	if (points.length > 1) {
-		zoom = 4;
-		for (let z = 16; z >= 4; z--) {
-			const xs = points.map(([, lon]) => worldX(lon, z));
-			const ys = points.map(([lat]) => worldY(lat, z));
-			if (Math.max(...xs) - Math.min(...xs) <= fitW && Math.max(...ys) - Math.min(...ys) <= fitH) {
-				zoom = z;
-				break;
-			}
-		}
-	}
+	// Innholdet skal ligge utenfor tekstfeltet, ikke bak det. To ledige felt:
+	// OVER panelet (bredt og lavt) og TIL HØYRE for det (smalt og høyt). Ruta
+	// legges i det som gir størst zoom — en nord–sør-tur passer til høyre, en
+	// øst–vest-tur over.
+	const panelTop = IMG_H - 40 - (progress ? 290 : 190);
+	const panelRight = progress ? 700 : 640;
+	const regions = [
+		{ x0: 0, y0: 0, x1: IMG_W, y1: panelTop },
+		{ x0: panelRight, y0: 0, x1: IMG_W, y1: IMG_H - 30 }
+	];
+
+	const fits = (z: number, r: (typeof regions)[number]) => {
+		const xs = points.map(([, lon]) => worldX(lon, z));
+		const ys = points.map(([lat]) => worldY(lat, z));
+		return (
+			Math.max(...xs) - Math.min(...xs) <= (r.x1 - r.x0) * 0.8 &&
+			Math.max(...ys) - Math.min(...ys) <= (r.y1 - r.y0) * 0.8
+		);
+	};
+	const bestZoom = (r: (typeof regions)[number]) => {
+		if (points.length === 1) return 14;
+		for (let z = 16; z >= 3; z--) if (fits(z, r)) return z;
+		return 3;
+	};
+	const zooms = regions.map(bestZoom);
+	const regionIdx = zooms[1] > zooms[0] ? 1 : 0;
+	const region = regions[regionIdx];
+	const zoom = zooms[regionIdx];
 
 	const xs = points.map(([, lon]) => worldX(lon, zoom));
 	const ys = points.map(([lat]) => worldY(lat, zoom));
-	const originX = (Math.min(...xs) + Math.max(...xs)) / 2 - IMG_W / 2;
-	const originY = (Math.min(...ys) + Math.max(...ys)) / 2 - (IMG_H - panelReserve) / 2 - 10;
+	const originX = (Math.min(...xs) + Math.max(...xs)) / 2 - (region.x0 + region.x1) / 2;
+	const originY = (Math.min(...ys) + Math.max(...ys)) / 2 - (region.y0 + region.y1) / 2;
 	const toXY = ([lat, lon]: readonly [number, number]): [string, string] => [
 		(worldX(lon, zoom) - originX).toFixed(1),
 		(worldY(lat, zoom) - originY).toFixed(1)
@@ -247,7 +319,7 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 							style: { position: 'absolute', left: 0, top: 0 }
 						}
 					},
-					textPanel(session),
+					textPanel(session, progress),
 					credit
 				]
 			}
