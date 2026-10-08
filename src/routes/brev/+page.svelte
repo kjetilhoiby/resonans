@@ -24,7 +24,7 @@
 
 	const LENS_LABEL: Record<LetterLens, string> = { venter: 'venter', status: 'status' };
 
-	const SECTION_ORDER: LetterSection[] = ['maal', 'uka', 'trader', 'ellers'];
+	const SECTION_ORDER: LetterSection[] = ['maal', 'uka', 'trader', 'registrering', 'ellers'];
 	const sections = $derived(
 		SECTION_ORDER.map((section) => ({
 			section,
@@ -81,6 +81,24 @@
 				{/each}
 			{/if}
 		</article>
+
+		{#if data.registration}
+			<section class="coverage" aria-label="Registrering siste sju dager">
+				<h2>Registrering, siste sju dager</h2>
+				{#each data.registration as row (row.domain)}
+					<div class="cov-row" aria-label={`${row.label}: ${row.last7} av 7 dager`}>
+						<span class="cov-label">{row.label}</span>
+						<span class="cov-dots">
+							{#each row.week as hit, i (i)}
+								<span class="cov-dot" class:hit class:today={i === row.week.length - 1}></span>
+							{/each}
+						</span>
+						<span class="cov-count">{row.last7}/7</span>
+					</div>
+				{/each}
+				<p class="note">Siste prikk er i dag. En prikk er en dag med minst én registrering.</p>
+			</section>
+		{/if}
 
 		<section class="behind">
 			<h2>Bak brevet</h2>
@@ -173,6 +191,49 @@
 	}
 	.quiet {
 		color: var(--text-secondary);
+	}
+	.coverage {
+		margin-bottom: 1.75rem;
+	}
+	.coverage h2 {
+		margin: 0 0 0.6rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+	.cov-row {
+		display: grid;
+		grid-template-columns: 7.5rem 1fr auto;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.3rem 0;
+	}
+	.cov-label {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+	.cov-dots {
+		display: flex;
+		gap: 0.4rem;
+	}
+	.cov-dot {
+		width: 0.8rem;
+		height: 0.8rem;
+		border-radius: 50%;
+		border: 1px solid var(--border-subtle);
+	}
+	.cov-dot.hit {
+		background: var(--text-primary);
+		border-color: var(--text-primary);
+	}
+	.cov-dot.today:not(.hit) {
+		border-style: dashed;
+		border-color: var(--text-secondary);
+	}
+	.cov-count {
+		font-size: 0.78rem;
+		color: var(--text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 	.behind {
 		/* Plass til den flytende «+»-knappen, som ellers ligger over siste linje. */

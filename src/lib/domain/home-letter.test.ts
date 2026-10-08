@@ -27,6 +27,7 @@ const base: HomeLetterInput = {
 	daysLeftInWeek: 4,
 	todayOpen: [],
 	events: [],
+	registration: null,
 	hoursSinceLastVisit: 2,
 	sinceLastVisit: null
 };

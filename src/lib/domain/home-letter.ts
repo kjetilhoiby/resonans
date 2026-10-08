@@ -37,16 +37,18 @@ import { describeGoalTrajectory, type GoalShape } from '$lib/domain/goals/goal-p
 import { prepStanding, type EventPrepItem } from '$lib/domain/events/prep';
 import { daysBetween } from '$lib/domain/events/event-fields';
 import { weekItemTarget } from '$lib/domain/week-item-target';
+import { describeCoverage, missingToday, nextUnlock, type DomainCoverage } from '$lib/domain/registration-coverage';
 
 export { weekItemTarget };
 
 export type LetterLens = 'venter' | 'status';
-export type LetterSection = 'maal' | 'uka' | 'trader' | 'ellers';
+export type LetterSection = 'maal' | 'uka' | 'trader' | 'registrering' | 'ellers';
 
 export const SECTION_TITLES: Record<LetterSection, string> = {
 	maal: 'Målene',
 	uka: 'Uka',
 	trader: 'Løse tråder',
+	registrering: 'Registrering',
 	ellers: 'Ellers'
 };
 
@@ -57,7 +59,7 @@ export interface LetterLine {
 	section: LetterSection;
 	text: string;
 	/** Hvilken motor setningen kom fra. Vises i prototypen, ikke i et ferdig brev. */
-	source: 'mål' | 'effort' | 'dagsoversikt' | 'vekt' | 'arrangement' | 'dagsplan' | 'ukeliste' | 'siden-sist';
+	source: 'mål' | 'effort' | 'dagsoversikt' | 'vekt' | 'arrangement' | 'dagsplan' | 'ukeliste' | 'siden-sist' | 'registrering';
 	href?: string;
 }
 
@@ -108,6 +110,8 @@ export interface HomeLetterInput {
 	todayOpen: readonly string[];
 	/** Kommende arrangementer, stigende. */
 	events: readonly LetterEvent[];
+	/** Registreringsdekningen per område, eller null når den ikke kunne leses. */
+	registration: readonly DomainCoverage[] | null;
 	/** Timer siden forrige besøk, eller null når vi ikke vet. */
 	hoursSinceLastVisit: number | null;
 	/** Økter siden forrige besøk (deduplisert), eller null når det ikke er regnet. */
@@ -125,7 +129,7 @@ export interface HomeLetter {
  * Hvor mange linjer hver del får. Målene er brukerens egne og får flest; et brev
  * som er en liste er ikke et brev.
  */
-export const SECTION_CAPS: Record<LetterSection, number> = { maal: 6, uka: 3, trader: 3, ellers: 2 };
+export const SECTION_CAPS: Record<LetterSection, number> = { maal: 6, uka: 3, trader: 3, registrering: 3, ellers: 2 };
 
 /**
  * Hvor lenge borte før «siden sist» er en nyhet. Et døgn minus litt: den som
@@ -401,6 +405,33 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 		candidates.push({ id: 'today-open', lens: 'venter', section: 'trader', text: todayOpen.sentence, source: 'dagsplan', href: '/ukeplan' });
 	}
 
+	// ── Registrering ──
+	// Brukerens eget ønske: å registrere mer. Belønningen er hva dataene låser opp,
+	// sagt med motorens terskel — ikke en skår. Se `registration-coverage.ts`.
+	if (input.registration && input.registration.length > 0) {
+		candidates.push({
+			id: 'registration-coverage',
+			lens: 'status',
+			section: 'registrering',
+			text: describeCoverage(input.registration),
+			source: 'registrering'
+		});
+		const missing = missingToday(input.registration);
+		if (missing.length > 0) {
+			candidates.push({
+				id: 'registration-today',
+				lens: 'venter',
+				section: 'registrering',
+				text: `Ikke registrert ennå i dag: ${joinNorwegian(missing)}.`,
+				source: 'registrering'
+			});
+		}
+		const unlock = nextUnlock(input.registration);
+		if (unlock) {
+			candidates.push({ id: 'registration-unlock', lens: 'status', section: 'registrering', text: unlock, source: 'registrering' });
+		}
+	}
+
 	// ── Ellers ──
 	const sinceLine = sinceLastVisitLine(input);
 	if (sinceLine) candidates.push(sinceLine);
@@ -427,9 +458,9 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 		};
 	}
 
-	const order: LetterSection[] = ['maal', 'uka', 'trader', 'ellers'];
+	const order: LetterSection[] = ['maal', 'uka', 'trader', 'registrering', 'ellers'];
 	const lines: LetterLine[] = [];
-	const perSection: Record<LetterSection, number> = { maal: 0, uka: 0, trader: 0, ellers: 0 };
+	const perSection: Record<LetterSection, number> = { maal: 0, uka: 0, trader: 0, registrering: 0, ellers: 0 };
 	for (const section of order) {
 		for (const line of candidates.filter((l) => l.section === section)) {
 			if (perSection[section] < SECTION_CAPS[section]) {
