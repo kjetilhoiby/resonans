@@ -91,12 +91,12 @@
 				<button
 					class="model-pill"
 					onclick={() => {
-						const opts = ['auto', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4'];
+						const opts = ['auto', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4', 'gpt-6-luna'];
 						ctx.selectedChatModel = opts[(opts.indexOf(ctx.selectedChatModel) + 1) % opts.length];
 						if (typeof localStorage !== 'undefined') localStorage.setItem('chat-model', ctx.selectedChatModel);
 					}}
 					title="Modell — klikk for å bytte"
-				>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' }[ctx.selectedChatModel] ?? ctx.selectedChatModel}</button>
+				>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4', 'gpt-6-luna': 'Luna' }[ctx.selectedChatModel] ?? ctx.selectedChatModel}</button>
 			{/snippet}
 		</PageHeader>
 		<div class="chat-messages" aria-live="polite">

@@ -5,12 +5,12 @@
  */
 
 /**
- * GPT-5- og o-serien er reasoning-modeller med et annet parameter-format enn gpt-4o: de krever
+ * GPT-5 og nyere og o-serien er reasoning-modeller med et annet parameter-format enn gpt-4o: de krever
  * `max_completion_tokens` (ikke `max_tokens`) og støtter bare default-temperatur. Sender vi feil
  * navn/verdi, svarer OpenAI 400 → 502 mot frontend. Skill derfor per modell.
  */
 export function isReasoningModel(modelId: string): boolean {
-	return /^(o\d|gpt-5)/i.test(modelId);
+	return /^(o\d|gpt-(?:[5-9]|[1-9]\d))/i.test(modelId);
 }
 
 /** Bygg de modell-spesifikke completion-parametrene (token-tak + ev. temperatur). */

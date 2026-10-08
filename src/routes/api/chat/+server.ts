@@ -109,6 +109,7 @@ import {
 	chooseChatModel,
 	completionSizing,
 	isLegacyChatModelMode,
+	isReasoningChatModel,
 	resolveReasoningEffort,
 	resolveVerbosity
 } from '$lib/domain/ai/chat-model';
@@ -2937,7 +2938,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// Determine conversation mode: skip tools for conversational/literary contexts,
 		// use stronger model when routing suggests it or user has picked one.
 		const aiSuggestsConversation = routingDecision.mode === 'conversation';
-		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
+		const isHighCapabilityModel = preferredModel ? isReasoningChatModel(preferredModel) : false;
 		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
 
 		/**
@@ -3003,6 +3004,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 		// Legacy beholder rutingens modellforslag for samtale-modus; ellers gjelder
 		// brukerens valg, så standardmodellen.
+		const initialSendsTools = forceWebSearch || !skipTools;
 		const legacyResolvedModel = legacyChatModels && !preferredModel && isConversationalMode
 			? (routingDecision.modelSuggestion ?? 'gpt-5.4')
 			: undefined;
@@ -3014,7 +3016,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				preferredModel,
 				configuredDefault: configuredChatModel,
 				hasImage: Boolean(effectiveImageUrl),
-				userInput: latestUserInput
+				userInput: latestUserInput,
+				withTools: initialSendsTools
 			});
 		const initialFallbackSizing = { temperature: 0.8, maxTokens: effectiveImageUrl ? 1500 : 1000 };
 
@@ -3039,7 +3042,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					...initialFallbackSizing,
 					maxTokens: isConversationalMode ? 2000 : initialFallbackSizing.maxTokens,
 					reasoningEffort,
-					verbosity
+					verbosity,
+					withTools: initialSendsTools
 				})
 			},
 			initialFallbackSizing,
@@ -4530,7 +4534,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				hasImage: Boolean(effectiveImageUrl),
 				userInput: latestUserInput,
 				toolCallCount: responseMessage.tool_calls.length,
-				toolRound
+				toolRound,
+				withTools: true
 			});
 			await emitProgress(onProgress, 'model_followup_request', 'Ber modellen bruke verktøyresultatene...', {
 				model: followupModelDecision.model,
@@ -4554,7 +4559,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					...completionSizing(followupModelDecision.model, {
 						...followupFallbackSizing,
 						reasoningEffort,
-						verbosity
+						verbosity,
+						withTools: true
 					})
 				},
 				followupFallbackSizing,

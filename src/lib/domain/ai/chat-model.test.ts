@@ -6,6 +6,7 @@ import {
 	rejectedOptionalParams,
 	isLegacyChatModelMode,
 	isReasoningChatModel,
+	chatCompletionsToolSupport,
 	resolveDefaultChatModel,
 	resolveReasoningEffort,
 	resolveVerbosity,
@@ -114,6 +115,37 @@ describe('completionSizing', () => {
 		expect(isReasoningChatModel('o3-mini')).toBe(true);
 		expect(isReasoningChatModel('gpt-4o')).toBe(false);
 		expect(isReasoningChatModel('gpt-4.1')).toBe(false);
+		expect(isReasoningChatModel('gpt-6-luna')).toBe(true);
+		expect(isReasoningChatModel('gpt-6.1-sol')).toBe(true);
+		expect(isReasoningChatModel('gpt-10')).toBe(true);
+	});
+
+	it('Luna med verktøy går uten resonnering; uten verktøy gjelder valget', () => {
+		const opts = { temperature: 0.3, maxTokens: 1000, reasoningEffort: 'low' as const };
+		expect(completionSizing('gpt-6-luna', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'none' });
+		expect(completionSizing('gpt-6-luna', opts)).toMatchObject({ reasoning_effort: 'low' });
+		expect(completionSizing('gpt-5.4', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'low' });
+	});
+});
+
+describe('chatCompletionsToolSupport', () => {
+	it('kjenner GPT-6-familiens grenser over Chat Completions', () => {
+		expect(chatCompletionsToolSupport('gpt-6.1-sol')).toBe('none');
+		expect(chatCompletionsToolSupport('gpt-6-sol')).toBe('none');
+		expect(chatCompletionsToolSupport('gpt-6-astra')).toBe('none');
+		expect(chatCompletionsToolSupport('gpt-6-luna')).toBe('without-reasoning');
+		expect(chatCompletionsToolSupport('gpt-5.4')).toBe('full');
+		expect(chatCompletionsToolSupport('gpt-4o')).toBe('full');
+	});
+
+	it('velger ikke en modell som ikke kan kalle verktøyene kallet sender', () => {
+		const base = { phase: 'initial' as const, hasImage: false, userInput: 'hei' };
+		expect(chooseChatModel({ ...base, preferredModel: 'gpt-6.1-sol', withTools: true })).toEqual({
+			model: 'gpt-5.4',
+			reason: 'tools_unsupported:gpt-6.1-sol'
+		});
+		expect(chooseChatModel({ ...base, preferredModel: 'gpt-6.1-sol', withTools: false }).model).toBe('gpt-6.1-sol');
+		expect(chooseChatModel({ ...base, configuredDefault: 'gpt-6-luna', withTools: true }).model).toBe('gpt-6-luna');
 	});
 });
 
