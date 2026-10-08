@@ -82,6 +82,22 @@ Brevet er bygget om i fire deler:
 Overliggerne fra i går, kalenderuka og ukas vekt står under «Valgt bort» med en
 setning om hva som erstattet dem.
 
+### Etterarbeid etter første lesing med ekte data (8. oktober)
+
+- **Målene sorteres på den faktiske fristen.** Sorteringen sto på `targetDate`,
+  som er tom for mål med frist i metadata, og NULL havner sist. «Løpe 90 km i
+  oktober», målet med nærmest frist, falt derfor ut bak tre mål med frist i
+  2027. Nå er det nærmeste frist først, og taket på fire kapper bort de fjerneste.
+- **Ukelista teller ganger, ikke punkter.** Et punkt kan bære målet i parentes,
+  «Dele legging i to med Anita (3 ganger)». Første utgave så det som ett punkt,
+  viste parentesen som en del av navnet, og ville tatt det bort i det det var
+  lagt på én dag. `weekItemTarget` leser målet, `remainingWeekPlacements` trekker
+  fra dagene som peker på punktet, og linja sier hvor mange dager som er igjen
+  av uka: «Fire dager igjen av uka, og uten en dag ennå: Dele legging … ×3».
+- Kjent rest: å hake av et dagpunkt haker også av ukepunktet det peker på
+  (`/ukeplan`), så et «(3 ganger)»-punkt forsvinner fra brevet etter første gang.
+  Det er ukelistas regel, ikke brevets, og den er ikke rørt.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren

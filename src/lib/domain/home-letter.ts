@@ -97,8 +97,10 @@ export interface HomeLetterInput {
 	weight: readonly WeightNugget[];
 	/** Åpne punkter på dager som har gått, siste sju dager. */
 	lostItems: readonly string[];
-	/** Punkter på ukelista uten en dag, gruppert («Løp» ×2). */
+	/** Ganger på ukelista som ingen dag har tatt ennå, gruppert («Løp» ×2). */
 	unplacedWeek: ReadonlyArray<{ label: string; count: number }>;
+	/** Dager igjen av uka, i dag medregnet (1 på søndag, 7 på mandag). */
+	daysLeftInWeek: number;
 	/** Åpne punkter på dagens dagsplan. */
 	todayOpen: readonly string[];
 	/** Kommende arrangementer, stigende. */
@@ -235,14 +237,57 @@ function sinceLastVisitLine(input: HomeLetterInput): LetterLine | null {
 	};
 }
 
-function unplacedLine(unplaced: HomeLetterInput['unplacedWeek']): LetterLine | null {
+/**
+ * Hvor mange ganger et ukepunkt skal gjøres, lest av teksten.
+ *
+ * Ukelista har to former for «flere ganger»: tre punkter «Løp (1/3)», «Løp (2/3)»
+ * … (én per gang, se `addItem` på /ukeplan), og ETT punkt med målet i parentes,
+ * «Dele legging i to med Anita (3 ganger)». Den andre formen må telles, ellers
+ * forsvinner hele punktet idet det er lagt på én dag, mens to ganger gjenstår.
+ */
+export function weekItemTarget(text: string): { label: string; times: number } {
+	const match = /^(.*?)\s*\((\d{1,2})\s+(?:ganger|gang|dager|dag)\)\s*$/i.exec(text.trim());
+	if (!match) return { label: text.trim(), times: 1 };
+	const times = Number(match[2]);
+	return { label: match[1].trim(), times: times > 0 ? times : 1 };
+}
+
+/**
+ * Gangene på ukelista som ingen dag har tatt, per etikett.
+ *
+ * `linkCounts` er hvor mange dagpunkter denne uka som peker på hvert ukepunkt
+ * (`metadata.linkedChecklistItemId`). Et punkt med «(3 ganger)» som er lagt på én
+ * dag står igjen med to.
+ */
+export function remainingWeekPlacements(
+	items: ReadonlyArray<{ id: string; text: string; open: boolean }>,
+	linkCounts: ReadonlyMap<string, number>,
+	labelOf: (text: string) => string = (t) => t
+): Array<{ label: string; count: number }> {
+	const counts = new Map<string, number>();
+	for (const item of items) {
+		if (!item.open) continue;
+		const target = weekItemTarget(item.text);
+		const remaining = target.times - (linkCounts.get(item.id) ?? 0);
+		if (remaining <= 0) continue;
+		const label = labelOf(target.label) || target.label;
+		counts.set(label, (counts.get(label) ?? 0) + remaining);
+	}
+	return [...counts].map(([label, count]) => ({ label, count }));
+}
+
+const DAY_COUNT_WORDS = ['null', 'én', 'to', 'tre', 'fire', 'fem', 'seks', 'sju'];
+
+function unplacedLine(unplaced: HomeLetterInput['unplacedWeek'], daysLeft: number): LetterLine | null {
 	if (unplaced.length === 0) return null;
 	const named = unplaced.map((u) => (u.count > 1 ? `${u.label} ×${u.count}` : u.label));
+	const left = daysLeft === 1 ? 'Siste dag i uka' : `${DAY_COUNT_WORDS[daysLeft] ?? daysLeft} dager igjen av uka`;
+	const head = daysLeft === 1 ? left : left.charAt(0).toUpperCase() + left.slice(1);
 	return {
 		id: 'week-unplaced',
 		lens: 'venter',
 		section: 'uka',
-		text: `På ukelista uten en dag: ${joinNorwegian(named)}.`,
+		text: `${head}, og uten en dag ennå: ${joinNorwegian(named)}.`,
 		source: 'ukeliste',
 		href: '/ukeplan'
 	};
@@ -267,7 +312,7 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 		);
 		candidates.push({ id: 'effort-7d', lens: 'status', section: 'uka', text: verdict.text, source: 'effort', href: '/tema/helse' });
 	}
-	const unplaced = unplacedLine(input.unplacedWeek);
+	const unplaced = unplacedLine(input.unplacedWeek, input.daysLeftInWeek);
 	if (unplaced) candidates.push(unplaced);
 
 	for (const nugget of input.digest) {

@@ -4,7 +4,9 @@ import {
 	goalLine,
 	joinNorwegian,
 	letterGreeting,
+	remainingWeekPlacements,
 	SECTION_CAPS,
+	weekItemTarget,
 	type HomeLetterInput,
 	type LetterGoal
 } from './home-letter';
@@ -21,6 +23,7 @@ const base: HomeLetterInput = {
 	weight: [],
 	lostItems: [],
 	unplacedWeek: [],
+	daysLeftInWeek: 4,
 	todayOpen: [],
 	events: [],
 	hoursSinceLastVisit: 2,
@@ -125,7 +128,14 @@ describe('buildHomeLetter', () => {
 
 	it('navngir det som står på ukelista uten en dag', () => {
 		const letter = buildHomeLetter({ ...base, unplacedWeek: [{ label: 'Løp', count: 2 }, { label: 'Handle', count: 1 }] });
-		expect(letter.lines[0]).toMatchObject({ lens: 'venter', section: 'uka', text: 'På ukelista uten en dag: Løp ×2 og Handle.' });
+		expect(letter.lines[0]).toMatchObject({
+			lens: 'venter',
+			section: 'uka',
+			text: 'Fire dager igjen av uka, og uten en dag ennå: Løp ×2 og Handle.'
+		});
+		expect(buildHomeLetter({ ...base, daysLeftInWeek: 1, unplacedWeek: [{ label: 'Løp', count: 1 }] }).lines[0].text).toBe(
+			'Siste dag i uka, og uten en dag ennå: Løp.'
+		);
 	});
 
 	it(`kapper de løse trådene på ${SECTION_CAPS.trader} og viser resten som valgt bort`, () => {
@@ -198,6 +208,38 @@ describe('buildHomeLetter', () => {
 		expect(letter.lines.map((l) => l.id)).toEqual(['sick', 'goal:w']);
 		expect(letter.lines.some((l) => l.lens === 'venter')).toBe(false);
 		expect(letter.dropped.map((l) => l.id)).toEqual(['digest:streak-due', 'lost-items']);
+	});
+});
+
+describe('weekItemTarget', () => {
+	it('leser målet i parentes', () => {
+		expect(weekItemTarget('Dele legging i to med Anita (3 ganger)')).toEqual({ label: 'Dele legging i to med Anita', times: 3 });
+		expect(weekItemTarget('Måltidslogg (7 dager)')).toEqual({ label: 'Måltidslogg', times: 7 });
+		expect(weekItemTarget('Løp (1/3)')).toEqual({ label: 'Løp (1/3)', times: 1 });
+		expect(weekItemTarget('Handle')).toEqual({ label: 'Handle', times: 1 });
+	});
+});
+
+describe('remainingWeekPlacements', () => {
+	const strip = (t: string) => t.replace(/\s*\(\d+\/\d+\)$/, '');
+
+	it('trekker fra dagene som alt har tatt et punkt med flere ganger', () => {
+		const items = [{ id: 'a', text: 'Dele legging (3 ganger)', open: true }];
+		expect(remainingWeekPlacements(items, new Map([['a', 1]]))).toEqual([{ label: 'Dele legging', count: 2 }]);
+		expect(remainingWeekPlacements(items, new Map([['a', 3]]))).toEqual([]);
+	});
+
+	it('teller «Løp (1/3)»-formen per punkt og grupperer på etiketten', () => {
+		const items = [
+			{ id: 'a', text: 'Løp (1/3)', open: true },
+			{ id: 'b', text: 'Løp (2/3)', open: true },
+			{ id: 'c', text: 'Løp (3/3)', open: true }
+		];
+		expect(remainingWeekPlacements(items, new Map([['a', 1]]), strip)).toEqual([{ label: 'Løp', count: 2 }]);
+	});
+
+	it('hopper over punkter som er gjort eller utsatt', () => {
+		expect(remainingWeekPlacements([{ id: 'a', text: 'Handle', open: false }], new Map())).toEqual([]);
 	});
 });
 
