@@ -44,11 +44,34 @@ rask»).
 
 | Spor | Status | Neste steg |
 |---|---|---|
-| 1. Coachen | Fase 1–6 ferdig, kuttet måles i skygge | **▶ Ta opp igjen her** (se under) |
-| 2. Én inngang | Fase 1–2 ute til utprøving | Hjem: chatfeltet tar flere vedlegg og innliming. Andre sider: flytende «+» |
-| 3. Hjemskjerm etter døgnet | Prototype på `/brev` (✉ på hjemskjermen) | Brukeren prøver den; se `2026-10-06-brev-prototype.md` |
-| 4. Visuelt uttrykk | **Besluttet: A** | Klar til å tegnes ut |
-| 5. Tre rom (struktur) | Foreslått | Etter spor 2 og 3 |
+| 1. Coachen | Fase 1–6 ferdig. Kuttet måles i skygge, men **målingen sulter** | Chatte som vanlig til 20 svar med verktøykall; se under |
+| 2. Én inngang | Ute til utprøving, lite brukt ennå | Les `inngang:*` igjen om et par uker |
+| 3. Hjemskjerm etter døgnet | **Brevet parkert** etter fase 7 | Signalene inn på hjemskjermen som klikkbare linjer, uten modell |
+| 4. Visuelt uttrykk | Besluttet: A, ikke startet | Tegnes ut på hjemskjermen først, sammen med spor 3 |
+| 5. Tre rom (struktur) | Foreslått | Etter spor 3 |
+| Sidespor: modeller | GPT-6 Luna valgbar i chatten, Sol i brevet | Testsuite som egen app (brukeren); Sol i chatten krever Responses-API-et |
+
+### Status 8. oktober 2026
+
+Bruksdata siste sju dager (`/api/diagnostikk/bruk?days=7`): 7 av 7 dager
+aktive, 27 økter, 166 sidevisninger, 93 minutter oppmerksomhet.
+
+- **Hjemskjermen er flaten**: 68 av 166 visninger og 40 av 93 minutter. Deretter
+  temaene (37), ukeplanen (18) og `/brev` (13). Det er derfor spor 3 og 4
+  hører sammen og bør starte på `/`.
+- **Chatten brukes, men mest i skriveprosjektet**: 39 meldinger, hvorav 30 i
+  dagbok-/skrivetråden (`writing`). Den flaten måles ikke i
+  `chat_perf_samples`, og hovedchatten hadde 0 målte svar siste døgn. Spor 1s
+  neste steg står derfor stille på data, ikke på kode.
+- **Én inngang**: `inngang:bibliotek` 3, `inngang:tekst` 3, `inngang:kamera` 2,
+  `inngang:apne-hjem` 2. For lite til å si om den nye veien tar over.
+- **Brevet**: se `2026-10-06-brev-prototype.md`, «Hvor vi står». Innholdet
+  (styringssignalene) og lenkene virker; prosaen krever mer arbeid enn den er
+  verdt før det finnes en måte å vurdere den systematisk på.
+- **Modeller**: se `2026-10-08-gpt6-modeller.md`. Brukeren bygger en
+  testsuite som egen app (fart, kapabiliteter, svarkvalitet), med kartleggingen
+  av OpenAI-bruken som grunnlag. Modellbrevet og hovedchatten er de første
+  kandidatene til å bli målt der.
 
 ### 1. Coachen — ▶ ta opp igjen tråden her
 
@@ -108,7 +131,12 @@ klipp-og-lim til ChatGPT.
 - Åpent spørsmål: hvor knappen bor før de tre rommene finnes. Forslaget er at
   den står fast nederst på hjemskjermen og i samtalen.
 
-### 3. Hjemskjerm etter døgnet — kan startes nå
+### 3. Hjemskjerm etter døgnet — brevet parkert, signalene videre
+
+Brevet som prototype er ferdig og parkert, se `2026-10-06-brev-prototype.md`.
+Det som tas videre er innholdet: styringssignalene og at de er klikkbare.
+
+Opprinnelig beskrivelse:
 
 Skissene A1–A3 viser hjemskjermen som ett brev og én eller to handlinger. Brevet
 skifter med tiden:
@@ -157,15 +185,23 @@ dashboardtyper.
   alene.
 - «Én tråd» fra spor 1 og «Samtalen» her er samme beslutning, og de tas sammen.
 
-## Forslag til rekkefølge mens chatten måles
+## Forslag til rekkefølge (oppdatert 8. oktober 2026)
 
 1. ~~**Brukeren velger visuell retning** (spor 4).~~ A er besluttet.
 2. ~~**Én inngang** (spor 2).~~ Fase 1 er ute til utprøving.
-3. **Hjemskjerm v1** (spor 3) i dagens uttrykk.
-4. **Tilbake til coachen** når tallene fra skyggemålingen er inne (spor 1,
-   punkt 1).
-5. **Tre rom og én tråd** (spor 5 og spor 1, punkt 5).
-6. **Det visuelle uttrykket rulles ut** rom for rom.
+3. ~~**Hjemskjerm v1 som brev** (spor 3).~~ Prototype ferdig og parkert.
+4. **Hjemskjerm v2: «I dag» i uttrykk A.** Styringssignalene fra brevet som
+   korte, klikkbare linjer øverst på `/`, tegnet i A (blekk på krem, nattmodus)
+   på den ene flaten. Det slår sammen spor 3 og 4 der bruken er størst, og
+   prøver ut A på én side før resten. Krever beslutningen om «Alltid mørk».
+5. **Tilbake til coachen** når skyggemålingen har 20 svar med verktøykall
+   (spor 1, punkt 1). Vurder samtidig om skrivetråden skal måles, siden det er
+   der chattingen faktisk skjer.
+6. **Tre rom og én tråd** (spor 5 og spor 1, punkt 5).
+7. **Det visuelle uttrykket rulles ut** rom for rom.
+
+Parallelt, uten kode i dette repoet: testsuiten for modeller. Når den finnes,
+kan modellbrevet tas opp igjen med en måling i stedet for en følelse.
 
 ## Beslutninger
 

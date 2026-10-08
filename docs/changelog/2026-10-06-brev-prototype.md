@@ -1,7 +1,7 @@
 # Brevet: en prototype med ekte data
 
 Dato: 2026-10-06
-Status: til utprøving (fase 2)
+Status: parkert etter fase 7 (8. oktober 2026). `/brev` står, men ingen videre arbeid før beslutningen under er tatt.
 
 ## Kontekst
 
@@ -186,8 +186,10 @@ du der rundt …» fire ganger) og ba om en modellversjon å sammenligne med.
   samme morgen gir ett kall og samme tekst.
 - **Strømming:** modellbrevet returneres som et uavventet løfte fra `load`, så
   regelbrevet vises med en gang og modellteksten kommer etter.
-- **Modellen** er `CHAT_DEFAULT_MODEL` (som chatten), med `gpt-4o` som reserve
-  når den avvises. Feiler kallet, vises siste lagrede brev for dagen.
+- **Modellen** var `CHAT_DEFAULT_MODEL` (som chatten), med `gpt-4o` som reserve
+  når den avvises. Feiler kallet, vises siste lagrede brev for dagen. Fra
+  8. oktober er det `gpt-6.1-sol` (`HOME_LETTER_MODEL`), se
+  `2026-10-08-gpt6-modeller.md`.
 
 ### Fase 7: tallene bak, og lenkene i teksten (8. oktober)
 
@@ -219,6 +221,60 @@ Nå:
   og et `#3` i faktaene ville skjult et oppfunnet 3-tall.
 - `HOME_LETTER_PROMPT_VERSION` er 2, så lagrede brev skrives på nytt.
 
+## Hvor vi står (8. oktober 2026, parkert)
+
+Brukerens vurdering etter fase 7: «det føles fortsatt som at brevet vil kreve en
+viss innsats å få bra.» Arbeidet stoppes her, og dette er det en senere økt
+trenger å vite.
+
+**Det som virker:**
+
+- **Innholdet.** Styringssignalene fra fase 2 er de riktige: målene med anslått
+  dato, delmål under hovedmålet, effort de løpende sju dagene, ukelista som ikke
+  har fått en dag, tapte oppgaver, og registrering bare når den er et valgt
+  fokus. Brukeren har korrigert hva som skulle med, ikke at noe var feil.
+- **Lenkene.** Regelbrevets setninger er innganger, og de ble brukt:
+  `brev:lenke` 6 klikk og `hjem:brev-prototype` 19 klikk i første uke
+  (`/api/diagnostikk/bruk`), `/brev` 13 visninger over 3 dager.
+- **Byggesteinene** er rene og testet og kan brukes uansett form:
+  `buildHomeLetter`, `nestPhaseGoals`, `describeGoalTrajectory`,
+  `describeRollingEffort`, `isWeekItemComplete`, `findRegistrationFocus`,
+  `gatherDigestInput`/`gatherWeightNuggetInput`, og akutt/kronisk uten
+  sykedager.
+
+**Det som ikke er godt nok:**
+
+- **Regelversjonen er lang og repeterende.** Fem mållinjer sier «På dagens tempo
+  er du der rundt …» fem ganger. Brevet leses som en liste, ikke som et brev.
+- **Modellversjonen er ikke vurdert i fase 7-form.** Fase 6 limte setninger og
+  kuttet seksjoner. Fase 7 (tall bak hver linje, lenkede ord, utelatt-liste) er
+  ute, men ikke lest av brukeren.
+- **Kvaliteten kan ikke vurderes systematisk ennå.** Det finnes ingen samling
+  brev å sammenligne over tid; hver vurdering er én morgen.
+
+**Hva som skal til for å gjøre det godt** (grovt anslått):
+
+1. **Færre mållinjer i regelversjonen.** Én linje per hovedmål med delmålene
+   innbakt, og anslaget sagt én gang. Liten jobb, ren domenelogikk.
+2. **En evalueringssløyfe for modellversjonen.** Lagre faktaene og teksten per
+   dag (tabellen finnes), og la testsuiten brukeren planlegger
+   (`resonans-openai-bruk`, profil P6: forankret prosa) score dem: tallvakt,
+   utelatte linjer, lenker per linje, lengde, gjentakelser. Uten den er hver
+   promptendring en følelse.
+3. **Plasseringen.** Brevet øverst på hjemskjermen, en egen flate, eller bare
+   som innhold i en ny «I dag»-seksjon uten prosa.
+4. Kveldsvariant og ukentlige oppgaver (`tasks` med `frequency: 'weekly'`) i
+   linja om det som ikke har fått en dag.
+
+**Anbefalingen ved parkering:** ta signalene inn på hjemskjermen som korte,
+klikkbare linjer UTEN modellen (punkt 1 og 3), og la modellversjonen vente på
+testsuiten (punkt 2). Det meste av verdien brukeren pekte på — klikkbare
+styringssignaler — krever ingen prosa.
+
+**Forkastes brevet helt,** slettes `/brev`, ✉-lenken i `HomeTitleZone.svelte`,
+`home-letter-prose.ts` (begge lag) og `home_letter_drafts` (ny migrasjon).
+Byggesteinene over blir stående.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren
@@ -244,6 +300,9 @@ Nå:
   til basen.
 
 ## Neste steg
+
+Se «Hvor vi står» over. Det opprinnelige utprøvingsopplegget under er besvart
+for regelversjonen og står for historikkens skyld:
 
 Brukeren åpner `/brev` noen morgener og kvelder. Spørsmålene er:
 
