@@ -3844,7 +3844,11 @@ se «Verktøyutvalget» under.
 Completions**, som chatten bruker: Sol og Astra gjør det aldri, Luna bare med
 `reasoning_effort: 'none'`. Det står i `chatCompletionsToolSupport`; et kall som
 sender verktøy velger aldri en modell som ikke kan ta dem (`withTools`), og
-Luna får `none` automatisk. Full Sol i chatten krever Responses-API-et. Brevet
+Luna får `none` automatisk. **gpt-5.x har samme grense som Luna**: med verktøy
+avviste den `reasoning_effort` (`400::reasoning_effort`), og fase 4 målte 0
+tenketokens. Hovedchatten sender alltid verktøy, så `CHAT_REASONING_EFFORT`
+virker ikke der. Coachen tenker ikke før den går over Responses-API-et (spor 1
+i fremdriftsplanen). Full Sol i chatten krever det samme. Brevet
 på `/brev` kaller ingen verktøy og bruker derfor `gpt-6.1-sol`
 (`HOME_LETTER_MODEL` overstyrer). Se
 `docs/changelog/2026-10-08-gpt6-modeller.md`.

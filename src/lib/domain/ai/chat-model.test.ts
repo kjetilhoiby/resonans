@@ -124,7 +124,9 @@ describe('completionSizing', () => {
 		const opts = { temperature: 0.3, maxTokens: 1000, reasoningEffort: 'low' as const };
 		expect(completionSizing('gpt-6-luna', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'none' });
 		expect(completionSizing('gpt-6-luna', opts)).toMatchObject({ reasoning_effort: 'low' });
-		expect(completionSizing('gpt-5.4', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'low' });
+		expect(completionSizing('gpt-5.4', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'none' });
+		expect(completionSizing('gpt-5.4', opts)).toMatchObject({ reasoning_effort: 'low' });
+		expect(completionSizing('gpt-5', { ...opts, withTools: true })).toMatchObject({ reasoning_effort: 'low' });
 	});
 });
 
@@ -134,7 +136,9 @@ describe('chatCompletionsToolSupport', () => {
 		expect(chatCompletionsToolSupport('gpt-6-sol')).toBe('none');
 		expect(chatCompletionsToolSupport('gpt-6-astra')).toBe('none');
 		expect(chatCompletionsToolSupport('gpt-6-luna')).toBe('without-reasoning');
-		expect(chatCompletionsToolSupport('gpt-5.4')).toBe('full');
+		expect(chatCompletionsToolSupport('gpt-5.4')).toBe('without-reasoning');
+		expect(chatCompletionsToolSupport('gpt-5.4-2026-03-05')).toBe('without-reasoning');
+		expect(chatCompletionsToolSupport('gpt-5')).toBe('full');
 		expect(chatCompletionsToolSupport('gpt-4o')).toBe('full');
 	});
 

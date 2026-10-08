@@ -38,6 +38,26 @@ standardmodellen, og det ville sett ut som om Sol var dårlig.
 - `none` er lagt til som gyldig `CHAT_REASONING_EFFORT`. SDK-en (6.7) kjenner
   ikke verdien, så den castes ved utgangen av `completionSizing`.
 
+## Fase 2: gpt-5.x uten avslag (8. oktober)
+
+Grensa gjelder ikke bare GPT-6. Første svarmåling i hovedchatten (5. oktober,
+`2026-10-05-coachen-smart-og-rask.md` fase 3–4) ga `400::reasoning_effort` på
+gpt-5.4 med verktøy, og etter at parameteren ble droppet målte fase 4 **0
+tenketokens**. To konsekvenser:
+
+- **Et ekstra kall på nesten hver første melding.** Avslaget ble oppdaget på
+  nytt hver gang `ModelRejectionMemory` hadde glemt det: etter 30 minutter, og
+  ved hver deploy. Brukeren chatter sjeldnere enn hver halvtime.
+- **Coachen har aldri tenkt med verktøy.** `CHAT_REASONING_EFFORT=low` hadde
+  ingen virkning i hovedchatten.
+
+`chatCompletionsToolSupport` gir nå gpt-5.x (`gpt-5.1` og nyere, ikke `gpt-5`)
+`without-reasoning`, så `none` sendes med en gang verktøy er med. Svarene er de
+samme som før; det ekstra kallet er borte. **Ikke verifisert:** at gpt-5.4
+godtar `none`. Avvises den, droppes parameteren som før, så det blir ikke
+verre. `chat.answer.rejections` på `/api/diagnostikk` viser det etter første
+melding.
+
 ## Beslutninger
 
 - **Luna i chatten går uten resonnering.** Det er prisen for verktøy over
@@ -49,8 +69,8 @@ standardmodellen, og det ville sett ut som om Sol var dårlig.
 
 ## Neste steg
 
-Full Sol (med resonnering og verktøy) i chatten krever at hovedløkka går over
-Responses-API-et: andre meldingsformer, verktøykall som `function_call`-items
+Resonnering OG verktøy i chatten, for gpt-5.4 så vel som Sol, krever at
+hovedløkka går over Responses-API-et: andre meldingsformer, verktøykall som `function_call`-items
 og en annen strømmeprotokoll. Det er en egen jobb.
 
 ## Verifisering
