@@ -1,0 +1,3229 @@
+[
+	{
+		"type": "function",
+		"function": {
+			"name": "check_similar_goals",
+			"description": "Sjekk om det finnes lignende mål før du oppretter et nytt. BRUK ALLTID DETTE FØR create_goal!",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"description": "Tittelen på målet du vurderer å opprette"
+					}
+				},
+				"required": [
+					"title"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "check_similar_tasks",
+			"description": "Sjekk om det finnes lignende oppgaver under et mål før du oppretter en ny. BRUK ALLTID DETTE FØR create_task!",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"goalId": {
+						"type": "string",
+						"description": "UUID til målet du vil opprette oppgave under"
+					},
+					"title": {
+						"type": "string",
+						"description": "Tittelen på oppgaven du vurderer å opprette"
+					}
+				},
+				"required": [
+					"goalId",
+					"title"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "create_goal",
+			"description": "Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. \"løpe 150 km før 15. juni\"): sett startDate til dagens dato og endDate til fristen. VEKTMÅL (\"ned til 95 kg innen 15. november\"): metricId=weight_change, targetWeightKg=95 (MÅLVEKTEN i kg — aldri endringen), startDate og endDate satt. Startvekten hentes fra siste vektmåling, så la startValue stå tom med mindre brukeren oppgir en annen. Målvekten må stemme med tittelen: sier tittelen «til 95 kg», må targetWeightKg være 95. Svaret forteller hvilke tall målet faktisk måles mot: bruk DEM i kvitteringen til brukeren, aldri egne anslag. ALDRI opprett mål med meta-titler som \"Planlegging\" eller \"Plan\" — kun konkrete livsmål.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"categoryName": {
+						"description": "Kategori for målet",
+						"type": "string",
+						"enum": [
+							"Trening",
+							"Parforhold",
+							"Mental helse",
+							"Karriere",
+							"Økonomi",
+							"Hobby",
+							"Annet"
+						]
+					},
+					"themeId": {
+						"description": "Valgfritt tema-ID hvis målet skal kobles til et eksisterende tema",
+						"type": "string"
+					},
+					"title": {
+						"description": "Kort, konkret tittel for målet (f.eks: \"Løpe 5 km uten pause\")",
+						"type": "string"
+					},
+					"description": {
+						"description": "Detaljert beskrivelse av målet, inkludert hvorfor det er viktig",
+						"type": "string"
+					},
+					"targetDate": {
+						"description": "Måldato i ISO format (YYYY-MM-DD)",
+						"type": "string"
+					},
+					"startDate": {
+						"description": "Startdato (YYYY-MM-DD). Sett til dagens dato for tidsbegrensede mål.",
+						"type": "string"
+					},
+					"endDate": {
+						"description": "Sluttdato (YYYY-MM-DD) når brukeren har oppgitt en eksplisitt frist",
+						"type": "string"
+					},
+					"metricId": {
+						"description": "Canonical metric id når målet er målbart: running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori), sleep_avg_night, sleep_lag, steps_avg_day, active_minutes_avg_day, resting_heart_rate, weekly_effort, running_5k_time, running_10k_time, fat_mass, muscle_mass, monthly_savings, parent_time.",
+						"type": "string"
+					},
+					"spendCategory": {
+						"description": "Kun for metricId=category_spend: hvilken forbrukskategori taket gjelder (canonical CategoryId, f.eks. kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr).",
+						"type": "string"
+					},
+					"childName": {
+						"description": "Kun for metricId=parent_time: hvilket barn timene gjelder (fornavn). targetValue = timer per uke.",
+						"type": "string"
+					},
+					"goalKind": {
+						"description": "Hvordan målet evalueres i dashboardet",
+						"type": "string",
+						"enum": [
+							"level",
+							"change",
+							"trajectory"
+						]
+					},
+					"goalWindow": {
+						"description": "Hvilken horisont målet gjelder for",
+						"type": "string",
+						"enum": [
+							"week",
+							"month",
+							"quarter",
+							"year",
+							"custom"
+						]
+					},
+					"targetValue": {
+						"description": "Målverdien for metrikksporet (f.eks. 20 km/uke). For metricId=weight_change: oppgi MÅLVEKTEN i kg (f.eks. 95 for «ned til 95 kg») — serveren regner endringen selv.",
+						"type": "number"
+					},
+					"targetWeightKg": {
+						"description": "Kun for metricId=weight_change: MÅLVEKTEN i kg (f.eks. 95 for «ned til 95 kg»). Aldri endringen — serveren regner den selv fra startvekten.",
+						"type": "number"
+					},
+					"startValue": {
+						"description": "Fraverdi/baseline. Kun for metricId=weight_change: startvekten i kg. Utelat den hvis brukeren ikke har oppgitt en startvekt — serveren bruker siste målte vekt, som er riktigere enn et anslag. IKKE gjett et tall her.",
+						"type": "number"
+					},
+					"unit": {
+						"description": "Enhet for målverdien, f.eks. km, kg eller kr",
+						"type": "string"
+					},
+					"durationDays": {
+						"description": "Brukes kun når goalWindow er custom (f.eks. 60)",
+						"type": "number"
+					}
+				},
+				"required": [
+					"categoryName",
+					"title",
+					"description"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "update_goal",
+			"description": "Endre et mål som allerede finnes. Bruk DENNE framfor create_goal når brukeren vil justere noe de har satt — to mål om samme sak gjør begge meningsløse. goalId er UUID-en fra lista over aktive mål. action: \"adjust_target\" (ny målverdi — for vektmål: MÅLVEKTEN i kg, f.eks. 98 for «ned til 98 kg»), \"set_deadline\" (flytt eller sett frist, targetDate=YYYY-MM-DD), \"pause\" (legg målet på is uten å slette det), \"resume\", \"complete\" (nådd), \"abandon\" (vi dropper det). Svaret sier hvilke tall målet faktisk måles mot etterpå — bruk DEM i kvitteringen, aldri egne anslag. Målverdien kan bare endres på mål som har en metrikk; har målet ingen, sier svaret det, og da skal du si det til brukeren framfor å påstå at det er justert.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"goalId": {
+						"type": "string",
+						"description": "UUID-en til målet, fra lista over aktive mål. Aldri tittel eller nummer."
+					},
+					"action": {
+						"type": "string",
+						"enum": [
+							"adjust_target",
+							"set_deadline",
+							"pause",
+							"resume",
+							"complete",
+							"abandon"
+						],
+						"description": "Hva som skal endres"
+					},
+					"targetValue": {
+						"type": "number",
+						"description": "Ny målverdi (adjust_target). For vektmål: MÅLVEKTEN i kg."
+					},
+					"targetDate": {
+						"type": "string",
+						"description": "Ny frist YYYY-MM-DD (set_deadline)."
+					}
+				},
+				"required": [
+					"goalId",
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "create_task",
+			"description": "Opprett en konkret oppgave knyttet til et mål. VIKTIG: Sjekk ALLTID med check_similar_tasks først! Hvis lignende oppgave finnes, spør brukeren. goalId må være den faktiske UUID-en.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"goalId": {
+						"type": "string",
+						"description": "UUID til målet denne oppgaven tilhører. Dette er en lang ID-streng som f.eks \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\". ALDRI bruk tittel, nummer eller slug - kun den faktiske UUID-en fra listen over aktive mål."
+					},
+					"title": {
+						"type": "string",
+						"description": "Tittel på oppgaven (f.eks: \"Løpe 3 ganger i uken\")"
+					},
+					"description": {
+						"type": "string",
+						"description": "Beskrivelse av hvordan oppgaven skal utføres"
+					},
+					"frequency": {
+						"type": "string",
+						"description": "Hvor ofte oppgaven skal gjøres",
+						"enum": [
+							"daily",
+							"weekly",
+							"monthly",
+							"once"
+						]
+					},
+					"targetValue": {
+						"type": "number",
+						"description": "Målverdi (f.eks: 3 for \"3 ganger per uke\")"
+					},
+					"unit": {
+						"type": "string",
+						"description": "Enhet for måling (f.eks: \"ganger per uke\", \"minutter\", \"kilometer\")"
+					}
+				},
+				"required": [
+					"goalId",
+					"title",
+					"frequency"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_activity",
+			"description": "Registrer en tradisjonell aktivitet/trening med målbare verdier (løp, styrketrening, date osv). IKKE bruk denne for vaner/mål som er koblet til tracking series (f.eks. mikroyoga, skjermtid) — bruk record_tracking_event for disse. Aktiviteten kobles automatisk til relevante oppgaver uten tracking series.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"type": {
+						"type": "string",
+						"description": "Type aktivitet. Format: kategori_spesifikk (f.eks: workout_run, workout_strength, relationship_date, life_admin_errands)",
+						"examples": [
+							"workout_run",
+							"workout_strength",
+							"relationship_date",
+							"life_admin_errands"
+						]
+					},
+					"duration": {
+						"type": "number",
+						"description": "Varighet i minutter (hvis relevant)"
+					},
+					"note": {
+						"type": "string",
+						"description": "Brukerens notat om aktiviteten"
+					},
+					"metrics": {
+						"type": "array",
+						"description": "Målbare verdier fra aktiviteten",
+						"items": {
+							"type": "object",
+							"properties": {
+								"metricType": {
+									"type": "string",
+									"description": "Type måling (f.eks: distance, quality_rating, energy_level)"
+								},
+								"value": {
+									"type": "number",
+									"description": "Verdien som ble målt"
+								},
+								"unit": {
+									"type": "string",
+									"description": "Enhet for målingen (f.eks: km, rating_1_10, minutes)"
+								}
+							},
+							"required": [
+								"metricType",
+								"value"
+							]
+						}
+					},
+					"taskIds": {
+						"type": "array",
+						"description": "Valgfritt: Spesifikke task IDs denne aktiviteten skal telle mot. Hvis ikke angitt, matcher systemet automatisk.",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"required": [
+					"type",
+					"metrics"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_sleep_disturbance",
+			"description": "Registrer at brukeren ikke fikk sove, eller våknet og ikke fikk sove igjen.\n\nBruk når brukeren forteller om en urolig natt — «jeg fikk ikke sove i natt», «våknet\nklokka tre og lå våken», «sov dårlig». Registreringen havner i søvnloggen på\nErnæring-temaets nabo, Søvn, og telles ved siden av nattlengden fra Withings.\n\nBruk log_nap i stedet for søvn på dagtid — den har en varighet.\nIkke bruk dette for generell trøtthet uten en konkret natt.\n\nKinds:\n- innsovning: fikk ikke sove ved leggetid\n- oppvaakning: våknet i løpet av natta og fikk ikke sove igjen\n\nawakeMinutes er valgfritt. Ikke gjett — «vet ikke» er et gyldig svar, og et oppdiktet\ntall forgifter ukesstatistikken. Spør bare hvis brukeren virker å ha tallet.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"kind": {
+						"type": "string",
+						"enum": [
+							"innsovning",
+							"oppvaakning"
+						],
+						"description": "innsovning = fikk ikke sove. oppvaakning = våknet og fikk ikke sove igjen."
+					},
+					"at": {
+						"type": "string",
+						"description": "Når det skjedde: «HH:MM» (i dag, Oslo-tid) eller ISO-tidspunkt. Utelates for nå. Kan ikke være i framtiden."
+					},
+					"awakeMinutes": {
+						"type": "number",
+						"description": "Minutter våken, 0–600. Utelat hvis brukeren ikke sa det."
+					},
+					"note": {
+						"type": "string",
+						"description": "Kort notat, hvis brukeren nevner en årsak."
+					}
+				},
+				"required": [
+					"kind"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_nap",
+			"description": "Registrer en powernap/hvil på dagtid — «tok en powernap», «hvilte en halvtime i ettermiddag», «la meg nedpå i stad». Kall verktøyet én gang per hvil (to hvileøkter = to kall). Bruk time når brukeren oppgir omtrentlig tidspunkt; utelat hvis hvilen nettopp ble avsluttet.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"durationMinutes": {
+						"type": "number",
+						"description": "Varighet i minutter (5–180). Anslå 20 hvis brukeren ikke sier noe."
+					},
+					"time": {
+						"type": "string",
+						"description": "Starttidspunkt i dag som HH:MM lokal tid (f.eks. \"14:30\"). Utelat hvis hvilen nettopp ble avsluttet."
+					},
+					"note": {
+						"type": "string",
+						"description": "Kort notat, f.eks. hvorfor («sliten etter dårlig natt»)"
+					}
+				},
+				"required": [
+					"durationMinutes"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_chore",
+			"description": "Logg en gjennomført husarbeids-oppgave og hvem som gjorde den — «jeg tok oppvasken», «kona støvsuget stua». Brukes til å følge fordelingen av husarbeid mot 50/50. Kall verktøyet én gang per oppgave.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"task": {
+						"type": "string",
+						"description": "Kort beskrivelse, f.eks. «oppvask», «støvsuge stua», «klesvask»"
+					},
+					"doneBy": {
+						"type": "string",
+						"enum": [
+							"meg",
+							"partner"
+						],
+						"description": "«meg» = brukeren selv, «partner» = ektefelle/samboer"
+					},
+					"minutes": {
+						"type": "number",
+						"description": "Anslått tidsbruk i minutter (valgfritt)"
+					}
+				},
+				"required": [
+					"task",
+					"doneBy"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_parent_time",
+			"description": "Logg fokusert tid med ett barn — «leste en halvtime med Emma», «fotball med Noah i to timer». Kall verktøyet én gang per barn. Brukes til foreldretid-mål og ukesoversikt.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"childName": {
+						"type": "string",
+						"description": "Barnets fornavn, f.eks. «Emma»"
+					},
+					"minutes": {
+						"type": "number",
+						"description": "Antall minutter fokusert tid"
+					},
+					"activity": {
+						"type": "string",
+						"description": "Kort hva dere gjorde, f.eks. «lesing», «fotball» (valgfritt)"
+					}
+				},
+				"required": [
+					"childName",
+					"minutes"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "create_memory",
+			"description": "Lagre viktig informasjon om brukeren som skal huskes permanent. Kan være generelt eller tema-spesifikt.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"category": {
+						"type": "string",
+						"description": "Kategori for minnet",
+						"enum": [
+							"personal",
+							"relationship",
+							"fitness",
+							"mental_health",
+							"preferences",
+							"other"
+						]
+					},
+					"content": {
+						"type": "string",
+						"description": "Selve minnet - skriv som en kort, faktisk påstand (f.eks: \"Brukeren heter Kjetil\", \"Har to barn: Ola (7), Emma (4)\")"
+					},
+					"importance": {
+						"type": "string",
+						"description": "Hvor viktig er dette minnet?",
+						"enum": [
+							"high",
+							"medium",
+							"low"
+						]
+					},
+					"themeId": {
+						"type": "string",
+						"description": "Valgfritt: Tema-ID for tema-spesifikke memories. Brukes under tema-kartlegging."
+					}
+				},
+				"required": [
+					"category",
+					"content"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_theme",
+			"description": "Administrer tema (tematiske områder) for å organisere mål og samtaler. Foreslå nye tema når bruker diskuterer mål som ikke passer i eksisterende tema.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"description": "Handling å utføre",
+						"enum": [
+							"suggest_create",
+							"create",
+							"list",
+							"archive"
+						]
+					},
+					"name": {
+						"type": "string",
+						"description": "Temanavn (f.eks: \"Vennskap\", \"Løping\", \"Familie\")"
+					},
+					"emoji": {
+						"type": "string",
+						"description": "Emoji som representerer temaet (f.eks: \"🤝\", \"🏃‍♂️\", \"👨‍👩‍👦\")"
+					},
+					"parentTheme": {
+						"type": "string",
+						"description": "Overordnet kategori. Mortemaer som eier undertemaer i dag: \"Helse\", \"Hjem\", \"Familie\", \"Samliv\", \"Foreldreliv\", \"Karriere\", \"Økonomi\", \"Personlig utvikling\". Andre kategorier er lov."
+					},
+					"description": {
+						"type": "string",
+						"description": "Kort beskrivelse av hva dette temaet dekker"
+					},
+					"reason": {
+						"type": "string",
+						"description": "Forklaring til bruker om hvorfor dette temaet er foreslått"
+					},
+					"themeId": {
+						"type": "string",
+						"description": "Valgfritt: Tema-ID. For archive kan du også bruke name direkte hvis navnet er entydig."
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_sensor_data",
+			"description": "Rå helsedata og aggregater fra Withings — antall økter, distanser, skritt, enkeltmålinger. ALDRI oppgi data fra hukommelsen; hent live. VIKTIG: Bruk \"metric\"-parameteren for å kun hente det brukeren spør om (f.eks. metric=\"workouts\" for løping, metric=\"weight\" for vekt). Bruk \"latest\" for nyeste uke, \"trend\" for flere perioder, \"period_summary\" for én periode, \"raw_events\" for detaljerte målinger. Hvis bruker spør \"fra 2017\", \"siden 2017\" eller annet startår: send periodKey med startåret (f.eks. \"2017\") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.\n\nMEN — for undertemaenes egne beregnede tall finnes egne verktøy, og de svarer på et annet spørsmål enn dette: BELASTNING/effort/form/restitusjon/pulsfall/VO2max → query_training. VEKTTREND/milepæler/kroppssammensetning → query_weight. FJERNE/SLETTE en enkelt vektmåling som er feil → manage_weight_measurement (dette verktøyet er kun lesing og kan ikke slette noe). SØVNKVALITET/sovepuls/HRV/forstyrrelser → query_sleep. Hvordan brukeren HAR HATT DET (balanse, overskudd, stress, innsjekk) → query_egenfrekvens. De fire gir de samme tallene brukeren ser på flatene; dette verktøyet gir råmaterialet under dem.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"description": "Type spørring: \"latest\"=nyeste uke, \"trend\"=sammenlign perioder (f.eks. siste 3 mnd), \"period_summary\"=én periode, \"raw_events\"=enkeltverdier/alle målinger/treningsøkter (BRUK for \"enkeltverdier\", \"alle målinger\", \"detaljert\", \"treningsøkter\")",
+						"enum": [
+							"latest",
+							"period_summary",
+							"trend",
+							"raw_events"
+						]
+					},
+					"period": {
+						"type": "string",
+						"description": "Tidsperiode for aggregater (kun for trend/period_summary)",
+						"enum": [
+							"week",
+							"month",
+							"year"
+						]
+					},
+					"periodKey": {
+						"type": "string",
+						"description": "Spesifikk periode (f.eks: \"2025W43\", \"2025M10\", \"2025\"). For trend med historisk start (f.eks. \"fra 2017\"), sett periodKey til startåret."
+					},
+					"metric": {
+						"type": "string",
+						"description": "Hvilken metrikk å fokusere på. VIKTIG: Bruk dette for å filtrere! Eksempler: metric=\"workouts\" hvis brukeren spør om løping/trening, metric=\"weight\" for vekt, metric=\"sleep\" for søvn, metric=\"steps\" for skritt. Bruk metric=\"all\" kun for generelle spørsmål om helsedata.",
+						"enum": [
+							"weight",
+							"steps",
+							"sleep",
+							"intense_minutes",
+							"heartrate",
+							"workouts",
+							"all"
+						]
+					},
+					"limit": {
+						"type": "number",
+						"description": "Max antall resultater (for raw_events eller trend)"
+					},
+					"startDate": {
+						"type": "string",
+						"description": "Startdato for raw events (ISO format)"
+					},
+					"endDate": {
+						"type": "string",
+						"description": "Sluttdato for raw events (ISO format)"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_training",
+			"description": "Les treningsflatas beregnede tall — belastning, ukesbudsjett, balanse, kapasitet og treningsløp. Dette er de SAMME tallene brukeren ser på Trening-temaet.\n\nBruk denne, ikke query_sensor_data, når brukeren spør om belastning, effort, form, hvor hard uka har vært, om det er rom for en hard økt, restitusjon, pulsfall eller VO2max. query_sensor_data gir rå økt-tellinger og distanser; det er et annet spørsmål.\n\nqueryType:\n- 'load' (standard): ukas effort mot båndet (bandMin–bandMax), prognose for uka, og belastningen bak den — CTL (form), ATL (tretthet), TSB (balanse) med ferdig klassifisering.\n- 'balance': fordelingen mellom disipliner siste fire uker, løpsintensitet, styrkedekning, og den ene nudgen som peker på det største avviket.\n- 'capacity': VO2max og pulsfall (HRR60).\n- 'sessions': de siste utholdenhetsøktene med effort, km og minutter.\n- 'plan': aktivt treningsløp, dagens forslag, forventet tempo og milepæler.\n- 'volume': akkumulerte løpte kilometer hittil i år og hittil i måneden, mot de foregående årene og månedene PÅ SAMME DAG i perioden. Bruk denne på «hvor mye har jeg løpt i år», «ligger jeg foran i fjor», «er dette en god måned».\n- 'trailing': SLEPENDE volum — summen av siste 7, 30 og 90 dager, med brukerens eget kvartilbånd for samme tid på året, og rampen mot forrige like lange vindu. Bruk denne på «hvor mye løper jeg nå», «er jeg i rute», «bygger jeg opp», «har volumet falt». Dette er et ANNET spørsmål enn 'volume': den nullstilles 1. januar, denne gjør ikke det.\n- 'quality': INTENSITET — rolige minutter, kvalitetsminutter og minutter «i midten» per uke siste tolv uker (weeklyMinutes), pluss andelen rolige/grå/harde ØKTER siste 7/30/90 dager. Bruk denne på «trener jeg riktig», «er det for mye i midten», «er treningen polarisert», «nok rolig trening», «nok hardt».\n\nOm tallene:\n- effort er TRIMP når puls finnes, MET-fallback ellers. El-sykkel teller mindre per minutt enn vanlig sykkel og telles som egen kategori.\n- TSB er negativ når akutt belastning ligger over formen. Bruk status.label ordrett («Sliten», «I balanse») — den er delt med kortet på flaten, så du sier det samme som skjermen.\n- ctlSettled false betyr at serien er kortere enn CTL-ens 42-dagers tidskonstant; formtallet er da fortsatt på vei opp fra null og skal ikke leses som et nivå.\n- vo2max og pulsfall oppgis som BESTE observasjon i vinduet, ikke siste. Begge forutsetter at brukeren presset — en rolig økt gir et lavt tall som bare sier at den var rolig, ikke at formen falt. Si «beste siste åtte uker», ikke «din VO2max er».\n- wellAnchored false på pulsfall betyr at fallet var i gang før målingen startet: tallet er et gulv. Si det.\n- 'volume' sammenligner på SAMME DAG i perioden, ikke mot fjorårets sluttall. Bruk sentence-feltet ordrett; den bærer regelen. «Du ligger 380 km bak i fjor» er sant hver vår og betyr ingenting.\n- completed er tidligere perioders SLUTTALL. Det er svaret på «hvor mye løp jeg i 2024», ikke på «ligger jeg foran».\n- 'trailing' og 'quality' har hver et sentence-felt per vindu. SITER det ordrett — det bærer forbeholdene: hva sammenligningen ble gjort mot, og at en bratt rampe IKKE er en dom om kroppen. Restitusjonsspørsmålet svares av 'load' (TSB), aldri av rampen.\n- En bratt rampe i 'trailing' betyr at volumet vokser fort, ikke at brukeren har overtrent. To ulike dommer om «for mye» blir aldri enige; si «rask oppbygging» og vis til formkurven.\n- weeklyMinutes er HOVEDSVARET i 'quality', og de tre tallene er UAVHENGIGE: «nok rolig» og «nok hardt» kan svares ja på det ene og nei på det andre. Regn dem ALDRI om til et forholdstall — 80 % grått og 20 % grått er også 80/20. Bruk qualityMinutes og qualityPerActiveWeek som absolutte tall.\n- «I midten» (greyMinutes) er tid over sone 2 som IKKE ligger i en sammenhengende blokk over sone 4s gulv — for hardt til å bygge grunnmur billig, for kort til å flytte terskelen. Den blir aldri null: oppvarming, nedjogg og bakker på rolige turer havner der. Ikke sett et mål om 0, og ikke kall et tall høyt uten å ha ukene å sammenligne med — sentence sier det selv når det er for få uker.\n- Kvalitetsminutter krever en SAMMENHENGENDE blokk (minst ett minutt) over sone 4s gulv. Fire bakker à 30 sekunder gir derfor 0 kvalitetsminutter og havner i midten — det er riktig, og det er hele grunnen til at målingen finnes.\n- weeklyMinutes.coverage sier hvor mange økter i perioden som har tidsdelingen. withSplit 0 betyr at målingen er ny og historikken ikke er analysert ennå — si det, ikke at brukeren ikke har trent.\n- Bøttene (windows/buckets) teller ØKTER, ikke minutter, og er BAKGRUNN til weeklyMinutes. coverage under 0,5 eller classifiedSessions under 5 betyr at fordelingen IKKE skal brukes — sentence sier det da selv. Si hvor mange økter som mangler, framfor å presentere andeler som fakta.\n- Karakterene er en proxy: polarisert trening er definert av laktatterskler vi ikke måler. Si «grå er den største bøtta», ikke «du er 68/22/10».\n- Mangler et felt, si hva som mangler kort — ikke påstå at du ikke har tilgang.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"load",
+							"balance",
+							"capacity",
+							"sessions",
+							"plan"
+						],
+						"description": "Hvilket utsnitt. Default load."
+					}
+				}
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_weight",
+			"description": "Les vektflatas beregnede tall — trend, endring over tid, milepæler og kroppssammensetning. Samme tall brukeren ser på Vekt-temaet.\n\nBruk denne framfor query_sensor_data når brukeren spør om vekta si, om det går rette veien, om målet, eller om fett og muskel.\n\nqueryType:\n- 'trend' (standard): siste veiing, trendverdi, endring over 7/30/90 dager, avstand til målvekt, laveste trendverdi i historikken.\n- 'milestones': ferdig formulerte milepælsetninger, rangert. Velg ÉN og si den — ikke regn om tallene.\n- 'composition': fett og muskel bak vektendringen.\n- 'periods': PERIODENE kurven er delt i — nedganger OG oppganger, med start, slutt, varighet, endring og tempo. Bruk denne på «når har jeg gått ned før», «hvor fort klarte jeg det sist», «hvor lenge holdt det», «når snudde det», «hva har skjedd i år».\n- 'monthly': snittvekt per måned gjennom HELE historikken, med hull fylt av interpolasjon. Bruk denne på «list vekta per måned», «hvordan har vekta gått år for år», «snittvekt i 2019».\n\nALDRI finn på månedstall. Trenger du en serie, hent 'monthly' — den finnes. Et oppdiktet tall merket «interpolert» er verre enn å si at du ikke vet, fordi merkelappen gir oppspinnet en metode.\n\nOm 'monthly':\n- Hver rad har source: 'measured' (snitt av dagsverdiene den måneden) eller 'interpolated' (regnet lineært mellom nabomånedene). SI hvilke som er anslag — ikke presenter dem som målinger.\n- gapMonths på en interpolert rad sier hvor stort hullet den ligger i er. Et anslag midt i et hull på fjorten måneder skal kvalifiseres, ikke oppgis som et tall.\n- measuredFrom er første måned med en ekte måling. Spør brukeren om data lenger tilbake enn det, er DET svaret — serien er aldri ekstrapolert bakover, og du skal heller ikke gjøre det selv.\n\nOm 'periods':\n- Periodene er avgrenset topp-til-bunn og bunn-til-topp på TRENDEN, med toleranse for tilbakeslag: et platå midt i en nedgang deler den ikke i to. direction er 'ned' eller 'opp'. Perioder under 2 kg eller 21 dager er utelatt som støy — lista har derfor HULL, og du skal ikke påstå at den er sammenhengende.\n- current er perioden som pågår, og currentSentence er den ferdig formulerte setningen om den. SI DEN framfor å sette sammen tallene selv: den bærer forbeholdene (tilbakeslag fra ytterpunktet, sluttempo som avviker fra snittet).\n- Dette er det RIKTIGE svaret på «hvor mye har jeg gått ned» når brukeren mener den nedgangen de er inne i. Milepælenes faste vinduer (30/90/180/365 dager) starter et vilkårlig antall dager tilbake og blander gjerne inn en oppgang som lå foran.\n- kgPerWeek og kgPerMonth er snitt over HELE perioden, ikke tempoet på det bratteste. Si «i snitt». recentPace finnes bare når de siste 30 dagene avviker merkbart fra snittet.\n- ongoing betyr at ingen vending er bekreftet — ikke at ytterpunktet er i dag. daysSinceEnd sier hvor mange dager siden ytterpunktet var; er den stor, har trenden stått stille siden, og «faller fortsatt» er da feil ord.\n- longestGapDays sier lengste strekk uten veiing INNE i perioden. Er den stor, er tempoet regnet over et vindu brukeren ikke målte — kvalifiser det framfor å oppgi tallet bart.\n- largestDecline/fastestDecline/longestDecline og averageKgPerWeek gjelder bare NEDGANGENE. averageKgPerWeek er vektet på varighet, så en lang periode teller mer enn en kort. Ikke regn et eget snitt av kgPerWeek-verdiene.\n\nOm tallene:\n- ALLE endringstall er regnet på TRENDEN (etterslepende 7-dagerssnitt), ikke på enkeltmålinger. Si «trenden», ikke «du veide».\n- changes[].actualDays sier hvor langt tilbake referansepunktet faktisk lå. Er den mye større enn windowDays, veide brukeren seg ikke i vinduet — si det framfor å presentere det som «siste 7 dager».\n- coverage.enoughHistory false ⇒ ikke kall noe «lavest noensinne». Rekorder krever en historikk å være rekord i.\n- Er mer enn omtrent en tredel av nedgangen muskel, skal tonen falle. composition.sentence sier det; ikke feire et vekttap som er muskeltap.\n- fatShare er ikke garantert mellom 0 og 1 — falt fettet mer enn vekta fordi muskelen økte, blir den over 1. Bruk setningen framfor å lage en prosent av den.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"description": "Hvilket utsnitt. Default trend.",
+						"type": "string",
+						"enum": [
+							"trend",
+							"milestones",
+							"composition",
+							"monthly",
+							"periods"
+						]
+					}
+				}
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_movement",
+			"description": "Les brukerens bevegelser fra Akser-appen: opphold på steder, reiser mellom dem og transportform per etappe (gange, løping, sykkel, elsykkel, bil, kollektivt). Bygget fra GPS på telefonen.\n\nBruk denne når brukeren spør NÅR de var et sted, HVORDAN de kom seg dit, eller HVA de gjorde i løpet av en dag: «når kom jeg på jobb i dag/i går», «syklet jeg til jobben denne uka», «når var jeg sist på hytta», «hvor var jeg på lørdag», «hvor lenge var jeg på kontoret». Ikke for trening (løpeturer og økter → query_training): en Akser-reise er forflytning, ikke en økt.\n\nqueryType:\n- 'day': hele dagen i rekkefølge — opphold med sted, reiser med transportform og km. date = YYYY-MM-DD (default i går).\n- 'arrivals': når brukeren kom til et sted hver dag, med hva og når hen dro. place = stedets navn eller «jobb»/«hjem». days = vindu (default 14, maks 90).\n- 'last_visit': siste dag på et sted, og hvor mange dager i vinduet. place påkrevd. days default 365.\n- 'places': stedene brukeren har navngitt, mest besøkt først.\n\nOm tallene:\n- Akser sender bare FERDIGE dager. I dag finnes ikke før i morgen — si det framfor å si at brukeren ikke har vært noe sted.\n- Et opphold fra 00:00 er natta som fortsetter, ikke en ankomst.\n- source 'rettet' betyr at brukeren selv har satt transportformen; uten source er den gjettet av appen fra GPS-fart.\n- Treffer ikke place noe sted, svarer verktøyet med stedene som finnes. Spør brukeren eller velg et av dem — ikke gjett.\n- connected false betyr at Akser ikke er koblet til. Da finnes ingen bevegelsesdata, og det skal sies.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"description": "Hvilket utsnitt.",
+						"type": "string",
+						"enum": [
+							"day",
+							"arrivals",
+							"last_visit",
+							"places"
+						]
+					},
+					"date": {
+						"description": "YYYY-MM-DD for 'day'. Default i går.",
+						"type": "string"
+					},
+					"place": {
+						"description": "Stedets navn, eller «jobb»/«hjem», for 'arrivals' og 'last_visit'.",
+						"type": "string"
+					},
+					"days": {
+						"description": "Vindu bakover fra i går, i dager.",
+						"type": "number"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_weight_measurement",
+			"description": "Finn og slett ENKELTE vektmålinger. For veiinger som målte noe annet enn brukeren — et barn på vekta, en bag, en sensorglipp.\n\nBruk denne når brukeren vil fjerne, slette eller rette en vektmåling, eller spør om en måling som ser feil ut. For vekttrend og milepæler: query_weight.\n\naction='find' (gjør ALLTID denne først):\n- Med date: målingene på den datoen, hver med en id.\n- Uten date: målingene som avviker mest fra sine naboer — de mistenkelige.\n\naction='delete': krever id fra et find-svar i DENNE samtalen.\n\nARBEIDSFLYT — følg den:\n1. Kall find. 2. Si hva du fant («10. august 2018 har én måling på 40,2 kg») og spør om den skal slettes. 3. Kall delete med id-en først når brukeren har sagt ja.\n\nAldri kall delete uten at brukeren har bekreftet nettopp den målingen. Sletting kan ikke angres fra flaten.\nFinner find flere målinger på datoen, LIST dem med vekt og klokkeslett og spør hvilken — ikke slett alle.\nFinner find ingenting, si det. Ikke gjett en id; en oppdiktet id treffer ingen rad.\nEtter sletting: videreformidle merknaden om at kilden også må ryddes.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"find",
+							"delete"
+						],
+						"description": "find først, alltid. delete krever id fra et find-svar."
+					},
+					"date": {
+						"type": "string",
+						"description": "YYYY-MM-DD. Kun for find. Utelates for de mistenkelige målingene."
+					},
+					"id": {
+						"type": "string",
+						"description": "Målingens id, fra et find-svar. Påkrevd for delete."
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_sleep",
+			"description": "Les søvnflatas beregnede tall — netter, døgnrytme, sovepuls, HRV, forstyrrelser og søvnmål. Samme tall brukeren ser på Søvn-temaet.\n\nBruk denne framfor query_sensor_data når brukeren spør om søvnen sin, hvorfor de er trøtte, om de sover dårligere enn vanlig, eller om puls og HRV om natta.\n\nqueryType:\n- 'recent' (standard): nattlengde per natt siste to uker, median leggetid og oppvåkning, dupper, og søvnmålene med status.\n- 'physiology': sovepuls og HRV mot brukerens egen baseline, pluss pust/snorking siste natt som hadde tallene.\n- 'disturbances': netter med «fikk ikke sove» og «våknet», per natt.\n\nOm tallene:\n- Siste natt er tallet, ikke beste natt — søvn måles hver natt uten innsats, i motsetning til VO2max og pulsfall. Baselinen er brukerens egen median over vinduet, med siste natt holdt utenfor.\n- Sovepuls: latestRestingBpm (hr_min) er hvilepulsen. latestAverageBpm blander REM og oppvåkninger inn og ligger 5–10 slag høyere — kryssjekk, aldri hovedtallet. Lav puls er bra, så en STIGNING er signalet: band 'over' er det som er verdt å se på.\n- HRV: si ALDRI absoluttverdien alene. SDNN varierer for mye mellom folk, og det finnes ingen normtabell. band 'ukjent' betyr for få netter til å regne avvik — da skal tallet ikke tolkes, heller ikke som «normalt».\n- Mangler HRV, sier hrvAvailability hvorfor: sleepNights uten nightsWithHrv betyr at søvnen er synket men HRV ikke er. Det er to ulike ting, og brukeren skal få det riktige.\n- segments 2 eller mer betyr at natta ble delt fordi brukeren var ute av senga — ikke to netter.\n- awakeMinutes null betyr «vet ikke», ikke 0 minutter. Ikke gjett et tall.\n- Si aldri noe om apné som en diagnose; apneaHypopneaIndex er enhetens eget tall.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"recent",
+							"physiology",
+							"disturbances"
+						],
+						"description": "Hvilket utsnitt. Default recent."
+					}
+				}
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_egenfrekvens",
+			"description": "Les egenfrekvens-innsjekkene — balanse, tanker, følelser, handlinger og det brukeren selv har skrevet. Samme data brukeren ser på Egenfrekvens-temaet.\n\nBruk denne når brukeren spør hvordan de har hatt det, om overskudd eller underskudd, om stress, om mønstre i humøret, eller viser til noe de har sjekket inn. Ingen annen tool ser disse dataene.\n\nqueryType:\n- 'recent' (standard): dagene siste to uker med balanse, nivåer og brukerens egne notater.\n- 'trend': snitt over perioden, og snitt per periode av døgnet (natt/morgen/arbeidsdag/ettermiddag/kveld) — det er der mønsteret vises.\n- 'latest': siste dag i detalj, med hver periode-innsjekk for seg.\n\nOm tallene:\n- Balanse går fra −5 til 5 med 0 som nøytralt. Bruk balanceLabel — brukerens egen merkelapp fra slideren («Underskudd», «Overskudd») — framfor å tolke tallet selv.\n- Nivå er 1–5 per periode, høyere er bedre.\n- byPeriod er poenget i et trend-svar: «morgenene er tunge, kveldene greie» er et annet svar enn et lavt dagssnitt.\n- noteTruncated true betyr at brukeren skrev mer enn du fikk se. Ikke oppsummer det som om du leste alt — spør heller.\n- reflectionSynthesis er et sammendrag av en refleksjonstråd, ikke brukerens egne setninger. Ikke siter det som et sitat.\n\nDette er selvrapportering om hvordan noen har det. Møt det som er sagt, ikke tallene alene, og ikke still en diagnose.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"recent",
+							"trend",
+							"latest"
+						],
+						"description": "Hvilket utsnitt. Default recent."
+					},
+					"days": {
+						"type": "number",
+						"description": "Dager tilbake (default 30, maks 90)"
+					}
+				}
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_tesla_vehicle",
+			"description": "Hent gjeldende tilstand for brukerens Tesla: batteriprosent, rekkevidde, ladestatus, posisjon, kilometerstand, lås og innetemperatur. Bruk ved spørsmål om bil/elbil/lading/batteri/rekkevidde/hvor bilen står. Leser ferskeste lagrede data; sett forceLive=true kun når brukeren eksplisitt vil ha live-status NÅ (kan vekke bilen).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"forceLive": {
+						"type": "boolean",
+						"description": "Hent ferskt øyeblikksbilde direkte fra Tesla (kan vekke bilen). Default false = les lagrede data."
+					}
+				},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "record_tracking_event",
+			"description": "Generisk registrering av vaner/aktiviteter/målinger i tracking-systemet. Bruk denne i stedet for hardkodede record_* tools. Kan opprette ny serie ved første registrering eller bruke eksisterende seriesId/taskId ved senere registreringer. Systemet finner automatisk eksisterende serie for recordTypeKey hvis seriesId ikke oppgis.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"seriesId": {
+						"type": "string",
+						"description": "Valgfritt: eksisterende tracking-serie-ID. Bruk når registrering skal knyttes til en kjent serie."
+					},
+					"taskId": {
+						"type": "string",
+						"description": "Valgfritt: task-ID som serien skal kobles til. Bruk dette rett etter create_task for å knytte tracking-serien til oppgaven. Gjør at registreringer automatisk teller fremgang på ukemål-siden."
+					},
+					"taskTitle": {
+						"type": "string",
+						"description": "Valgfritt: task-tittel fra dagsplan/ukeplan (f.eks. \"mikroyoga\"). Brukes som fallback for å finne riktig oppgave når taskId ikke er kjent."
+					},
+					"recordTypeKey": {
+						"type": "string",
+						"description": "Nøkkel for registreringstype, f.eks. mikroyoga, screen_time, mood. Bruk lowercase med underscore. Systemet gjenbruker eksisterende serie for samme nøkkel."
+					},
+					"recordTypeLabel": {
+						"type": "string",
+						"description": "Lesbart navn for typen, brukes ved første opprettelse."
+					},
+					"kind": {
+						"type": "string",
+						"enum": [
+							"activity",
+							"measurement"
+						],
+						"description": "Om registreringen primært er en aktivitet eller måling."
+					},
+					"date": {
+						"type": "string",
+						"description": "Dato for registreringen (ISO format: YYYY-MM-DD)"
+					},
+					"note": {
+						"type": "string",
+						"description": "Valgfri kontekst/merknad."
+					},
+					"measurements": {
+						"type": "array",
+						"description": "Liste over målinger knyttet til registreringen, f.eks. reps/minutter/score.",
+						"items": {
+							"type": "object",
+							"properties": {
+								"key": {
+									"type": "string"
+								},
+								"value": {
+									"oneOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string"
+										},
+										{
+											"type": "boolean"
+										}
+									]
+								},
+								"unit": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"key",
+								"value"
+							]
+						}
+					},
+					"autoCreateSeries": {
+						"type": "boolean",
+						"description": "Om ny serie skal opprettes automatisk hvis ingen eksisterer."
+					},
+					"createSeriesOnly": {
+						"type": "boolean",
+						"description": "Hvis true opprettes eller kobles kun tracking-serien, uten at det registreres en gjennomføring for i dag. Bruk denne når et mål settes opp første gang."
+					},
+					"title": {
+						"type": "string",
+						"description": "Tittel for serien ved første opprettelse."
+					},
+					"themeId": {
+						"type": "string",
+						"description": "Valgfri tema-ID for serien."
+					},
+					"autoRegister": {
+						"type": "boolean",
+						"description": "Skal denne serien kunne auto-registreres av triage neste gang?"
+					},
+					"confirmationPolicy": {
+						"type": "string",
+						"enum": [
+							"always",
+							"low_confidence_only",
+							"never"
+						]
+					}
+				},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "record_screen_time",
+			"description": "Tolk og lagre et iOS Skjermtid-skjermbilde brukeren har lastet opp. Bruk denne når brukeren sender et skjermbilde fra «Skjermtid» (Uke- eller Dag-fane). Systemet kjenner igjen om det er et uke- eller dagsbilde, henter ut tall (total skjermtid, kategorier inkl. sosiale medier/«scrolling», topp-apper og fordeling per time) og lagrer det som helse-sensordata. Bildet hentes automatisk fra den vedlagte meldingen.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"imageUrl": {
+						"type": "string",
+						"description": "Valgfritt: URL til skjermbildet. Utelat for å bruke bildet i gjeldende melding."
+					},
+					"captureType": {
+						"type": "string",
+						"enum": [
+							"weekly",
+							"daily",
+							"auto"
+						],
+						"description": "Hint om bildetype. Bruk auto (default) for å la systemet avgjøre."
+					},
+					"weekStartISO": {
+						"type": "string",
+						"description": "Valgfritt for ukesbilde: mandag i den aktuelle uken (YYYY-MM-DD). Default forrige uke."
+					},
+					"dateISO": {
+						"type": "string",
+						"description": "Valgfritt for dagsbilde: datoen bildet gjelder (YYYY-MM-DD). Default leses fra bildet."
+					}
+				},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_reflections",
+			"description": "Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), Balanse-materialet ('livsintervju_kilde' — rått kildemateriale fra tidligere dype samtaler), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). SEMANTISK SØK: sett 'query' til et tema/spørsmål for å finne de mest relevante refleksjonene på tvers av typer — bruk dette når du ikke vet hvilken kind svaret bor i. Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "Semantisk søk: tema eller spørsmål («trening og motivasjon») — mest relevante først, på tvers av typer. Utelat for nyeste."
+					},
+					"kind": {
+						"type": "string",
+						"description": "Refleksjonstype, f.eks. 'livsintervju_chat', 'livsintervju', 'livsintervju_kilde', 'retningssamtale', 'retningsgap', 'birthday_interview_chat', 'week_review'. Utelat for alle typer."
+					},
+					"periodKey": {
+						"type": "string",
+						"description": "Periode, f.eks. '2026' (år) eller '2026-Q3' (kvartal). Utelat for nyeste."
+					},
+					"limit": {
+						"type": "number",
+						"description": "Antall refleksjoner (default 3, maks 10)"
+					}
+				},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_writing",
+			"description": "Les brukerens skriveprosjekter og dokumenter (skjønnlitteratur, dikt, notatblokk). queryType 'projects' = oversikt med ordtelling og skrivestreak («hvor langt har jeg kommet»). 'documents' = dokumentliste nyeste først («hva skrev jeg sist»). 'search' = semantisk søk i teksten («hvem er Ida», «hva har jeg om havna»). AVGRENSNING: dette dekker tekst brukeren REDIGERER og kommer tilbake til. Dagsnotater, feriedagbok, livsintervju og refleksjoner er query_reflections. Oppskrifter, ukemeny og lager er query_food.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"projects",
+							"documents",
+							"search"
+						],
+						"description": "'projects' | 'documents' | 'search'"
+					},
+					"query": {
+						"type": "string",
+						"description": "Søketekst for queryType 'search'. Treffer også omskrivinger."
+					},
+					"projectId": {
+						"type": "string",
+						"description": "Avgrens til ett prosjekt. Utelat for frie notater i notatblokka."
+					},
+					"kind": {
+						"type": "string",
+						"description": "Dokumenttype: scene, kapittel, karakter, sted, notat, dikt, liste, transkripsjon."
+					},
+					"limit": {
+						"type": "number",
+						"description": "Antall (default 5, maks 20)"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_economics",
+			"description": "Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.\n\nqueryType:\n- balance: Hent kontosaldo\n- transactions: Hent enkelt-transaksjoner (krever month eller dateRange)\n- spending_summary: Hent forbruk gruppert per kategori (krever month eller payPeriod). Kan filtreres til én kategori med \"category\".\n- category_trend: Hent månedlige totaler for ÉN kategori over et dato-spenn (krever dateRange + category). BRUK DETTE når bruker ber om månedlig utvikling for én kategori, f.eks. \"dagligvare per måned\".\n- account_list: List alle tilkoblede kontoer\n\nFor spørsmål om lønnsmåned/siden lønn: bruk payPeriod=\"current\".",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"description": "Type økonomi-spørring",
+						"enum": [
+							"balance",
+							"transactions",
+							"spending_summary",
+							"category_trend",
+							"account_list"
+						]
+					},
+					"month": {
+						"type": "string",
+						"description": "Måned i format YYYY-MM, for eksempel 2026-01"
+					},
+					"payPeriod": {
+						"type": "string",
+						"description": "Bruk \"current\" for inneværende lønnsmåned (fra siste lønnsdag til i dag).",
+						"enum": [
+							"current"
+						]
+					},
+					"dateRange": {
+						"type": "object",
+						"properties": {
+							"start": {
+								"type": "string",
+								"description": "Startdato i format YYYY-MM-DD"
+							},
+							"end": {
+								"type": "string",
+								"description": "Sluttdato i format YYYY-MM-DD"
+							}
+						}
+					},
+					"category": {
+						"type": "string",
+						"description": "Normalisert kategori-ID for filtrering. Eksempler: \"dagligvarer\", \"kafe_og_restaurant\", \"bil_og_transport\", \"helse_og_velvaere\", \"faste_boutgifter\", \"forsikring\", \"sparing\", \"reise\", \"medier_og_underholdning\". Brukes med spending_summary og category_trend."
+					},
+					"filterCategory": {
+						"type": "string",
+						"description": "Valgfri kategori (alias for category), f.eks. dagligvarer, kafe_og_restaurant, bil_og_transport"
+					},
+					"accountId": {
+						"type": "string",
+						"description": "Valgfri konto-ID for å begrense spørringen til én konto"
+					},
+					"limit": {
+						"type": "number",
+						"description": "Maks antall transaksjoner å hente tilbake"
+					},
+					"sortBy": {
+						"type": "string",
+						"description": "Sortering for transaksjoner",
+						"enum": [
+							"date",
+							"amount"
+						]
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_family",
+			"description": "Hent familie-/relasjonsdata: alle personer, relasjoner, eller detaljert info om én person (memories, åpne mål, kommende events, mentions). queryType: persons | relations | person_detail (krever personId) | find_by_name (krever name).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"persons",
+							"relations",
+							"person_detail",
+							"find_by_name"
+						]
+					},
+					"personId": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"kind": {
+						"type": "string"
+					},
+					"limit": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_person",
+			"description": "Opprett, oppdater eller arkiver en person. Bruk suggest_create FØR create når personen kun er nevnt i samtale. action=create krever name. action=update/archive krever personId.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"suggest_create",
+							"create",
+							"update",
+							"archive"
+						]
+					},
+					"personId": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"fullName": {
+						"type": "string"
+					},
+					"nickname": {
+						"type": "string"
+					},
+					"birthDate": {
+						"type": "string",
+						"description": "YYYY-MM-DD"
+					},
+					"kind": {
+						"type": "string",
+						"enum": [
+							"child",
+							"partner",
+							"parent",
+							"sibling",
+							"in_law",
+							"extended_family",
+							"friend",
+							"colleague",
+							"self",
+							"other"
+						]
+					},
+					"avatarEmoji": {
+						"type": "string"
+					},
+					"notes": {
+						"type": "string"
+					},
+					"spondGroupIds": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"emailAddresses": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"aliases": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_relation",
+			"description": "Opprett eller slett relasjon mellom to personer. relationType: family|friend|work. fromPersonId=null betyr selv (brukeren).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"delete"
+						]
+					},
+					"relationId": {
+						"type": "string"
+					},
+					"fromPersonId": {
+						"type": "string"
+					},
+					"toPersonId": {
+						"type": "string"
+					},
+					"relationType": {
+						"type": "string",
+						"enum": [
+							"family",
+							"friend",
+							"work"
+						]
+					},
+					"subType": {
+						"type": "string",
+						"enum": [
+							"parent_of",
+							"child_of",
+							"married_to",
+							"partnered_with",
+							"sibling_of",
+							"in_law_of",
+							"friend_of",
+							"colleague_of"
+						]
+					},
+					"closeness": {
+						"type": "number",
+						"minimum": 1,
+						"maximum": 5
+					},
+					"notes": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_home",
+			"description": "Hent hus/hjem-data: aktive hus-prosjekter med burn-up + budsjett, sesong-oppgaver, husarbeids-rutiner og siste apparat-events. queryType: overview | projects | seasonal_tasks | routines | appliance_events.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"overview",
+							"projects",
+							"seasonal_tasks",
+							"routines",
+							"appliance_events"
+						]
+					},
+					"seasonOnly": {
+						"type": "boolean"
+					},
+					"limit": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_project",
+			"description": "Opprett, oppdater, fullfør eller avbryt et prosjekt (domen-agnostisk). For hus-prosjekter, sett domain='home' og type='renovation'|'maintenance'|'repair'|'organize'. Legg rom og andre detaljer i metadata. Eksempel: { action:'create', domain:'home', type:'renovation', title:'Pusse opp baderom', budgetNok:80000, metadata:{ room:'bathroom' } }.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"complete",
+							"cancel"
+						]
+					},
+					"projectId": {
+						"type": "string"
+					},
+					"domain": {
+						"type": "string"
+					},
+					"themeId": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"description": {
+						"type": "string"
+					},
+					"type": {
+						"type": "string"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"planning",
+							"active",
+							"paused",
+							"done",
+							"cancelled"
+						]
+					},
+					"budgetNok": {
+						"type": "number"
+					},
+					"startedAt": {
+						"type": "string",
+						"description": "ISO date"
+					},
+					"targetCompletionAt": {
+						"type": "string",
+						"description": "ISO date"
+					},
+					"metadata": {
+						"type": "object"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_project_tasks",
+			"description": "Styr oppgavelista til et hus-prosjekt (tema-undertema av Hjem). Bruk når brukeren snakker om hva som må gjøres i prosjektet. action: 'create' (ny oppgave/underoppgave), 'update' (endre tekst/frist/estimat/avhengigheter), 'check' (kryss av/gjenåpne), 'delete'. themeId er prosjektets tema-id (oppgitt i PROSJEKTOPPGAVER-konteksten). Underoppgave: sett parentId. INNKJØP: sett shopping=true og store=butikknavn, og la text være kun varen (f.eks. text='aluminiumslister', store='Maxbo'). AVHENGIGHET: «A må gjøres før B». Hvis A er NY: opprett A i ÉN kall med blocksItemIds=[B.id] (da blokkeres B av A automatisk). Hvis begge finnes: update B med blockedBy=[A.id]. blockedBy peker på id-er som må fullføres FØRST. VIKTIG: når brukeren sier «A før B», sett ALDRI blockedBy på A — da blir retningen feil. A blokkerer B, så B.blockedBy=[A] (eller bruk blocksItemIds på A). itemId/parentId/blockedBy bruker id-ene fra PROSJEKTOPPGAVER-konteksten.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"themeId": {
+						"type": "string",
+						"description": "Prosjektets tema-id"
+					},
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"check",
+							"delete"
+						]
+					},
+					"itemId": {
+						"type": "string",
+						"description": "Oppgave-id (for update/check/delete)"
+					},
+					"text": {
+						"type": "string",
+						"description": "Oppgavetekst. Innkjøp: 'kjøp: X på [butikk]'"
+					},
+					"parentId": {
+						"type": "string",
+						"description": "Forelder-oppgavens id (for underoppgave)"
+					},
+					"shopping": {
+						"type": "boolean",
+						"description": "true hvis dette skal kjøpes"
+					},
+					"store": {
+						"type": "string",
+						"description": "Butikknavn for innkjøp, f.eks. Maxbo"
+					},
+					"dueDate": {
+						"type": "string",
+						"description": "Frist YYYY-MM-DD"
+					},
+					"estimateMinutes": {
+						"type": "number",
+						"description": "Estimat i minutter (60=1t, 480=1 dag)"
+					},
+					"blockedBy": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Id-er som må fullføres FØRST denne"
+					},
+					"blocksItemIds": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Id-er som må vente på DENNE (denne gjøres først). «A før B»: opprett A med blocksItemIds=[B.id]."
+					},
+					"checked": {
+						"type": "boolean",
+						"description": "true=kryss av, false=gjenåpne"
+					}
+				},
+				"required": [
+					"themeId",
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_project_contacts",
+			"description": "Styr kontaktlista til et kommunikasjons-/arrangement-prosjekt (tema-undertema av Hjem). Bruk når prosjektet handler om å følge opp folk: samle kontaktinfo, sette oppfølgingsdato (purredato) og registrere status. action: 'create' (ny kontakt), 'update' (endre felter/status/oppfølging), 'delete', 'list' (hent alle). themeId er prosjektets tema-id (oppgitt i PROSJEKTKONTAKTER-konteksten). status: 'todo' (ikke kontaktet), 'venter' (venter på svar), 'ferdig' (avklart). followUpAt (YYYY-MM-DD) driver purre-nudgen: forfalte kontakter som ikke er 'ferdig' varsles. Selve e-postene/samtalene formulerer du i chatten — dette verktøyet lagrer kontaktene og oppfølgingen.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"themeId": {
+						"type": "string",
+						"description": "Prosjektets tema-id"
+					},
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"delete",
+							"list"
+						]
+					},
+					"contactId": {
+						"type": "string",
+						"description": "Kontakt-id (for update/delete)"
+					},
+					"name": {
+						"type": "string",
+						"description": "Navn på kontakten"
+					},
+					"role": {
+						"type": "string",
+						"description": "Rolle, f.eks. Rørlegger, Nabo, Leverandør"
+					},
+					"phone": {
+						"type": "string",
+						"description": "Telefonnummer"
+					},
+					"email": {
+						"type": "string",
+						"description": "E-postadresse"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"todo",
+							"venter",
+							"ferdig"
+						]
+					},
+					"notes": {
+						"type": "string",
+						"description": "Fritt notat om kontakten"
+					},
+					"followUpAt": {
+						"type": "string",
+						"description": "Oppfølging/purredato YYYY-MM-DD"
+					}
+				},
+				"required": [
+					"themeId",
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_training_program",
+			"description": "Forklar og ENDRE brukerens adaptive treningsprogram direkte når brukeren foreslår justeringer (typisk etter et varsel om at planen ble rekalkulert). Ring ALLTID action='get' først for å se uker, økter (med sessionId) og siste automatiske justeringer — bruk det til å forklare hva som endret seg og hvorfor, og til å finne riktig sessionId. Deretter: 'move_session' (flytt økt til annen ukedag, dayNumber 1=man..7=søn), 'set_pace' (sett tempo i sek/km på én økt via sessionId, eller alle fremtidige av en runType), 'scale_volume' (skaler distanse/varighet, factor f.eks. 0.9=−10% eller 1.1=+10%, for én weekNumber eller fra fromWeek og fremover), 'set_preference' (varige føringer som den ukentlige automatiske justeringen respekterer: pinnedDays=ukedager løp ikke skal flyttes fra, lockPace=lås tempoet, volumeBias=ønsket volumnivå 0.5–1.5, note=fri føring). programId er valgfri — utelat den for brukerens aktive program. Bekreft konkrete endringer med brukeren før du gjør dem hvis det er tvil.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"get",
+							"move_session",
+							"set_pace",
+							"scale_volume",
+							"set_preference"
+						]
+					},
+					"programId": {
+						"type": "string",
+						"description": "Valgfri — utelat for aktivt program"
+					},
+					"sessionId": {
+						"type": "string",
+						"description": "Økt-id fra get (for move_session/set_pace)"
+					},
+					"newDay": {
+						"type": "number",
+						"description": "Ny ukedag 1=man..7=søn (move_session)"
+					},
+					"paceSecPerKm": {
+						"type": "number",
+						"description": "Tempo i sekunder per km (set_pace), f.eks. 330 = 5:30/km"
+					},
+					"runType": {
+						"type": "string",
+						"enum": [
+							"easy",
+							"tempo",
+							"intervals",
+							"long"
+						],
+						"description": "For set_pace på alle fremtidige av denne typen"
+					},
+					"factor": {
+						"type": "number",
+						"description": "Volumfaktor (scale_volume), 0.5–1.5"
+					},
+					"weekNumber": {
+						"type": "number",
+						"description": "Skaler kun denne uka (scale_volume)"
+					},
+					"fromWeek": {
+						"type": "number",
+						"description": "Gjelder fra og med denne uka og fremover"
+					},
+					"pinnedDays": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "Ukedager (1-7) der løp ikke skal flyttes (set_preference)"
+					},
+					"lockPace": {
+						"type": "boolean",
+						"description": "Lås tempoet mot auto-rekalkulering (set_preference)"
+					},
+					"volumeBias": {
+						"type": "number",
+						"description": "Ønsket volumnivå 0.5–1.5 (set_preference)"
+					},
+					"note": {
+						"type": "string",
+						"description": "Fri føring coachen noterer (set_preference)"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_projects",
+			"description": "List prosjekter med burn-up + kost-vs-budsjett. Filter på domain, status, themeId, eller søk i tittel. Bruk dette for å finne projectId før manage_project.update/complete eller link_to_project.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"domain": {
+						"type": "string"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"planning",
+							"active",
+							"paused",
+							"done",
+							"cancelled"
+						]
+					},
+					"themeId": {
+						"type": "string"
+					},
+					"searchTitle": {
+						"type": "string"
+					},
+					"projectId": {
+						"type": "string"
+					}
+				}
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "link_to_project",
+			"description": "Koble eksisterende oppgaver, sjekklist-items eller transaksjoner til et prosjekt (action=attach), eller fjern koblingen (action=detach). Linkede items teller mot burn-up; linkede transaksjoner teller mot kost-vs-budsjett. Bekreft med bruker før du kobler transaksjoner.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"attach",
+							"detach"
+						]
+					},
+					"entity": {
+						"type": "string",
+						"enum": [
+							"task",
+							"checklist_item",
+							"transaction"
+						]
+					},
+					"entityIds": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"projectId": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"action",
+					"entity",
+					"entityIds"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_procedure",
+			"description": "Opprett, oppdater eller slett en fremgangsmåte/oppskrift (prosedyre for hverdagsoppgaver, IKKE mat-oppskrifter). action=suggest_save for å foreslå lagring etter relevant samtale. action=create for å faktisk lagre. Bruk triggerKeywords for matching mot fremtidige oppgaver.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"delete",
+							"suggest_save"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"summary": {
+						"type": "string",
+						"description": "Markdown-formatert fremgangsmåte/forklaring"
+					},
+					"steps": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Sjekkliste-trinn i rekkefølge"
+					},
+					"domain": {
+						"type": "string",
+						"enum": [
+							"health",
+							"economics",
+							"food",
+							"family",
+							"self",
+							"home"
+						]
+					},
+					"themeId": {
+						"type": "string"
+					},
+					"conversationId": {
+						"type": "string"
+					},
+					"triggerKeywords": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Nøkkelord for å matche mot oppgaver, f.eks. [\"stryke\", \"skjorte\", \"bøye\"]"
+					},
+					"emoji": {
+						"type": "string"
+					},
+					"shared": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_day_tasks",
+			"description": "Legg punkter i en bestemt dags oppgaveliste (dagslisten på forsiden). Bruk når brukeren vil huske noe på en konkret dato — turer, \"ha med\"-ting, frister, avtaler. Sett personName for å knytte punktet til riktig barn/person. Skriv teksten naturlig og selvforklarende.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"items": {
+						"type": "array",
+						"description": "Punktene som skal legges til",
+						"items": {
+							"type": "object",
+							"properties": {
+								"text": {
+									"type": "string",
+									"description": "Selvforklarende punkttekst, uten personnavn"
+								},
+								"dayIso": {
+									"type": "string",
+									"description": "Dagen punktet vises på, YYYY-MM-DD"
+								},
+								"dueDate": {
+									"type": "string",
+									"description": "Valgfri hard frist, YYYY-MM-DD"
+								},
+								"personName": {
+									"type": "string",
+									"description": "Navn på person punktet gjelder"
+								}
+							},
+							"required": [
+								"text",
+								"dayIso"
+							]
+						}
+					}
+				},
+				"required": [
+					"items"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_home_routine",
+			"description": "Opprett en hus-rutine — checklist med context='home_routine'. Eksempler: ukentlig vaskerutine, sesong-oppgaver, klesvask-rotasjon. Knytt til prosjekt via projectId hvis relevant.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string"
+					},
+					"emoji": {
+						"type": "string"
+					},
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"projectId": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"title",
+					"items"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_routine",
+			"description": "Administrer brukerens rutiner — faste, gjentakende grupper av små handlinger knyttet til ukedag og tidspunkt. Eksempler: \"Lørdag morgen\" (støvsuge, vaske bad), \"Hverdagskveld\" (matpakker, rydde kjøkken), \"Morgen\" (vann, yoga). Dagens rutiner materialiseres automatisk som checklists og vises på hjemskjermen. action=list/create/update/delete. slot styrer tidspunkt på dagen. daysOfWeek bruker 0=søndag..6=lørdag.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"list",
+							"create",
+							"update",
+							"delete"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"emoji": {
+						"type": "string"
+					},
+					"slot": {
+						"type": "string",
+						"enum": [
+							"morning",
+							"afternoon",
+							"evening",
+							"flex"
+						]
+					},
+					"daysOfWeek": {
+						"type": "array",
+						"items": {
+							"type": "integer",
+							"minimum": 0,
+							"maximum": 6
+						},
+						"description": "0=søndag, 1=mandag, ..., 6=lørdag. F.eks. [6] = lørdag, [1,2,3,4,5] = hverdager."
+					},
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "Items i rekkefølgen de skal vises."
+					},
+					"active": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_streak",
+			"description": "Administrer brukerens streaks — «hvor mange runder på rad har jeg holdt?». rule=consecutive_days for dager på rad (yoga, lett styrke). rule=count_per_window for perioder over en terskel (config.windowDays 7 + config.threshold 2 = «uker på rad med minst to løpeturer»). rule=max_interval for periodisk vedlikehold innen et intervall (config.intervalDays 5 = «hårklipp innen fem dager», 14 = «badevask innen to uker»). Vedlikehold løftes automatisk fram på ukeplanen når det nærmer seg forfall — ikke lag egne nedtellingsoppgaver for det. source: {kind:\"workout\",sportFamily} for treningsøkter, {kind:\"sensor_event\",dataType,textMatch} for sensorhendelser, {kind:\"manual\"} når brukeren registrerer selv. action=list/create/update/delete/log (log registrerer en gjennomført runde). Pause-toleranse: config.maxGapDays + config.maxGaps lar en rekke overleve korte pauser (ferie/sykdom) — og gjenoppretter en brutt rekke retroaktivt, siden streaks beregnes fra hendelser og ikke har lagret teller. Pausen vises i teksten, den skjules ikke.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"list",
+							"create",
+							"update",
+							"delete",
+							"log"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"emoji": {
+						"type": "string"
+					},
+					"rule": {
+						"type": "string",
+						"enum": [
+							"consecutive_days",
+							"count_per_window",
+							"max_interval"
+						]
+					},
+					"source": {
+						"type": "object",
+						"properties": {
+							"kind": {
+								"type": "string",
+								"enum": [
+									"workout",
+									"sensor_event",
+									"manual"
+								]
+							},
+							"sportFamily": {
+								"type": "string",
+								"description": "running, yoga, strength, cycling, walking, swimming"
+							},
+							"dataType": {
+								"type": "string",
+								"description": "f.eks. chore_done"
+							},
+							"textMatch": {
+								"type": "string",
+								"description": "Fritekst-filter, f.eks. \"badevask\""
+							}
+						},
+						"required": [
+							"kind"
+						]
+					},
+					"config": {
+						"type": "object",
+						"properties": {
+							"windowDays": {
+								"type": "integer",
+								"description": "7 = kalenderuke"
+							},
+							"threshold": {
+								"type": "integer",
+								"description": "Hendelser som kreves per periode"
+							},
+							"intervalDays": {
+								"type": "integer",
+								"description": "Maks dager mellom to runder"
+							},
+							"dueSoonDays": {
+								"type": "integer",
+								"description": "Varsle så mange dager før forfall"
+							},
+							"maxGapDays": {
+								"type": "integer",
+								"description": "Hvor lang én pause kan være uten å bryte rekka (0 = ingen toleranse). Kun consecutive_days/count_per_window"
+							},
+							"maxGaps": {
+								"type": "integer",
+								"description": "Hvor mange pauser som tolereres i rekka. Default 1 når maxGapDays er satt"
+							}
+						}
+					},
+					"active": {
+						"type": "boolean"
+					},
+					"date": {
+						"type": "string",
+						"description": "Etterregistrering av runde: 'YYYY-MM-DD'"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_food",
+			"description": "Hent mat-data: måltider, ukemeny, pantry/fryserinnhold. queryType: meals (måltidsliste), meal_plan (krever weekContext \"YYYY-W##\"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"meals",
+							"meal_plan",
+							"pantry",
+							"expiring_soon"
+						]
+					},
+					"weekContext": {
+						"type": "string",
+						"description": "ISO-uke, f.eks. \"2026-W17\""
+					},
+					"location": {
+						"type": "string",
+						"enum": [
+							"pantry",
+							"fridge",
+							"freezer"
+						]
+					},
+					"days": {
+						"type": "number"
+					},
+					"limit": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_recipe",
+			"description": "Opprett, oppdater eller slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, bilde). action=create krever title; ingredients er valgfritt. action=update/delete krever id.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"delete"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"description": {
+						"type": "string"
+					},
+					"ingredients": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string"
+								},
+								"quantity": {
+									"type": "number"
+								},
+								"unit": {
+									"type": "string"
+								},
+								"optional": {
+									"type": "boolean"
+								}
+							},
+							"required": [
+								"name"
+							]
+						}
+					},
+					"instructions": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"prepTimeMin": {
+						"type": "number"
+					},
+					"cookTimeMin": {
+						"type": "number"
+					},
+					"servings": {
+						"type": "number"
+					},
+					"tags": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"mainProtein": {
+						"type": "string",
+						"description": "kjøtt/kylling/svin/fisk/torsk/vegetar/egg — la stå tom for retter uten fast protein-struktur"
+					},
+					"mainCarb": {
+						"type": "string",
+						"description": "pasta/potet/ris/brød/couscous/nudler"
+					},
+					"greens": {
+						"type": "string",
+						"description": "salat/kokte grønnsaker/rotgrønnsaker osv."
+					},
+					"wantMore": {
+						"type": "boolean",
+						"description": "true hvis familien ønsker mer av denne — løftes i forslag"
+					},
+					"effortLevel": {
+						"type": "string",
+						"enum": [
+							"lav",
+							"middels",
+							"høy"
+						]
+					},
+					"imageUrl": {
+						"type": "string"
+					},
+					"sourceUrl": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_meal_plan",
+			"description": "Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad (kun navn) som senere kan utvides med oppskrift via manage_recipe.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"create",
+							"update",
+							"delete"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"weekContext": {
+						"type": "string",
+						"description": "ISO-uke, f.eks. \"2026-W17\""
+					},
+					"date": {
+						"type": "string",
+						"description": "YYYY-MM-DD"
+					},
+					"mealType": {
+						"type": "string",
+						"enum": [
+							"breakfast",
+							"lunch",
+							"dinner",
+							"snack"
+						]
+					},
+					"mealId": {
+						"type": "string"
+					},
+					"mealName": {
+						"type": "string",
+						"description": "Navn på måltid; auto-opprettes hvis ikke mealId er gitt"
+					},
+					"notes": {
+						"type": "string"
+					},
+					"servings": {
+						"type": "number"
+					},
+					"photoUrl": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_pantry",
+			"description": "Oppdater pantry/fryser/kjøleskap. action: add (krever name+location), update (krever id), remove (krever id), use (krever id, kan oppgi consumeQuantity).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"add",
+							"update",
+							"remove",
+							"use"
+						]
+					},
+					"id": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"location": {
+						"type": "string",
+						"enum": [
+							"pantry",
+							"fridge",
+							"freezer"
+						]
+					},
+					"quantity": {
+						"type": "number"
+					},
+					"unit": {
+						"type": "string"
+					},
+					"expiresAt": {
+						"type": "string",
+						"description": "YYYY-MM-DD"
+					},
+					"notes": {
+						"type": "string"
+					},
+					"consumeQuantity": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_lunchbox",
+			"description": "Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component), foreslå NYE komponenter (suggest_components — basert på preferanser, bibliotek og retur; presenter og legg til valgte med add_component).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"get_suggestions",
+							"log_packed",
+							"log_return",
+							"set_preferences",
+							"add_component",
+							"suggest_components"
+						]
+					},
+					"childName": {
+						"type": "string"
+					},
+					"date": {
+						"type": "string",
+						"description": "YYYY-MM-DD, default i dag"
+					},
+					"itemName": {
+						"type": "string"
+					},
+					"quantity": {
+						"type": "number"
+					},
+					"degree": {
+						"type": "string",
+						"enum": [
+							"alt",
+							"mesteparten",
+							"noe"
+						]
+					},
+					"likes": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"dislikes": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"allergies": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"appetite": {
+						"type": "string",
+						"enum": [
+							"liten",
+							"middels",
+							"stor"
+						]
+					},
+					"componentName": {
+						"type": "string"
+					},
+					"componentKind": {
+						"type": "string",
+						"enum": [
+							"palegg",
+							"brod",
+							"frukt",
+							"gront",
+							"notter",
+							"annet"
+						]
+					},
+					"instruction": {
+						"type": "string",
+						"description": "Fritekst-ønske for suggest_components, f.eks. «mer frukt»"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "find_recipes",
+			"description": "Finn ekte oppskrifter på norske oppskriftssider basert på ingredienser (default: lageret, utløpsvarer prioriteres) og preferanser; barnas allergier ekskluderes automatisk. action=search gir kandidater med URL; action=import henter valgt oppskrift inn i kartoteket. Bruk ved «hva kan jeg lage med …», «finn en oppskrift på …».",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"search",
+							"import"
+						]
+					},
+					"query": {
+						"type": "string",
+						"description": "Frisøk, f.eks. \"rask fiskemiddag\""
+					},
+					"ingredients": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"constraints": {
+						"type": "string",
+						"description": "F.eks. \"barnevennlig, under 30 min\""
+					},
+					"maxResults": {
+						"type": "number"
+					},
+					"url": {
+						"type": "string",
+						"description": "Kandidat-URL for action=import"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_food_settings",
+			"description": "Familiens matinnstillinger på husholdningsnivå (ikke per barn): weekRhythmNote (faste ukemønstre og myke føringer som «fredag = taco», «onsdag Oda-dag», «mandager holder vi det enkelt») og ukebudsjett. get leser, set oppdaterer. Kall get først når du legger til én ting, så du bygger videre på eksisterende tekst.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"get",
+							"set"
+						]
+					},
+					"weekRhythmNote": {
+						"type": "string",
+						"description": "Full ny ukerytme-tekst (erstatter eksisterende)"
+					},
+					"groceryBudgetWeekly": {
+						"type": "number",
+						"description": "Ukebudsjett i kr, eller null for å fjerne"
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "generate_shopping_list",
+			"description": "Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"weekContext": {
+						"type": "string",
+						"description": "ISO-uke, f.eks. \"2026-W17\""
+					},
+					"includeOptional": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"weekContext"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "analyze_meal_image",
+			"description": "Analyser et matbilde (Cloudinary-URL) med GPT-4o vision og returner anslag av rett, ingredienser og næringsinnhold per porsjon. Resultatet er et grovt estimat.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"imageUrl": {
+						"type": "string"
+					},
+					"servings": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"imageUrl"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "query_nutrition",
+			"description": "Les brukerens ernæringslogg — hva som faktisk er spist, ikke oppskrifter eller lager (det er query_food).\n\nBruk denne FØR du gir råd om mat, sult eller kaloribudsjett. Uten den gjetter du på tall som finnes.\n\nqueryType:\n- 'today': dagens logg gruppert i frokost/lunsj/middag/kvelds/snacks, summer, mål, hva som er igjen, forbruket med kilde og komponenter, og vektkontrollen. Inkluderer hvilken måltidsslot klokka er i nå.\n- 'recent': siste N dager (default 7) med kcal, protein OG forbruk per dag, **måltidene med navn og klokkeslett**, snitt per logget dag, og vektkontrollen. Bruk denne på «hva spiste jeg i går» og «går inntaket opp eller ned mot forbruket».\n\nOm tallene: kcal og protein er anslag mot en norsk referansetabell, med en confidence per rad. «Forbrent» er hvileforbrenning + aktivitet og vokser fram til midnatt — så et underskudd midt på dagen er strengere enn det blir om kvelden. Si det hvis du bruker tallet.\n\n**Forbruket har en kilde, og den skal du kunne oppgi.** expenditure.source er 'own' når vi regner selv (Mifflin-St Jeor x kontorfaktor + øktene) og 'withings' ellers. Dette er samme tall og samme kilde som Ernæring-flaten leder med — sier du noe annet enn skjermen, er én av dere feil. Spør brukeren «hvorfor mener du at jeg har forbrent 2 700?», er svaret i expenditure: kilde, vårt anslag, Withings' tall, og withingsBreakdown med hvile/aktivitet. missingForOwn sier hva som mangler i kroppsprofilen når vi ikke kan regne selv — det er en konfigurasjonsmangel brukeren kan fikse i /settings/profile, ikke en datamangel. withingsBreakdown.activityFieldSuspect betyr at Withings' calories-felt spriker fra øktenes egne tall; si det framfor å bruke feltet som fasit.\n\n**realityCheck er vekta som dommer over regnestykket.** Et underskudd som ikke gir vektnedgang er feil, og feilen kan ligge på begge sider — forbruket for høyt ELLER inntaket underlogget. Ikke velg side uten grunn. conclusive: false betyr at de loggede dagene ikke dekker nok av vinduet: da skal du si at grunnlaget er for tynt, ikke rapportere avviket som et funn. impliedDailyErrorKcal positivt = det reelle inntaket var høyere enn logget, eller forbruket lavere.\n\nmacroTargets gir avviket fra makromålene i GRAM, som er det et forslag kan handle på. pacing sier hvor langt på dagen inntaket ligger — det er der sultkriser forklares.\n\nPå «jeg er dritsulten» eller «trenger en snack»: bruk queryType today og les 'hunger' og 'cumulativeSoFar' sammen. cumulativeSoFar.gapKcal er forbrent minus spist SÅ LANGT — det eneste gap-tallet som er sammenlignbart med brukerens egen terskel (hunger.thresholdKcal, målt fra deres egne 1–5-meldinger). Ligger gapet nær eller over terskelen, si det med tallene: «du ligger på X kcal gap, og der har du meldt sterk sult N ganger før». Er hunger.ready false, si at skalaen trenger flere svar framfor å gjette — og bruk pacing i mellomtiden.\n\nSi ALDRI noe om blodsukker. Appen måler det ikke.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"queryType": {
+						"type": "string",
+						"enum": [
+							"today",
+							"recent"
+						]
+					},
+					"days": {
+						"type": "number",
+						"description": "Dager for recent (default 7, maks 30)"
+					}
+				},
+				"required": [
+					"queryType"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_nutrition",
+			"description": "Logg et måltid brukeren har spist, og få makroer estimert mot en norsk referansetabell.\n\nBruk når brukeren forteller at de har spist noe — «jeg spiste to knekkebrød med egg»,\n«hadde skyr til frokost». Estimatet lagres i ernæringsloggen og teller mot dagens\nsummer på Ernæring-temaet.\n\nIkke bruk for å planlegge måltid eller finne oppskrifter — da er find_recipes eller\nmat-temaet riktig. Ikke bruk for å SPØRRE om næringsinnhold uten å spise; det er\nbare et estimat, ikke en logg.\n\nSier brukeren når de spiste («til lunsj», «kl. 11», «i går kveld»), send det med i\neatenAt og/eller mealSlot. Utelater du dem, brukes tidspunktet nå og måltidet\nutledes fra klokka.\n\nSvaret inneholder dagens totalsum etterpå, og et oppfølgingsspørsmål hvis mengden\nmåtte gjettes. Still det spørsmålet til brukeren.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"description": {
+						"type": "string",
+						"description": "Hva brukeren spiste, med mengde hvis oppgitt. F.eks. «to knekkebrød med egg»."
+					},
+					"imageUrl": {
+						"type": "string",
+						"description": "Cloudinary-URL til et bilde av måltidet, hvis brukeren har lastet opp ett."
+					},
+					"eatenAt": {
+						"type": "string",
+						"description": "ISO-tidspunkt for når måltidet ble spist, hvis brukeren oppgir et annet enn nå. Kan ikke være i framtiden."
+					},
+					"mealSlot": {
+						"type": "string",
+						"enum": [
+							"frokost",
+							"lunsj",
+							"middag",
+							"kvelds",
+							"snacks"
+						],
+						"description": "Måltidet, hvis brukeren sier det. Utelates ellers — da utledes det fra klokka."
+					}
+				},
+				"required": [
+					"description"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "log_hunger",
+			"description": "Registrer hvor sulten brukeren er, 1–5 (1 = ikke sulten, 5 = skrubbsulten). Bruk når brukeren OPPGIR et nivå, eller svarer på sultvarselets «hvor sulten er du, 1–5?». IKKE gjett nivået ut fra ordbruk — skalaen er kalibrert mot brukerens egne svar, og et gjettet tall ødelegger kalibreringen. Er nivået uklart, spør. Systemet legger selv på det kumulative gapet, og lærer over tid hvilket gap som gjør denne brukeren sulten. Si aldri noe om blodsukker.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"level": {
+						"type": "number",
+						"description": "Sultnivået brukeren oppgav, 1–5. Aldri gjettet."
+					},
+					"note": {
+						"type": "string",
+						"description": "Brukerens egne ord, hvis de sa mer enn tallet."
+					}
+				},
+				"required": [
+					"level"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "manage_nutrition_targets",
+			"description": "Les eller sett dagsmålene for kalorier, protein og makrofordeling. Bruk get når brukeren spør hva målene er, og FØR du endrer ett av dem — du må se de andre for ikke å lage en umulig kombinasjon. Bruk set på «sett kalorimålet til 2600», «jeg vil ha 180 g protein», «2 gram protein per kilo». Bare feltene du sender endres. Send proteinPerKg for gram per kilo, så regnes det om med siste vekt. Andelene trenger ikke summere til 100; får du en warning tilbake, SI den til brukeren. Målene vises og kan justeres på Ernæring-temaet.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"get",
+							"set"
+						]
+					},
+					"kcalTarget": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Dagsmål kcal, 800–6000. null fjerner."
+					},
+					"proteinTarget": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Proteinmål i gram, 30–400. null fjerner."
+					},
+					"proteinPerKg": {
+						"type": "number",
+						"description": "Gram protein per kg kroppsvekt, f.eks. 1.8."
+					},
+					"proteinPct": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Proteinandel av energien, i prosent."
+					},
+					"carbsPct": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Karboandel av energien, i prosent."
+					},
+					"fatPct": {
+						"type": [
+							"number",
+							"null"
+						],
+						"description": "Fettandel av energien, i prosent."
+					},
+					"useDefaultMacroSplit": {
+						"type": "boolean",
+						"description": "Setter 30/40/30 når brukeren vil ha en fordeling uten å ha en mening om tallene."
+					}
+				},
+				"required": [
+					"action"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "weather_forecast",
+			"description": "Hent værprognose fra MET.no basert på koordinater. Uten koordinater brukes brukerens hjem (fra Akser), ellers Oslo — oppgi koordinater bare for et ANNET sted enn hjemme. Brukes når bruker spør om vær, eller når du vil berike svar med lokalt vær nå og neste time.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"latitude": {
+						"type": "number",
+						"description": "Breddegrad (f.eks. 59.91 for Oslo)."
+					},
+					"longitude": {
+						"type": "number",
+						"description": "Lengdegrad (f.eks. 10.75 for Oslo)."
+					},
+					"locationName": {
+						"type": "string",
+						"description": "Valgfri etikett for stedet, f.eks. bynavn."
+					}
+				},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "web_search",
+			"description": "Søk på web og få et kort, kildebasert sammendrag (Tavily). Bruk når brukeren spør om aktuelle hendelser, tidsavhengige fakta, steder/aktiviteter, personer, referanser eller annen kunnskap som ikke finnes i brukerdata. Verktøyet henter sider, oppsummerer og returnerer kilder. Sett saveToTheme=true når brukeren undersøker noe som hører til det aktive temaet og bør tas vare på (f.eks. «hva kan jeg gjøre i Hornbæk» på et ferietema) — da lagres runden som funn i Research-seksjonen i Filer på temasiden.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel \"aktiviteter i Hornbæk om sommeren\" eller \"Iran war update April 2026\"."
+					},
+					"saveToTheme": {
+						"type": "boolean",
+						"description": "Sett true for å lagre denne research-runden som funn på det aktive temaet. Bruk kun når brukeren undersøker noe knyttet til temaet og vil ha det tatt vare på."
+					},
+					"deep": {
+						"type": "boolean",
+						"description": "Sett true for grundigere research: flere vinkel-søk flettes sammen (f.eks. severdigheter + mat + praktisk for et reisemål). Bruk ved planlegging eller når brukeren vil ha en bred oversikt."
+					}
+				},
+				"required": [
+					"query"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "book_research",
+			"description": "Søk og hent dypere info om en bok eller forfatter (kritikeranmeldelser, plassering i forfatterskap, spesifikke temaer). Bruk når brukeren spør om noe spesifikt som ikke ligger i forhåndshentet kontekst (f.eks. \"Hva sa Morgenbladet om sluttkapitlet?\", \"Hvilke andre Knausgård-bøker handler om barndom?\"). Slå opp lagrede kritiker-URL-er først hvis det er aktuelt; ellers gjør et nytt websøk.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"bookId": {
+						"type": "string",
+						"description": "ID til boken samtalen handler om (om kjent)."
+					},
+					"query": {
+						"type": "string",
+						"description": "Konkret søkestreng på norsk, f.eks. \"Hva sa Morgenbladet om Min kamp 1 sluttkapittel?\""
+					},
+					"focus": {
+						"type": "string",
+						"enum": [
+							"critics",
+							"bibliography",
+							"theme",
+							"general"
+						],
+						"description": "Hvilken type info som søkes. \"critics\" prioriterer norske mediedomener."
+					}
+				},
+				"required": [
+					"query"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "film_research",
+			"description": "Søk og hent dypere info om en film eller regissør (kritikeranmeldelser, plassering i regissørskap, spesifikke temaer, hvor filmen strømmes). Bruk når brukeren spør om noe spesifikt som ikke ligger i forhåndshentet kontekst (f.eks. \"Hva sa Montages om sluttscenen?\", \"Hvilke andre Tarkovskij-filmer handler om minne?\"). Slå opp lagrede kritiker-URL-er først hvis det er aktuelt; ellers gjør et nytt websøk.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"filmId": {
+						"type": "string",
+						"description": "ID til filmen samtalen handler om (om kjent)."
+					},
+					"query": {
+						"type": "string",
+						"description": "Konkret søkestreng på norsk, f.eks. \"Hva sa Montages om Offeret av Tarkovskij?\""
+					},
+					"focus": {
+						"type": "string",
+						"enum": [
+							"critics",
+							"filmography",
+							"theme",
+							"general"
+						],
+						"description": "Hvilken type info som søkes. \"critics\" prioriterer norske filmmediedomener."
+					}
+				},
+				"required": [
+					"query"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "annotate_photo_composition",
+			"description": "Lag visuelle bildeannoteringer for fotoanalyse (ledende linjer, fokusområder, tredjedeler). Bruk når bruker vil ha komposisjonsanalyse med figurer tegnet oppå bildet.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"imageUrl": {
+						"type": "string",
+						"description": "URL til bildet som skal annoteres. Hvis utelatt, bruk nylig vedlagt bilde i samtalen."
+					},
+					"summary": {
+						"type": "string",
+						"description": "Kort oppsummering av komposisjonsanalysen."
+					},
+					"overlays": {
+						"type": "array",
+						"description": "Liste med figurer i normaliserte koordinater (0..1).",
+						"items": {
+							"type": "object"
+						}
+					}
+				},
+				"required": [
+					"summary",
+					"overlays"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "search_metrics",
+			"description": "Søk i metrikkregisteret for å finne riktig metricKey til widgets.\nBruk ALLTID dette FØR propose_widget når brukeren ber om widget for:\n- Økonomi/forbruk (transport, mat, elbil, strøm, osv.)\n- En kategori du ikke er sikker på nøkkelnavnet til\n- Helse-metrikker der du er usikker\n\nReturnerer en liste med key, label, defaultAggregation, defaultUnit og filterCategory.\nBruk key-feltet direkte som metricKey i propose_widget.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "Fritekst søk, f.eks. \"elbil lading transport\", \"dagligvarer mat\", \"søvn\", \"trening\""
+					},
+					"domain": {
+						"type": "string",
+						"enum": [
+							"health",
+							"spending",
+							"income",
+							"all"
+						],
+						"description": "Begrens til domene. Utelat eller bruk \"all\" for å søke i alt."
+					},
+					"limit": {
+						"type": "number",
+						"description": "Maks antall resultater (standard: 8)"
+					}
+				},
+				"required": [
+					"query"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "propose_widget",
+			"description": "Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget (\"lag widget for dagligvare\", \"vis søvn siste 30 dager\", \"widget for løpedistanse\"). ALDRI opprett widget direkte uten forslag og bekreftelse. For økonomi/forbruk: bruk search_metrics først for å finne riktig metricKey.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"description": "Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. \"Søvn / dag\", \"Ukentlig løping\""
+					},
+					"metricKey": {
+						"type": "string",
+						"description": "Metrikkens nøkkel fra search_metrics, f.eks. \"spending_bil_og_transport_drivstoff\". Bruk dette fremfor metricType+filterCategory for økonomi-widgets. Sett metricType til \"amount\" når metricKey er oppgitt."
+					},
+					"metricType": {
+						"type": "string",
+						"description": "Hvilken metrikk widgeten viser. Bruk \"amount\" for alle økonomi-metrikker (kombinert med metricKey for presisjon).",
+						"enum": [
+							"weight",
+							"sleepDuration",
+							"steps",
+							"distance",
+							"workoutCount",
+							"heartrate",
+							"mood",
+							"screenTime",
+							"amount"
+						]
+					},
+					"aggregation": {
+						"type": "string",
+						"description": "Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi",
+						"enum": [
+							"avg",
+							"sum",
+							"count",
+							"latest"
+						]
+					},
+					"period": {
+						"type": "string",
+						"description": "Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig",
+						"enum": [
+							"day",
+							"week",
+							"month"
+						]
+					},
+					"range": {
+						"type": "string",
+						"description": "Tidsvindu for data",
+						"enum": [
+							"last7",
+							"last14",
+							"last30",
+							"current_week",
+							"current_month",
+							"current_year"
+						]
+					},
+					"filterCategory": {
+						"type": "string",
+						"description": "Valgfri kategorifilter for amount-metrikk (settes automatisk fra metricKey hvis oppgitt)",
+						"enum": [
+							"innskudd",
+							"dagligvarer",
+							"kafe_og_restaurant",
+							"faste_boutgifter",
+							"annet_lan_og_gjeld",
+							"bil_og_transport",
+							"helse_og_velvaere",
+							"medier_og_underholdning",
+							"hobby_og_fritid",
+							"hjem_og_hage",
+							"klaer_og_utstyr",
+							"barn",
+							"barnehage_og_sfo",
+							"forsikring",
+							"bilforsikring_og_billan",
+							"sparing",
+							"reise",
+							"diverse",
+							"ukategorisert"
+						]
+					},
+					"filterSubcategory": {
+						"type": "string",
+						"description": "Valgfri underkategorifilter, f.eks. \"drivstoff\", \"kollektivtransport\". Settes automatisk fra metricKey hvis oppgitt."
+					},
+					"filterHourFrom": {
+						"type": "number",
+						"description": "Timevindu-start (0–23, inklusiv) — KUN for screenTime. F.eks. 16 for «skjermtid kl. 16–19». Krever at filterHourTo også settes."
+					},
+					"filterHourTo": {
+						"type": "number",
+						"description": "Timevindu-slutt (1–24, eksklusiv) — KUN for screenTime. F.eks. 19 for «skjermtid kl. 16–19»."
+					},
+					"unit": {
+						"type": "string",
+						"description": "Enhet som vises på widgeten, f.eks. \"kg\", \"timer\", \"km\", \"steg\", \"kr\""
+					},
+					"goal": {
+						"type": "number",
+						"description": "MÅL-VERDI for å vise fremgang som prosentring. Sett når bruker nevner konkret mål."
+					},
+					"color": {
+						"type": "string",
+						"description": "Hex-farge for widgeten",
+						"enum": [
+							"#7c8ef5",
+							"#82c882",
+							"#e07070",
+							"#f0b429",
+							"#5fa0a0",
+							"#d4829a"
+						]
+					}
+				},
+				"required": [
+					"title",
+					"metricType",
+					"aggregation",
+					"period",
+					"range",
+					"unit"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "create_widget",
+			"description": "Opprett widget i databasen. Bruk KUN etter at brukeren eksplisitt har bekreftet et propose_widget-forslag. ALDRI uten forutgående propose_widget og bekreftelse fra bruker. Widgeten festes til hjemskjermen.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"description": "Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. \"Søvn / dag\", \"Ukentlig løping\""
+					},
+					"metricKey": {
+						"type": "string",
+						"description": "Metrikkens nøkkel fra search_metrics, f.eks. \"spending_bil_og_transport_drivstoff\". Bruk dette fremfor metricType+filterCategory for økonomi-widgets."
+					},
+					"metricType": {
+						"type": "string",
+						"description": "Hvilken metrikk widgeten viser. Bruk \"amount\" for alle økonomi-metrikker (kombinert med metricKey for presisjon).",
+						"enum": [
+							"weight",
+							"sleepDuration",
+							"steps",
+							"distance",
+							"workoutCount",
+							"heartrate",
+							"mood",
+							"screenTime",
+							"amount"
+						]
+					},
+					"aggregation": {
+						"type": "string",
+						"description": "Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi",
+						"enum": [
+							"avg",
+							"sum",
+							"count",
+							"latest"
+						]
+					},
+					"period": {
+						"type": "string",
+						"description": "Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig",
+						"enum": [
+							"day",
+							"week",
+							"month"
+						]
+					},
+					"range": {
+						"type": "string",
+						"description": "Tidsvindu for data: last7=siste 7 dager, last14=siste 14 dager, last30=siste 30 dager, current_week=inneværende uke, current_month=inneværende måned, current_year=inneværende år",
+						"enum": [
+							"last7",
+							"last14",
+							"last30",
+							"current_week",
+							"current_month",
+							"current_year"
+						]
+					},
+					"filterCategory": {
+						"type": "string",
+						"description": "Valgfri kategorifilter for amount-metrikk (settes automatisk fra metricKey hvis oppgitt). Gyldige verdier: innskudd (inntekter), dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert",
+						"enum": [
+							"innskudd",
+							"dagligvarer",
+							"kafe_og_restaurant",
+							"faste_boutgifter",
+							"annet_lan_og_gjeld",
+							"bil_og_transport",
+							"helse_og_velvaere",
+							"medier_og_underholdning",
+							"hobby_og_fritid",
+							"hjem_og_hage",
+							"klaer_og_utstyr",
+							"barn",
+							"barnehage_og_sfo",
+							"forsikring",
+							"bilforsikring_og_billan",
+							"sparing",
+							"reise",
+							"diverse",
+							"ukategorisert"
+						]
+					},
+					"filterSubcategory": {
+						"type": "string",
+						"description": "Valgfri underkategorifilter, f.eks. \"drivstoff\", \"kollektivtransport\". Settes automatisk fra metricKey hvis oppgitt."
+					},
+					"filterHourFrom": {
+						"type": "number",
+						"description": "Timevindu-start (0–23, inklusiv) — KUN for screenTime. F.eks. 16 for «skjermtid kl. 16–19». Krever at filterHourTo også settes."
+					},
+					"filterHourTo": {
+						"type": "number",
+						"description": "Timevindu-slutt (1–24, eksklusiv) — KUN for screenTime. F.eks. 19 for «skjermtid kl. 16–19»."
+					},
+					"unit": {
+						"type": "string",
+						"description": "Enhet som vises på widgeten, f.eks. \"kg\", \"timer\", \"km\", \"steg\", \"kr\""
+					},
+					"goal": {
+						"type": "number",
+						"description": "MÅL-VERDI for å vise fremgang som prosentring. BRUK ALLTID dette når brukeren nevner et konkret mål! Eksempler: 15 (for 15 km/uke), 10000 (for 10000 skritt/dag), 8 (for 8 timer søvn/natt). Hvis brukeren sier \"jeg vil løpe 15 km hver uke\", så er goal=15."
+					},
+					"color": {
+						"type": "string",
+						"description": "Hex-farge for widgeten, f.eks. #7c8ef5 (blå), #82c882 (grønn), #e07070 (rød), #f0b429 (gul), #5fa0a0 (teal)",
+						"enum": [
+							"#7c8ef5",
+							"#82c882",
+							"#e07070",
+							"#f0b429",
+							"#5fa0a0",
+							"#d4829a"
+						]
+					},
+					"pinned": {
+						"type": "boolean",
+						"description": "Om widgeten skal festes til hjemskjermen med én gang (default: true)"
+					}
+				},
+				"required": [
+					"title",
+					"metricType",
+					"aggregation",
+					"period",
+					"range",
+					"unit"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "get_widgets",
+			"description": "Henter brukerens eksisterende widgets. Bruk denne FØRST når brukeren vil konfigurere, oppdatere eller slette en spesifikk widget, slik at du kan finne riktig widget-ID.",
+			"parameters": {
+				"type": "object",
+				"properties": {},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "update_widget",
+			"description": "Oppdater konfigurasjon på en eksisterende widget. Bruk etter get_widgets for å finne riktig widgetId. Kan sette terskelverdier (thresholdWarn/thresholdSuccess), mål, tittel og farge.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"widgetId": {
+						"type": "string",
+						"description": "ID til widgeten som skal oppdateres (fra get_widgets)"
+					},
+					"title": {
+						"type": "string",
+						"description": "Ny tittel (valgfritt)"
+					},
+					"goal": {
+						"type": "number",
+						"description": "Nytt mål (sett til null for å fjerne)"
+					},
+					"thresholdWarn": {
+						"type": "number",
+						"description": "Terskelverdi for advarsel (gul/rød). For høyere-er-bedre-metrikker (steg, søvn): verdi UNDER denne = advarsel. For lavere-er-bedre (vekt, forbruk): verdi OVER denne = advarsel. Sett til null for å fjerne."
+					},
+					"thresholdSuccess": {
+						"type": "number",
+						"description": "Terskelverdi for suksess (grønn). For høyere-er-bedre-metrikker: verdi OVER denne = suksess. For lavere-er-bedre: verdi UNDER denne = suksess. Sett til null for å fjerne."
+					},
+					"color": {
+						"type": "string",
+						"enum": [
+							"#7c8ef5",
+							"#82c882",
+							"#e07070",
+							"#f0b429",
+							"#5fa0a0",
+							"#d4829a"
+						],
+						"description": "Ny farge (valgfritt)"
+					}
+				},
+				"required": [
+					"widgetId"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "create_checklist",
+			"description": "Opprett en sjekkliste for brukeren med konkrete punkter. Bruk når brukeren nevner at de skal på tur, forberede noe, pakke, eller har en liste de vil holde orden på. Foreslå relevante punkter basert på konteksten.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"description": "Tittel på sjekklisten, f.eks. \"Forberede tur til Bergen\" eller \"Pakkeliste sommerferie\""
+					},
+					"emoji": {
+						"type": "string",
+						"description": "Emoji som representerer listen, f.eks. ✈️ 🎒 🚗 🏖️ ⛷️ 🗺️"
+					},
+					"context": {
+						"type": "string",
+						"description": "Kontekst for listen",
+						"enum": [
+							"tur",
+							"reise",
+							"pakkeliste",
+							"event",
+							"forberedelse",
+							"handling",
+							"annet"
+						]
+					},
+					"items": {
+						"type": "array",
+						"description": "Liste over konkrete punkter. Lag 6-12 relevante, spesifikke punkter.",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"required": [
+					"title",
+					"emoji",
+					"items"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "get_active_checklists",
+			"description": "Hent brukerens aktive sjekklister med punkter. Bruk dette før du utvider en eksisterende liste eller når brukeren refererer til en liste de allerede har.",
+			"parameters": {
+				"type": "object",
+				"properties": {},
+				"required": []
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "add_checklist_items",
+			"description": "Legg til nye punkter i en eksisterende sjekkliste. Bruk etter get_active_checklists når brukeren vil utvide, supplere eller forbedre en liste som allerede finnes.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"checklistId": {
+						"type": "string",
+						"description": "ID til sjekklisten som skal utvides."
+					},
+					"items": {
+						"type": "array",
+						"description": "Nye punkter som skal legges til. Send bare de nye punktene, ikke hele listen på nytt.",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"required": [
+					"checklistId",
+					"items"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "add_to_week_plan",
+			"description": "Legg målbare tiltak på en ukes sjekkliste (ukelista) — finner eller oppretter ukas liste automatisk. Bruk når brukeren vil føre opp konkrete mål/tiltak for en uke, f.eks. fra livskompass-coachingen («legg dette på neste ukes liste»). Skriv frekvens rett i teksten («Skjermfri 16–19 tre kvelder», «Legge meg før kl. 21 en gang») — systemet lager riktig antall punkter og trekker ut klokkeslett. Kommer tiltaket fra livskompass-coachingen: sett dimension til dimensjons-id-en tiltaket skal heve, så spores målet frem til neste innsjekk.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"weekOffset": {
+						"type": "number",
+						"description": "Hvilken uke: 0 = denne uka, 1 = neste uke (standard). Bruk 1 for «neste uke»."
+					},
+					"items": {
+						"type": "array",
+						"description": "Tiltakene som skal føres opp, med frekvens i teksten der det er relevant.",
+						"items": {
+							"type": "object",
+							"properties": {
+								"text": {
+									"type": "string",
+									"description": "Tiltaket, med frekvens i teksten der det er relevant («Skjermfri 16–19 tre kvelder»)."
+								},
+								"dimension": {
+									"type": "string",
+									"enum": [
+										"partner",
+										"barn",
+										"venner",
+										"sovn",
+										"trening",
+										"mat",
+										"jobb",
+										"laering",
+										"hobbyer",
+										"egentid",
+										"natur",
+										"kultur"
+									],
+									"description": "Livskompass-dimensjonen tiltaket skal heve. Kun for kompass-mål fra livskompass-coachingen — utelat ellers."
+								}
+							},
+							"required": [
+								"text"
+							]
+						}
+					}
+				},
+				"required": [
+					"items"
+				]
+			}
+		}
+	},
+	{
+		"type": "function",
+		"function": {
+			"name": "plan_day",
+			"description": "Lagre dagsplan for brukeren: enlinjer (kort beskrivelse av hva dagen handler om) og dagsoppgaver. Kall dette verktøyet etter at du har avklart enlinjer og oppgaver med brukeren. Skriv klokkeslett rett inn i oppgaveteksten (f.eks. \"Handle middag kl. 18\" eller \"Legge barna kl. 18:45\") og nevn personer med @navn (f.eks. \"Hente @Nils kl. 16\") — systemet trekker automatisk ut tidspunkt og personer.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"dayIso": {
+						"type": "string",
+						"description": "ISO-dato for dagen, f.eks. \"2025-01-20\""
+					},
+					"weekDashedKey": {
+						"type": "string",
+						"description": "Ukenøkkel i format \"2025-W03\""
+					},
+					"headline": {
+						"type": "string",
+						"description": "Enlinjer for dagen – én setning som oppsummerer hva dagen handler om"
+					},
+					"tasks": {
+						"type": "array",
+						"description": "Konkrete dagsoppgaver å legge i dagslista. Inkluder klokkeslett inline der det er relevant (\"kl. 18\", \"kl. 18:45\") og @navn for personer — disse parses automatisk ut i egne felt.",
+						"items": {
+							"type": "string"
+						}
+					}
+				},
+				"required": [
+					"dayIso",
+					"weekDashedKey",
+					"headline",
+					"tasks"
+				]
+			}
+		}
+	}
+]
