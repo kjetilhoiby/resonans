@@ -893,8 +893,8 @@ står i `$lib/domain/capture.ts`.
   gir de LYSE standardverdiene fra `app.css`. Første utgave hadde usynlig
   tittel. Fargene står som `--cs-*` øverst i stilen. **Dette er gjeld etter
   regelen om at alle flater finnes i valgt tema**: mens en side i uttrykk A er
-  åpen bærer `<body>` A-variablene (`data-uttrykk`), så svaret er å lese
-  variablene, ikke en egen mørk palett per ark.
+  åpen bærer `<body>` A-variablene (`data-uttrykk`, se `$lib/styles/`), så
+  svaret er å lese variablene, ikke en egen mørk palett per ark.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i

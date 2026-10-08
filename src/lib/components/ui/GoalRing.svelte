@@ -43,17 +43,17 @@
 
 	let {
 		pct,
-		color = '#7c8ef5',
-		trackColor = '#1e1e2a',
+		color = 'var(--accent-light)',
+		trackColor = 'var(--border-color)',
 		r = 26,
 		strokeWidth = 5,
 		pct2,
 		color2 = '#5fa0a0',
-		trackColor2 = '#1a1a1a',
+		trackColor2 = 'var(--border-color)',
 		r2 = 18,
 		strokeWidth2 = 4,
 		pacePct,
-		paceColor = '#555',
+		paceColor = 'var(--text-muted)',
 		size = 80,
 		children,
 	}: Props = $props();

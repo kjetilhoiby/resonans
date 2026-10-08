@@ -32,8 +32,14 @@ endringen bygger mekanismen og flytter den første flaten: hjemskjermen, som har
   spesifisitet. Avstander, radier og skriftstørrelser er felles. Skriften i A
   er Hanken Grotesk og Petrona (`@fontsource`, latin-delsettet, som dekker
   æøå).
-- **`<body>` får `data-uttrykk` mens en A-side er åpen**, for de portalerte
-  arkene som ellers faller tilbake på `app.css`.
+- **`<body>` bærer uttrykket til siden som står åpen** (`data-uttrykk`, `a`
+  eller `gammel`), for de portalerte arkene og popupene som ellers faller
+  tilbake på `app.css`. Det gamle mørke uttrykket bor derfor i
+  `$lib/styles/uttrykk-gammel.css`, ikke i AppPage. Grunnen er konkret: da
+  popupen i `DynamicWidgetView` gikk fra hardkodet mørkt til variabler, leste
+  den `:root` i `app.css`, som er LYS på en telefon i lys modus — en mørk side
+  ville fått en lys popup. En stabel på modulnivå i AppPage sørger for at den
+  nyeste siden vinner når den monteres før den forrige har ryddet.
 - **Bakgrunnen og `theme-color` følger med** når fargetemaet skifter mens siden
   står åpen (valg i innstillingene, eller telefonen som går i nattmodus).
 - **Velgeren** står øverst i `/settings` (`FargetemaVelger`).
@@ -43,8 +49,25 @@ endringen bygger mekanismen og flytter den første flaten: hjemskjermen, som har
 ### Fase 2: hjemskjermen
 
 `/` er tegnet i A. Komponentene på hjemskjermen i hvile og chatten som åpnes
-derfra er gått gjennom, og hardkodede farger er byttet med variabler etter rolle.
-Detaljene står under «Verifisering».
+derfra er gått gjennom (27 filer, ~300 farger), og hardkodede farger er byttet
+med variabler etter rolle:
+
+- **Hjem i hvile:** sonene (tittel, widgets, temaer, oppfølging), temaknappene,
+  hurtighandlingene, readiness-chipen, partnerkortet, `PageHeader`,
+  `CollapsibleSection`, `PagerDots`, `Skeleton`, `PullToRefresh`, `GoalRing`
+  (standardfargene), `ChecklistWidget`, `DynamicWidgetView`.
+- **Chatten:** `HomeChatZone`, `ChatInput`, `ChatMessages`, `ChatThread`,
+  `TriageCard`, `ChatResearchCard`, `AnnotatedImageCard`,
+  `WidgetProposalCard`, `ChatImageMenu`, `ConversationContextMenu`. En lokal
+  overstyring av `--text-primary` i `HomeChatZone` som låste toppen i mørkt er
+  fjernet, og en fallback på en variabel som ikke fantes
+  (`--color-text-secondary`) er borte.
+- **Tema-huen blandes inn i flaten** (`color-mix(… hsl(var(--theme-hue) …),
+  var(--bg-card))`) i temaknappene og temabanneret i chatten, framfor faste
+  mørke lysheter. Da er huen synlig i begge temaer.
+- **Står med vilje** (domenefarger): favorittstjerna, værkortets himmel,
+  markeringene oppå bilder, readiness «lett» (oransje, ingen statusvariabel),
+  den indre ringens datafarge i `GoalRing`.
 
 ## Beslutninger
 
@@ -71,7 +94,9 @@ Detaljene står under «Verifisering».
 - `src/lib/styles/uttrykk-a.test.ts`: kontrast (4,5:1 for tekst, accent og
   status, 3:1 for dempet tekst) mot bakgrunn og kort i krem og natt, og at de to
   natt-blokkene er like. Den fanget en grønn statusfarge på 4,48:1.
-- Skjermbilder av `/design` i krem, natt og gammelt mørkt.
+- Skjermbilder av `/design` (chat, modaler, ringer, utvidbare kort) og
+  `/design/flater` (hjem) i krem, natt og gammelt mørkt. Det gamle ser ut som
+  før. `svelte-check` 0 feil, `npm test` grønn.
 
 ## Kjent rest
 
@@ -81,6 +106,9 @@ Detaljene står under «Verifisering».
   `StreakHistorySheet`. De er neste runde.
 - **`theme-color` ved kald start** er app.html sin mørke verdi til JavaScript
   har kjørt, så statuslinja i PWA-en kan blinke mørk.
+- **Galleriet**: `ringer.svelte` gir `GoalRing` mørke spor som props, og
+  `PeriodPills`/`CompactRecordList` er fortsatt mørke. Galleriets egen ramme
+  (`design.css`) er mørk utenom chat- og ark-rammene.
 - **Visuelle baselines** for `hjem` må oppdateres: kjør
   `VISUAL_REVIEW_CONTEXT="Hjemskjermen i uttrykk A" npm run test:visual:review`
   mot en dev-server med database.

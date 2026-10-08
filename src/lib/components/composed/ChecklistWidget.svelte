@@ -101,7 +101,7 @@
 	}
 
 	const label = $derived(getContextLabel(checklist.context));
-	const ringColor = $derived(isComplete ? '#5fa080' : '#7c8ef5');
+	const ringColor = $derived(isComplete ? 'var(--success-text)' : 'var(--accent-light)');
 
 	// Måneds-widgeten sykler gjennom datasett — denne overstyrer labelen mens hjulet er aktivt.
 	let monthCycleLabel = $state<string>('Gjort');
@@ -278,56 +278,56 @@
 		width: 60px;
 		height: 60px;
 		border-radius: 50%;
-		border: 2px dashed #2a2e3f;
+		border: 2px dashed var(--border-color);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		transition: border-color 0.15s;
 	}
 	.dw:hover .dw-empty-ring {
-		border-color: #7c8ef5;
+		border-color: var(--accent-light);
 	}
 
 	.dw-empty-plus {
 		font-size: 1.4rem;
 		font-weight: 300;
-		color: #3a3f52;
+		color: var(--text-muted);
 		line-height: 1;
 		transition: color 0.15s;
 	}
 	.dw:hover .dw-empty-plus {
-		color: #7c8ef5;
+		color: var(--accent-light);
 	}
 
 	.dw-label--empty {
-		color: #3a3f52 !important;
+		color: var(--text-muted) !important;
 		transition: color 0.15s;
 	}
 	.dw:hover .dw-label--empty {
-		color: #7c8ef5 !important;
+		color: var(--accent-light) !important;
 	}
 
 	.dw-plan-hint {
 		font-size: 0.6rem;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: #2e3347;
+		color: var(--text-muted);
 		transition: color 0.15s;
 	}
 	.dw:hover .dw-plan-hint {
-		color: #7c8ef5;
+		color: var(--accent-light);
 	}
 
 	.dw-val {
 		font-size: 1rem;
 		font-weight: 700;
-		color: #eee;
+		color: var(--text-primary);
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
 	}
 
 	.dw-val.complete {
-		color: #9fd1b3;
+		color: var(--success-text);
 	}
 
 	.dw-label {
@@ -345,15 +345,15 @@
 	}
 
 	.dw-popup {
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 		padding: 6px;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		z-index: 200;
-		box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+		box-shadow: var(--shadow-md);
 	}
 
 	.dw-popup-btn {
@@ -367,20 +367,20 @@
 	}
 
 	.dw-popup-danger {
-		color: #e07070;
-		border-bottom: 1px solid #2a2a2a;
+		color: var(--error-text);
+		border-bottom: 1px solid var(--border-color);
 		border-radius: 6px 6px 0 0;
 	}
-	.dw-popup-danger:hover { background: #2a1a1a; }
+	.dw-popup-danger:hover { background: var(--error-bg); }
 
 	.dw-popup-cancel {
 		background: none;
 		border: none;
-		color: #555;
+		color: var(--text-muted);
 		font-size: 0.75rem;
 		padding: 4px 10px;
 		cursor: pointer;
 		text-align: center;
 	}
-	.dw-popup-cancel:hover { color: #888; }
+	.dw-popup-cancel:hover { color: var(--text-tertiary); }
 </style>

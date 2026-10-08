@@ -1,3 +1,13 @@
+<script lang="ts" module>
+	const bodyUttrykkStack: { uttrykk: 'a' | 'gammel' }[] = [];
+
+	function applyBodyUttrykk() {
+		const top = bodyUttrykkStack.at(-1);
+		if (top) document.body.dataset.uttrykk = top.uttrykk;
+		else delete document.body.dataset.uttrykk;
+	}
+</script>
+
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import type { Snippet } from 'svelte';
@@ -8,6 +18,7 @@
 	import '@fontsource/hanken-grotesk/latin-600.css';
 	import '@fontsource/hanken-grotesk/latin-700.css';
 	import '$lib/styles/uttrykk-a.css';
+	import '$lib/styles/uttrykk-gammel.css';
 
 	type AppPageWidth = 'full' | 'content' | 'narrow';
 
@@ -17,7 +28,8 @@
 		className?: string;
 		/**
 		 * «a» tegner siden i uttrykk A (blekk på krem, nattmodus) og følger
-		 * brukerens fargetema. Uten den står siden i det gamle mørke uttrykket —
+		 * brukerens fargetema. Uten den står siden i det gamle mørke uttrykket
+		 * ($lib/styles/uttrykk-gammel.css) —
 		 * gjeld som ryddes rom for rom, se «Grunnregler» i docs/DESIGN.md. Når
 		 * alle sider er over, blir A standarden og propen forsvinner.
 		 */
@@ -32,6 +44,8 @@
 		uttrykk,
 		children
 	}: Props = $props();
+
+	const resolvedUttrykk = $derived<'a' | 'gammel'>(uttrykk ?? 'gammel');
 
 	let mainEl = $state<HTMLElement | undefined>();
 
@@ -69,13 +83,19 @@
 		};
 	});
 
-	// Portalerte ark ligger utenfor <main> og arver ikke variablene derfra.
-	// Mens en side i uttrykk A er åpen, bærer <body> dem også.
+	// Portalerte ark ligger utenfor <main> og arver ikke variablene derfra, så
+	// <body> bærer uttrykket til siden som står åpen. Stabelen (modulnivå, se
+	// over) gjør at den nyeste siden vinner også når den monteres før den
+	// forrige har ryddet etter seg under en navigasjon.
 	$effect(() => {
-		if (!browser || !uttrykk) return;
-		document.body.dataset.uttrykk = uttrykk;
+		if (!browser) return;
+		const entry = { uttrykk: resolvedUttrykk };
+		bodyUttrykkStack.push(entry);
+		applyBodyUttrykk();
 		return () => {
-			delete document.body.dataset.uttrykk;
+			const i = bodyUttrykkStack.indexOf(entry);
+			if (i >= 0) bodyUttrykkStack.splice(i, 1);
+			applyBodyUttrykk();
 		};
 	});
 </script>
@@ -83,7 +103,7 @@
 <main
 	bind:this={mainEl}
 	class={`app-page width-${width} ${className}`.trim()}
-	data-uttrykk={uttrykk}
+	data-uttrykk={resolvedUttrykk}
 	style={bg ? `--page-bg: ${bg}` : undefined}
 >
 	{@render children()}
@@ -141,56 +161,6 @@
 	   fargetemaet. Skriften er uttrykkets egen. */
 	.app-page[data-uttrykk='a'] {
 		font-family: var(--font-body);
-	}
-
-	/* Det gamle, mørke uttrykket — bare for sider som ikke er flyttet ennå.
-	   `:not` gjør at A-variablene ikke tapes på spesifisitet mot denne blokka. */
-	.app-page:not([data-uttrykk='a']) {
-		/* Bakgrunner */
-		--bg-primary: #0f0f0f;
-		--bg-secondary: #111;
-		--bg-card: #171717;
-		--bg-elevated: #141414;
-		--bg-header: #111;
-		--bg-input: #1a1a1a;
-		--bg-hover: #23262b;
-		--bg-overlay: rgba(0, 0, 0, 0.5);
-
-		/* Tekst */
-		--text-primary: #eee;
-		--text-secondary: #aaa;
-		--text-tertiary: #777;
-		--text-muted: #555;
-
-		/* Rammer */
-		--border-color: #2a2a2a;
-		--border-subtle: #1e1e1e;
-
-		/* Accent */
-		--accent-primary: #4a5af0;
-		--accent-hover: #3f4de0;
-		--accent-light: #7c8ef5;
-		--accent-muted: #8ba0f5;
-		--accent-contrast: #fff;
-
-		/* Status */
-		--success-bg: rgba(74, 222, 128, 0.08);
-		--success-text: #4ade80;
-		--success-border: rgba(74, 222, 128, 0.2);
-		--warning-bg: rgba(240, 180, 41, 0.08);
-		--warning-text: #f0b429;
-		--warning-border: rgba(240, 180, 41, 0.2);
-		--error-bg: rgba(224, 112, 112, 0.08);
-		--error-text: #e07070;
-		--error-border: #6a2a2a;
-		--info-bg: rgba(74, 90, 240, 0.12);
-		--info-border: rgba(74, 90, 240, 0.3);
-
-		/* Skygger */
-		--shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.28);
-		--shadow-md: 0 14px 34px rgba(0, 0, 0, 0.34);
-
-		--card-bg-inset: #0d0d0d;
 	}
 
 	/* Width */

@@ -43,9 +43,9 @@
 		width: 100%;
 		padding: 14px;
 		border-radius: 14px;
-		background: linear-gradient(155deg, rgba(51, 86, 153, 0.24), rgba(25, 29, 40, 0.9));
-		border: 1px solid rgba(130, 160, 255, 0.32);
-		box-shadow: 0 14px 26px rgba(6, 8, 14, 0.28);
+		background: linear-gradient(155deg, color-mix(in srgb, var(--accent-primary) 24%, transparent), color-mix(in srgb, var(--bg-card) 90%, transparent));
+		border: 1px solid var(--info-border);
+		box-shadow: var(--shadow-md);
 	}
 
 	.partner-onboarding-card-theme {
@@ -61,21 +61,21 @@
 		font-size: 0.68rem;
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
-		color: #9fb8ff;
+		color: var(--accent-muted);
 	}
 
 	.partner-onboarding-card h3 {
 		margin: 6px 0 8px;
 		font-size: 1rem;
 		line-height: 1.3;
-		color: #ecf2ff;
+		color: var(--text-primary);
 	}
 
 	.partner-onboarding-card p {
 		margin: 0;
 		font-size: 0.82rem;
 		line-height: 1.45;
-		color: #d2daee;
+		color: var(--text-secondary);
 	}
 
 	.partner-onboarding-actions {
@@ -86,9 +86,9 @@
 	}
 
 	.partner-onboarding-btn {
-		border: 1px solid rgba(180, 198, 240, 0.3);
-		background: rgba(13, 16, 26, 0.6);
-		color: #dce4f6;
+		border: 1px solid var(--border-color);
+		background: color-mix(in srgb, var(--bg-primary) 60%, transparent);
+		color: var(--text-primary);
 		border-radius: 999px;
 		padding: 7px 12px;
 		font-size: 0.75rem;
@@ -97,8 +97,8 @@
 	}
 
 	.partner-onboarding-btn.primary {
-		background: linear-gradient(145deg, #5476ef, #4364d9);
+		background: linear-gradient(145deg, var(--accent-primary), var(--accent-hover));
 		border-color: transparent;
-		color: #fff;
+		color: var(--accent-contrast);
 	}
 </style>

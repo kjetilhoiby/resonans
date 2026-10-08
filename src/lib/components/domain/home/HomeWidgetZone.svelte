@@ -198,7 +198,7 @@
 		flex: 28 0 0;
 		min-height: 0;
 		padding: 8px 14px 4px;
-		background: #171717;
+		background: var(--bg-card);
 		border-radius: 18px;
 		margin: 0;
 		position: relative;
@@ -240,7 +240,7 @@
 	.widget-page-divider {
 		flex: 0 0 100%;
 		height: 1px;
-		background: #202020;
+		background: var(--border-subtle);
 		margin: -2px 6px 2px;
 	}
 
@@ -270,17 +270,17 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 999px;
-		border: 1px solid #3a3a3a;
-		background: #101010;
-		color: #d8d8d8;
+		border: 1px solid var(--border-color);
+		background: var(--bg-secondary);
+		color: var(--text-primary);
 		font-size: 1.2rem;
 		line-height: 1;
 		cursor: pointer;
 	}
 
 	.widget-panel-fab:hover {
-		border-color: #4a5af0;
-		color: #ffffff;
+		border-color: var(--accent-primary);
+		color: var(--text-primary);
 	}
 
 	/* ── Widget-skeleton (laster) ── */
@@ -298,7 +298,7 @@
 		width: 56px;
 		height: 56px;
 		border-radius: 50%;
-		background: #1e1e1e;
+		background: var(--bg-hover);
 		animation: skeleton-pulse 1.4s ease-in-out infinite;
 	}
 
@@ -307,13 +307,13 @@
 		width: 40px;
 		height: 8px;
 		border-radius: 4px;
-		background: #1e1e1e;
+		background: var(--bg-hover);
 		animation: skeleton-pulse 1.4s ease-in-out infinite;
 		animation-delay: inherit;
 	}
 
 	@keyframes skeleton-pulse {
-		0%, 100% { background: #1e1e1e; }
-		50%       { background: #2c2c2c; }
+		0%, 100% { background: var(--bg-hover); }
+		50%       { background: var(--border-color); }
 	}
 </style>

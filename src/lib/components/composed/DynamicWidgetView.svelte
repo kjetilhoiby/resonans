@@ -116,7 +116,7 @@
 	const pct = $derived($tweenedPct);
 
 	// Fargestyring: state overstyrer standard widget-farge
-	const STATE_COLORS = { success: '#82c882', warn: '#f0b429', normal: null };
+	const STATE_COLORS = { success: 'var(--success-text)', warn: 'var(--warning-text)', normal: null };
 	const displayColor = $derived(
 		data?.state && data.state !== 'normal' ? STATE_COLORS[data.state] : color
 	);
@@ -244,7 +244,7 @@
 	.spinner {
 		width: 24px;
 		height: 24px;
-		border: 2px solid #333;
+		border: 2px solid var(--border-color);
 		border-top-color: var(--c);
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
@@ -269,13 +269,13 @@
 		border-radius: 999px;
 		background: var(--c);
 		opacity: 0.75;
-		box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35);
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-primary) 35%, transparent);
 		animation: refreshPulse 1.2s ease-out infinite;
 	}
 
 	@keyframes refreshPulse {
-		0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35); }
-		100% { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
+		0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-primary) 35%, transparent); }
+		100% { box-shadow: 0 0 0 7px transparent; }
 	}
 
 	.dw-plain-circle {
@@ -295,14 +295,14 @@
 		justify-content: center;
 		font-size: 1rem;
 		font-weight: 700;
-		color: #eee;
+		color: var(--text-primary);
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
 		transition: color 0.6s ease, text-shadow 0.6s ease;
 	}
 
 	.dw-val-pulse {
-		color: #fff;
+		color: var(--text-primary);
 		text-shadow: 0 0 8px var(--c);
 	}
 
@@ -323,21 +323,21 @@
 	.dw-popup {
 		/* Koordinater (left/top/bottom/width) settes via inline style, beregnet i openMenu */
 		position: fixed;
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 		padding: 6px;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		z-index: 200;
-		box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+		box-shadow: var(--shadow-md);
 	}
 
 	.dw-popup-btn {
 		background: none;
 		border: none;
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.8rem;
 		padding: 6px 10px;
 		border-radius: 6px;
@@ -345,38 +345,38 @@
 		text-align: center;
 	}
 	.dw-popup-btn:hover {
-		background: #2a1a1a;
+		background: var(--error-bg);
 	}
 
 	.dw-popup-chat {
-		color: #7c8ef5;
-		border-bottom: 1px solid #2a2a2a;
+		color: var(--accent-light);
+		border-bottom: 1px solid var(--border-color);
 		border-radius: 6px 6px 0 0;
 	}
 	.dw-popup-chat:hover {
-		background: #1a1a2e;
+		background: var(--info-bg);
 	}
 
 	.dw-popup-config {
-		color: #aaa;
-		border-bottom: 1px solid #2a2a2a;
+		color: var(--text-secondary);
+		border-bottom: 1px solid var(--border-color);
 		border-radius: 0;
 		margin-bottom: 2px;
 	}
 	.dw-popup-config:hover {
-		background: #222;
+		background: var(--bg-hover);
 	}
 
 	.dw-popup-cancel {
 		background: none;
 		border: none;
-		color: #555;
+		color: var(--text-muted);
 		font-size: 0.75rem;
 		padding: 4px 10px;
 		cursor: pointer;
 		text-align: center;
 	}
 	.dw-popup-cancel:hover {
-		color: #888;
+		color: var(--text-tertiary);
 	}
 </style>

@@ -131,7 +131,7 @@
 		font-size: 0.6rem;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
-		color: #444;
+		color: var(--text-muted);
 		margin: 0 0 6px;
 	}
 
@@ -162,25 +162,25 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 		padding: 10px 14px;
 		cursor: pointer;
 		width: 100%;
-		color: #888;
+		color: var(--text-tertiary);
 		font-size: 0.82rem;
 		transition: background 0.15s, border-color 0.15s;
 	}
 
 	.onboarding-cta:hover {
-		background: #222;
-		border-color: #4a5af0;
-		color: #aaa;
+		background: var(--bg-hover);
+		border-color: var(--accent-primary);
+		color: var(--text-secondary);
 	}
 
 	.cta-icon {
-		color: #4a5af0;
+		color: var(--accent-primary);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -192,6 +192,6 @@
 	}
 
 	.cta-arrow {
-		color: #555;
+		color: var(--text-muted);
 	}
 </style>

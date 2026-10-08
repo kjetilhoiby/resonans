@@ -253,11 +253,11 @@
 
 	.chat-input-area { position: sticky; bottom: 0; padding: 10px 14px env(safe-area-inset-bottom, 14px); border-top: 1px solid var(--border-subtle); background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 72%, transparent) 0%, var(--bg-primary) 18%); backdrop-filter: blur(10px); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
 
-	.theme-link-banner { --theme-hue: 228; display: flex; align-items: center; gap: 10px; width: 100%; background: linear-gradient(180deg, hsl(var(--theme-hue) 24% 13%) 0%, hsl(var(--theme-hue) 20% 11%) 100%); border: 1px solid hsl(var(--theme-hue) 24% 26%); border-radius: 14px; padding: 11px 12px; color: hsl(var(--theme-hue) 54% 88%); font: inherit; font-size: 0.82rem; cursor: pointer; text-align: left; transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease; }
-	.theme-link-banner:hover { border-color: hsl(var(--theme-hue) 34% 42%); }
+	.theme-link-banner { --theme-hue: 228; display: flex; align-items: center; gap: 10px; width: 100%; background: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 10%, var(--bg-card)); border: 1px solid color-mix(in srgb, hsl(var(--theme-hue) 50% 50%) 30%, var(--border-color)); border-radius: 14px; padding: 11px 12px; color: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 25%, var(--text-primary)); font: inherit; font-size: 0.82rem; cursor: pointer; text-align: left; transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease; }
+	.theme-link-banner:hover { border-color: color-mix(in srgb, hsl(var(--theme-hue) 50% 50%) 55%, var(--border-color)); }
 	.theme-link-banner.is-launching { opacity: 0.75; transform: scale(0.99); cursor: default; }
-	.theme-link-icon { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: hsl(var(--theme-hue) 24% 16%); border: 1px solid hsl(var(--theme-hue) 28% 32%); flex-shrink: 0; }
-	.theme-link-arrow { margin-left: auto; color: hsl(var(--theme-hue) 32% 68%); }
+	.theme-link-icon { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 16%, var(--bg-card)); border: 1px solid color-mix(in srgb, hsl(var(--theme-hue) 50% 50%) 35%, var(--border-color)); flex-shrink: 0; }
+	.theme-link-arrow { margin-left: auto; color: color-mix(in srgb, hsl(var(--theme-hue) 50% 50%) 45%, var(--text-secondary)); }
 
 	.theme-routing-banner { display: flex; align-items: center; gap: 8px; width: 100%; border-radius: 12px; padding: 10px 12px; font-size: 0.8rem; animation: slideIn 0.3s ease; }
 	@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }

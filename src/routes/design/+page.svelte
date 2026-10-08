@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
-	import { page } from '$app/state';
-	import { browser } from '$app/environment';
-	import { parseFargetema } from '$lib/domain/fargetema';
+	import { useFargetemaPreview } from './fargetema-preview.svelte';
 	import './design.css';
 
 	import Prinsipper from './sections/prinsipper.svelte';
@@ -45,29 +43,14 @@
 		{ id: 'lab', label: 'Lab' }
 	] as const;
 
-	// Forhåndsvisning av fargetemaene (docs/DESIGN.md, «Grunnregler»):
-	// ?uttrykk=a tegner galleriet i uttrykk A, &fargetema=lys|mork velger tema.
-	// Påvirker bare denne visningen — cookien til brukeren røres ikke.
-	const uttrykk = $derived(page.url.searchParams.get('uttrykk') === 'a' ? ('a' as const) : undefined);
-	const forhandsvisning = $derived(page.url.searchParams.get('fargetema'));
-
-	$effect(() => {
-		if (!browser || !forhandsvisning) return;
-		const html = document.documentElement;
-		const forrige = html.dataset.fargetema;
-		html.dataset.fargetema = parseFargetema(forhandsvisning);
-		return () => {
-			if (forrige === undefined) delete html.dataset.fargetema;
-			else html.dataset.fargetema = forrige;
-		};
-	});
+	const preview = useFargetemaPreview();
 </script>
 
 <svelte:head>
 	<title>Design</title>
 </svelte:head>
 
-<AppPage {uttrykk}>
+<AppPage uttrykk={preview.uttrykk}>
 	<PageSection>
 	<div class="design-root">
 	<div class="page">

@@ -66,11 +66,11 @@
 </ChipStrip>
 
 <style>
-	.action-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; background: hsl(228 19% 11%); border: 1px solid hsl(228 16% 18%); border-radius: 999px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; padding: 8px 14px; cursor: pointer; font: inherit; color: hsl(228 22% 80%); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; transition: background 0.15s, border-color 0.15s, transform 0.15s; }
-	.action-pill:hover { background: hsl(228 22% 14%); border-color: hsl(228 28% 34%); transform: translateY(-1px); }
+	.action-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 999px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; padding: 8px 14px; cursor: pointer; font: inherit; color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; transition: background 0.15s, border-color 0.15s, transform 0.15s; }
+	.action-pill:hover { background: var(--bg-hover); border-color: var(--accent-muted); transform: translateY(-1px); }
 	.action-pill.is-done { opacity: 0.7; }
 	.action-pill-icon { font-size: 0.95rem; line-height: 1; }
-	.action-pill-val { margin-left: 6px; padding: 2px 7px; background: hsl(228 28% 22%); border-radius: 999px; color: #e2e8f0; font-weight: 700; }
+	.action-pill-val { margin-left: 6px; padding: 2px 7px; background: var(--info-bg); border-radius: 999px; color: var(--text-primary); font-weight: 700; }
 
 	/* Pill med avvis-knapp: holdes sammen i strømmen og deler venstre-kant. */
 	.action-pill-group { flex: 0 0 auto; display: inline-flex; align-items: stretch; }
@@ -81,15 +81,15 @@
 		align-items: center;
 		justify-content: center;
 		width: 30px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 18%);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-left: none;
 		border-radius: 0 999px 999px 0;
-		color: hsl(228 18% 60%);
+		color: var(--text-tertiary);
 		font-size: 1rem;
 		line-height: 1;
 		cursor: pointer;
 		transition: background 0.15s, color 0.15s;
 	}
-	.action-pill-dismiss:hover { background: hsl(228 22% 14%); color: hsl(8 70% 70%); }
+	.action-pill-dismiss:hover { background: var(--bg-hover); color: var(--error-text); }
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
 	import '../design.css';
+	import { useFargetemaPreview } from '../fargetema-preview.svelte';
 
 	import Ukeplan from '../sections/ukeplan.svelte';
 	import Kavalkade from '../sections/kavalkade.svelte';
@@ -19,13 +20,15 @@
 		{ id: 'mat', label: 'Mat & matplan' },
 		{ id: 'sykdomsforlop', label: 'Sykdomsforløp' }
 	] as const;
+
+	const preview = useFargetemaPreview();
 </script>
 
 <svelte:head>
 	<title>Design · Flater</title>
 </svelte:head>
 
-<AppPage>
+<AppPage uttrykk={preview.uttrykk}>
 	<PageSection>
 	<div class="design-root">
 	<div class="page">

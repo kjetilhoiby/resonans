@@ -78,17 +78,17 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 8px;
-		border: 1px solid #1e2030;
-		background: #0c0e18;
-		color: #8a99c4;
+		border: 1px solid var(--border-subtle);
+		background: var(--card-bg-inset);
+		color: var(--text-secondary);
 		text-decoration: none;
 		transition: background 0.12s, color 0.12s, border-color 0.12s;
 	}
 
 	.icon-link:hover {
-		background: #12162a;
-		color: #bac6f9;
-		border-color: #2e3660;
+		background: var(--bg-hover);
+		color: var(--accent-light);
+		border-color: var(--border-color);
 	}
 
 	.brev-link {
@@ -99,6 +99,6 @@
 	.ferie-link {
 		font-size: 1.1rem;
 		line-height: 1;
-		border-color: #2c2740;
+		border-color: var(--border-color);
 	}
 </style>
