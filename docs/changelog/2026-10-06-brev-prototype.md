@@ -167,6 +167,28 @@ kanskje en påminnelse om at dette er et ønsket fokus når det finnes blant må
   brukerens spørsmål om måltidsloggen.
 - Et mål går foran et punkt på ukelista når begge gjelder samme område.
 
+### Fase 6: modellversjonen side om side (8. oktober)
+
+Brukeren pekte på at den regelbaserte teksten gjentar seg («På dagens tempo er
+du der rundt …» fire ganger) og ba om en modellversjon å sammenligne med.
+
+- **Arbeidsdelingen:** reglene avgjør hva som er sant og viktig
+  (`buildHomeLetter`). Modellen får BARE linjene brevet alt har valgt
+  (`letterFactsText`) og skriver bindevevet. Prompten forbyr nye tall, datoer,
+  råd og påstander, og ber om sammenslåing framfor gjentakelse
+  (`$lib/domain/ai/home-letter-prose.ts`).
+- **Tallvakten:** `unknownNumbers` sjekker at hvert tall i modellteksten står i
+  faktaene (tusenskille og desimaltegn normalisert). Et tall som ikke gjør det
+  er en regnefeil eller en oppfinnelse, og flaten sier fra under brevet.
+- **Lagring:** `home_letter_drafts` (migrasjon 0076), én rad per bruker og
+  Oslo-dag. Teksten skrives på nytt bare når hashen av fakta, modell og
+  promptversjon endrer seg, samme mønster som øktvurderingen. Ti sidevisninger
+  samme morgen gir ett kall og samme tekst.
+- **Strømming:** modellbrevet returneres som et uavventet løfte fra `load`, så
+  regelbrevet vises med en gang og modellteksten kommer etter.
+- **Modellen** er `CHAT_DEFAULT_MODEL` (som chatten), med `gpt-4o` som reserve
+  når den avvises. Feiler kallet, vises siste lagrede brev for dagen.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren

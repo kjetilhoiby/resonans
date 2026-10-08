@@ -1487,6 +1487,22 @@ export const workoutAssessments = pgTable('workout_assessments', {
 	uniqueUserEvent: unique('workout_assessments_user_event_idx').on(table.userId, table.sensorEventId)
 }));
 
+// Modellversjonen av hjemskjermens brev (prototype på /brev). Én rad per bruker
+// og Oslo-dag; skrives på nytt bare når fakta-hashen endrer seg. Se
+// scripts/db-migrations/0076_home_letter_drafts.sql.
+export const homeLetterDrafts = pgTable('home_letter_drafts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	day: text('day').notNull(),
+	letter: text('letter').notNull(),
+	model: text('model'),
+	contextHash: text('context_hash').notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserDay: uniqueIndex('home_letter_drafts_user_day_idx').on(table.userId, table.day)
+}));
+
 // Bokføring av hvilke øktvarsler som er sendt — se
 // docs/changelog/2026-08-10-en-vei-inn-for-nye-okter.md.
 //

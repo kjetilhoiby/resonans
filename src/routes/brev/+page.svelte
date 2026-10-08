@@ -12,6 +12,7 @@
 <script lang="ts">
 	import { AppPage, PageSection, PageHeader, TabButton } from '$lib/components/ui';
 	import { SECTION_TITLES, type LetterLens, type LetterLine, type LetterSection } from '$lib/domain/home-letter';
+	import { proseParagraphs } from '$lib/domain/ai/home-letter-prose';
 
 	let { data } = $props();
 
@@ -62,6 +63,9 @@
 			<TabButton active={view === 'status'} onClick={() => (view = 'status')}>Status</TabButton>
 		</div>
 
+		<div class="versions">
+		<div class="version">
+		<h2 class="version-title">Regler</h2>
 		<article class="letter" data-track="brev:lesing">
 			<p class="greeting">{data.letter.greeting}</p>
 			{#if sections.length === 0}
@@ -81,6 +85,40 @@
 				{/each}
 			{/if}
 		</article>
+		</div>
+
+		<div class="version">
+			<h2 class="version-title">Modell</h2>
+			<article class="letter prose" data-track="brev:modell">
+				{#await data.prose}
+					<p class="line quiet">Modellen skriver …</p>
+				{:then prose}
+					{#if prose.text}
+						{#each proseParagraphs(prose.text) as paragraph, i (i)}
+							<p class="line">{paragraph}</p>
+						{/each}
+					{:else}
+						<p class="line quiet">{prose.error ?? 'Ingen tekst.'}</p>
+					{/if}
+				{:catch}
+					<p class="line quiet">Modellbrevet kunne ikke lages.</p>
+				{/await}
+			</article>
+			{#await data.prose then prose}
+				{#if prose.unknownNumbers.length > 0}
+					<p class="warn">
+						Modellen skrev tall som ikke står i faktaene: {prose.unknownNumbers.join(', ')}. Les dem som
+						oppfunnet til det motsatte er vist.
+					</p>
+				{/if}
+				<p class="note">
+					{#if prose.model}Skrevet av {prose.model}{prose.cached ? ', lagret fra tidligere i dag' : ', nå'}.{/if}
+					{#if prose.error && prose.text} {prose.error} Viser siste lagrede.{/if}
+					Modellen får bare linjene til venstre, og skal ikke legge til noe.
+				</p>
+			{/await}
+		</div>
+		</div>
 
 		{#if data.registration}
 			<section class="coverage" aria-label="Registrering siste sju dager">
@@ -149,6 +187,34 @@
 		gap: 0.4rem;
 		flex-wrap: wrap;
 		margin-bottom: 1rem;
+	}
+	.versions {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
+	}
+	@media (min-width: 760px) {
+		.versions {
+			grid-template-columns: 1fr 1fr;
+			gap: 1rem;
+		}
+	}
+	.version-title {
+		margin: 0 0 0.4rem;
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-secondary);
+	}
+	.warn {
+		margin: -1rem 0 0.6rem;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		color: var(--text-primary);
+		border-left: 2px solid var(--border-subtle);
+		padding-left: 0.6rem;
 	}
 	.letter {
 		background: var(--bg-secondary);
