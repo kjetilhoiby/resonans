@@ -19,18 +19,27 @@ import { openai } from '$lib/server/openai';
 import { completionSizing } from '$lib/domain/ai/chat-model';
 import { createChatCompletionWithFallback } from '$lib/server/chat-completion';
 import {
+	buildProseInput,
 	HOME_LETTER_PROMPT_VERSION,
 	HOME_LETTER_SYSTEM_PROMPT,
-	letterFactsText,
-	unknownNumbers
+	omittedLines,
+	parseProse,
+	plainProse,
+	unknownNumbers,
+	type ProseSegment
 } from '$lib/domain/ai/home-letter-prose';
-import type { HomeLetter } from '$lib/domain/home-letter';
+import type { HomeLetter, LetterLine } from '$lib/domain/home-letter';
 
 /** Lav temperatur: samme fakta skal gi omtrent samme brev. */
 const TEMPERATURE = 0.3;
-const MAX_TOKENS = 600;
+/** Lenkemerkingen koster tokens i tillegg til de ~170 ordene. */
+const MAX_TOKENS = 900;
 
 export interface HomeLetterProse {
+	/** Avsnittene, med lenkene løst opp mot brevets linjer. Tom når teksten mangler. */
+	paragraphs: ProseSegment[][];
+	/** Linjene teksten aldri lenker til. Flaten sier at de er utelatt. */
+	omitted: LetterLine[];
 	text: string | null;
 	model: string | null;
 	cached: boolean;
@@ -77,7 +86,25 @@ async function generate(model: string, facts: string): Promise<{ text: string; m
 }
 
 export async function getHomeLetterProse(userId: string, letter: HomeLetter, day: string): Promise<HomeLetterProse> {
-	const facts = letterFactsText(letter);
+	const input = buildProseInput(letter);
+	const facts = input.text;
+	const result = (
+		text: string | null,
+		model: string | null,
+		cached: boolean,
+		error: string | null
+	): HomeLetterProse => {
+		const paragraphs = text ? parseProse(text, input.refs) : [];
+		return {
+			paragraphs,
+			omitted: text ? omittedLines(paragraphs, input.refs) : [],
+			text,
+			model,
+			cached,
+			unknownNumbers: text ? unknownNumbers(plainProse(paragraphs), facts) : [],
+			error
+		};
+	};
 	const requested = chooseModel();
 	let model = requested;
 	const contextHash = createHash('sha256')
@@ -89,13 +116,7 @@ export async function getHomeLetterProse(userId: string, letter: HomeLetter, day
 		columns: { letter: true, model: true, contextHash: true }
 	});
 	if (existing && existing.contextHash === contextHash) {
-		return {
-			text: existing.letter,
-			model: existing.model,
-			cached: true,
-			unknownNumbers: unknownNumbers(existing.letter, facts),
-			error: null
-		};
+		return result(existing.letter, existing.model, true, null);
 	}
 
 	let text: string;
@@ -106,17 +127,11 @@ export async function getHomeLetterProse(userId: string, letter: HomeLetter, day
 		console.error(`[home-letter] modellbrev feilet user=${userId}: ${message}`);
 		// Et brev fra tidligere i dag er bedre enn ingen: faktaene har endret seg,
 		// men det gjelder den samme dagen. Vakten regnes mot DAGENS fakta.
-		return {
-			text: existing?.letter ?? null,
-			model: existing?.model ?? null,
-			cached: Boolean(existing),
-			unknownNumbers: existing ? unknownNumbers(existing.letter, facts) : [],
-			error: 'Modellen svarte ikke.'
-		};
+		return result(existing?.letter ?? null, existing?.model ?? null, Boolean(existing), 'Modellen svarte ikke.');
 	}
 
 	if (!text) {
-		return { text: existing?.letter ?? null, model, cached: Boolean(existing), unknownNumbers: [], error: 'Modellen svarte tomt.' };
+		return result(existing?.letter ?? null, existing?.model ?? null, Boolean(existing), 'Modellen svarte tomt.');
 	}
 
 	await db
@@ -127,5 +142,5 @@ export async function getHomeLetterProse(userId: string, letter: HomeLetter, day
 			set: { letter: text, model, contextHash, updatedAt: new Date() }
 		});
 
-	return { text, model, cached: false, unknownNumbers: unknownNumbers(text, facts), error: null };
+	return result(text, model, false, null);
 }

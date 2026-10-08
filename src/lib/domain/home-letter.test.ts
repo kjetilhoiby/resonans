@@ -129,6 +129,11 @@ describe('nestPhaseGoals', () => {
 		expect(line.text).not.toContain('kg nå');
 		expect(line.text).toContain('etter fristen');
 		expect(line.text).toContain('Hovedmålet er fortsatt i rute.');
+		// Modellversjonen får tallene og koblingen til hovedmålet, ikke bare setningen.
+		const facts = Object.fromEntries(line.facts ?? []);
+		expect(facts['nå']).toBe('96,9 kg');
+		expect(facts['status']).toBe('bak planen');
+		expect(facts['delmål av']).toBe(weightGoal.title);
 	});
 });
 

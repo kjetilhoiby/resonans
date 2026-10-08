@@ -189,6 +189,36 @@ du der rundt …» fire ganger) og ba om en modellversjon å sammenligne med.
 - **Modellen** er `CHAT_DEFAULT_MODEL` (som chatten), med `gpt-4o` som reserve
   når den avvises. Feiler kallet, vises siste lagrede brev for dagen.
 
+### Fase 7: tallene bak, og lenkene i teksten (8. oktober)
+
+Første lesing av modellversjonen (skrevet av `gpt-6.1-sol`, tallvakten fant
+ingenting) viste tre feil, alle med samme rot: modellen fikk bare de ferdige
+setningene.
+
+- **Den kunne bare lime.** Samme setninger med kolon imellom, og «Hovedmålet er
+  fortsatt i rute» to ganger. Den visste ikke hvilke delmål som hørte til samme
+  hovedmål.
+- **Den kuttet «Uka» og «Registrering» uten å si fra.** Ordtaket var 120 og
+  instruksen «utelat det som ikke får plass, men aldri målene», så fem mål tok
+  hele plassen.
+- **Lenkene forsvant.** I regelbrevet er hver setning en inngang; i prosaen var
+  ingenting klikkbart.
+
+Nå:
+
+- **Hver linje får en bokstav-id og tallene bak seg** (`LetterLine.facts`: mål,
+  nå, målverdi, frist, anslag, status og hvilket hovedmål et delmål hører til).
+  Formatert i domenelaget, så tallvakten ser de samme tallene som modellen.
+- **Modellen merker de klikkbare ordene selv**, `[Løpe 600 km](#a)`, og flaten
+  gjør dem til uthevede lenker til linjens `href`. Teksten kan flyte og likevel
+  ha tydelige handlinger. En ukjent id blir vanlig tekst.
+- **Det som ikke lenkes, er utelatt, og står under teksten.** Prompten ber om
+  alle punktene (høyst 170 ord), men en seksjon som forsvinner stille var det
+  verste ved første utgave, så flaten sier det selv om prompten svikter.
+- **Id-ene er bokstaver, ikke tall.** Tallvakten leser teksten uten merkingen,
+  og et `#3` i faktaene ville skjult et oppfunnet 3-tall.
+- `HOME_LETTER_PROMPT_VERSION` er 2, så lagrede brev skrives på nytt.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren
