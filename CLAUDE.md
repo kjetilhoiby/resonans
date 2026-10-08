@@ -39,7 +39,13 @@ Alle endringer i dette repoet skal følge disse prinsippene. En agent som gjør 
 **Les [`docs/DESIGN.md`](docs/DESIGN.md) før du gjør UI-endringer.** Den inneholder sidelayout (AppPage + PageSection + bleed), navigasjonsprinsipper (tittel = tilbakeknapp), view transitions, komponentlag, og kodeeksempler.
 
 Kort oppsummert:
-- Alltid mørk. Bruk CSS-variabler fra `AppPage` — aldri hardkodede farger.
+- **Alle flater finnes i valgt tema.** Uttrykk A er blekk på krem med nattmodus,
+  så en flate som bare er tegnet mørk, er en halv flate. Bruk CSS-variabler fra
+  `AppPage` — aldri hardkodede farger. «Alltid mørk» gjaldt fram til
+  8. oktober 2026, og koden er ikke fulgt etter ennå: `AppPage` setter selv de
+  mørke verdiene, og de portalerte arkene har egne mørke farger. Det er gjeld
+  som ryddes rom for rom, ikke et mønster å kopiere. Se «Grunnregler» i
+  `docs/DESIGN.md`.
 - Hver side: `<AppPage>` → `<PageSection>` → `<PageHeader title="..." titleHref="/" />` → innhold.
 - Tittelen ER tilbakeknappen. Ingen `backHref`, ingen separate tilbake-ikoner.
 - `<PageSection bleed>` for sider med egne bakgrunner (gradient, hue-tint).
@@ -883,7 +889,10 @@ står i `$lib/domain/capture.ts`.
 - **Arket og knappen er mørke uansett systeminnstilling**, som de andre arkene.
   De portaleres og arver ikke `AppPage`-variablene, så `var(--text-primary)` der
   gir de LYSE standardverdiene fra `app.css`. Første utgave hadde usynlig
-  tittel. Fargene står som `--cs-*` øverst i stilen.
+  tittel. Fargene står som `--cs-*` øverst i stilen. **Dette er gjeld etter
+  regelen om at alle flater finnes i valgt tema**: fella (portalen arver ikke
+  temaet) står, men svaret er at temaets variabler må nå portalen, ikke en
+  egen mørk palett per ark.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
