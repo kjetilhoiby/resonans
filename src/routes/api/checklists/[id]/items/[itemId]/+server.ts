@@ -2,7 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists } from '$lib/db/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
+import { isWeekItemComplete } from '$lib/domain/week-item-target';
 import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
 import {
@@ -104,17 +105,38 @@ async function applyItemCheckedSideEffects(
 		}
 	}
 
-	// Koblet ukeliste-punkt → speil avkryssingen.
+	// Koblet ukeliste-punkt → ferdig når nok dagpunkter er hakket av. Et punkt
+	// med målet i parentes («Dele legging (3 ganger)») er ferdig først etter
+	// tredje gang; et vanlig punkt følger dagpunktet som før. Regelen bor i
+	// `isWeekItemComplete`, som ukeplanen og hjemskjermens brev også leser.
 	const linkedChecklistItemId =
 		typeof meta.linkedChecklistItemId === 'string' ? meta.linkedChecklistItemId : null;
 	if (linkedChecklistItemId && linkedChecklistItemId !== item.id) {
-		const [linked] = await db
-			.update(checklistItems)
-			.set({ checked, checkedAt: checked ? (item.checkedAt ?? new Date()) : null })
-			.where(and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)))
-			.returning({ checklistId: checklistItems.checklistId });
-		if (linked?.checklistId) {
-			await syncChecklistCompletion(linked.checklistId);
+		const weekItem = await db.query.checklistItems.findFirst({
+			where: and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)),
+			columns: { text: true }
+		});
+		if (weekItem) {
+			const [{ others }] = await db
+				.select({ others: count() })
+				.from(checklistItems)
+				.where(
+					and(
+						eq(checklistItems.userId, userId),
+						eq(checklistItems.checked, true),
+						ne(checklistItems.id, item.id),
+						sql`${checklistItems.metadata}->>'linkedChecklistItemId' = ${linkedChecklistItemId}`
+					)
+				);
+			const done = isWeekItemComplete(weekItem.text, Number(others) + (checked ? 1 : 0));
+			const [linked] = await db
+				.update(checklistItems)
+				.set({ checked: done, checkedAt: done ? (item.checkedAt ?? new Date()) : null })
+				.where(and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)))
+				.returning({ checklistId: checklistItems.checklistId });
+			if (linked?.checklistId) {
+				await syncChecklistCompletion(linked.checklistId);
+			}
 		}
 	}
 

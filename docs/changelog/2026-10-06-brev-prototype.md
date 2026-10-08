@@ -94,9 +94,27 @@ setning om hva som erstattet dem.
   lagt på én dag. `weekItemTarget` leser målet, `remainingWeekPlacements` trekker
   fra dagene som peker på punktet, og linja sier hvor mange dager som er igjen
   av uka: «Fire dager igjen av uka, og uten en dag ennå: Dele legging … ×3».
-- Kjent rest: å hake av et dagpunkt haker også av ukepunktet det peker på
-  (`/ukeplan`), så et «(3 ganger)»-punkt forsvinner fra brevet etter første gang.
-  Det er ukelistas regel, ikke brevets, og den er ikke rørt.
+- Å hake av et dagpunkt hakket også av ukepunktet det pekte på, så et
+  «(3 ganger)»-punkt var ferdig etter første gang. Rettet i fase 3.
+
+### Fase 3: delmål og ukelista som teller (8. oktober)
+
+- **Delmål legges under hovedmålet** (`nestPhaseGoals`). Brukeren har et
+  vektmål på 85 kg og et delmål på 94,7 kg for en avgrenset fase inni det.
+  Koblingen leses av datoene: samme enhet, og et vindu som ligger inni et annet.
+  Målene har ingen forelder-kolonne, og brukeren oppretter dem hver for seg.
+  Delmålet hører til det VIDESTE målet som rommer det.
+- **Når delmålet sklir og hovedmålet står, sier brevet det**: «Hovedmålet er
+  fortsatt i rute.» Brukerens egen begrunnelse: fremdrift mot det langsiktige er
+  verdifull når det kortsiktige må justeres, for eksempel etter sykdom.
+  Delmålets linje gjentar ikke vekta, som står i hovedmålets linje.
+- **Et «(3 ganger)»-punkt på ukelista er ferdig etter tredje gang**, ikke første.
+  Regelen bor i `$lib/domain/week-item-target.ts` (`isWeekItemComplete`) og
+  leses av serverens PATCH, ukeplanens optimistiske speiling og brevet. Et
+  vanlig punkt følger dagpunktet som før.
+- **Måltidslogg som signal** trenger ingen ny kode: `manage_streak` tar en
+  `sensor_event`-kilde med `dataType: 'nutrition'`, og en daglig streak gir
+  `streak-due` i brevet og dagsvarselet de dagene det ikke er logget.
 
 ## Beslutninger
 
