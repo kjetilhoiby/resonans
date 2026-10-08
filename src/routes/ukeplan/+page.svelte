@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isWeekItemComplete, weekItemTarget } from '$lib/domain/week-item-target';
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { AppPage, ChipStrip, DateInput, PageSection, PullToRefresh } from '$lib/components/ui';
@@ -293,11 +294,20 @@
 			t.id === taskId ? { ...t, completedCount: Math.max(0, t.completedCount + delta) } : t
 		);
 	}
+	// Speiler serverens regel (`isWeekItemComplete`): et ukepunkt med målet i
+	// parentes, «Dele legging (3 ganger)», er ferdig først når så mange dagpunkter
+	// som peker på det er hakket av. Et vanlig punkt følger dagpunktet som før.
 	function setWeekChecklistItemChecked(itemId: string, checked: boolean) {
 		if (!weekChecklistState) return;
+		const weekItem = weekChecklistState.items.find((i) => i.id === itemId);
+		if (!weekItem) return;
+		const checkedLinks = Object.values(dayChecklistsState)
+			.flatMap((cl) => cl.items)
+			.filter((i) => i.checked && i.metadata?.linkedChecklistItemId === itemId).length;
+		const done = weekItemTarget(weekItem.text).times > 1 ? isWeekItemComplete(weekItem.text, checkedLinks) : checked;
 		weekChecklistState = {
 			...weekChecklistState,
-			items: weekChecklistState.items.map((i) => (i.id === itemId ? { ...i, checked } : i))
+			items: weekChecklistState.items.map((i) => (i.id === itemId ? { ...i, checked: done } : i))
 		};
 	}
 

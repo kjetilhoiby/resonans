@@ -36,6 +36,9 @@ import { describeRollingEffort } from '$lib/domain/health/effort-standing';
 import { describeGoalTrajectory, type GoalShape } from '$lib/domain/goals/goal-projection';
 import { prepStanding, type EventPrepItem } from '$lib/domain/events/prep';
 import { daysBetween } from '$lib/domain/events/event-fields';
+import { weekItemTarget } from '$lib/domain/week-item-target';
+
+export { weekItemTarget };
 
 export type LetterLens = 'venter' | 'status';
 export type LetterSection = 'maal' | 'uka' | 'trader' | 'ellers';
@@ -122,7 +125,7 @@ export interface HomeLetter {
  * Hvor mange linjer hver del får. Målene er brukerens egne og får flest; et brev
  * som er en liste er ikke et brev.
  */
-export const SECTION_CAPS: Record<LetterSection, number> = { maal: 4, uka: 3, trader: 3, ellers: 2 };
+export const SECTION_CAPS: Record<LetterSection, number> = { maal: 6, uka: 3, trader: 3, ellers: 2 };
 
 /**
  * Hvor lenge borte før «siden sist» er en nyhet. Et døgn minus litt: den som
@@ -161,13 +164,14 @@ function dayWord(days: number): string {
 	return `Om ${days} dager`;
 }
 
-/** «Ned til 90 kg: 94,1 kg nå. På dagens tempo er du der rundt …» */
-export function goalLine(goal: LetterGoal, today: string): LetterLine {
-	const progress =
-		goal.unit === 'km'
-			? `${formatNumber(goal.currentValue, 0)} av ${formatNumber(goal.targetValue, 0)} km`
-			: `${formatNumber(goal.currentValue, 1)} kg nå, målet er ${formatNumber(goal.targetValue, 1)} kg`;
-	const trajectory = describeGoalTrajectory({
+function goalProgressText(goal: LetterGoal): string {
+	return goal.unit === 'km'
+		? `${formatNumber(goal.currentValue, 0)} av ${formatNumber(goal.targetValue, 0)} km`
+		: `${formatNumber(goal.currentValue, 1)} kg nå, målet er ${formatNumber(goal.targetValue, 1)} kg`;
+}
+
+function goalTrajectory(goal: LetterGoal, today: string) {
+	return describeGoalTrajectory({
 		startDate: goal.startDate,
 		endDate: goal.endDate,
 		startValue: goal.startValue,
@@ -177,11 +181,79 @@ export function goalLine(goal: LetterGoal, today: string): LetterLine {
 		rawSeries: goal.rawSeries,
 		shape: goal.shape
 	});
+}
+
+/** «Ned til 90 kg: 94,1 kg nå. På dagens tempo er du der rundt …» */
+export function goalLine(goal: LetterGoal, today: string): LetterLine {
+	const trajectory = goalTrajectory(goal, today);
 	return {
 		id: `goal:${goal.id}`,
 		lens: 'status',
 		section: 'maal',
-		text: `${goal.title}: ${progress}.${trajectory ? ` ${trajectory.label}` : ''}`,
+		text: `${goal.title}: ${goalProgressText(goal)}.${trajectory ? ` ${trajectory.label}` : ''}`,
+		source: 'mål',
+		href: '/plan/mal'
+	};
+}
+
+/**
+ * Delmål legges under målet de er en fase av.
+ *
+ * Et delmål er et mål i samme enhet med et vindu som ligger INNI et annet måls
+ * vindu — «94,7 kg innen 30. november» som en fase av «85 kg innen 2028». Det
+ * leses av datoene, ikke av en lagret kobling: målene har ingen forelder-kolonne,
+ * og brukeren oppretter dem hver for seg. Et delmål hører til det VIDESTE målet
+ * som rommer det, så en kjede 600 ⊃ 250 ⊃ 90 km blir én gruppe.
+ *
+ * Grupperingen finnes fordi de to svarer på ulike spørsmål, og det ene kan
+ * berolige det andre: et delmål som sklir etter en sykeperiode er ikke det samme
+ * som at retningen er tapt, og det skal brevet si.
+ */
+export function nestPhaseGoals(goals: readonly LetterGoal[]): Array<{ goal: LetterGoal; phases: LetterGoal[] }> {
+	const span = (g: LetterGoal) => Date.parse(g.endDate) - Date.parse(g.startDate);
+	const contains = (outer: LetterGoal, inner: LetterGoal) =>
+		outer.id !== inner.id &&
+		outer.unit === inner.unit &&
+		outer.startDate <= inner.startDate &&
+		inner.endDate <= outer.endDate &&
+		span(inner) < span(outer);
+
+	const parentOf = new Map<string, LetterGoal>();
+	for (const inner of goals) {
+		const candidates = goals.filter((outer) => contains(outer, inner));
+		if (candidates.length === 0) continue;
+		parentOf.set(inner.id, candidates.reduce((a, b) => (span(b) > span(a) ? b : a)));
+	}
+
+	const groups = goals
+		.filter((g) => !parentOf.has(g.id))
+		.map((goal) => ({
+			goal,
+			phases: goals
+				.filter((g) => parentOf.get(g.id)?.id === goal.id)
+				.sort((a, b) => a.endDate.localeCompare(b.endDate))
+		}));
+	// Gruppa med nærmeste frist først — et delmål i oktober drar hovedmålet sitt opp.
+	const nearest = (g: { goal: LetterGoal; phases: LetterGoal[] }) =>
+		[g.goal, ...g.phases].map((x) => x.endDate).sort()[0];
+	return groups.sort((a, b) => nearest(a).localeCompare(nearest(b)));
+}
+
+/**
+ * Delmålets linje, under hovedmålet. Vekta nå er sagt i hovedmålets linje og
+ * gjentas ikke; kilometerne er det delmålets EGET vindu som teller, så de står.
+ */
+export function phaseLine(phase: LetterGoal, parent: LetterGoal, today: string): LetterLine {
+	const trajectory = goalTrajectory(phase, today);
+	const parentTrajectory = goalTrajectory(parent, today);
+	const progress = phase.unit === 'km' ? ` ${goalProgressText(phase)}.` : '';
+	const reassurance =
+		trajectory?.tone === 'behind' && parentTrajectory?.tone !== 'behind' ? ' Hovedmålet er fortsatt i rute.' : '';
+	return {
+		id: `goal:${phase.id}`,
+		lens: 'status',
+		section: 'maal',
+		text: `Delmål, ${phase.title}:${progress}${trajectory ? ` ${trajectory.label}` : ''}${reassurance}`,
 		source: 'mål',
 		href: '/plan/mal'
 	};
@@ -238,21 +310,6 @@ function sinceLastVisitLine(input: HomeLetterInput): LetterLine | null {
 }
 
 /**
- * Hvor mange ganger et ukepunkt skal gjøres, lest av teksten.
- *
- * Ukelista har to former for «flere ganger»: tre punkter «Løp (1/3)», «Løp (2/3)»
- * … (én per gang, se `addItem` på /ukeplan), og ETT punkt med målet i parentes,
- * «Dele legging i to med Anita (3 ganger)». Den andre formen må telles, ellers
- * forsvinner hele punktet idet det er lagt på én dag, mens to ganger gjenstår.
- */
-export function weekItemTarget(text: string): { label: string; times: number } {
-	const match = /^(.*?)\s*\((\d{1,2})\s+(?:ganger|gang|dager|dag)\)\s*$/i.exec(text.trim());
-	if (!match) return { label: text.trim(), times: 1 };
-	const times = Number(match[2]);
-	return { label: match[1].trim(), times: times > 0 ? times : 1 };
-}
-
-/**
  * Gangene på ukelista som ingen dag har tatt, per etikett.
  *
  * `linkCounts` er hvor mange dagpunkter denne uka som peker på hvert ukepunkt
@@ -299,7 +356,10 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 	const dropped: LetterLine[] = [];
 
 	// ── Målene ──
-	for (const goal of input.goals) candidates.push(goalLine(goal, input.today));
+	for (const group of nestPhaseGoals(input.goals)) {
+		candidates.push(goalLine(group.goal, input.today));
+		for (const phase of group.phases) candidates.push(phaseLine(phase, group.goal, input.today));
+	}
 	const hasWeightGoal = input.goals.some((g) => g.unit === 'kg');
 
 	// ── Uka ──

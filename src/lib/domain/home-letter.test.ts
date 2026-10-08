@@ -4,9 +4,10 @@ import {
 	goalLine,
 	joinNorwegian,
 	letterGreeting,
+	nestPhaseGoals,
+	phaseLine,
 	remainingWeekPlacements,
 	SECTION_CAPS,
-	weekItemTarget,
 	type HomeLetterInput,
 	type LetterGoal
 } from './home-letter';
@@ -84,6 +85,48 @@ describe('goalLine', () => {
 	it('akkumulerer løpemålet før datoen anslås', () => {
 		const line = goalLine(runGoal, '2026-10-08');
 		expect(line.text).toMatch(/^Løp 300 km i høst: 120 av 300 km\. /);
+	});
+});
+
+describe('nestPhaseGoals', () => {
+	const phase: LetterGoal = {
+		...weightGoal,
+		id: 'p',
+		title: 'Redusere vekten til 94,7 kg',
+		startDate: '2026-09-01',
+		endDate: '2026-11-30',
+		startValue: 97,
+		targetValue: 94.7
+	};
+
+	it('legger et mål i samme enhet med vindu inni et annet under det', () => {
+		const groups = nestPhaseGoals([weightGoal, phase, runGoal]);
+		expect(groups.map((g) => [g.goal.id, g.phases.map((p) => p.id)])).toEqual([
+			['w', ['p']],
+			['r', []]
+		]);
+	});
+
+	it('legger aldri et mål under et i en annen enhet', () => {
+		const groups = nestPhaseGoals([runGoal, { ...phase, unit: 'km' as const, id: 'k', startDate: '2026-10-01', endDate: '2026-10-31' }]);
+		expect(groups.find((g) => g.goal.id === 'r')?.phases.map((p) => p.id)).toEqual(['k']);
+		expect(nestPhaseGoals([weightGoal, runGoal]).every((g) => g.phases.length === 0)).toBe(true);
+	});
+
+	it('sier at hovedmålet står når delmålet sklir', () => {
+		const behind: LetterGoal = {
+			...phase,
+			rawSeries: [
+				{ date: '2026-09-01', value: 97 },
+				{ date: '2026-10-08', value: 96.9 }
+			],
+			currentValue: 96.9
+		};
+		const line = phaseLine(behind, weightGoal, '2026-10-08');
+		expect(line.text.startsWith('Delmål, Redusere vekten til 94,7 kg:')).toBe(true);
+		expect(line.text).not.toContain('kg nå');
+		expect(line.text).toContain('etter fristen');
+		expect(line.text).toContain('Hovedmålet er fortsatt i rute.');
 	});
 });
 
@@ -208,15 +251,6 @@ describe('buildHomeLetter', () => {
 		expect(letter.lines.map((l) => l.id)).toEqual(['sick', 'goal:w']);
 		expect(letter.lines.some((l) => l.lens === 'venter')).toBe(false);
 		expect(letter.dropped.map((l) => l.id)).toEqual(['digest:streak-due', 'lost-items']);
-	});
-});
-
-describe('weekItemTarget', () => {
-	it('leser målet i parentes', () => {
-		expect(weekItemTarget('Dele legging i to med Anita (3 ganger)')).toEqual({ label: 'Dele legging i to med Anita', times: 3 });
-		expect(weekItemTarget('Måltidslogg (7 dager)')).toEqual({ label: 'Måltidslogg', times: 7 });
-		expect(weekItemTarget('Løp (1/3)')).toEqual({ label: 'Løp (1/3)', times: 1 });
-		expect(weekItemTarget('Handle')).toEqual({ label: 'Handle', times: 1 });
 	});
 });
 
