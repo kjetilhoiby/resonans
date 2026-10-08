@@ -143,8 +143,29 @@ innputten coachen trenger, ikke bruk for brukens skyld, så den er et legitimt m
   - Lesing: `book_progress_log`.
 - **Prototypen viser prikkene** (fem rader × sju dager) under brevet.
 - Kjent rest: egenfrekvens, lesing og oppgaver har ingen motor med en terskel, så
-  de får ingen «låser opp»-setning. Dagens dag regnes som mangler hele dagen, så
-  morgenbrevet sier «ikke registrert ennå: mat» før frokost.
+  de får ingen «låser opp»-setning.
+
+### Fase 5: registrering som valgt fokus, ikke daglig opptelling (8. oktober)
+
+Brukeren: «Jeg trenger ikke daglig påminnelse om registreringer samme dag, men
+kanskje en påminnelse om at dette er et ønsket fokus når det finnes blant målene.»
+
+- **«Ikke registrert ennå i dag» og oppsummeringen av alle fem er fjernet** fra
+  brevet. Prikkene står fortsatt på prototypesiden.
+- **Registreringsdelen viser bare områder brukeren har gjort til et fokus**: et
+  aktivt mål eller et åpent punkt på ukelista. Linja bruker brukerens egne ord,
+  sier dekningen siste sju dager og det som låses opp: «Måltidslogg (7 dager)
+  står på ukelista. Mat er registrert 3 av de siste sju dagene. Med 10 av 14
+  dager kan jeg si …». Uten et fokus er delen borte.
+- **Mønstrene er smale med vilje** (`REGISTRATION_FOCUS_PATTERNS`):
+  - «Redusere vekt til 85 kg» er et vektmål, ikke et mål om å veie seg.
+  - «Lese eller leke med barna» handler ikke om boklesing.
+
+  En bom ville gjort et fokus brukeren aldri valgte til en påminnelse.
+- **Et registreringsfokus på ukelista står ikke lenger under «uten en dag
+  ennå»**. Det måles av dataene og skal ikke legges på en dag. Det svarer også på
+  brukerens spørsmål om måltidsloggen.
+- Et mål går foran et punkt på ukelista når begge gjelder samme område.
 
 ## Beslutninger
 

@@ -37,7 +37,12 @@ import { describeGoalTrajectory, type GoalShape } from '$lib/domain/goals/goal-p
 import { prepStanding, type EventPrepItem } from '$lib/domain/events/prep';
 import { daysBetween } from '$lib/domain/events/event-fields';
 import { weekItemTarget } from '$lib/domain/week-item-target';
-import { describeCoverage, missingToday, nextUnlock, type DomainCoverage } from '$lib/domain/registration-coverage';
+import {
+	describeFocus,
+	registrationDomainOf,
+	type DomainCoverage,
+	type RegistrationFocus
+} from '$lib/domain/registration-coverage';
 
 export { weekItemTarget };
 
@@ -112,6 +117,8 @@ export interface HomeLetterInput {
 	events: readonly LetterEvent[];
 	/** Registreringsdekningen per område, eller null når den ikke kunne leses. */
 	registration: readonly DomainCoverage[] | null;
+	/** Registreringsområdene brukeren har gjort til et fokus (mål eller ukeliste). */
+	registrationFocus: readonly RegistrationFocus[];
 	/** Timer siden forrige besøk, eller null når vi ikke vet. */
 	hoursSinceLastVisit: number | null;
 	/** Økter siden forrige besøk (deduplisert), eller null når det ikke er regnet. */
@@ -376,7 +383,12 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 		);
 		candidates.push({ id: 'effort-7d', lens: 'status', section: 'uka', text: verdict.text, source: 'effort', href: '/tema/helse' });
 	}
-	const unplaced = unplacedLine(input.unplacedWeek, input.daysLeftInWeek);
+	// Et registreringsfokus («Måltidslogg (7 dager)») måles av dataene og skal ikke
+	// legges på en dag — det står under Registrering i stedet.
+	const unplaced = unplacedLine(
+		input.unplacedWeek.filter((u) => registrationDomainOf(u.label) === null),
+		input.daysLeftInWeek
+	);
 	if (unplaced) candidates.push(unplaced);
 
 	for (const nugget of input.digest) {
@@ -406,29 +418,20 @@ export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 	}
 
 	// ── Registrering ──
-	// Brukerens eget ønske: å registrere mer. Belønningen er hva dataene låser opp,
-	// sagt med motorens terskel — ikke en skår. Se `registration-coverage.ts`.
-	if (input.registration && input.registration.length > 0) {
-		candidates.push({
-			id: 'registration-coverage',
-			lens: 'status',
-			section: 'registrering',
-			text: describeCoverage(input.registration),
-			source: 'registrering'
-		});
-		const missing = missingToday(input.registration);
-		if (missing.length > 0) {
+	// Bare områder brukeren selv har gjort til et fokus, som mål eller på
+	// ukelista. Ingen daglig opptelling av det som mangler: brukeren ba om en
+	// påminnelse om det valgte, ikke om alt. Se `registration-coverage.ts`.
+	if (input.registration) {
+		for (const focus of input.registrationFocus) {
+			const coverage = input.registration.find((c) => c.domain === focus.domain);
+			if (!coverage) continue;
 			candidates.push({
-				id: 'registration-today',
-				lens: 'venter',
+				id: `registration-focus:${focus.domain}`,
+				lens: 'status',
 				section: 'registrering',
-				text: `Ikke registrert ennå i dag: ${joinNorwegian(missing)}.`,
+				text: describeFocus(focus, coverage),
 				source: 'registrering'
 			});
-		}
-		const unlock = nextUnlock(input.registration);
-		if (unlock) {
-			candidates.push({ id: 'registration-unlock', lens: 'status', section: 'registrering', text: unlock, source: 'registrering' });
 		}
 	}
 
