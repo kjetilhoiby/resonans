@@ -44,7 +44,7 @@ rask»).
 
 | Spor | Status | Neste steg |
 |---|---|---|
-| 1. Coachen | Fase 1–6 ferdig. Kuttet måles i skygge, men **målingen sulter** | Chatte som vanlig til 20 svar med verktøykall; se under |
+| 1. Coachen | Fase 1–6 ferdig. Kuttet måles i skygge, men **målingen sulter**. Coachen tenker ikke (Chat Completions + verktøy) | Chatte som vanlig til 20 svar med verktøykall; deretter Responses-API-et (punkt 6) |
 | 2. Én inngang | Ute til utprøving, lite brukt ennå | Les `inngang:*` igjen om et par uker |
 | 3. Hjemskjerm etter døgnet | **Brevet parkert** etter fase 7 | Signalene inn på hjemskjermen som klikkbare linjer, uten modell |
 | 4. Visuelt uttrykk | Besluttet: A, ikke startet | Tegnes ut på hjemskjermen først, sammen med spor 3 |
@@ -106,7 +106,21 @@ langt er dette:
    - **Synlig hukommelse.** «Hva jeg vet om deg» blir en side som kan leses og
      rettes.
    - **Prosjekter og intervjuer over flere dager**, som ChatGPT-bruken A og C.
-6. **Ekko** (`shared-tools.ts`) har verken modellvalget, strømmingen eller
+6. **Hovedchatten over på Responses-API-et — coachen tenker ikke i dag.**
+   Over Chat Completions kan gpt-5.x, Luna og Sol ikke kalle verktøy med
+   resonnering slått på, og hovedchatten sender alltid verktøy. Fase 4 målte 0
+   tenketokens; «smart» har vært gpt-5.4 uten tenking. Se
+   `2026-10-08-gpt6-modeller.md`, fase 2.
+   - Berører verktøyløkka (verktøykall som `function_call`-items), strømmingen
+     (en annen hendelsesprotokoll), meldingsformatet og historikken.
+     `createChatCompletionWithFallback`, `ModelRejectionMemory` og målingen i
+     `chat_perf_samples` må over i samme slengen.
+   - Gjøres når testsuiten brukeren bygger kan si om svarene blir bedre og hva
+     tenkingen koster i tid til første ord. Uten den er det å bytte en målt
+     6,6 s mot en følelse.
+   - Mulig gevinst på kjøpet: lagret samtaletilstand (`previous_response_id`).
+     Om det løfter cache-andelen fra ~20 % (punkt 4), må måles, ikke antas.
+7. **Ekko** (`shared-tools.ts`) har verken modellvalget, strømmingen eller
    verktøyutvalget. Det er en egen runde, og den må koordineres med ekko-repoet.
 
 ### 2. Én inngang — ute til utprøving

@@ -120,12 +120,22 @@ export function isReasoningChatModel(model: string): boolean {
  * Completions, og Luna gjør det bare med `reasoning_effort: 'none'`. En modell
  * som får verktøy den ikke kan bruke, avvises med 400 — og reserven er
  * `gpt-4o`, altså et dårligere svar enn standardmodellen ville gitt.
+ *
+ * gpt-5.x (5.1 og nyere) har samme grense som Luna. Første svarmåling
+ * (5. oktober 2026) ga `400::reasoning_effort` på gpt-5.4 med verktøy, og
+ * fase 4 målte 0 tenketokens etter at parameteren ble droppet: coachen har
+ * aldri tenkt mens den hadde verktøy. Fram til 8. oktober ble grensa oppdaget
+ * ved avslag, og avslaget huskes bare 30 minutter per prosess — med en bruker
+ * som chatter sjeldnere enn det, og en deploy per push, betalte nesten hver
+ * første melding et ekstra kall. Nå sendes `none` med en gang. Resonnering
+ * OG verktøy krever Responses-API-et; se fremdriftsplanen, spor 1.
  */
 export type ChatToolSupport = 'full' | 'none' | 'without-reasoning';
 
 export function chatCompletionsToolSupport(model: string): ChatToolSupport {
 	if (/^gpt-6(?:\.\d+)?-(?:sol|astra)\b/.test(model)) return 'none';
 	if (/^gpt-6(?:\.\d+)?-luna\b/.test(model)) return 'without-reasoning';
+	if (/^gpt-5\.\d/.test(model)) return 'without-reasoning';
 	return 'full';
 }
 
