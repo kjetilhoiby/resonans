@@ -175,10 +175,12 @@ Brukeren valgte **A (døgnrytme)**, blekk på krem med nattmodus. Svaret var
 dybdelagene, slik anbefalingen foreslo. Den kan vurderes i en enkelt flate der
 den gjør jobben, men ikke som et system.
 
-- **NB:** `docs/DESIGN.md` og CLAUDE.md sier «Alltid mørk». En lys krem-modus er
-  derfor en endring av et designprinsipp, ikke bare et tema. Begge filene må
-  oppdateres samtidig, og alle hardkodede antakelser om mørk bakgrunn må finnes.
-  Fargene skal fortsatt komme fra CSS-variablene i `AppPage`.
+- **Prinsippet er endret (8. oktober 2026):** «Alltid mørk» er erstattet av
+  «Alle flater finnes i valgt tema», i `docs/DESIGN.md` og CLAUDE.md samtidig.
+  Fargene skal fortsatt komme fra CSS-variablene i `AppPage`. Det som gjenstår
+  er koden: `AppPage` hardkoder de mørke verdiene, de portalerte arkene har egne
+  mørke paletter (`--cs-*`), og alle hardkodede antakelser om mørk bakgrunn må
+  finnes.
 - Overgangen bør skje rom for rom, med `npm run test:visual:review` for hver
   side, framfor i ett stort bytte.
 
@@ -207,7 +209,8 @@ dashboardtyper.
 4. **Hjemskjerm v2: «I dag» i uttrykk A.** Styringssignalene fra brevet som
    korte, klikkbare linjer øverst på `/`, tegnet i A (blekk på krem, nattmodus)
    på den ene flaten. Det slår sammen spor 3 og 4 der bruken er størst, og
-   prøver ut A på én side før resten. Krever beslutningen om «Alltid mørk».
+   prøver ut A på én side før resten. Beslutningen om «Alltid mørk» er tatt:
+   alle flater finnes i valgt tema.
 5. **Tilbake til coachen** når skyggemålingen har 20 svar med verktøykall
    (spor 1, punkt 1). Vurder samtidig om skrivetråden skal måles, siden det er
    der chattingen faktisk skjer.

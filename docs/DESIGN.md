@@ -24,7 +24,10 @@ Tommelfingerregel for hvor en ny seksjon hører hjemme: *demoer jeg én komponen
 
 ## Grunnregler
 
-- Appen er **alltid mørk**. `AppPage` er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
+- **Alle flater finnes i valgt tema.** Uttrykk A (besluttet oktober 2026) er blekk på krem med nattmodus, så hver flate skal tegnes i begge. En flate som bare fungerer mørk, er ikke ferdig. `AppPage` er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger, og heller ikke en farge som «ser riktig ut» fordi bakgrunnen tilfeldigvis er mørk (hvit tekst, `rgba(255,255,255,…)`-rammer, skygger som bare synes mot svart).
+  - Regelen erstattet «appen er alltid mørk» 8. oktober 2026, og koden er ikke fulgt etter ennå. `AppPage` setter selv de mørke verdiene i stedet for å lese dem fra et tema, og de portalerte arkene (`CaptureSheet`/`CaptureButton` med `--cs-*`) har egne mørke paletter fordi en portal ikke arver `AppPage`-variablene. Begge er gjeld som ryddes rom for rom med `npm run test:visual:review` per side — ikke mønstre å kopiere i en ny flate.
+  - Portalerte flater må få temaets variabler, ikke en egen palett. Fella er den samme som før: uten variablene faller de til `app.css`-standardene og kan få usynlig tekst.
+  - `/design` skal kunne vise en komponent i begge temaer — det er prinsippet om å re-skinne ved å bytte tokens, som står øverst.
 - Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
 - Ingen lokal bottom-nav/tab-bar.
 - Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.

@@ -47,7 +47,7 @@
 	<p class="section-desc">
 		Hue-mekanismen under er den samme som i produksjon: <code>getThemeHueStyle(temanavn)</code> setter
 		<code>--theme-hue</code> per tema, og bakgrunn/border/forgrunn avledes som <code>hsl(hue, s, l)</code>-trinn.
-		Slideren og light-modus er laboratorium for å teste nye hues og fremtidig re-skinning — appen er alltid mørk.
+		Slideren og light-modus er laboratorium for å teste nye hues og re-skinningen: alle flater skal finnes i valgt tema, også det lyse.
 	</p>
 
 	<div class="icon-theme-lab" class:light-mode={iconThemeMode === 'light'} style={`--icon-hue:${iconThemeHue};`}>
