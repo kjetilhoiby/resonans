@@ -3840,6 +3840,14 @@ Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Mo
 `CHAT_VERBOSITY` (default `low`). Alle kan endres i Coolify uten deploy.
 `CHAT_TOOL_SELECTION` (`shadow` default | `on` | `off`) styrer verktøyutvalget —
 se «Verktøyutvalget» under.
+**GPT-6-familien (Sol, Luna, Astra) kaller ikke verktøy som 5.4 gjør over Chat
+Completions**, som chatten bruker: Sol og Astra gjør det aldri, Luna bare med
+`reasoning_effort: 'none'`. Det står i `chatCompletionsToolSupport`; et kall som
+sender verktøy velger aldri en modell som ikke kan ta dem (`withTools`), og
+Luna får `none` automatisk. Full Sol i chatten krever Responses-API-et. Brevet
+på `/brev` kaller ingen verktøy og bruker derfor `gpt-6.1-sol`
+(`HOME_LETTER_MODEL` overstyrer). Se
+`docs/changelog/2026-10-08-gpt6-modeller.md`.
 **Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
 skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
 uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med

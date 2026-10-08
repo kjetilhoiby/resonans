@@ -28,7 +28,7 @@ export const LEGACY_CHAT_MODEL_MODE = 'legacy';
  */
 export const REASONING_TOKEN_FLOOR = 4000;
 
-const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
+const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const;
 export type ChatReasoningEffort = (typeof REASONING_EFFORTS)[number];
 /** Lav innsats: fart er halve poenget, og et coachsvar er sjelden et matteproblem. */
 export const DEFAULT_REASONING_EFFORT: ChatReasoningEffort = 'low';
@@ -43,6 +43,8 @@ export interface ChatModelInput {
 	userInput: string;
 	toolCallCount?: number;
 	toolRound?: number;
+	/** Kallet sender verktøy. En modell som ikke kan kalle dem over Chat Completions, velges ikke. */
+	withTools?: boolean;
 }
 
 export interface ChatModelDecision {
@@ -60,6 +62,14 @@ export function isLegacyChatModelMode(configured: string | null | undefined): bo
 }
 
 export function chooseChatModel(input: ChatModelInput): ChatModelDecision {
+	const decision = chooseChatModelIgnoringTools(input);
+	if (input.withTools && chatCompletionsToolSupport(decision.model) === 'none') {
+		return { model: DEFAULT_CHAT_MODEL, reason: `tools_unsupported:${decision.model}` };
+	}
+	return decision;
+}
+
+function chooseChatModelIgnoringTools(input: ChatModelInput): ChatModelDecision {
 	const preferred = input.preferredModel?.trim();
 	if (preferred && preferred !== 'auto') {
 		return { model: preferred, reason: 'user_preferred_model' };
@@ -93,9 +103,30 @@ function chooseLegacyChatModel(input: ChatModelInput): ChatModelDecision {
 	return { model: 'gpt-4o-mini', reason: 'default_followup_fast_path' };
 }
 
-/** gpt-5-familien og o-seriene: ingen `temperature`, `max_completion_tokens`, `reasoning_effort`. */
+/**
+ * gpt-5 og nyere, og o-seriene: ingen `temperature`, `max_completion_tokens`,
+ * `reasoning_effort`. Mønsteret var `^gpt-5` fram til oktober 2026, så
+ * `gpt-6-luna` ville fått `temperature` + `max_tokens` og blitt avvist.
+ */
 export function isReasoningChatModel(model: string): boolean {
-	return /^(gpt-5|o\d)/.test(model);
+	return /^(gpt-(?:[5-9]|[1-9]\d)|o\d)/.test(model);
+}
+
+/**
+ * Kan modellen kalle verktøy over Chat Completions, som chatten bruker?
+ *
+ * GPT-6-familien (oktober 2026) er bygget for Responses-API-et. Ifølge
+ * modellsidene hos OpenAI: Sol og Astra kaller ALDRI verktøy over Chat
+ * Completions, og Luna gjør det bare med `reasoning_effort: 'none'`. En modell
+ * som får verktøy den ikke kan bruke, avvises med 400 — og reserven er
+ * `gpt-4o`, altså et dårligere svar enn standardmodellen ville gitt.
+ */
+export type ChatToolSupport = 'full' | 'none' | 'without-reasoning';
+
+export function chatCompletionsToolSupport(model: string): ChatToolSupport {
+	if (/^gpt-6(?:\.\d+)?-(?:sol|astra)\b/.test(model)) return 'none';
+	if (/^gpt-6(?:\.\d+)?-luna\b/.test(model)) return 'without-reasoning';
+	return 'full';
 }
 
 export function resolveReasoningEffort(configured: string | null | undefined): ChatReasoningEffort {
@@ -121,8 +152,15 @@ export function resolveVerbosity(configured: string | null | undefined): ChatVer
 		: DEFAULT_VERBOSITY;
 }
 
+/**
+ * SDK-en (openai 6.7) kjenner ikke `none`, som GPT-6 Luna krever for å kalle
+ * verktøy over Chat Completions. Den sender verdien uendret; typen ligger bare
+ * etter API-et. Castet ved utgangen, så resten av koden ser den ekte mengden.
+ */
+type SdkReasoningEffort = Exclude<ChatReasoningEffort, 'none'>;
+
 export type ChatCompletionSizing =
-	| { max_completion_tokens: number; reasoning_effort: ChatReasoningEffort; verbosity: ChatVerbosity }
+	| { max_completion_tokens: number; reasoning_effort: SdkReasoningEffort; verbosity: ChatVerbosity }
 	| { temperature: number; max_tokens: number };
 
 /**
@@ -132,12 +170,20 @@ export type ChatCompletionSizing =
  */
 export function completionSizing(
 	model: string,
-	opts: { temperature: number; maxTokens: number; reasoningEffort?: ChatReasoningEffort; verbosity?: ChatVerbosity }
+	opts: {
+		temperature: number;
+		maxTokens: number;
+		reasoningEffort?: ChatReasoningEffort;
+		verbosity?: ChatVerbosity;
+		/** Kallet sender verktøy — Luna tar dem da bare uten resonnering. */
+		withTools?: boolean;
+	}
 ): ChatCompletionSizing {
 	if (isReasoningChatModel(model)) {
+		const toolsForceNone = opts.withTools && chatCompletionsToolSupport(model) === 'without-reasoning';
 		return {
 			max_completion_tokens: Math.max(opts.maxTokens, REASONING_TOKEN_FLOOR),
-			reasoning_effort: opts.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+			reasoning_effort: (toolsForceNone ? 'none' : (opts.reasoningEffort ?? DEFAULT_REASONING_EFFORT)) as SdkReasoningEffort,
 			verbosity: opts.verbosity ?? DEFAULT_VERBOSITY
 		};
 	}

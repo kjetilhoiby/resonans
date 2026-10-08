@@ -16,13 +16,8 @@ import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { homeLetterDrafts } from '$lib/db/schema';
 import { openai } from '$lib/server/openai';
-import {
-	completionSizing,
-	FALLBACK_CHAT_MODEL,
-	isLegacyChatModelMode,
-	resolveDefaultChatModel,
-	shouldFallBackToChatModel
-} from '$lib/domain/ai/chat-model';
+import { completionSizing } from '$lib/domain/ai/chat-model';
+import { createChatCompletionWithFallback } from '$lib/server/chat-completion';
 import {
 	HOME_LETTER_PROMPT_VERSION,
 	HOME_LETTER_SYSTEM_PROMPT,
@@ -44,29 +39,49 @@ export interface HomeLetterProse {
 	error: string | null;
 }
 
+/**
+ * Brevet skriver bare prosa og kaller ingen verktøy, så det kan bruke en modell
+ * chatten ikke kan: GPT-6.1 Sol tar ikke verktøy over Chat Completions
+ * (`chatCompletionsToolSupport`). `HOME_LETTER_MODEL` overstyrer uten deploy.
+ */
+export const DEFAULT_HOME_LETTER_MODEL = 'gpt-6.1-sol';
+
 function chooseModel(): string {
-	const configured = env.CHAT_DEFAULT_MODEL;
-	return isLegacyChatModelMode(configured) ? FALLBACK_CHAT_MODEL : resolveDefaultChatModel(configured);
+	return env.HOME_LETTER_MODEL?.trim() || DEFAULT_HOME_LETTER_MODEL;
 }
 
-async function generate(model: string, facts: string): Promise<string> {
-	const response = await openai.chat.completions.create({
-		model,
-		messages: [
-			{ role: 'system', content: HOME_LETTER_SYSTEM_PROMPT },
-			{ role: 'user', content: facts }
-		],
-		...completionSizing(model, { temperature: TEMPERATURE, maxTokens: MAX_TOKENS })
-	} as Parameters<typeof openai.chat.completions.create>[0]);
-	const message = 'choices' in response ? response.choices[0]?.message?.content : null;
-	return (message ?? '').trim();
+/**
+ * Gjennom samme reservevei som chatten: avvises en valgfri parameter
+ * (`verbosity`), prøves samme modell uten den før `gpt-4o` tar over.
+ * Returnerer modellen som faktisk svarte.
+ */
+async function generate(model: string, facts: string): Promise<{ text: string; model: string }> {
+	const sizing = { temperature: TEMPERATURE, maxTokens: MAX_TOKENS };
+	const completion = await createChatCompletionWithFallback(
+		openai,
+		{
+			model,
+			messages: [
+				{ role: 'system', content: HOME_LETTER_SYSTEM_PROMPT },
+				{ role: 'user', content: facts }
+			],
+			...completionSizing(model, sizing)
+		},
+		sizing,
+		{ onFallback: (reason) => console.warn(`[home-letter] ${model} avvist (${reason}), reserven svarte`) }
+	);
+	return {
+		text: (completion.choices[0]?.message?.content ?? '').trim(),
+		model: completion.model || model
+	};
 }
 
 export async function getHomeLetterProse(userId: string, letter: HomeLetter, day: string): Promise<HomeLetterProse> {
 	const facts = letterFactsText(letter);
-	let model = chooseModel();
+	const requested = chooseModel();
+	let model = requested;
 	const contextHash = createHash('sha256')
-		.update(`${HOME_LETTER_PROMPT_VERSION}\n${model}\n${facts}`)
+		.update(`${HOME_LETTER_PROMPT_VERSION}\n${requested}\n${facts}`)
 		.digest('hex');
 
 	const existing = await db.query.homeLetterDrafts.findFirst({
@@ -85,15 +100,7 @@ export async function getHomeLetterProse(userId: string, letter: HomeLetter, day
 
 	let text: string;
 	try {
-		try {
-			text = await generate(model, facts);
-		} catch (err) {
-			const status = (err as { status?: number }).status;
-			if (!shouldFallBackToChatModel(model, status)) throw err;
-			console.warn(`[home-letter] ${model} avvist (${status}), prøver ${FALLBACK_CHAT_MODEL}`);
-			model = FALLBACK_CHAT_MODEL;
-			text = await generate(model, facts);
-		}
+		({ text, model } = await generate(requested, facts));
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(`[home-letter] modellbrev feilet user=${userId}: ${message}`);
