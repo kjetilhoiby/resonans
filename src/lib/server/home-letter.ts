@@ -10,9 +10,9 @@
  * ingen milepæler.
  */
 
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, like, lt } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { checklists, goals, usageEvents } from '$lib/db/schema';
+import { bookProgressLog, checklistItems, checklists, goals, sensorEvents, usageEvents } from '$lib/db/schema';
 import { osloDayKey } from '$lib/domain/oslo-time';
 import { digestNuggets, type DigestNugget } from '$lib/domain/digest-nugget-rules';
 import { weightNuggets, type WeightNugget } from '$lib/domain/health/weight-nugget-rules';
@@ -32,6 +32,14 @@ import { contextForDay, openItemsFromDay } from '$lib/server/day-planning-nudges
 import { listEventsInRange } from '$lib/server/events/event-store';
 import { readDeduplicatedWorkouts } from '$lib/server/workouts/deduplicated-workouts';
 import { loadTrainingDashboardData } from '$lib/server/training-dashboard';
+import { listIntake } from '$lib/server/nutrition/intake-log';
+import { readWeightDays } from '$lib/server/health/weight-history';
+import {
+	buildCoverage,
+	COVERAGE_WINDOW_DAYS,
+	type DomainCoverage,
+	type RegistrationDomain
+} from '$lib/domain/registration-coverage';
 import {
 	isRunningGoal,
 	isWeightGoal,
@@ -217,6 +225,74 @@ function weekDayContexts(weekKey: string, today: string): string[] {
 	});
 }
 
+/**
+ * Oslo-dagene med minst én registrering per område, siste `COVERAGE_WINDOW_DAYS`.
+ *
+ * - Mat: måltider (`listIntake` filtrerer bort sultmeldingene på samme sensor).
+ * - Vekt: dager med en veiing, fra samme leser som Vekt-flaten.
+ * - Oppgaver: dagpunkter brukeren selv hakket av — `autoChecked` er ute, siden
+ *   autohakingen fra økter og våkentid ikke er en registrering.
+ * - Egenfrekvens: innsjekkene, på `data.day` (speilraden `mood` telles ikke).
+ * - Lesing: lagret fremdrift i en bok (`book_progress_log`).
+ */
+async function loadRegistrationDays(
+	userId: string,
+	today: string,
+	now: Date
+): Promise<Record<RegistrationDomain, Set<string>>> {
+	const fromDay = addDaysIso(today, -(COVERAGE_WINDOW_DAYS - 1));
+	const since = new Date(`${addDaysIso(fromDay, -1)}T00:00:00Z`);
+	const [meals, weightDays, checked, checkins, reading] = await Promise.all([
+		listIntake(userId, { since, limit: 2000 }),
+		readWeightDays(userId, { now }),
+		db
+			.select({ checkedAt: checklistItems.checkedAt, metadata: checklistItems.metadata })
+			.from(checklistItems)
+			.innerJoin(checklists, eq(checklistItems.checklistId, checklists.id))
+			.where(
+				and(
+					eq(checklistItems.userId, userId),
+					eq(checklistItems.checked, true),
+					gte(checklistItems.checkedAt, since),
+					like(checklists.context, 'week:%:day:%')
+				)
+			),
+		db
+			.select({ data: sensorEvents.data, timestamp: sensorEvents.timestamp })
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
+					gte(sensorEvents.timestamp, since)
+				)
+			),
+		db
+			.select({ loggedAt: bookProgressLog.loggedAt })
+			.from(bookProgressLog)
+			.where(and(eq(bookProgressLog.userId, userId), gte(bookProgressLog.loggedAt, since)))
+	]);
+
+	const inWindow = (day: string) => day >= fromDay && day <= today;
+	const set = (days: Iterable<string>) => new Set([...days].filter(inWindow));
+	return {
+		mat: set(meals.map((m) => osloDayKey(new Date(m.timestamp)))),
+		vekt: set(weightDays.filter((d) => d.weighInCount > 0).map((d) => d.date)),
+		oppgaver: set(
+			checked
+				.filter((c) => c.checkedAt && !(c.metadata as { autoChecked?: unknown } | null)?.autoChecked)
+				.map((c) => osloDayKey(c.checkedAt as Date))
+		),
+		egenfrekvens: set(
+			checkins.map((c) => {
+				const day = (c.data as { day?: unknown } | null)?.day;
+				return typeof day === 'string' ? day.slice(0, 10) : osloDayKey(c.timestamp);
+			})
+		),
+		lesing: set(reading.map((r) => osloDayKey(r.loggedAt)))
+	};
+}
+
 export interface HomeLetterPayload {
 	letter: HomeLetter;
 	/** Alt reglene sa, før brevet valgte — vises i prototypen for sammenligning. */
@@ -225,6 +301,8 @@ export interface HomeLetterPayload {
 		weight: WeightNugget[];
 		lastVisit: string | null;
 	};
+	/** Registreringsdekningen, til prikkene på prototypen. */
+	registration: DomainCoverage[] | null;
 	/** Kilder som feilet. Et brev som tier fordi en kilde døde, skal si det. */
 	failed: string[];
 }
@@ -251,6 +329,8 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 			loadLostItems(userId, today).catch(soft('løse tråder', [] as string[])),
 			loadUnplacedWeek(userId, today).catch(soft('ukeliste', [] as Array<{ label: string; count: number }>))
 		]);
+	const registrationDays = await loadRegistrationDays(userId, today, now).catch(soft('registrering', null));
+	const registration = registrationDays ? buildCoverage(registrationDays, today) : null;
 
 	const [digestInput, workouts] = await Promise.all([
 		gatherDigestInput({ userId, carryover: carryover.titles, now, training }).catch(soft('dagsoversikt', null)),
@@ -282,6 +362,7 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 		daysLeftInWeek: 7 - ((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7),
 		todayOpen: todayItems.titles,
 		events: letterEvents,
+		registration,
 		hoursSinceLastVisit: lastVisit ? (now.getTime() - lastVisit.getTime()) / 3_600_000 : null,
 		sinceLastVisit: workouts
 			? {
@@ -294,6 +375,7 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 	return {
 		letter,
 		raw: { digest, weight, lastVisit: lastVisit ? lastVisit.toISOString() : null },
+		registration,
 		failed
 	};
 }

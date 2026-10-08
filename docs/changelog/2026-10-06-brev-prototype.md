@@ -116,6 +116,36 @@ setning om hva som erstattet dem.
   `sensor_event`-kilde med `dataType: 'nutrition'`, og en daglig streak gir
   `streak-due` i brevet og dagsvarselet de dagene det ikke er logget.
 
+### Fase 4: registrering (8. oktober)
+
+Brukeren svarte nei til forslaget om å la være å belønne bruk: «jeg registrerer
+mindre enn ønsket (mat, oppgaver, vekt, egenfrekvens, boklesing), og å
+registrere mer ville stimulert til bedre bruk av appen». Registreringen er
+innputten coachen trenger, ikke bruk for brukens skyld, så den er et legitimt mål.
+
+- **Regler i `$lib/domain/registration-coverage.ts`.** Dagene med minst én
+  registrering per område, siste 14 dager. Brevet får en del «Registrering» med
+  tre linjer:
+  - dekningen siste sju dager,
+  - det som ikke er registrert ennå i dag,
+  - hva mer logging låser opp.
+- **Belønningen er det dataene låser opp, sagt med motorens egen terskel.**
+  Tersklene importeres fra motorene (`MIN_LOGGED_COVERAGE`/`MIN_DAYS_FOR_VERDICT`
+  for matens dom mot vekta, `MIN_WEEK_WEIGH_INS` for ukesoppgjøret), så et løfte
+  om «med 10 dager kan jeg si …» ikke kan drive fra kravet.
+- **Ingen skår, ingen rangering mellom områdene.** En prikk per dag og en
+  setning er en observasjon; en skår er en dom.
+- **Kildene:**
+  - Mat: `listIntake`, uten sultmeldinger.
+  - Vekt: `readWeightDays`.
+  - Oppgaver: dagpunkter hakket av av brukeren, uten `autoChecked`.
+  - Egenfrekvens: innsjekker på `data.day`.
+  - Lesing: `book_progress_log`.
+- **Prototypen viser prikkene** (fem rader × sju dager) under brevet.
+- Kjent rest: egenfrekvens, lesing og oppgaver har ingen motor med en terskel, så
+  de får ingen «låser opp»-setning. Dagens dag regnes som mangler hele dagen, så
+  morgenbrevet sier «ikke registrert ennå: mat» før frokost.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren
