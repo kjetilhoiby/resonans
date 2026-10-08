@@ -18,6 +18,7 @@ import {
 	unsecuredHeaderWarning
 } from '$lib/server/user-header-auth';
 import { clientErrorMessage, formatErrorLog } from '$lib/server/error-report';
+import { applyFargetemaToHtml, FARGETEMA_COOKIE, parseFargetema } from '$lib/domain/fargetema';
 
 // Logg-ringbufferet installeres først i hook-kroppen, så [cron-dispatch]- og
 // [job-worker]-oppstarten under fanges. Linjer logget under selve importen
@@ -125,7 +126,23 @@ const requestUserHandle: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle: Handle = sequence(authenticationHandle, authorizationHandle, requestUserHandle);
+/**
+ * Fargetemaet settes på `<html>` før siden sendes, så en lys side ikke
+ * blinker mørk først. Står først i rekka: også innloggingssiden skal ha det.
+ */
+const fargetemaHandle: Handle = async ({ event, resolve }) => {
+	const valg = parseFargetema(event.cookies.get(FARGETEMA_COOKIE));
+	return resolve(event, {
+		transformPageChunk: ({ html }) => applyFargetemaToHtml(html, valg)
+	});
+};
+
+export const handle: Handle = sequence(
+	fargetemaHandle,
+	authenticationHandle,
+	authorizationHandle,
+	requestUserHandle
+);
 
 /**
  * Uventede serverfeil: logg rute + stack, og gi klienten noe å vise.

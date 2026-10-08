@@ -3,9 +3,10 @@ import { users } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { ensureUser } from '$lib/server/users';
 import { readBodyProfile } from '$lib/server/health/body-profile';
+import { FARGETEMA_COOKIE, parseFargetema } from '$lib/domain/fargetema';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, cookies }) => {
 	await ensureUser(locals.userId);
 
 	// Kroppsprofilen er med her fordi en manglende profil ellers er *stille*: uten
@@ -18,6 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		user: user || null,
-		bodyProfileComplete: bodyProfile.complete
+		bodyProfileComplete: bodyProfile.complete,
+		fargetema: parseFargetema(cookies.get(FARGETEMA_COOKIE))
 	};
 };

@@ -34,7 +34,7 @@
 	let { data }: Props = $props();
 </script>
 
-<AppPage>
+<AppPage uttrykk="a">
 	<PageSection bleed>
 		<HomeScreen
 			themes={data.themes}

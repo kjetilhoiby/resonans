@@ -1,0 +1,166 @@
+/*
+ * Uttrykk A: blekk på krem, med nattmodus. Se docs/DESIGN.md («Grunnregler») og
+ * docs/changelog/2026-10-08-alle-flater-i-valgt-tema.md.
+ *
+ * Paletten er hentet fra skissene A1–A3 i «Resonans – veier videre». Den mappes
+ * inn på de SAMME variabelnavnene som resten av appen bruker (--bg-primary,
+ * --text-primary, …), så en komponent som alt leser variablene følger med uten
+ * å endres. Navnene fra skissen (--ink, --paper, --line, --sun) finnes i
+ * tillegg, for nye flater.
+ *
+ * Gjelder alt med data-uttrykk="a": `<main>` i AppPage, og `<body>` mens en slik
+ * side er åpen. Det siste er for de portalerte arkene, som ligger utenfor
+ * `<main>` og ellers faller tilbake på app.css.
+ *
+ * Valget leses av `data-fargetema` på <html>, satt av serveren
+ * ($lib/domain/fargetema.ts). Alt annet enn «lys» og «mork» betyr «følg
+ * telefonen» — også en plassholder som aldri ble byttet, så en side uten
+ * hook-en (prerendret, feilside) fortsatt får et tema.
+ */
+
+[data-uttrykk='a'] {
+	color-scheme: light;
+
+	--ink: #1b1a17;
+	--paper: #fbf8f1;
+	--line: #e3dccd;
+	--sun: #ec5a2e;
+	--sun-text: #b83e19;
+
+	--font-body: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+	--font-display: 'Petrona', Georgia, serif;
+
+	--bg-primary: #f6f1e7;
+	--bg-secondary: #f0eadd;
+	--bg-card: var(--paper);
+	--bg-elevated: var(--paper);
+	--bg-header: #f6f1e7;
+	--bg-input: var(--paper);
+	--bg-hover: #ece5d6;
+	--bg-overlay: rgba(27, 26, 23, 0.32);
+
+	--text-primary: var(--ink);
+	--text-secondary: #4a453c;
+	--text-tertiary: #6b6559;
+	--text-muted: #857e70;
+
+	--border-color: var(--line);
+	--border-subtle: #ebe5d8;
+
+	--accent-primary: var(--sun-text);
+	--accent-hover: #9e3414;
+	--accent-light: var(--sun);
+	--accent-muted: #c9603d;
+	/* Tekst OPPÅ accent-flater. Komponenter som skriver `color: #fff` på en
+	   accent, må lese denne i stedet — i natt er accenten lys. */
+	--accent-contrast: #ffffff;
+
+	--success-bg: rgba(47, 125, 79, 0.08);
+	--success-text: #2a7247;
+	--success-border: rgba(47, 125, 79, 0.25);
+	--warning-bg: rgba(160, 112, 0, 0.08);
+	--warning-text: #8a6100;
+	--warning-border: rgba(160, 112, 0, 0.25);
+	--error-bg: rgba(179, 38, 30, 0.07);
+	--error-text: #b3261e;
+	--error-border: rgba(179, 38, 30, 0.3);
+	--info-bg: rgba(184, 62, 25, 0.07);
+	--info-border: rgba(184, 62, 25, 0.25);
+
+	--shadow-sm: 0 6px 18px rgba(27, 26, 23, 0.07);
+	--shadow-md: 0 12px 30px rgba(27, 26, 23, 0.1);
+
+	--card-bg-inset: #efe9dc;
+}
+
+/* Natt: valgt eksplisitt … */
+html[data-fargetema='mork'] [data-uttrykk='a'] {
+	color-scheme: dark;
+
+	--ink: #f1eadb;
+	--paper: #221f18;
+	--line: #3a352c;
+	--sun: #ee6a40;
+	--sun-text: #f08a64;
+
+	--bg-primary: #17150f;
+	--bg-secondary: #1d1b14;
+	--bg-header: #17150f;
+	--bg-hover: #2a261e;
+	--bg-overlay: rgba(0, 0, 0, 0.5);
+
+	--text-secondary: #cfc6b3;
+	--text-tertiary: #a39a88;
+	--text-muted: #857d6d;
+
+	--border-subtle: #2c2821;
+
+	--accent-hover: #f4a07f;
+	--accent-muted: #e9a285;
+	--accent-contrast: #17150f;
+
+	--success-bg: rgba(124, 199, 154, 0.1);
+	--success-text: #7cc79a;
+	--success-border: rgba(124, 199, 154, 0.25);
+	--warning-bg: rgba(217, 174, 85, 0.1);
+	--warning-text: #d9ae55;
+	--warning-border: rgba(217, 174, 85, 0.25);
+	--error-bg: rgba(229, 138, 122, 0.1);
+	--error-text: #e58a7a;
+	--error-border: rgba(229, 138, 122, 0.3);
+	--info-bg: rgba(240, 138, 100, 0.1);
+	--info-border: rgba(240, 138, 100, 0.3);
+
+	--shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 14px 34px rgba(0, 0, 0, 0.36);
+
+	--card-bg-inset: #1a1812;
+}
+
+/* … eller fulgt etter telefonen. Samme verdier som over; CSS har ingen måte å
+   dele en blokk mellom en media query og en vanlig regel. Endrer du den ene,
+   endre den andre — testen i uttrykk-a.test.ts krever at de er like. */
+@media (prefers-color-scheme: dark) {
+	html:not([data-fargetema='lys']):not([data-fargetema='mork']) [data-uttrykk='a'] {
+		color-scheme: dark;
+
+		--ink: #f1eadb;
+		--paper: #221f18;
+		--line: #3a352c;
+		--sun: #ee6a40;
+		--sun-text: #f08a64;
+
+		--bg-primary: #17150f;
+		--bg-secondary: #1d1b14;
+		--bg-header: #17150f;
+		--bg-hover: #2a261e;
+		--bg-overlay: rgba(0, 0, 0, 0.5);
+
+		--text-secondary: #cfc6b3;
+		--text-tertiary: #a39a88;
+		--text-muted: #857d6d;
+
+		--border-subtle: #2c2821;
+
+		--accent-hover: #f4a07f;
+		--accent-muted: #e9a285;
+		--accent-contrast: #17150f;
+
+		--success-bg: rgba(124, 199, 154, 0.1);
+		--success-text: #7cc79a;
+		--success-border: rgba(124, 199, 154, 0.25);
+		--warning-bg: rgba(217, 174, 85, 0.1);
+		--warning-text: #d9ae55;
+		--warning-border: rgba(217, 174, 85, 0.25);
+		--error-bg: rgba(229, 138, 122, 0.1);
+		--error-text: #e58a7a;
+		--error-border: rgba(229, 138, 122, 0.3);
+		--info-bg: rgba(240, 138, 100, 0.1);
+		--info-border: rgba(240, 138, 100, 0.3);
+
+		--shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 14px 34px rgba(0, 0, 0, 0.36);
+
+		--card-bg-inset: #1a1812;
+	}
+}

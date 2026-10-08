@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AppPage, Button, PageHeader, PageSection } from '$lib/components/ui';
+	import FargetemaVelger from '$lib/components/domain/FargetemaVelger.svelte';
 	import type { PageData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -111,6 +112,13 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		{/if}
 
 		<section class="overview-grid">
+			<article class="overview-card" id="fargetema-overview">
+				<div class="overview-head">
+					<h2>Utseende</h2>
+				</div>
+				<p>Lyst, mørkt, eller følg telefonen. Gjelder sidene som er tegnet i det nye uttrykket, foreløpig hjemskjermen.</p>
+				<FargetemaVelger valgt={data.fargetema} />
+			</article>
 			<article class="overview-card" id="themes-overview">
 				<div class="overview-head">
 					<span class="status-dot ok"></span>
@@ -237,6 +245,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		border: none;
 		border-radius: 12px;
 		padding: 1rem;
+	}
+
+	/* Velgeren har tre valg og trenger hele bredden. */
+	#fargetema-overview {
+		grid-column: 1 / -1;
 	}
 
 	.overview-card h2 {

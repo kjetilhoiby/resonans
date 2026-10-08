@@ -47,7 +47,7 @@ rask»).
 | 1. Coachen | Fase 1–6 ferdig. Kuttet måles i skygge, men **målingen sulter**. Coachen tenker ikke (Chat Completions + verktøy) | Chatte som vanlig til 20 svar med verktøykall; deretter Responses-API-et (punkt 6) |
 | 2. Én inngang | Ute til utprøving, lite brukt ennå | Les `inngang:*` igjen om et par uker |
 | 3. Hjemskjerm etter døgnet | **Brevet parkert** etter fase 7 | Signalene inn på hjemskjermen som klikkbare linjer, uten modell |
-| 4. Visuelt uttrykk | Besluttet: A, ikke startet | Tegnes ut på hjemskjermen først, sammen med spor 3 |
+| 4. Visuelt uttrykk | Besluttet: A. Fargetemaet bygget, `/` tegnet i A (`2026-10-08-alle-flater-i-valgt-tema.md`) | Arkene på hjemskjermen; så «I dag»-linjene (spor 3) |
 | 5. Tre rom (struktur) | Foreslått | Etter spor 3 |
 | Sidespor: modeller | GPT-6 Luna valgbar i chatten, Sol i brevet | Testsuite som egen app (brukeren); Sol i chatten krever Responses-API-et |
 
