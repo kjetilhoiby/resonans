@@ -356,8 +356,8 @@
 	.ci-form {
 		display: flex;
 		align-items: stretch;
-		background: #161616;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 18px;
 		padding: 8px 10px 8px 14px;
 		gap: 8px;
@@ -376,8 +376,8 @@
 		flex-direction: column;
 		align-items: stretch;
 		gap: 0;
-		background: rgba(24, 24, 24, 0.55);
-		border-color: rgba(42, 42, 42, 0.7);
+		background: color-mix(in srgb, var(--bg-input) 55%, transparent);
+		border-color: color-mix(in srgb, var(--border-color) 70%, transparent);
 	}
 
 	.ci-form-expand .ci-line {
@@ -451,13 +451,13 @@
 		border-radius: 50%;
 		border: none;
 		background: transparent;
-		color: #6a6a6a;
+		color: var(--text-tertiary);
 		cursor: pointer;
 		transition: color 0.15s, background 0.15s;
 	}
 	.ci-attach-btn:hover:not(:disabled) {
-		color: #b9c2ff;
-		background: #1a1a1a;
+		color: var(--accent-muted);
+		background: var(--bg-hover);
 	}
 	.ci-attach-btn:disabled {
 		opacity: 0.35;
@@ -469,7 +469,7 @@
 		background: transparent;
 		border: none;
 		outline: none;
-		color: #ccc;
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 16px;
 		line-height: 1.4;
@@ -485,7 +485,7 @@
 	}
 
 	.ci-area::placeholder {
-		color: #3a3a3a;
+		color: var(--text-muted);
 	}
 
 	.ci-actions-rig {
@@ -501,17 +501,17 @@
 		width: 36px;
 		height: 36px;
 		border-radius: 999px;
-		border: 1px solid #2a2f43;
-		background: #121522;
-		color: #b9c2ff;
+		border: 1px solid var(--info-border);
+		background: var(--info-bg);
+		color: var(--accent-muted);
 		cursor: pointer;
 		transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 	}
 
 	.ci-icon-btn:hover:not(:disabled) {
-		background: #1a2040;
-		color: #d5dcff;
-		border-color: #3b4470;
+		background: color-mix(in srgb, var(--accent-primary) 22%, transparent);
+		color: var(--text-primary);
+		border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent);
 	}
 
 	.ci-icon-btn:disabled {
@@ -522,20 +522,20 @@
 	/* Send-knappen i kolonne-modus: skyves til høyre og får aksentfarge. */
 	.ci-icon-send {
 		margin-left: auto;
-		background: #7c8ef5;
-		border-color: #7c8ef5;
-		color: #fff;
+		background: var(--accent-light);
+		border-color: var(--accent-light);
+		color: var(--accent-contrast);
 	}
 	.ci-icon-send:hover:not(:disabled) {
-		background: #8f9ff7;
-		border-color: #8f9ff7;
-		color: #fff;
+		background: var(--accent-muted);
+		border-color: var(--accent-muted);
+		color: var(--accent-contrast);
 	}
 
 	.ci-send {
-		background: #7c8ef5;
+		background: var(--accent-light);
 		border: none;
-		color: #fff;
+		color: var(--accent-contrast);
 		width: 30px;
 		height: 30px;
 		border-radius: 50%;
@@ -555,23 +555,23 @@
 	}
 
 	.ci-send:not(:disabled):hover {
-		background: #8f9ff7;
+		background: var(--accent-muted);
 	}
 
 	.ci-stop-btn {
 		font-size: 0.7rem;
-		color: #888;
-		border-color: #2a2a2a;
+		color: var(--text-tertiary);
+		border-color: var(--border-color);
 	}
-	.ci-stop-btn:hover { color: #ccc; border-color: #555; }
+	.ci-stop-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
 	/* Spinner when loading */
 	.ci-spinner {
 		display: inline-block;
 		width: 12px;
 		height: 12px;
-		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: #fff;
+		border: 2px solid color-mix(in srgb, var(--accent-contrast) 30%, transparent);
+		border-top-color: var(--accent-contrast);
 		border-radius: 50%;
 		animation: spin 0.7s linear infinite;
 	}

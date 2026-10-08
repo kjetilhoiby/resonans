@@ -52,9 +52,9 @@
 <style>
 	.research-card {
 		margin-top: 10px;
-		border: 1px solid #222;
+		border: 1px solid var(--border-color);
 		border-radius: 14px;
-		background: #111;
+		background: var(--bg-elevated);
 		padding: 10px;
 		display: flex;
 		flex-direction: column;
@@ -75,14 +75,14 @@
 		border-radius: 10px;
 		object-fit: cover;
 		flex-shrink: 0;
-		background: #1a1a1a;
+		background: var(--bg-hover);
 	}
 
 	.rc-heading {
 		font-size: 0.72rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #666;
+		color: var(--text-tertiary);
 	}
 
 	.rc-sources {
@@ -101,7 +101,7 @@
 		transition: background 0.12s;
 	}
 	.rc-source:hover {
-		background: #171717;
+		background: var(--bg-hover);
 	}
 
 	.rc-favicon {
@@ -121,12 +121,12 @@
 	.rc-domain {
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: #b4b4f0;
+		color: var(--accent-muted);
 	}
 
 	.rc-snippet {
 		font-size: 0.78rem;
-		color: #999;
+		color: var(--text-secondary);
 		line-height: 1.4;
 		overflow: hidden;
 		display: -webkit-box;

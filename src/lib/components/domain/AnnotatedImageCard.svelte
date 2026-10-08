@@ -88,7 +88,7 @@
 		position: relative;
 		border-radius: 12px;
 		overflow: hidden;
-		border: 1px solid #2f2f2f;
+		border: 1px solid var(--border-color);
 	}
 
 	.annot-image {
@@ -108,7 +108,7 @@
 	.annot-summary {
 		margin: 0;
 		font-size: 0.8rem;
-		color: #b8b8b8;
+		color: var(--text-secondary);
 		line-height: 1.45;
 	}
 </style>

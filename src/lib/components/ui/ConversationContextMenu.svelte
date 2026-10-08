@@ -176,7 +176,7 @@
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
 		border-radius: 6px;
-		color: var(--color-text-secondary, #6f6f6f);
+		color: var(--text-tertiary);
 		font-size: 0.75rem;
 		letter-spacing: 0.1em;
 		line-height: 1;
@@ -186,19 +186,19 @@
 	}
 
 	.ctx-trigger:hover {
-		background: #171717;
-		border-color: #262626;
-		color: #cfcfcf;
+		background: var(--bg-hover);
+		border-color: var(--border-color);
+		color: var(--text-primary);
 	}
 
 	.ctx-menu {
 		position: absolute;
 		right: 0;
 		top: calc(100% + 4px);
-		background: #141414;
-		border: 1px solid #252525;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
-		box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
+		box-shadow: var(--shadow-md);
 		min-width: 180px;
 		z-index: 100;
 		overflow: hidden;
@@ -216,31 +216,31 @@
 		cursor: pointer;
 		text-align: left;
 		font-size: 0.875rem;
-		color: #d6d6d6;
+		color: var(--text-primary);
 		border-radius: 6px;
 		white-space: nowrap;
 	}
 
 	.ctx-item:hover {
-		background: #202020;
+		background: var(--bg-hover);
 	}
 
 	.ctx-item--danger {
-		color: #e06b6b;
+		color: var(--error-text);
 	}
 
 	.ctx-item--danger:hover {
-		background: #2a1616;
+		background: var(--error-bg);
 	}
 
 	.ctx-item--back {
-		color: #8e8e8e;
+		color: var(--text-tertiary);
 		font-size: 0.8rem;
 	}
 
 	.ctx-divider {
 		height: 1px;
-		background: #262626;
+		background: var(--border-color);
 		margin: 4px 0;
 	}
 </style>

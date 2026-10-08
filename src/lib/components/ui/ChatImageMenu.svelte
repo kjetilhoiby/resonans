@@ -108,11 +108,11 @@
 	.cim-menu {
 		position: fixed;
 		z-index: 91;
-		background: #16181f;
-		border: 1px solid #2a2d38;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 12px;
 		padding: 6px;
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--shadow-md);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
@@ -124,7 +124,7 @@
 		width: 100%;
 		background: none;
 		border: none;
-		color: #e2e2e8;
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 0.86rem;
 		text-align: left;
@@ -133,10 +133,10 @@
 		cursor: pointer;
 	}
 	.cim-item:hover {
-		background: #202430;
+		background: var(--bg-hover);
 	}
 	.cim-danger {
-		color: #e08585;
+		color: var(--error-text);
 	}
 	.cim-icon {
 		font-size: 1rem;
@@ -147,9 +147,9 @@
 	.cim-textarea {
 		width: 100%;
 		box-sizing: border-box;
-		background: #0f121b;
-		border: 1px solid #2a2d38;
-		color: #e8e8e8;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		color: var(--text-primary);
 		border-radius: 8px;
 		padding: 8px;
 		font: inherit;
@@ -172,11 +172,11 @@
 	}
 	.cim-btn-ghost {
 		background: transparent;
-		border-color: #2a2d38;
-		color: #b8b8c0;
+		border-color: var(--border-color);
+		color: var(--text-secondary);
 	}
 	.cim-btn-primary {
-		background: #3c4f9f;
-		color: #fff;
+		background: var(--accent-primary);
+		color: var(--accent-contrast);
 	}
 </style>

@@ -115,10 +115,10 @@
 <style>
 	.proposal-card {
 		margin-top: 8px;
-		border: 1px solid #2a2a2a;
+		border: 1px solid var(--border-color);
 		border-radius: 14px;
 		padding: 14px 16px;
-		background: #161616;
+		background: var(--bg-card);
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
@@ -132,7 +132,7 @@
 
 	.ring-unit {
 		font-size: 0.6rem;
-		color: #888;
+		color: var(--text-tertiary);
 		letter-spacing: 0.02em;
 	}
 
@@ -146,7 +146,7 @@
 	.proposal-title {
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: #eee;
+		color: var(--text-primary);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -154,12 +154,12 @@
 
 	.proposal-meta {
 		font-size: 0.72rem;
-		color: #888;
+		color: var(--text-tertiary);
 	}
 
 	.proposal-goal {
 		font-size: 0.72rem;
-		color: #aaa;
+		color: var(--text-secondary);
 		margin-top: 2px;
 	}
 
@@ -171,13 +171,13 @@
 
 	.proposal-error {
 		font-size: 0.78rem;
-		color: #e07070;
+		color: var(--error-text);
 		margin: 0;
 	}
 
 	.proposal-success {
 		font-size: 0.82rem;
-		color: #82c882;
+		color: var(--success-text);
 		margin: 0;
 	}
 </style>

@@ -198,10 +198,10 @@
 		width: 100%;
 		max-width: 420px;
 		height: 560px;
-		border: 1px solid #222;
+		border: 1px solid var(--border-color);
 		border-radius: 20px;
 		overflow: hidden;
-		background: #08080a;
+		background: var(--card-bg-inset);
 		margin-bottom: 12px;
 	}
 
@@ -512,8 +512,8 @@
 
 	/* ── Chat-demo ── */
 	.chat-demo {
-		background: #111;
-		border: 1px solid #1e1e1e;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-subtle);
 		border-radius: 16px;
 		padding: 16px;
 		max-width: 380px;
