@@ -28,6 +28,7 @@ const base: HomeLetterInput = {
 	todayOpen: [],
 	events: [],
 	registration: null,
+	registrationFocus: [],
 	hoursSinceLastVisit: 2,
 	sinceLastVisit: null
 };
@@ -168,6 +169,26 @@ describe('buildHomeLetter', () => {
 		const withGoal = buildHomeLetter({ ...base, weight: nuggets, goals: [weightGoal] });
 		expect(withGoal.lines.map((l) => l.id)).toEqual(['goal:w']);
 		expect(withGoal.dropped.map((l) => l.id)).toEqual(['weight:year-over-year']);
+	});
+
+	it('legger et registreringsfokus under Registrering, ikke under ukelista uten dag', () => {
+		const coverage = [
+			{ domain: 'mat' as const, label: 'Mat', week: [false, false, false, false, true, true, false], last7: 2, last14: 4, today: false }
+		];
+		const letter = buildHomeLetter({
+			...base,
+			unplacedWeek: [{ label: 'Måltidslogg', count: 7 }, { label: 'Handle', count: 1 }],
+			registration: coverage,
+			registrationFocus: [{ domain: 'mat', text: 'Måltidslogg (7 dager)', source: 'ukeliste' }]
+		});
+		expect(letter.lines.find((l) => l.id === 'week-unplaced')?.text).toBe('Fire dager igjen av uka, og uten en dag ennå: Handle.');
+		const focus = letter.lines.find((l) => l.section === 'registrering');
+		expect(focus?.text.startsWith('Måltidslogg (7 dager) står på ukelista. Mat er registrert 2 av de siste sju dagene.')).toBe(true);
+	});
+
+	it('har ingen registreringsdel uten et valgt fokus', () => {
+		const coverage = [{ domain: 'mat' as const, label: 'Mat', week: [], last7: 0, last14: 0, today: false }];
+		expect(buildHomeLetter({ ...base, registration: coverage }).lines.some((l) => l.section === 'registrering')).toBe(false);
 	});
 
 	it('navngir det som står på ukelista uten en dag', () => {

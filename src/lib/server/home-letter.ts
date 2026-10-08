@@ -37,7 +37,9 @@ import { readWeightDays } from '$lib/server/health/weight-history';
 import {
 	buildCoverage,
 	COVERAGE_WINDOW_DAYS,
+	findRegistrationFocus,
 	type DomainCoverage,
+	type FocusSource,
 	type RegistrationDomain
 } from '$lib/domain/registration-coverage';
 import {
@@ -293,6 +295,33 @@ async function loadRegistrationDays(
 	};
 }
 
+/** Titlene på aktive mål og åpne punkter på ukelista — det brukeren har valgt å fokusere på. */
+async function loadFocusTexts(userId: string, today: string): Promise<Array<{ text: string; source: FocusSource }>> {
+	const todayContext = contextForDay(today);
+	const weekContext = todayContext ? todayContext.split(':day:')[0] : null;
+	const [goalRows, weekList] = await Promise.all([
+		db.query.goals.findMany({
+			where: and(eq(goals.userId, userId), eq(goals.status, 'active')),
+			columns: { title: true, metadata: true }
+		}),
+		weekContext
+			? db.query.checklists.findFirst({
+					where: and(eq(checklists.userId, userId), eq(checklists.context, weekContext)),
+					with: { items: true },
+					orderBy: (c, { desc: orderDesc }) => [orderDesc(c.createdAt)]
+				})
+			: Promise.resolve(null)
+	]);
+	return [
+		...goalRows
+			.filter((g) => !(g.metadata as { isPlanningGoal?: unknown } | null)?.isPlanningGoal)
+			.map((g) => ({ text: g.title, source: 'mål' as const })),
+		...(weekList?.items ?? [])
+			.filter((i) => !i.checked && !i.skippedAt && !i.parentId)
+			.map((i) => ({ text: i.text, source: 'ukeliste' as const }))
+	];
+}
+
 export interface HomeLetterPayload {
 	letter: HomeLetter;
 	/** Alt reglene sa, før brevet valgte — vises i prototypen for sammenligning. */
@@ -329,7 +358,10 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 			loadLostItems(userId, today).catch(soft('løse tråder', [] as string[])),
 			loadUnplacedWeek(userId, today).catch(soft('ukeliste', [] as Array<{ label: string; count: number }>))
 		]);
-	const registrationDays = await loadRegistrationDays(userId, today, now).catch(soft('registrering', null));
+	const [registrationDays, focusTexts] = await Promise.all([
+		loadRegistrationDays(userId, today, now).catch(soft('registrering', null)),
+		loadFocusTexts(userId, today).catch(soft('fokus', [] as Array<{ text: string; source: FocusSource }>))
+	]);
 	const registration = registrationDays ? buildCoverage(registrationDays, today) : null;
 
 	const [digestInput, workouts] = await Promise.all([
@@ -363,6 +395,7 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 		todayOpen: todayItems.titles,
 		events: letterEvents,
 		registration,
+		registrationFocus: findRegistrationFocus(focusTexts),
 		hoursSinceLastVisit: lastVisit ? (now.getTime() - lastVisit.getTime()) / 3_600_000 : null,
 		sinceLastVisit: workouts
 			? {

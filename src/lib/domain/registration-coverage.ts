@@ -74,32 +74,75 @@ export function buildCoverage(
 	});
 }
 
-/** «Siste sju dager: mat 3, vekt 6, oppgaver 5, egenfrekvens 1 og lesing 0 dager.» */
-export function describeCoverage(coverage: readonly DomainCoverage[]): string {
-	const parts = coverage.map((c) => `${c.label.toLowerCase()} ${c.last7}`);
-	const joined = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} og ${parts[parts.length - 1]}` : parts[0];
-	return `Registrert siste sju dager: ${joined} dager.`;
+/**
+ * Hvilke registreringsområder brukeren har gjort til et FOKUS — ved å sette det
+ * som mål eller legge det på ukelista («Måltidslogg (7 dager)»).
+ *
+ * Brukeren ville ikke ha en daglig påminnelse om alt som ikke er registrert i
+ * dag, men en påminnelse om at registreringen er et valgt fokus. Mønstrene er
+ * derfor smale med vilje: «Redusere vekt til 85 kg» er et vektmål, ikke et mål
+ * om å VEIE seg, og «Lese eller leke med barna» handler ikke om boklesing. En
+ * bom her ville gjort et fokus brukeren aldri har valgt til en påminnelse.
+ */
+export const REGISTRATION_FOCUS_PATTERNS: Record<RegistrationDomain, RegExp> = {
+	mat: /m[åa]ltid|matlogg|logg(?:e|er)? mat|kostholdslogg/i,
+	vekt: /\bvei(?:e|er|ing|inger)\b|vektlogg/i,
+	oppgaver: /\boppgaver?\b.*\b(?:hak|logg|registrer)|(?:hak|logg|registrer)\w*\b.*\boppgaver?\b/i,
+	egenfrekvens: /egenfrekvens/i,
+	lesing: /\bbok(?:a|en|lesing)?\b|\bbøker(?:ne)?\b|\blese\b.*\bsider\b/i
+};
+
+export type FocusSource = 'mål' | 'ukeliste';
+
+export interface RegistrationFocus {
+	domain: RegistrationDomain;
+	/** Teksten brukeren skrev, slik den står i målet eller på ukelista. */
+	text: string;
+	source: FocusSource;
 }
 
-/** Områdene som ikke er registrert i dag, i fast rekkefølge. */
-export function missingToday(coverage: readonly DomainCoverage[]): string[] {
-	return coverage.filter((c) => !c.today).map((c) => c.label.toLowerCase());
+export function registrationDomainOf(text: string): RegistrationDomain | null {
+	for (const domain of REGISTRATION_DOMAINS) {
+		if (REGISTRATION_FOCUS_PATTERNS[domain].test(text)) return domain;
+	}
+	return null;
+}
+
+/** Ett fokus per område; et mål går foran et punkt på ukelista. */
+export function findRegistrationFocus(
+	texts: ReadonlyArray<{ text: string; source: FocusSource }>
+): RegistrationFocus[] {
+	const byDomain = new Map<RegistrationDomain, RegistrationFocus>();
+	for (const { text, source } of [...texts].sort((a, b) => (a.source === b.source ? 0 : a.source === 'mål' ? -1 : 1))) {
+		const domain = registrationDomainOf(text);
+		if (domain && !byDomain.has(domain)) byDomain.set(domain, { domain, text: text.trim(), source });
+	}
+	return REGISTRATION_DOMAINS.filter((d) => byDomain.has(d)).map((d) => byDomain.get(d)!);
 }
 
 /**
- * Hva mer registrering låser opp, med motorens egen terskel — eller null når
- * ingen terskel står igjen. Mat først: den dommen er den rikeste, og den som
- * oftest står stille fordi loggen er tynn.
+ * Hva mer registrering i ett område låser opp, med motorens egen terskel — eller
+ * null når ingen terskel står igjen.
  */
-export function nextUnlock(coverage: readonly DomainCoverage[]): string | null {
-	const mat = coverage.find((c) => c.domain === 'mat');
-	const matNeeded = Math.ceil(MIN_LOGGED_COVERAGE * COVERAGE_WINDOW_DAYS);
-	if (mat && mat.last14 < matNeeded) {
-		return `Mat er logget ${mat.last14} av de siste ${COVERAGE_WINDOW_DAYS} dagene. Med ${matNeeded} kan jeg si om energiregnskapet stemmer med vekta.`;
+export function unlockFor(domain: RegistrationDomain, coverage: DomainCoverage): string | null {
+	if (domain === 'mat') {
+		const needed = Math.ceil(MIN_LOGGED_COVERAGE * COVERAGE_WINDOW_DAYS);
+		if (coverage.last14 < needed) {
+			return `Med ${needed} av ${COVERAGE_WINDOW_DAYS} dager kan jeg si om energiregnskapet stemmer med vekta; nå er det ${coverage.last14}.`;
+		}
 	}
-	const vekt = coverage.find((c) => c.domain === 'vekt');
-	if (vekt && vekt.last7 < MIN_WEEK_WEIGH_INS) {
-		return `Du har veid deg ${vekt.last7} av de siste sju dagene. Med ${MIN_WEEK_WEIGH_INS} kan jeg si hva uka ble på vekta.`;
+	if (domain === 'vekt' && coverage.last7 < MIN_WEEK_WEIGH_INS) {
+		return `Med ${MIN_WEEK_WEIGH_INS} veiinger i uka kan jeg si hva uka ble på vekta.`;
 	}
 	return null;
+}
+
+/**
+ * «Måltidslogg (7 dager) står på ukelista. Mat er registrert 3 av de siste sju
+ * dagene.» Fokuset først, med brukerens egne ord — det er hen som valgte det.
+ */
+export function describeFocus(focus: RegistrationFocus, coverage: DomainCoverage): string {
+	const where = focus.source === 'mål' ? 'er et av målene dine' : 'står på ukelista';
+	const unlock = unlockFor(focus.domain, coverage);
+	return `${focus.text} ${where}. ${coverage.label} er registrert ${coverage.last7} av de siste sju dagene.${unlock ? ` ${unlock}` : ''}`;
 }
