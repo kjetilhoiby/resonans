@@ -33,8 +33,10 @@ import { loadTrainingDashboardData } from '$lib/server/training-dashboard';
  * `evaluateMilestones` utelates med vilje: en nudge-bygger skal ikke skrive til
  * basen. Samme regel som `buildHealthChatContext`.
  */
-async function loadWeek(userId: string): Promise<DigestWeek | null> {
-	const training = await loadTrainingDashboardData(userId).catch(() => null);
+export type TrainingDashboard = Awaited<ReturnType<typeof loadTrainingDashboardData>>;
+
+async function loadWeek(userId: string, preloaded?: TrainingDashboard | null): Promise<DigestWeek | null> {
+	const training = preloaded !== undefined ? preloaded : await loadTrainingDashboardData(userId).catch(() => null);
 	const budget = training?.states?.budget;
 	if (!budget) return null;
 
@@ -85,6 +87,11 @@ export async function gatherDigestInput(args: {
 	userId: string;
 	carryover: readonly string[];
 	now?: Date;
+	/**
+	 * Treningsdataene, når kalleren alt har hentet dem. Lasteren er tung, og
+	 * brevet trenger budsjettet selv — to kall ville regnet det samme to ganger.
+	 */
+	training?: TrainingDashboard | null;
 }): Promise<DigestNuggetInput> {
 	const { userId, carryover } = args;
 	const now = args.now ?? new Date();
@@ -93,7 +100,7 @@ export async function gatherDigestInput(args: {
 		getSickState(userId, now).catch(() => null),
 		loadStreaks(userId, { now }).catch(() => []),
 		readWeightDays(userId, { now }).catch(() => []),
-		loadWeek(userId).catch(() => null)
+		loadWeek(userId, args.training).catch(() => null)
 	]);
 
 	const streaks: DigestStreak[] = streakRows.map(({ definition, state }) => ({

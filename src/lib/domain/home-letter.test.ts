@@ -1,20 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildHomeLetter,
+	goalLine,
 	joinNorwegian,
 	letterGreeting,
-	MAX_LINES_PER_LENS,
-	type HomeLetterInput
+	SECTION_CAPS,
+	type HomeLetterInput,
+	type LetterGoal
 } from './home-letter';
 import type { DigestNugget } from './digest-nugget-rules';
 import type { WeightNugget } from './health/weight-nugget-rules';
 
 const base: HomeLetterInput = {
-	today: '2026-10-06',
+	today: '2026-10-08',
 	hour: 8,
 	sick: false,
+	goals: [],
+	rollingEffort: null,
 	digest: [],
 	weight: [],
+	lostItems: [],
+	unplacedWeek: [],
 	todayOpen: [],
 	events: [],
 	hoursSinceLastVisit: 2,
@@ -23,6 +29,38 @@ const base: HomeLetterInput = {
 
 const nugget = (kind: DigestNugget['kind'], sentence: string): DigestNugget => ({ kind, headline: sentence, sentence });
 const weight = (kind: WeightNugget['kind'], sentence: string): WeightNugget => ({ kind, headline: sentence, sentence });
+
+const weightGoal: LetterGoal = {
+	id: 'w',
+	title: 'Ned til 90 kg',
+	shape: 'state',
+	unit: 'kg',
+	startDate: '2026-08-01',
+	endDate: '2027-06-01',
+	startValue: 98,
+	currentValue: 94.1,
+	targetValue: 90,
+	rawSeries: [
+		{ date: '2026-08-01', value: 98 },
+		{ date: '2026-10-08', value: 94.1 }
+	]
+};
+
+const runGoal: LetterGoal = {
+	id: 'r',
+	title: 'Løp 300 km i høst',
+	shape: 'volume',
+	unit: 'km',
+	startDate: '2026-09-01',
+	endDate: '2026-11-30',
+	startValue: 0,
+	currentValue: 120,
+	targetValue: 300,
+	rawSeries: [
+		{ date: '2026-09-10', value: 60 },
+		{ date: '2026-10-01', value: 60 }
+	]
+};
 
 describe('letterGreeting', () => {
 	it('følger døgnet', () => {
@@ -33,43 +71,81 @@ describe('letterGreeting', () => {
 	});
 });
 
+describe('goalLine', () => {
+	it('sier hvor vektmålet står og hvor tempoet tar deg', () => {
+		const line = goalLine(weightGoal, '2026-10-08');
+		expect(line.section).toBe('maal');
+		expect(line.text).toMatch(/^Ned til 90 kg: 94,1 kg nå, målet er 90,0 kg\. På dagens tempo er du der rundt /);
+	});
+
+	it('akkumulerer løpemålet før datoen anslås', () => {
+		const line = goalLine(runGoal, '2026-10-08');
+		expect(line.text).toMatch(/^Løp 300 km i høst: 120 av 300 km\. /);
+	});
+});
+
 describe('buildHomeLetter', () => {
-	it('er tomt når reglene ikke har noe å si — et brev uten innhold lager ikke innhold', () => {
+	it('er tomt når kildene ikke har noe å si — et brev uten innhold lager ikke innhold', () => {
 		expect(buildHomeLetter(base).lines).toEqual([]);
 	});
 
-	it('legger påminnelser i «venter» og tilstander i «status»', () => {
+	it('legger målene først, så uka, så de løse trådene', () => {
 		const letter = buildHomeLetter({
 			...base,
-			digest: [nugget('streak-due', 'Løperekka forfaller i morgen.'), nugget('week-load', 'Uka er på plan.')]
+			goals: [weightGoal, runGoal],
+			rollingEffort: { spentLast7Days: 420, bandMin: 391, bandMax: 469 },
+			lostItems: ['Ring verkstedet']
 		});
-		expect(letter.lines.map((l) => [l.id, l.lens])).toEqual([
-			['digest:streak-due', 'venter'],
-			['digest:week-load', 'status']
-		]);
+		expect(letter.lines.map((l) => l.section)).toEqual(['maal', 'maal', 'uka', 'trader']);
+		expect(letter.lines[2].text).toBe('Siste sju dager: 420 i effort, innenfor rammen din (391–469).');
+		expect(letter.lines[3].text).toBe('Ring verkstedet står igjen på dager som har gått.');
 	});
 
-	it('tar bare den sterkeste vektsetningen inn, resten er valgt bort', () => {
+	it('bruker ikke kalenderuka, overliggerne fra i går eller ukas vekt — de er erstattet', () => {
 		const letter = buildHomeLetter({
 			...base,
-			weight: [weight('month-change', 'September ble ned 1,2 kg.'), weight('weigh-in-streak', '27 av 30 dager.')]
-		});
-		expect(letter.lines.map((l) => l.id)).toEqual(['weight:month-change']);
-		expect(letter.dropped.map((l) => l.id)).toEqual(['weight:weigh-in-streak']);
-	});
-
-	it(`kapper hver linse på ${MAX_LINES_PER_LENS} og viser resten som valgt bort`, () => {
-		const letter = buildHomeLetter({
-			...base,
-			digest: [nugget('streak-due', 'a.'), nugget('carryover', 'b.')],
-			todayOpen: ['Ring verkstedet', 'Handle'],
-			events: [
-				{ id: 'e1', title: 'Konsert', eventDate: '2026-10-09', startTime: '19:00', prep: [{ id: 'b', label: 'Barnevakt', done: false, doneAt: null }] }
+			digest: [
+				nugget('load-high', 'Ta en rolig dag.'),
+				nugget('carryover', 'Fra i går.'),
+				nugget('week-change', 'Uka på vekta.'),
+				nugget('week-load', 'Under ukas plan.')
 			]
 		});
-		const venter = letter.lines.filter((l) => l.lens === 'venter');
-		expect(venter).toHaveLength(MAX_LINES_PER_LENS);
-		expect(venter.map((l) => l.id)).toEqual(['digest:streak-due', 'digest:carryover', 'event-prep:e1']);
+		expect(letter.lines.map((l) => l.id)).toEqual(['digest:load-high']);
+		expect(letter.dropped.map((l) => l.id)).toEqual(['digest:carryover', 'digest:week-change', 'digest:week-load']);
+	});
+
+	it('viser vektkrydderet bare når det ikke finnes et vektmål', () => {
+		const nuggets = [weight('year-over-year', '2,2 kg under i fjor.')];
+		expect(buildHomeLetter({ ...base, weight: nuggets }).lines.map((l) => l.id)).toEqual(['weight:year-over-year']);
+		const withGoal = buildHomeLetter({ ...base, weight: nuggets, goals: [weightGoal] });
+		expect(withGoal.lines.map((l) => l.id)).toEqual(['goal:w']);
+		expect(withGoal.dropped.map((l) => l.id)).toEqual(['weight:year-over-year']);
+	});
+
+	it('navngir det som står på ukelista uten en dag', () => {
+		const letter = buildHomeLetter({ ...base, unplacedWeek: [{ label: 'Løp', count: 2 }, { label: 'Handle', count: 1 }] });
+		expect(letter.lines[0]).toMatchObject({ lens: 'venter', section: 'uka', text: 'På ukelista uten en dag: Løp ×2 og Handle.' });
+	});
+
+	it(`kapper de løse trådene på ${SECTION_CAPS.trader} og viser resten som valgt bort`, () => {
+		const letter = buildHomeLetter({
+			...base,
+			digest: [nugget('streak-due', 'Løperekka forfaller i morgen.')],
+			lostItems: ['Ring verkstedet'],
+			todayOpen: ['Handle'],
+			events: [
+				{
+					id: 'e1',
+					title: 'Konsert',
+					eventDate: '2026-10-10',
+					startTime: '19:00',
+					prep: [{ id: 'b', label: 'Barnevakt', done: false, doneAt: null }]
+				}
+			]
+		});
+		const trader = letter.lines.filter((l) => l.section === 'trader');
+		expect(trader.map((l) => l.id)).toEqual(['digest:streak-due', 'event-prep:e1', 'lost-items']);
 		expect(letter.dropped.map((l) => l.id)).toEqual(['today-open']);
 	});
 
@@ -80,7 +156,7 @@ describe('buildHomeLetter', () => {
 				{
 					id: 'e1',
 					title: 'Konsert',
-					eventDate: '2026-10-09',
+					eventDate: '2026-10-11',
 					startTime: '19:00',
 					prep: [
 						{ id: 'b', label: 'Barnevakt', done: false, doneAt: null },
@@ -97,11 +173,11 @@ describe('buildHomeLetter', () => {
 		const letter = buildHomeLetter({
 			...base,
 			events: [
-				{ id: 'e1', title: 'Kamp', eventDate: '2026-10-07', startTime: null, prep: [] },
-				{ id: 'e2', title: 'Teater', eventDate: '2026-10-12', startTime: '18:00', prep: [] }
+				{ id: 'e1', title: 'Kamp', eventDate: '2026-10-09', startTime: null, prep: [] },
+				{ id: 'e2', title: 'Teater', eventDate: '2026-10-14', startTime: '18:00', prep: [] }
 			]
 		});
-		expect(letter.lines.map((l) => [l.text, l.lens])).toEqual([['I morgen: Kamp.', 'status']]);
+		expect(letter.lines.map((l) => [l.text, l.section])).toEqual([['I morgen: Kamp.', 'ellers']]);
 	});
 
 	it('sier «siden sist» bare etter et fravær, og bare når noe har skjedd', () => {
@@ -111,11 +187,17 @@ describe('buildHomeLetter', () => {
 		expect(buildHomeLetter({ ...away, sinceLastVisit: { workouts: 0, distanceKm: 0 } }).lines).toEqual([]);
 	});
 
-	it('ber ikke om noe når brukeren er syk, og viser det reglene ellers ville sagt', () => {
-		const letter = buildHomeLetter({ ...base, sick: true, digest: [nugget('streak-due', 'Løperekka forfaller.')] });
-		expect(letter.lines.map((l) => l.id)).toEqual(['sick']);
-		expect(letter.lines.every((l) => l.lens === 'status')).toBe(true);
-		expect(letter.dropped.map((l) => l.id)).toEqual(['digest:streak-due']);
+	it('ber ikke om noe når brukeren er syk, men lar målene stå', () => {
+		const letter = buildHomeLetter({
+			...base,
+			sick: true,
+			goals: [weightGoal],
+			digest: [nugget('streak-due', 'Løperekka forfaller.')],
+			lostItems: ['Ring verkstedet']
+		});
+		expect(letter.lines.map((l) => l.id)).toEqual(['sick', 'goal:w']);
+		expect(letter.lines.some((l) => l.lens === 'venter')).toBe(false);
+		expect(letter.dropped.map((l) => l.id)).toEqual(['digest:streak-due', 'lost-items']);
 	});
 });
 

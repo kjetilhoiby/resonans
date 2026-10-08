@@ -2,17 +2,21 @@ import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import {
-	getRunningSummaryForRange,
+	isRunningGoal,
+	isWeightGoal,
+	loadRunningProgress,
+	loadWeightGoalProgress,
+	type RunningProgress
+} from '$lib/server/goal-trajectories';
+import {
 	readBestEffort,
 	readBodyComposition,
 	readCategorySpend,
 	readRestingHeartRate,
 	readWeeklyEffort,
-	readWeightProgress,
 	type WeightProgress
 } from '$lib/server/goal-progress';
 import { buildMetricGoalEval, type MetricGoalEval } from '$lib/domain/metric-goal-eval';
-import { readGoalTargetValue } from '$lib/domain/goal-tracks';
 
 /** grocery_spend er category_spend bundet til denne kategorien. */
 const GROCERY_CATEGORY = 'dagligvarer';
@@ -51,53 +55,22 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const userGoals = allGoals.filter((g) => !(g.metadata as any)?.isPlanningGoal);
 	console.log(`[perf][goals/load] user=${userId} step=goals_query ms=${(performance.now() - t0).toFixed(0)} count=${userGoals.length}`);
 
-	// For goals with running_distance metric and dates, fetch accumulated km
-	const runningGoals = userGoals.filter((g) => {
-		const meta = g.metadata as any;
-		return meta?.metricId === 'running_distance' && (meta?.startDate || meta?.goalTrack);
-	});
-
-	let sensorProgressMap: Record<string, { currentKm: number; targetKm: number; startDate: string; endDate: string; dailyKm: { date: string; km: number }[] }> = {};
-
-	// Fetch running km for each goal individually to avoid loading unnecessary historical data
+	// Løpe- og vektmålenes fremdrift leses gjennom `goal-trajectories.ts`, som
+	// hjemskjermens brev også bruker — samme utvalg og samme vindu begge steder.
+	const runningGoals = userGoals.filter(isRunningGoal);
+	let sensorProgressMap: Record<string, RunningProgress> = {};
 	for (const goal of runningGoals) {
-		const meta = goal.metadata as any;
-		const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
-		const endDate = meta?.endDate ? new Date(meta.endDate) : new Date();
-		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
-
 		const tRun = performance.now();
-		const summary = await getRunningSummaryForRange(userId, startDate, endDate);
-		console.log(`[perf][goals/load] user=${userId} step=running_summary ms=${(performance.now() - tRun).toFixed(0)} goal=${goal.id} days=${summary.dailyKm.length}`);
-		sensorProgressMap[goal.id] = { ...summary, targetKm };
+		const progress = await loadRunningProgress(userId, goal);
+		console.log(`[perf][goals/load] user=${userId} step=running_summary ms=${(performance.now() - tRun).toFixed(0)} goal=${goal.id} days=${progress.dailyKm.length}`);
+		sensorProgressMap[goal.id] = progress;
 	}
 
-	// For weight_change goals, fetch the most recent weight measurement.
-	// NB: `startValue` er IKKE et krav her. Mål opprettet uten baseline (chatten kunne
-	// ikke sende den før 23. august 2026) ble ellers filtrert bort i det stille og
-	// havnet under «Uten måling»; `readWeightProgress` faller tilbake på første
-	// måling i vinduet. Målverdien må finnes — uten den er det ingenting å måle mot.
-	const weightGoals = userGoals
-		.map((g) => ({ goal: g, targetValue: readGoalTargetValue(g.metadata) }))
-		.filter(
-			(g): g is { goal: (typeof userGoals)[number]; targetValue: number } =>
-				(g.goal.metadata as any)?.metricId === 'weight_change' && g.targetValue !== null
-		);
-
+	const weightGoals = userGoals.filter(isWeightGoal);
 	let weightProgressMap: Record<string, WeightProgress> = {};
-
-	for (const { goal, targetValue } of weightGoals) {
-		const meta = goal.metadata as any;
-		const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
-		const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
-
+	for (const goal of weightGoals) {
 		const tW = performance.now();
-		const progress = await readWeightProgress(userId, {
-			startDate,
-			endDate,
-			startWeight: typeof meta?.startValue === 'number' ? meta.startValue : null,
-			targetValue
-		});
+		const progress = await loadWeightGoalProgress(userId, goal);
 		console.log(`[perf][goals/load] user=${userId} step=weight_query ms=${(performance.now() - tW).toFixed(0)} goal=${goal.id}`);
 		if (progress) weightProgressMap[goal.id] = progress;
 	}

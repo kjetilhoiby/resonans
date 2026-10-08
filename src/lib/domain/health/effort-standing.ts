@@ -79,6 +79,53 @@ export function describeBudgetStanding(
 	};
 }
 
+/**
+ * De sju siste dagene mot ukesbåndet — løpende, ikke kalenderuka.
+ *
+ * Kalenderuka står på null hver mandag og sier «under ukas plan — rom igjen»
+ * hver mandag morgen, uansett hvor mye du trente i helga. Det er et regnskap,
+ * ikke noe å styre etter. Sju dager bakover er sammenlignbart med båndet, som
+ * er bygget av summer over sju dager, og det glir med deg i stedet for å
+ * nullstilles. Brukes av hjemskjermens brev; budsjettkortet på Trening viser
+ * fortsatt kalenderuka, fordi progresjonsplanen er lagt per uke.
+ *
+ * Samme regel som budsjettet: over båndet er et regnskap, ikke et helsevarsel.
+ */
+export function describeRollingEffort(
+	spentLast7Days: number,
+	bandMin: number,
+	bandMax: number,
+	sick = false
+): BudgetVerdict {
+	const band = `${bandMin}–${bandMax}`;
+	if (sick) {
+		return {
+			standing: spentLast7Days > bandMax ? 'over' : 'i_band',
+			label: 'Sykeperiode',
+			text: `Du er meldt syk, så rammen er senket til ${band}. Siste sju dager: ${spentLast7Days}. Ingenting kreves.`
+		};
+	}
+	if (spentLast7Days < bandMin) {
+		return {
+			standing: 'under',
+			label: 'Under rammen',
+			text: `Siste sju dager: ${spentLast7Days} i effort, under rammen din (${band}).`
+		};
+	}
+	if (spentLast7Days > bandMax) {
+		return {
+			standing: 'over',
+			label: 'Over rammen',
+			text: `Siste sju dager: ${spentLast7Days} i effort, over rammen din (${band}). Rammen er et budsjett, ikke en grense.`
+		};
+	}
+	return {
+		standing: 'i_band',
+		label: 'I rammen',
+		text: `Siste sju dager: ${spentLast7Days} i effort, innenfor rammen din (${band}).`
+	};
+}
+
 export type LoadLevel = 'rolig' | 'normal' | 'høy';
 
 export interface LoadVerdict {

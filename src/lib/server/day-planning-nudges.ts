@@ -137,7 +137,7 @@ function addDaysIsoDate(isoDate: string, days: number) {
 	return date.toISOString().slice(0, 10);
 }
 
-function contextForDay(isoDate: string) {
+export function contextForDay(isoDate: string) {
 	const weekKey = getIsoWeekDashedFromIsoDate(isoDate);
 	if (!weekKey) return null;
 	return `week:${weekKey}:day:${isoDate}`;

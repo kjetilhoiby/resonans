@@ -253,3 +253,42 @@ export function describeGoalProjection(
 			return null;
 	}
 }
+
+/**
+ * Prosjekterer og beskriver et mål ut fra dagsverdier, slik flaten tegner det.
+ *
+ * For et volummål er dagsverdiene DAGENS bidrag (km løpt den dagen), og
+ * oppnåelsen er dagen SUMMEN passerte målet — serien må derfor akkumuleres
+ * før `projectGoal` leter etter passeringen. Et tilstandsmål (vekt) sendes
+ * som det er. Delt av `/plan/mal` og hjemskjermens brev, så de to ikke kan
+ * gi ulike datoer for samme mål.
+ */
+export function describeGoalTrajectory(input: {
+	startDate: string;
+	endDate: string;
+	startValue: number;
+	currentValue: number;
+	targetValue: number;
+	today: string;
+	rawSeries: ReadonlyArray<{ date: string; value: number }>;
+	shape: GoalShape;
+}): { label: string; tone: 'ahead' | 'behind' | 'neutral' } | null {
+	let running = input.shape === 'volume' ? input.startValue : 0;
+	const series = input.rawSeries.map((point) => {
+		if (input.shape !== 'volume') return point;
+		running += point.value;
+		return { date: point.date, value: running };
+	});
+	return describeGoalProjection(
+		projectGoal({
+			startDate: input.startDate,
+			endDate: input.endDate,
+			startValue: input.startValue,
+			currentValue: input.currentValue,
+			targetValue: input.targetValue,
+			today: input.today,
+			series
+		}),
+		{ today: input.today, shape: input.shape }
+	);
+}

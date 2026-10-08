@@ -160,21 +160,37 @@ export function computeEffortBudget(
 	const thisWeek = counted.filter((w) => w.date >= thisMonday && w.date <= today);
 	const spentThisWeek = Math.round(sumEffort(thisWeek));
 
+	// Løpende sju dager, samme grunnlag som `spentThisWeek`. Båndet er bygget av
+	// summer over sju dager, så de to er sammenlignbare — og i motsetning til
+	// kalenderuka står den ikke på null hver mandag morgen.
+	const sevenDaysAgo = addDays(today, -6);
+	const spentLast7Days = Math.round(sumEffort(counted.filter((w) => w.date >= sevenDaysAgo && w.date <= today)));
+
 	// Akutt/kronisk: sum(3d) mot 3 × dagsnitt(30d). Krever ≥ 14 dagers historikk.
+	//
+	// Sykedager holdes UTENFOR det kroniske snittet, både dagen og effort den
+	// dagen — samme regel som ankeret over. Fram til oktober 2026 telte de som
+	// nuller i nevneren, så den første rolige turen etter en influensa ga
+	// «1,99× over snittet — ta en rolig dag»: snittet var dratt ned av ukene i
+	// senga, ikke løftet av turen. Det akutte vinduet er urørt; det spør hva du
+	// faktisk gjorde de tre siste dagene.
 	const threeDaysAgo = addDays(today, -2); // inkluderer i dag → 3 dager
 	const thirtyDaysAgo = addDays(today, -29);
 	const acute = sumEffort(counted.filter((w) => w.date >= threeDaysAgo && w.date <= today));
-	const chronicWindow = counted.filter((w) => w.date >= thirtyDaysAgo && w.date <= today);
-	const chronicSum = sumEffort(chronicWindow);
 	const oldestDate = counted.length > 0 ? counted[0].date : today;
+	const historyStart = oldestDate > thirtyDaysAgo ? oldestDate : thirtyDaysAgo;
+	const chronicWindow = counted.filter((w) => w.date >= historyStart && w.date <= today && !sick.has(w.date));
+	const chronicSum = sumEffort(chronicWindow);
 	const historyDays = Math.min(
 		30,
 		Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${oldestDate}T00:00:00Z`)) / 86400000) + 1
 	);
+	const sickDaysInWindow = [...sick].filter((d) => d >= historyStart && d <= today).length;
+	const chronicDays = historyDays - sickDaysInWindow;
 
 	let acuteChronicRatio: number | null = null;
-	if (historyDays >= MIN_HISTORY_DAYS_FOR_RATIO && chronicSum > 0) {
-		const dailyChronic = chronicSum / historyDays;
+	if (chronicDays >= MIN_HISTORY_DAYS_FOR_RATIO && chronicSum > 0) {
+		const dailyChronic = chronicSum / chronicDays;
 		acuteChronicRatio = Math.round((acute / (3 * dailyChronic)) * 100) / 100;
 	}
 
@@ -184,6 +200,7 @@ export function computeEffortBudget(
 		bandMin,
 		bandMax,
 		spentThisWeek,
+		spentLast7Days,
 		remainingMin: Math.max(0, bandMin - spentThisWeek),
 		remainingMax: Math.max(0, bandMax - spentThisWeek),
 		acuteChronicRatio,

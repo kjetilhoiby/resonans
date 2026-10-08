@@ -1,38 +1,60 @@
 /**
  * Brevet på hjemskjermen — PROTOTYPE. Se `docs/changelog/2026-10-06-brev-prototype.md`.
  *
- * Et brev regner ingenting selv. Det LESER reglene som alt lager push-varslene
- * (`digest-nugget-rules.ts`, `weight-nugget-rules.ts`) og arrangementenes
- * forberedelser, og velger blant dem. Samme regler bak varselet og brevet betyr
- * at de aldri kan si to ulike ting.
+ * Et brev regner ingenting selv. Det LESER motorene som alt finnes — målene
+ * (`describeGoalTrajectory`, samme som `/plan/mal`), effort-budsjettet,
+ * dagsoversiktens regler, arrangementenes forberedelser og dagsplanene — og
+ * velger blant dem.
  *
- * Hver linje har en LINSE, og den er spørsmålet prototypen finnes for å
- * besvare: brukeren var redd brevet ville bli en innboks med rød prikk.
- * - `venter` er det som ber om en handling (en rekke som ryker, et åpent punkt,
- *   en barnevakt som mangler). Det er påminnelser, og det er dem som kan føles
- *   som en innboks.
- * - `status` er hvor du står (uka, vekta, siden sist). Det ber ikke om noe.
- * Flaten lar brukeren se de to hver for seg og sammen, med sine egne data.
+ * ## Styring, ikke status (versjon 2, 8. oktober 2026)
  *
- * Ingen tellinger, ingen ulest-markør: et brev akkumulerer ikke. Det som ikke
+ * Første utgave valgte blant push-krydderne og ga «1,99× over snittet siste 30
+ * — ta en rolig dag», «Under ukas plan (391–469) — det er rom igjen» og «2,2 kg
+ * under i fjor på samme dato». Brukerens dom: ingen av dem er styringssignaler.
+ * Snittet var dratt ned av en sykeperiode, kalenderuka står på null hver
+ * mandag, og vekta har et MÅL som ikke ble nevnt. Brevet er derfor bygget rundt
+ * det brukeren styrer etter:
+ *
+ * - **Målene** — hvert løpe- og vektmål med frist, og hvor tempoet tar deg.
+ * - **Uka** — de sju siste dagene mot rammen (løpende, ikke kalenderuka), og det
+ *   som står på ukelista uten en dag.
+ * - **Løse tråder** — punkter som ble liggende på dager som har gått, og
+ *   arrangementer der noe mangler.
+ *
+ * Hver linje har i tillegg en LINSE: `venter` ber om en handling, `status` gjør
+ * det ikke. Den finnes fordi brukeren var redd brevet ville bli en innboks med
+ * rød prikk, og flaten lar de to ses hver for seg.
+ *
+ * Ingen tellinger og ingen ulest-markør: et brev akkumulerer ikke. Det som ikke
  * fikk plass havner i `dropped`, så prototypen kan vise hva som ble valgt bort.
  */
 
 import type { DigestNugget } from '$lib/domain/digest-nugget-rules';
 import { describeOpenItems } from '$lib/domain/digest-nugget-rules';
 import type { WeightNugget } from '$lib/domain/health/weight-nugget-rules';
+import { describeRollingEffort } from '$lib/domain/health/effort-standing';
+import { describeGoalTrajectory, type GoalShape } from '$lib/domain/goals/goal-projection';
 import { prepStanding, type EventPrepItem } from '$lib/domain/events/prep';
 import { daysBetween } from '$lib/domain/events/event-fields';
 
 export type LetterLens = 'venter' | 'status';
+export type LetterSection = 'maal' | 'uka' | 'trader' | 'ellers';
+
+export const SECTION_TITLES: Record<LetterSection, string> = {
+	maal: 'Målene',
+	uka: 'Uka',
+	trader: 'Løse tråder',
+	ellers: 'Ellers'
+};
 
 export interface LetterLine {
 	/** Stabil nøkkel for `{#each}` — regelens navn, ikke teksten. */
 	id: string;
 	lens: LetterLens;
+	section: LetterSection;
 	text: string;
 	/** Hvilken motor setningen kom fra. Vises i prototypen, ikke i et ferdig brev. */
-	source: 'dagsoversikt' | 'vekt' | 'arrangement' | 'dagsplan' | 'siden-sist';
+	source: 'mål' | 'effort' | 'dagsoversikt' | 'vekt' | 'arrangement' | 'dagsplan' | 'ukeliste' | 'siden-sist';
 	href?: string;
 }
 
@@ -45,16 +67,38 @@ export interface LetterEvent {
 	prep: EventPrepItem[];
 }
 
+/** Et løpe- eller vektmål med frist, med tallene `/plan/mal` regner på. */
+export interface LetterGoal {
+	id: string;
+	title: string;
+	shape: GoalShape;
+	unit: 'km' | 'kg';
+	startDate: string;
+	endDate: string;
+	startValue: number;
+	currentValue: number;
+	targetValue: number;
+	/** Dagsverdier: km per dag for volum, målt vekt for tilstand. */
+	rawSeries: ReadonlyArray<{ date: string; value: number }>;
+}
+
 export interface HomeLetterInput {
 	/** Dagens Oslo-dato, `YYYY-MM-DD`. */
 	today: string;
 	/** Oslo-timen, 0–23. Avgjør hilsenen og ingenting annet. */
 	hour: number;
 	sick: boolean;
-	/** `digestNuggets(...)`, sterkest først. */
+	goals: readonly LetterGoal[];
+	/** De sju siste dagene mot rammen. Null uten budsjett. */
+	rollingEffort: { spentLast7Days: number; bandMin: number; bandMax: number } | null;
+	/** `digestNuggets(...)`, sterkest først. Brevet bruker `streak-due` og `load-high`. */
 	digest: readonly DigestNugget[];
-	/** `weightNuggets(...)`, sterkest først. */
+	/** `weightNuggets(...)`. Brukes bare når det ikke finnes et vektmål. */
 	weight: readonly WeightNugget[];
+	/** Åpne punkter på dager som har gått, siste sju dager. */
+	lostItems: readonly string[];
+	/** Punkter på ukelista uten en dag, gruppert («Løp» ×2). */
+	unplacedWeek: ReadonlyArray<{ label: string; count: number }>;
 	/** Åpne punkter på dagens dagsplan. */
 	todayOpen: readonly string[];
 	/** Kommende arrangementer, stigende. */
@@ -68,12 +112,15 @@ export interface HomeLetterInput {
 export interface HomeLetter {
 	greeting: string;
 	lines: LetterLine[];
-	/** Det reglene hadde å si, men som ikke fikk plass. */
+	/** Det kildene hadde å si, men som ikke fikk plass eller ikke er styringssignaler. */
 	dropped: LetterLine[];
 }
 
-/** Hvor mange linjer hver linse får. Et brev som er en liste er ikke et brev. */
-export const MAX_LINES_PER_LENS = 3;
+/**
+ * Hvor mange linjer hver del får. Målene er brukerens egne og får flest; et brev
+ * som er en liste er ikke et brev.
+ */
+export const SECTION_CAPS: Record<LetterSection, number> = { maal: 4, uka: 3, trader: 3, ellers: 2 };
 
 /**
  * Hvor lenge borte før «siden sist» er en nyhet. Et døgn minus litt: den som
@@ -87,6 +134,9 @@ export const EVENT_PREP_HORIZON_DAYS = 14;
 /** Hvor langt fram et arrangement nevnes uten at noe mangler: i dag og i morgen. */
 export const EVENT_SOON_DAYS = 1;
 
+/** Hvor langt tilbake punkter som ble liggende på en dag, telles. */
+export const LOST_ITEMS_DAYS = 7;
+
 export function letterGreeting(hour: number): string {
 	if (hour >= 5 && hour < 10) return 'God morgen.';
 	if (hour >= 10 && hour < 17) return 'Hei.';
@@ -94,19 +144,45 @@ export function letterGreeting(hour: number): string {
 	return 'Sent oppe.';
 }
 
-const DIGEST_LENS: Record<DigestNugget['kind'], LetterLens> = {
-	'streak-due': 'venter',
-	carryover: 'venter',
-	// «Ta en rolig dag» er et råd, men det sier hvor kroppen står — ingen oppgave.
-	'load-high': 'status',
-	'week-change': 'status',
-	'week-load': 'status'
-};
+export function joinNorwegian(items: readonly string[]): string {
+	if (items.length <= 1) return items[0] ?? '';
+	return `${items.slice(0, -1).join(', ')} og ${items[items.length - 1]}`;
+}
+
+function formatNumber(value: number, decimals: number): string {
+	return value.toLocaleString('nb-NO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
 
 function dayWord(days: number): string {
 	if (days === 0) return 'I dag';
 	if (days === 1) return 'I morgen';
 	return `Om ${days} dager`;
+}
+
+/** «Ned til 90 kg: 94,1 kg nå. På dagens tempo er du der rundt …» */
+export function goalLine(goal: LetterGoal, today: string): LetterLine {
+	const progress =
+		goal.unit === 'km'
+			? `${formatNumber(goal.currentValue, 0)} av ${formatNumber(goal.targetValue, 0)} km`
+			: `${formatNumber(goal.currentValue, 1)} kg nå, målet er ${formatNumber(goal.targetValue, 1)} kg`;
+	const trajectory = describeGoalTrajectory({
+		startDate: goal.startDate,
+		endDate: goal.endDate,
+		startValue: goal.startValue,
+		currentValue: goal.currentValue,
+		targetValue: goal.targetValue,
+		today,
+		rawSeries: goal.rawSeries,
+		shape: goal.shape
+	});
+	return {
+		id: `goal:${goal.id}`,
+		lens: 'status',
+		section: 'maal',
+		text: `${goal.title}: ${progress}.${trajectory ? ` ${trajectory.label}` : ''}`,
+		source: 'mål',
+		href: '/plan/mal'
+	};
 }
 
 function eventLines(events: readonly LetterEvent[], today: string): LetterLine[] {
@@ -120,6 +196,7 @@ function eventLines(events: readonly LetterEvent[], today: string): LetterLine[]
 			lines.push({
 				id: `event-prep:${event.id}`,
 				lens: 'venter',
+				section: 'trader',
 				text: `${when}. Mangler ${joinNorwegian(standing.openLabels.map((l) => l.toLowerCase()))}.`,
 				source: 'arrangement',
 				href: '/arrangementer'
@@ -128,6 +205,7 @@ function eventLines(events: readonly LetterEvent[], today: string): LetterLine[]
 			lines.push({
 				id: `event-soon:${event.id}`,
 				lens: 'status',
+				section: 'ellers',
 				text: `${when}.`,
 				source: 'arrangement',
 				href: '/arrangementer'
@@ -137,15 +215,6 @@ function eventLines(events: readonly LetterEvent[], today: string): LetterLine[]
 	return lines;
 }
 
-export function joinNorwegian(items: readonly string[]): string {
-	if (items.length <= 1) return items[0] ?? '';
-	return `${items.slice(0, -1).join(', ')} og ${items[items.length - 1]}`;
-}
-
-function formatKm(km: number): string {
-	return km.toLocaleString('nb-NO', { maximumFractionDigits: km < 10 ? 1 : 0 });
-}
-
 function sinceLastVisitLine(input: HomeLetterInput): LetterLine | null {
 	const hours = input.hoursSinceLastVisit;
 	const since = input.sinceLastVisit;
@@ -153,83 +222,119 @@ function sinceLastVisitLine(input: HomeLetterInput): LetterLine | null {
 	const days = Math.round(hours / 24);
 	const ago = days <= 1 ? 'i går' : `for ${days} dager siden`;
 	const count = since.workouts === 1 ? 'én økt' : `${since.workouts} økter`;
-	const km = since.distanceKm >= 0.5 ? `, ${formatKm(since.distanceKm)} km` : '';
+	const km =
+		since.distanceKm >= 0.5
+			? `, ${since.distanceKm.toLocaleString('nb-NO', { maximumFractionDigits: since.distanceKm < 10 ? 1 : 0 })} km`
+			: '';
 	return {
 		id: 'since-last-visit',
 		lens: 'status',
+		section: 'ellers',
 		text: `Siden du var innom ${ago}: ${count}${km}.`,
 		source: 'siden-sist'
 	};
 }
 
+function unplacedLine(unplaced: HomeLetterInput['unplacedWeek']): LetterLine | null {
+	if (unplaced.length === 0) return null;
+	const named = unplaced.map((u) => (u.count > 1 ? `${u.label} ×${u.count}` : u.label));
+	return {
+		id: 'week-unplaced',
+		lens: 'venter',
+		section: 'uka',
+		text: `På ukelista uten en dag: ${joinNorwegian(named)}.`,
+		source: 'ukeliste',
+		href: '/ukeplan'
+	};
+}
+
 export function buildHomeLetter(input: HomeLetterInput): HomeLetter {
 	const greeting = letterGreeting(input.hour);
-
 	const candidates: LetterLine[] = [];
-	const sinceLine = sinceLastVisitLine(input);
-	if (sinceLine) candidates.push(sinceLine);
+	const dropped: LetterLine[] = [];
+
+	// ── Målene ──
+	for (const goal of input.goals) candidates.push(goalLine(goal, input.today));
+	const hasWeightGoal = input.goals.some((g) => g.unit === 'kg');
+
+	// ── Uka ──
+	if (input.rollingEffort) {
+		const verdict = describeRollingEffort(
+			input.rollingEffort.spentLast7Days,
+			input.rollingEffort.bandMin,
+			input.rollingEffort.bandMax,
+			input.sick
+		);
+		candidates.push({ id: 'effort-7d', lens: 'status', section: 'uka', text: verdict.text, source: 'effort', href: '/tema/helse' });
+	}
+	const unplaced = unplacedLine(input.unplacedWeek);
+	if (unplaced) candidates.push(unplaced);
 
 	for (const nugget of input.digest) {
-		candidates.push({
+		const line: LetterLine = {
 			id: `digest:${nugget.kind}`,
-			lens: DIGEST_LENS[nugget.kind],
+			lens: nugget.kind === 'streak-due' ? 'venter' : 'status',
+			section: nugget.kind === 'streak-due' ? 'trader' : 'uka',
 			text: nugget.sentence,
 			source: 'dagsoversikt'
-		});
+		};
+		// Belastningen er det eneste restitusjonssignalet, og den er nå regnet uten
+		// sykedagene. De tre andre er erstattet: overliggerne av sju dagers løse
+		// tråder, kalenderuka av de løpende sju dagene, og ukas vekt av målet.
+		if (nugget.kind === 'streak-due' || nugget.kind === 'load-high') candidates.push(line);
+		else dropped.push(line);
 	}
 
-	// Bare den sterkeste vektsetningen: rekordene er kontinuerlige, og tre av dem
-	// om samme kurve er metning, ikke informasjon (samme grunn som PUSH_RANK).
-	const [topWeight, ...restWeight] = input.weight;
-	if (topWeight) {
-		candidates.push({ id: `weight:${topWeight.kind}`, lens: 'status', text: topWeight.sentence, source: 'vekt' });
-	}
-
-	// Arrangementene før dagsplanen: barnevakt ordnes uker i forveien, og det
-	// er det punktet som er dyrt å glemme. Dagsplanen satte brukeren selv.
+	// ── Løse tråder ──
 	candidates.push(...eventLines(input.events, input.today));
-
+	const lost = describeOpenItems(input.lostItems, 'på dager som har gått');
+	if (lost) {
+		candidates.push({ id: 'lost-items', lens: 'venter', section: 'trader', text: lost.sentence, source: 'dagsplan', href: '/ukeplan' });
+	}
 	const todayOpen = describeOpenItems(input.todayOpen, 'på dagens plan');
 	if (todayOpen) {
-		candidates.push({ id: 'today-open', lens: 'venter', text: todayOpen.sentence, source: 'dagsplan', href: '/ukeplan' });
+		candidates.push({ id: 'today-open', lens: 'venter', section: 'trader', text: todayOpen.sentence, source: 'dagsplan', href: '/ukeplan' });
 	}
 
-	const extraWeight: LetterLine[] = restWeight.map((n) => ({
-		id: `weight:${n.kind}`,
-		lens: 'status',
-		text: n.sentence,
-		source: 'vekt'
-	}));
+	// ── Ellers ──
+	const sinceLine = sinceLastVisitLine(input);
+	if (sinceLine) candidates.push(sinceLine);
+	// Vektkrydderet bare uten et vektmål: med målet er det målet som er spørsmålet,
+	// og «2,2 kg under i fjor» svarer på et annet.
+	input.weight.forEach((nugget, i) => {
+		const line: LetterLine = { id: `weight:${nugget.kind}`, lens: 'status', section: 'ellers', text: nugget.sentence, source: 'vekt' };
+		if (!hasWeightGoal && i === 0) candidates.push(line);
+		else dropped.push(line);
+	});
 
-	// Syk: samme regel som dagsoversikten, som ikke sender noe da. Ett brev som
-	// ber om handling når man ligger nede, er nettopp innboksen brukeren fryktet.
+	// Syk: dagsoversikten sender ingenting da. Et brev som ber om handling når man
+	// ligger nede, er nettopp innboksen brukeren fryktet — målene får stå, de ber
+	// ikke om noe.
 	if (input.sick) {
+		const kept = candidates.filter((l) => l.section === 'maal');
 		return {
 			greeting,
 			lines: [
-				{
-					id: 'sick',
-					lens: 'status',
-					text: 'Du er registrert syk. Ingenting her haster.',
-					source: 'dagsoversikt'
-				}
+				{ id: 'sick', lens: 'status', section: 'uka', text: 'Du er registrert syk. Ingenting her haster.', source: 'dagsoversikt' },
+				...kept
 			],
-			dropped: [...candidates, ...extraWeight]
+			dropped: [...candidates.filter((l) => l.section !== 'maal'), ...dropped]
 		};
 	}
 
+	const order: LetterSection[] = ['maal', 'uka', 'trader', 'ellers'];
 	const lines: LetterLine[] = [];
-	const dropped: LetterLine[] = [];
-	const perLens: Record<LetterLens, number> = { venter: 0, status: 0 };
-	for (const line of candidates) {
-		if (perLens[line.lens] < MAX_LINES_PER_LENS) {
-			lines.push(line);
-			perLens[line.lens] += 1;
-		} else {
-			dropped.push(line);
+	const perSection: Record<LetterSection, number> = { maal: 0, uka: 0, trader: 0, ellers: 0 };
+	for (const section of order) {
+		for (const line of candidates.filter((l) => l.section === section)) {
+			if (perSection[section] < SECTION_CAPS[section]) {
+				lines.push(line);
+				perSection[section] += 1;
+			} else {
+				dropped.push(line);
+			}
 		}
 	}
-	dropped.push(...extraWeight);
 
 	return { greeting, lines, dropped };
 }

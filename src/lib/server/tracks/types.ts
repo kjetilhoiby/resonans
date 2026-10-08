@@ -84,9 +84,14 @@ export interface EffortBudget {
 	bandMin: number;
 	bandMax: number;
 	spentThisWeek: number;
+	/** Løpende sju dager (i dag og seks dager bak), samme grunnlag som `spentThisWeek`. */
+	spentLast7Days: number;
 	remainingMin: number;
 	remainingMax: number;
-	/** sum(effort siste 3 dager) / (3 × dagsnitt siste 30). Null ved < 14 dagers historikk. */
+	/**
+	 * sum(effort siste 3 dager) / (3 × dagsnitt siste 30). Sykedager holdes utenfor
+	 * snittet. Null ved < 14 friske dager med historikk.
+	 */
 	acuteChronicRatio: number | null;
 	restRecommended: boolean;
 	deload: boolean;

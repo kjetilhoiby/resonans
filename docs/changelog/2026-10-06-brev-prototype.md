@@ -1,7 +1,7 @@
 # Brevet: en prototype med ekte data
 
 Dato: 2026-10-06
-Status: til utprøving
+Status: til utprøving (fase 2)
 
 ## Kontekst
 
@@ -42,6 +42,46 @@ egen side med brukerens ekte data, ikke en endring av hjemskjermen.
 - **Inngangen** er en midlertidig ✉-lenke i hjemskjermens topprad. En PWA har
   ingen adresselinje, så uten den kan siden ikke prøves på telefonen.
 
+## Fase 2: styringssignaler (8. oktober 2026)
+
+Første utgave ga tre linjer en morgen: «Siste 3 dager ligger 1,99× over
+snittet siste 30 — ta en rolig dag», «Under ukas plan (391–469) — det er rom
+igjen» og «2,2 kg under i fjor på samme dato». Brukerens dom var at ingen av
+dem er tydelige styringssignaler:
+
+- **Snittet over 30 dager inneholdt en sykeperiode.** Sykedagene telte som
+  nuller i nevneren, så den første normale uka etter sykdom så ut som en topp.
+  Det er en feil i motoren, ikke i brevet. `computeEffortBudget` holder nå
+  sykedagene utenfor det kroniske snittet, både dagen og effort den dagen,
+  slik ankeret alt gjorde. Krever fortsatt minst 14 friske dager.
+  Feilen rammet også dagsvarselet og Trening-flaten, og rettingen gjelder der
+  også.
+- **Kalenderuka står på null hver mandag.** Brevet bruker nå de løpende sju
+  dagene (`spentLast7Days`, samme grunnlag som `spentThisWeek`) mot rammen,
+  med ordene i `describeRollingEffort`. Budsjettkortet på Trening viser
+  fortsatt kalenderuka, fordi progresjonsplanen er lagt per uke.
+- **Vekta har et mål.** Brevet var stumt om det og valgte et årssammenligning.
+
+Brevet er bygget om i fire deler:
+
+1. **Målene:** hvert aktivt løpe- og vektmål med frist, med fremdrift og
+   «på dagens tempo er du der rundt …». Tallene leses gjennom
+   `$lib/server/goal-trajectories.ts`, som er trukket ut av `/plan/mal`, og
+   datoen regnes av `describeGoalTrajectory`, som `/plan/mal` nå også bruker.
+   Brevet og målsiden kan derfor ikke gi ulike datoer for samme mål.
+2. **Uka:** de løpende sju dagene mot rammen, belastningen (bare når den
+   faktisk er høy, og nå uten sykedagene), og punkter på ukelista som ingen dag
+   har tatt (`metadata.linkedChecklistItemId`), gruppert på `scheduleLabel`
+   («Løp ×2»).
+3. **Løse tråder:** en rekke som ryker, arrangementer der noe mangler, punkter
+   som ble liggende på dager som har gått (sju dager tilbake, utsatte punkter
+   utenfor), og dagens åpne punkter.
+4. **Ellers:** «siden sist», arrangementer i dag eller i morgen, og
+   vektkrydderet, men bare når det ikke finnes et vektmål.
+
+Overliggerne fra i går, kalenderuka og ukas vekt står under «Valgt bort» med en
+setning om hva som erstattet dem.
+
 ## Beslutninger
 
 - **En egen side, ikke hjemskjermen.** Hjemskjermen er den flaten brukeren
@@ -50,13 +90,18 @@ egen side med brukerens ekte data, ikke en endring av hjemskjermen.
   ut. Det er den strukturelle forskjellen fra en innboks, uavhengig av innholdet.
 - **Ingen hurtighandlinger i brevet.** De står alt på hjemskjermen. To steder å
   se de samme påminnelsene på ville gjort brevet til en innboks med en gang.
+- **Arrangementer bare når noe mangler** (eller de er i dag eller i morgen).
+  Brukeren bekreftet at det var riktig: konserten var med så lenge barnevakt
+  sto åpen.
 - **Ingen kveldsvariant ennå.** Hilsenen følger klokka, men innholdet er det
   samme hele dagen. Kveld og «avslutt dagen» venter på svaret fra utprøvingen.
 
 ## Verifisering
 
-- `home-letter.test.ts`: linser, kapp, «valgt bort», arrangementer, siden sist
-  og sykdom.
+- `home-letter.test.ts`: målene, delene og kappene, hva som er erstattet,
+  ukelista, arrangementer, siden sist og sykdom.
+- `effort-budget.test.ts`: sykedager utenfor det kroniske snittet, og de
+  løpende sju dagene over et ukeskifte.
 - `npm test` og `svelte-check` er grønne.
 - **Ikke verifisert herfra:** siden med ekte data, siden økta ikke har tilgang
   til basen.

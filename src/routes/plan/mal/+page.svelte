@@ -10,8 +10,7 @@
 	} from '$lib/components/domain/plan/helpers.js';
 	import { goalHorizon, type GoalHorizon } from '$lib/domain/goal-validation';
 	import {
-		describeGoalProjection,
-		projectGoal,
+		describeGoalTrajectory,
 		type GoalShape
 	} from '$lib/domain/goals/goal-projection';
 	import type { SleepGoalEval } from '$lib/domain/sleep-goals';
@@ -134,16 +133,7 @@
 		shape: GoalShape
 	): string | undefined {
 		const today = new Date().toISOString().slice(0, 10);
-		let running = shape === 'volume' ? startValue : 0;
-		const series = rawSeries.map((point) => {
-			if (shape !== 'volume') return point;
-			running += point.value;
-			return { date: point.date, value: running };
-		});
-		const text = describeGoalProjection(
-			projectGoal({ startDate, endDate, startValue, currentValue, targetValue, today, series }),
-			{ today, shape }
-		);
+		const text = describeGoalTrajectory({ startDate, endDate, startValue, currentValue, targetValue, today, rawSeries, shape });
 		if (!text) return pace;
 		return pace ? `${pace}; ${text.label}` : text.label;
 	}
