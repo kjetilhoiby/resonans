@@ -5,7 +5,8 @@ import { openAiFunctionDefinition } from './tool-schema';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { queryWeightTool } from '$lib/ai/tools/query-weight';
 
-const CHAT_ROUTE = fileURLToPath(new URL('../../../routes/api/chat/+server.ts', import.meta.url));
+/** Hovedchattens verktøyliste. Lå i `routes/api/chat/+server.ts` fram til oktober 2026. */
+const CHAT_TOOLS_FILE = fileURLToPath(new URL('../chat/tools.ts', import.meta.url));
 
 describe('openAiFunctionDefinition', () => {
 	it('tar med parametrene fra verktøymodulen', () => {
@@ -47,8 +48,8 @@ describe('openAiFunctionDefinition', () => {
  * fortsatt sa «-3 for kg ned». Modellen fulgte kopien. En tekstvakt er nok her —
  * feilen er at navnet står som en literal ved siden av et eget `parameters`-objekt.
  */
-describe('chat-endepunktet skriver ikke skjemaene av', () => {
-	const source = readFileSync(CHAT_ROUTE, 'utf8');
+describe('chat-verktøylista skriver ikke skjemaene av', () => {
+	const source = readFileSync(CHAT_TOOLS_FILE, 'utf8');
 
 	for (const name of ['create_goal', 'query_weight']) {
 		it(`henter ${name} fra verktøymodulen`, () => {

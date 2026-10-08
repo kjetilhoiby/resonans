@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
 	evaluateToolSelection,
 	LOAD_TOOLS_NAME,
@@ -13,38 +13,11 @@ import {
 	toolNamesForGroups,
 	type ToolSelectionInput
 } from './tool-selection';
+import { CHAT_TOOLS } from '$lib/server/chat/tools';
 
-const ROUTE = resolve(process.cwd(), 'src/routes/api/chat/+server.ts');
-
-/**
- * Navnene i chat-ruta sin `tools`-liste, lest fra kildefila. Fire former:
- * literal (`function: { name: 'x'`), og tre der navnet står i verktøymodulen
- * (`openAiFunctionDefinition(xTool)`, `name: xTool.name` og en bar
- * `xToolDefinition`).
- */
+/** Navnene i hovedchattens `tools`-liste. Lå som en kildetekst-parser over ruta fram til lista fikk egen modul. */
 function routeToolNames(): string[] {
-	const src = readFileSync(ROUTE, 'utf8');
-	const start = src.indexOf('const tools = [');
-	const end = src.indexOf('\n];\n', start);
-	expect(start).toBeGreaterThan(-1);
-	const block = src.slice(start, end);
-	const names = [...block.matchAll(/function: \{\s*name: '([a-z_]+)'/g)].map((m) => m[1]);
-	const idents = [
-		...[...block.matchAll(/openAiFunctionDefinition\((\w+)\)/g)].map((m) => m[1]),
-		...[...block.matchAll(/function: \{\s*name: (\w+)\.name/g)].map((m) => m[1]),
-		...[...block.matchAll(/^\s*(\w+ToolDefinition),?$/gm)].map((m) => m[1])
-	];
-	for (const ident of idents) {
-		const imp = new RegExp(`import \\{[^}]*\\b${ident}\\b[^}]*\\} from '\\$lib/([^']+)'`).exec(src);
-		expect(imp, `fant ikke importen av ${ident}`).not.toBeNull();
-		const base = resolve(process.cwd(), 'src/lib', imp![1]);
-		const file = [`${base}.ts`, `${base}/index.ts`].find((f) => existsSync(f));
-		expect(file, `fant ikke modulen for ${ident}`).toBeDefined();
-		const name = /name: '([a-z_]+)'/.exec(readFileSync(file!, 'utf8'));
-		expect(name, `fant ikke navnet i ${file}`).not.toBeNull();
-		names.push(name![1]);
-	}
-	return names;
+	return CHAT_TOOLS.map((t) => t.function.name);
 }
 
 const empty: ToolSelectionInput = {
@@ -205,9 +178,12 @@ describe('resolveToolSelectionMode', () => {
 	});
 });
 
-describe('kildefilen finnes', () => {
-	it('peker på chat-ruta', () => {
-		expect(existsSync(ROUTE)).toBe(true);
-		expect(dirname(ROUTE)).toMatch(/api[/\\]chat$/);
+// Kartet sjekkes mot CHAT_TOOLS, så det vokter bare chatten så lenge ruta
+// faktisk sender den lista — og ikke en egen ved siden av.
+describe('chat-ruta sender CHAT_TOOLS', () => {
+	it('importerer lista og definerer ingen egen', () => {
+		const route = readFileSync(resolve(process.cwd(), 'src/routes/api/chat/+server.ts'), 'utf8');
+		expect(route).toContain("import { CHAT_TOOLS as tools } from '$lib/server/chat/tools';");
+		expect(route).not.toMatch(/const tools\s*=\s*\[/);
 	});
 });

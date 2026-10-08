@@ -794,13 +794,23 @@ API-endepunkt. Resultatet var at chatten på Trening-temaet svarte «10 økter, 
 - **Grenseverdier som gir ord til et tall skal deles.** `classifyTsb` lå inni
   `LoadBalanceCard.svelte`; nå bor den i `$lib/util/training-load.ts` fordi chatten må si
   «Sliten» der flaten sier «Sliten».
-- **Nye verktøy registreres på BEGGE flater:** `routes/api/chat/+server.ts` og
+- **Nye verktøy registreres på BEGGE flater:** `$lib/server/chat/tools.ts` (hovedchatten;
+  utførelsen bor fortsatt i `routes/api/chat/+server.ts`) og
   `server/assistant/shared-tools.ts` (Ekko). Beskrivelsen bor på verktøymodulen og gjenbrukes,
   ellers får de to flatene ulike instrukser uten at noen ser hvorfor.
 - **Et nytt verktøy i hovedchatten MÅ ha en gruppe i `TOOL_GROUP_MAP`**
-  (`$lib/domain/ai/tool-selection.ts`). En test leser `tools`-lista i ruta og
-  krever samme navnesett. Se «Verktøyutvalget» under.
-- **Skriv ALDRI av et verktøyskjema i `routes/api/chat/+server.ts`.** Bruk
+  (`$lib/domain/ai/tool-selection.ts`). En test leser `CHAT_TOOLS` og krever samme
+  navnesett. Se «Verktøyutvalget» under.
+- **`chat-tools.json` ved siden av `tools.ts` er lista som ren data**, for Stemmegaffel
+  (`resonans-lab/stemmegaffel`), som ikke kan importere verktøymodulene uten å ta med
+  databasen. Den er skrevet av `tools.test.ts` (`toMatchFileSnapshot`) og feiler testen
+  når den er gammel: endrer du et verktøy, kjør
+  `npx vitest run src/lib/server/chat/tools.test.ts -u` og commit begge. Systemmeldingen
+  settes sammen av `assembleSystemPrompt` (`$lib/domain/ai/chat-system-prompt.ts`), som
+  laben også bruker — en ny kontekstblokk legges i `SYSTEM_PROMPT_BLOCKS`, ellers når den
+  verken modellen eller promptens anatomi. Se
+  `docs/changelog/2026-10-08-chat-verktoy-ut-av-ruta.md`.
+- **Skriv ALDRI av et verktøyskjema i `$lib/server/chat/tools.ts`.** Bruk
   `openAiFunctionDefinition(tool)` fra `$lib/server/assistant/tool-schema.ts`, som
   genererer skjemaet fra verktøyets zod-parametre. Kopien er ikke en teoretisk fare:
   `create_goal` fikk `targetWeightKg` og «oppgi MÅLVEKTEN» på modulen 23. august 2026,
