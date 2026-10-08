@@ -12,7 +12,6 @@
 <script lang="ts">
 	import { AppPage, PageSection, PageHeader, TabButton } from '$lib/components/ui';
 	import { SECTION_TITLES, type LetterLens, type LetterLine, type LetterSection } from '$lib/domain/home-letter';
-	import { proseParagraphs } from '$lib/domain/ai/home-letter-prose';
 
 	let { data } = $props();
 
@@ -93,9 +92,19 @@
 				{#await data.prose}
 					<p class="line quiet">Modellen skriver …</p>
 				{:then prose}
-					{#if prose.text}
-						{#each proseParagraphs(prose.text) as paragraph, i (i)}
-							<p class="line">{paragraph}</p>
+					{#if prose.paragraphs.length > 0}
+						{#each prose.paragraphs as paragraph, i (i)}
+							<p class="line">
+								{#each paragraph as segment, j (j)}
+									{#if 'ref' in segment && segment.href}
+										<a class="cta" href={segment.href} data-track="brev:modell-lenke">{segment.text}</a>
+									{:else if 'ref' in segment}
+										<strong class="cta">{segment.text}</strong>
+									{:else}
+										{segment.text}
+									{/if}
+								{/each}
+							</p>
 						{/each}
 					{:else}
 						<p class="line quiet">{prose.error ?? 'Ingen tekst.'}</p>
@@ -111,10 +120,20 @@
 						oppfunnet til det motsatte er vist.
 					</p>
 				{/if}
+				{#if prose.omitted.length > 0}
+					<div class="omitted">
+						<p class="note">Utelatt av modellen:</p>
+						{#each prose.omitted as line (line.id)}
+							<p class="note">
+								{#if line.href}<a href={line.href} data-track="brev:utelatt-lenke">{line.text}</a>{:else}{line.text}{/if}
+							</p>
+						{/each}
+					</div>
+				{/if}
 				<p class="note">
 					{#if prose.model}Skrevet av {prose.model}{prose.cached ? ', lagret fra tidligere i dag' : ', nå'}.{/if}
 					{#if prose.error && prose.text} {prose.error} Viser siste lagrede.{/if}
-					Modellen får bare linjene til venstre, og skal ikke legge til noe.
+					Modellen får linjene fra reglene og tallene bak dem, og skal ikke legge til noe. De uthevede ordene er lenkene.
 				</p>
 			{/await}
 		</div>
@@ -254,6 +273,23 @@
 		text-decoration: underline;
 		text-decoration-color: var(--border-subtle);
 		text-underline-offset: 3px;
+	}
+	.line .cta {
+		color: var(--text-primary);
+		font-weight: 600;
+		text-decoration: underline;
+		text-decoration-color: var(--accent-light);
+		text-decoration-thickness: 2px;
+		text-underline-offset: 3px;
+	}
+	.omitted {
+		margin-bottom: 0.6rem;
+	}
+	.omitted .note {
+		margin-bottom: 0.25rem;
+	}
+	.omitted a {
+		color: inherit;
 	}
 	.quiet {
 		color: var(--text-secondary);

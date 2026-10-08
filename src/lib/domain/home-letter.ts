@@ -33,7 +33,7 @@ import type { DigestNugget } from '$lib/domain/digest-nugget-rules';
 import { describeOpenItems } from '$lib/domain/digest-nugget-rules';
 import type { WeightNugget } from '$lib/domain/health/weight-nugget-rules';
 import { describeRollingEffort } from '$lib/domain/health/effort-standing';
-import { describeGoalTrajectory, type GoalShape } from '$lib/domain/goals/goal-projection';
+import { describeGoalTrajectory, formatProjectionDate, type GoalShape } from '$lib/domain/goals/goal-projection';
 import { prepStanding, type EventPrepItem } from '$lib/domain/events/prep';
 import { daysBetween } from '$lib/domain/events/event-fields';
 import { weekItemTarget } from '$lib/domain/week-item-target';
@@ -66,6 +66,14 @@ export interface LetterLine {
 	/** Hvilken motor setningen kom fra. Vises i prototypen, ikke i et ferdig brev. */
 	source: 'mål' | 'effort' | 'dagsoversikt' | 'vekt' | 'arrangement' | 'dagsplan' | 'ukeliste' | 'siden-sist' | 'registrering';
 	href?: string;
+	/**
+	 * Tallene bak setningen, ferdig formatert, til modellversjonen av brevet.
+	 * Med bare den ferdige setningen kan modellen bare lime; med tallene og
+	 * koblingen til hovedmålet kan den slå sammen («begge delmålene ligger en
+	 * uke bak, men hovedmålet holder»). Formatert her, så tallvakten ser de
+	 * samme tallene som modellen.
+	 */
+	facts?: ReadonlyArray<readonly [string, string]>;
 }
 
 export interface LetterEvent {
@@ -194,6 +202,27 @@ function goalTrajectory(goal: LetterGoal, today: string) {
 	});
 }
 
+const TONE_WORDS = { ahead: 'foran planen', behind: 'bak planen', neutral: 'på planen' } as const;
+
+/** Tallene bak en mållinje. Bare det som alt står i setningen, i strukturert form. */
+function goalFacts(
+	goal: LetterGoal,
+	today: string,
+	trajectory: ReturnType<typeof goalTrajectory>,
+	parent?: LetterGoal
+): Array<[string, string]> {
+	const decimals = goal.unit === 'km' ? 0 : 1;
+	const facts: Array<[string, string]> = [
+		['mål', goal.title],
+		['nå', `${formatNumber(goal.currentValue, decimals)} ${goal.unit}`],
+		['målverdi', `${formatNumber(goal.targetValue, decimals)} ${goal.unit}`],
+		['frist', formatProjectionDate(goal.endDate, today)]
+	];
+	if (trajectory) facts.push(['anslag', trajectory.label], ['status', TONE_WORDS[trajectory.tone]]);
+	if (parent) facts.push(['delmål av', parent.title]);
+	return facts;
+}
+
 /** «Ned til 90 kg: 94,1 kg nå. På dagens tempo er du der rundt …» */
 export function goalLine(goal: LetterGoal, today: string): LetterLine {
 	const trajectory = goalTrajectory(goal, today);
@@ -203,7 +232,8 @@ export function goalLine(goal: LetterGoal, today: string): LetterLine {
 		section: 'maal',
 		text: `${goal.title}: ${goalProgressText(goal)}.${trajectory ? ` ${trajectory.label}` : ''}`,
 		source: 'mål',
-		href: '/plan/mal'
+		href: '/plan/mal',
+		facts: goalFacts(goal, today, trajectory)
 	};
 }
 
@@ -266,7 +296,8 @@ export function phaseLine(phase: LetterGoal, parent: LetterGoal, today: string):
 		section: 'maal',
 		text: `Delmål, ${phase.title}:${progress}${trajectory ? ` ${trajectory.label}` : ''}${reassurance}`,
 		source: 'mål',
-		href: '/plan/mal'
+		href: '/plan/mal',
+		facts: goalFacts(phase, today, trajectory, parent)
 	};
 }
 
