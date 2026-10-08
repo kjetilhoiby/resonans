@@ -20,6 +20,7 @@ import {
 	buildHomeLetter,
 	EVENT_PREP_HORIZON_DAYS,
 	LOST_ITEMS_DAYS,
+	remainingWeekPlacements,
 	type HomeLetter,
 	type LetterEvent,
 	type LetterGoal
@@ -126,7 +127,12 @@ async function loadLetterGoals(userId: string): Promise<LetterGoal[]> {
 			});
 		}
 	}
-	return result;
+	// Nærmeste frist først. Det er målet man kan gjøre noe med denne uka, og det
+	// er det taket på fire mål ikke får kappe bort. Fram til 8. oktober 2026 sto
+	// sorteringen på `targetDate`, som er tom for mål med frist i metadata — og
+	// NULL sorteres sist, så «Løpe 90 km i oktober» falt ut bak tre mål med frist
+	// i 2027.
+	return result.sort((a, b) => a.endDate.localeCompare(b.endDate));
 }
 
 /**
@@ -182,21 +188,23 @@ async function loadUnplacedWeek(userId: string, today: string): Promise<Array<{ 
 	]);
 	if (!weekList) return [];
 
-	const linked = new Set(
-		dayLists.flatMap((list) =>
-			list.items
-				.map((item) => (item.metadata as { linkedChecklistItemId?: unknown } | null)?.linkedChecklistItemId)
-				.filter((id): id is string => typeof id === 'string')
-		)
-	);
-
-	const counts = new Map<string, number>();
-	for (const item of weekList.items) {
-		if (item.checked || item.skippedAt || item.parentId || linked.has(item.id)) continue;
-		const label = scheduleLabel(item.text) || item.text;
-		counts.set(label, (counts.get(label) ?? 0) + 1);
+	const linkCounts = new Map<string, number>();
+	for (const list of dayLists) {
+		for (const item of list.items) {
+			const id = (item.metadata as { linkedChecklistItemId?: unknown } | null)?.linkedChecklistItemId;
+			if (typeof id === 'string') linkCounts.set(id, (linkCounts.get(id) ?? 0) + 1);
+		}
 	}
-	return [...counts].map(([label, count]) => ({ label, count }));
+
+	return remainingWeekPlacements(
+		weekList.items.map((item) => ({
+			id: item.id,
+			text: item.text,
+			open: !item.checked && !item.skippedAt && !item.parentId
+		})),
+		linkCounts,
+		scheduleLabel
+	);
 }
 
 /** Dagkontekstene i uka `today` ligger i, mandag til søndag. */
@@ -271,6 +279,7 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 		weight,
 		lostItems,
 		unplacedWeek,
+		daysLeftInWeek: 7 - ((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7),
 		todayOpen: todayItems.titles,
 		events: letterEvents,
 		hoursSinceLastVisit: lastVisit ? (now.getTime() - lastVisit.getTime()) / 3_600_000 : null,
