@@ -43,12 +43,12 @@
 		height: 7px;
 		border-radius: 999px;
 		border: none;
-		background: #353535;
+		background: var(--text-muted);
 		cursor: pointer;
 		padding: 0;
 	}
 
 	.widget-pager-dot.is-active {
-		background: #7c8ef5;
+		background: var(--accent-light);
 	}
 </style>

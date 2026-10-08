@@ -161,22 +161,22 @@
 		flex-direction: column;
 		gap: 12px;
 		scrollbar-width: thin;
-		scrollbar-color: #222 transparent;
+		scrollbar-color: var(--border-color) transparent;
 	}
 
 	.ct-note {
 		margin: 0;
 		text-align: center;
 		font-size: 0.76rem;
-		color: #555;
+		color: var(--text-muted);
 	}
 
 	.ct-note-error {
-		color: #e07070;
+		color: var(--error-text);
 	}
 
 	.ct-empty {
-		color: #444;
+		color: var(--text-muted);
 		font-size: 0.85rem;
 		text-align: center;
 		margin: auto;

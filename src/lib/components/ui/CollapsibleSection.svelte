@@ -46,7 +46,7 @@
 		text-align: left;
 		width: 100%;
 		/* Samme typografi som SectionLabel (interaktiv variant med hover) */
-		color: var(--section-label-color, #94a3b8);
+		color: var(--section-label-color, var(--text-secondary));
 		font-size: 0.85rem;
 		font-weight: 600;
 		letter-spacing: 0.05em;
@@ -54,7 +54,7 @@
 	}
 
 	.collapsible-header:hover {
-		color: #b8b8b8;
+		color: var(--text-primary);
 	}
 
 	.collapsible-title {
@@ -62,9 +62,9 @@
 	}
 
 	.collapsible-count {
-		background: #202020;
-		color: #9a9a9a;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-hover);
+		color: var(--text-secondary);
+		border: 1px solid var(--border-color);
 		border-radius: 999px;
 		padding: 0.05rem 0.45rem;
 		font-size: 0.7rem;

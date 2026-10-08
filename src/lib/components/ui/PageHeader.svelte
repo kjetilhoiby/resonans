@@ -174,7 +174,7 @@
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: var(--accent-primary, #4a5af0);
+		background: var(--accent-primary);
 		flex-shrink: 0;
 		display: none;
 		margin-left: -16px;

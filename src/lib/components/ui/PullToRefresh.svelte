@@ -143,7 +143,7 @@
 		top: 0;
 		left: 0;
 		right: 0;
-		background: linear-gradient(180deg, #1d2240 0%, #141528 100%);
+		background: linear-gradient(180deg, color-mix(in srgb, var(--accent-primary) 14%, var(--bg-secondary)) 0%, color-mix(in srgb, var(--accent-primary) 6%, var(--bg-secondary)) 100%);
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
@@ -176,12 +176,12 @@
 		align-items: center;
 		justify-content: center;
 		margin-bottom: 10px;
-		color: #a5b4fc;
+		color: var(--accent-muted);
 		transition: color 160ms ease;
 	}
 
 	.ptr-icon.is-armed {
-		color: #e0e7ff;
+		color: var(--text-primary);
 	}
 
 	.ptr-arrow {

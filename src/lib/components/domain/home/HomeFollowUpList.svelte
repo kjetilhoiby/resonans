@@ -87,14 +87,14 @@
 	.followup-item-wrap {
 		display: flex;
 		align-items: stretch;
-		border: 1px solid #1a1a1a;
+		border: 1px solid var(--border-subtle);
 		border-radius: 10px;
 		overflow: visible;
 		transition: border-color 0.15s ease, color 0.15s ease;
 	}
 
 	.followup-item-wrap:hover {
-		border-color: #2b2b2b;
+		border-color: var(--border-color);
 	}
 
 	.followup-item {
@@ -109,7 +109,7 @@
 		background: transparent;
 		border: none;
 		border-radius: 10px 0 0 10px;
-		color: #7a7a7a;
+		color: var(--text-tertiary);
 		cursor: pointer;
 		transition: opacity 0.15s ease, color 0.15s ease;
 		flex: 1;
@@ -118,18 +118,18 @@
 
 	.followup-item:hover {
 		opacity: 0.9;
-		color: #9a9a9a;
+		color: var(--text-secondary);
 	}
 
 	.followup-rename-input {
 		flex: 1;
 		min-width: 0;
-		background: #131313;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
 		padding: 9px 10px;
 		margin: 4px;
-		color: #d2d2d2;
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 0.79rem;
 		font-weight: 600;
@@ -140,7 +140,7 @@
 		margin: 0;
 		padding: 8px 10px;
 		font-size: 0.72rem;
-		color: #646464;
+		color: var(--text-muted);
 		font-style: italic;
 	}
 
@@ -157,14 +157,14 @@
 	.followup-date {
 		grid-area: date;
 		font-size: 0.7rem;
-		color: #666;
+		color: var(--text-muted);
 	}
 
 	.followup-preview {
 		grid-area: preview;
 		font-size: 0.72rem;
 		line-height: 1.3;
-		color: #666;
+		color: var(--text-muted);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;

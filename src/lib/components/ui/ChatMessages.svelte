@@ -247,14 +247,14 @@
 		align-items: center;
 		gap: 10px;
 		margin: 6px 0;
-		color: #6a6a6a;
+		color: var(--text-tertiary);
 	}
 	.cm-day-spacer::before,
 	.cm-day-spacer::after {
 		content: '';
 		flex: 1;
 		height: 1px;
-		background: #232323;
+		background: var(--border-color);
 	}
 	.cm-day-spacer-label {
 		font-size: 0.72rem;
@@ -278,8 +278,8 @@
 		gap: 10px;
 		width: 100%;
 		box-sizing: border-box;
-		background: #12141c;
-		border: 1px solid #23262f;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 12px;
 		padding: 10px 12px;
 		text-decoration: none;
@@ -289,8 +289,8 @@
 		transition: border-color 0.12s, background 0.12s;
 	}
 	.cm-event-card-link:hover {
-		border-color: #3c4f9f;
-		background: #151826;
+		border-color: var(--accent-primary);
+		background: var(--bg-hover);
 	}
 	.cm-event-icon {
 		font-size: 1.15rem;
@@ -307,15 +307,15 @@
 	.cm-event-title {
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: #dcdce4;
+		color: var(--text-primary);
 	}
 	.cm-event-detail {
 		font-size: 0.8rem;
-		color: #9a9aa6;
+		color: var(--text-secondary);
 		line-height: 1.4;
 	}
 	.cm-event-arrow {
-		color: #6a728f;
+		color: var(--text-tertiary);
 		flex-shrink: 0;
 	}
 
@@ -336,11 +336,11 @@
 	}
 
 	.cm-bubble-user {
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 18px 18px 4px 18px;
 		padding: 10px 14px;
-		color: #e8e8e8;
+		color: var(--text-primary);
 		font-size: 0.9rem;
 		line-height: 1.5;
 		max-width: 80%;
@@ -353,12 +353,12 @@
 
 	.cm-bubble-stoppable {
 		cursor: pointer;
-		border: 1px solid #333;
+		border: 1px solid var(--border-color);
 		transition: background 0.12s, border-color 0.12s;
 	}
 	.cm-bubble-stoppable:hover {
-		background: #202020;
-		border-color: #444;
+		background: var(--bg-hover);
+		border-color: var(--text-muted);
 	}
 
 	.cm-bubble-img {
@@ -387,7 +387,7 @@
 
 	.cm-edit-hint {
 		font-size: 0.72rem;
-		color: #666;
+		color: var(--text-tertiary);
 		display: block;
 	}
 
@@ -395,7 +395,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		background: #111;
+		background: var(--card-bg-inset);
 		border-radius: 8px;
 		padding: 6px 10px;
 	}
@@ -409,11 +409,11 @@
 	}
 	.cm-attachment-name {
 		font-size: 0.8rem;
-		color: #ccc;
+		color: var(--text-secondary);
 	}
 	.cm-attachment-meta {
 		font-size: 0.72rem;
-		color: #666;
+		color: var(--text-tertiary);
 	}
 
 	.cm-star-btn {
@@ -422,14 +422,14 @@
 		border: none;
 		cursor: pointer;
 		font-size: 1rem;
-		color: #444;
+		color: var(--text-muted);
 		padding: 4px;
 		line-height: 1;
 		transition: color 0.1s;
 		align-self: flex-end;
 		margin-bottom: 4px;
 	}
-	.cm-star-btn:hover { color: #aaa; }
+	.cm-star-btn:hover { color: var(--text-secondary); }
 	.cm-star-btn-active { color: #f0c040 !important; }
 
 	/* Bot-stjerne plasseres under meldingen, venstrejustert med tekstkanten */
@@ -448,22 +448,22 @@
 		padding: 12px 0;
 	}
 	.cm-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.85rem;
 		margin: 0;
 	}
 	.cm-retry-btn {
 		background: none;
-		border: 1px solid #444;
+		border: 1px solid var(--text-muted);
 		border-radius: 999px;
 		padding: 6px 16px;
-		color: #bbb;
+		color: var(--text-secondary);
 		font-size: 0.82rem;
 		cursor: pointer;
 		transition: background 0.12s, color 0.12s;
 	}
 	.cm-retry-btn:hover {
-		background: #1a1a1a;
-		color: #fff;
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 </style>

@@ -55,18 +55,18 @@
 		aspect-ratio: 4 / 3;
 		max-height: 100%;
 		align-self: center;
-		background: hsl(var(--theme-hue) 19% 11%);
+		background: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 8%, var(--bg-card));
 		border: none;
 		border-radius: 14px;
 		padding: 8px 6px;
 		cursor: pointer;
 		transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
 		font: inherit;
-		color: #ddd;
+		color: var(--text-primary);
 	}
 
 	.tema-btn-v3:hover {
-		background: hsl(var(--theme-hue) 22% 14%);
+		background: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 12%, var(--bg-card));
 		box-shadow: 0 8px 20px hsl(var(--theme-hue) 55% 18% / 0.2);
 		transform: translateY(-1px);
 	}
@@ -83,7 +83,7 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
-		color: hsl(var(--theme-hue) 22% 80%);
+		color: color-mix(in srgb, hsl(var(--theme-hue) 60% 50%) 25%, var(--text-primary));
 		opacity: 0.8;
 	}
 </style>
