@@ -156,6 +156,18 @@ describe('computeEffortBudget', () => {
 		expect(budget.restRecommended).toBe(true);
 	});
 
+	it('summerer løpende sju dager, også over et ukeskifte', () => {
+		// 2026-07-15 er en onsdag: sju dager bak er torsdag 9. juli.
+		const budget = computeEffortBudget(
+			[okt('2026-07-08', 50), okt('2026-07-09', 60), okt('2026-07-13', 70), okt('2026-07-15', 80)],
+			CONFIG,
+			PLAN_START,
+			'2026-07-15'
+		);
+		expect(budget.spentLast7Days).toBe(210);
+		expect(budget.spentThisWeek).toBe(150);
+	});
+
 	it('gir ingen ratio (og ingen hvileanbefaling) ved under 14 dagers historikk', () => {
 		const budget = computeEffortBudget(
 			[okt('2026-07-13', 150), okt('2026-07-14', 150), okt('2026-07-15', 150)],
@@ -373,6 +385,37 @@ describe('computeEffortBudget — sykeuker', () => {
 		expect(med.anchorWeeks).toBe(3);
 		// Ankeret uten sykeuka er 300; med den er det 230.
 		expect(med.bandMax).toBeGreaterThan(uten.bandMax);
+	});
+
+	it('holder sykedager utenfor det kroniske snittet — en rolig tur etter senga er ikke en topp', () => {
+		// 30 dager: 15 friske dager à 20, så 12 dager syk uten trening, så 3 dager à 20.
+		const workouts: EnduranceWorkout[] = [];
+		const sickDays: string[] = [];
+		for (let i = 29; i >= 0; i--) {
+			const d = new Date('2026-07-15T00:00:00Z');
+			d.setUTCDate(d.getUTCDate() - i);
+			const iso = d.toISOString().slice(0, 10);
+			if (i >= 3 && i <= 14) sickDays.push(iso);
+			else workouts.push(okt(iso, 20));
+		}
+		const uten = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15');
+		const med = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', false, sickDays);
+		// Uten sykedagene i regnestykket ligger de tre siste dagene akkurat på snittet.
+		expect(med.acuteChronicRatio).toBe(1);
+		expect(med.restRecommended).toBe(false);
+		// Med dem som nuller ser den samme jevne treningen ut som en topp.
+		expect(uten.acuteChronicRatio).toBeGreaterThan(1.5);
+	});
+
+	it('gir ingen ratio når for få friske dager er igjen i vinduet', () => {
+		const workouts = [okt('2026-06-20', 20), okt('2026-07-15', 20)];
+		const sickDays = Array.from({ length: 20 }, (_, i) => {
+			const d = new Date('2026-06-25T00:00:00Z');
+			d.setUTCDate(d.getUTCDate() + i);
+			return d.toISOString().slice(0, 10);
+		});
+		const budget = computeEffortBudget(workouts, CONFIG, PLAN_START, '2026-07-15', false, sickDays);
+		expect(budget.acuteChronicRatio).toBeNull();
 	});
 
 	it('sykdom overstyrer vedlikeholdsmodus', () => {

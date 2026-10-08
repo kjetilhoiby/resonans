@@ -2608,6 +2608,13 @@ datainnhentingen.
   akutt/kronisk er det eneste restitusjonssignalet, og det eneste som får varselfarge.
   Flaten viste dem med samme uttrykk fram til august 2026, og da leses «513 av 235–282»
   som en påstand om kroppen.
+- **Sykedager holdes utenfor det kroniske snittet i akutt/kronisk**, som i
+  ankeret. Fram til oktober 2026 telte de som nuller i nevneren, så den første
+  vanlige uka etter en sykeperiode ga «1,99× over snittet — ta en rolig dag».
+  Krever 14 FRISKE dager. Se `docs/changelog/2026-10-06-brev-prototype.md`.
+- **`spentLast7Days` er de løpende sju dagene**, på samme grunnlag som
+  `spentThisWeek`. Kalenderuka står på null hver mandag og er ikke noe å
+  styre etter; hjemskjermens brev bruker den løpende (`describeRollingEffort`).
 - `describeAcuteChronic` tar **`restRecommended`, ikke terskelen** — `hvileRatioTerskel`
   er brukerkonfigurerbar og bor på treningsløpet.
 - Ordene deles med chatten (`planText`/`loadText` i `training-summary.ts`). Med bare

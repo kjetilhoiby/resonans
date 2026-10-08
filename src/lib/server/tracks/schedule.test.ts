@@ -22,6 +22,7 @@ function budget(overrides: Partial<EffortBudget> = {}): EffortBudget {
 		bandMin: 200,
 		bandMax: 240,
 		spentThisWeek: 0,
+		spentLast7Days: 0,
 		remainingMin: 200,
 		remainingMax: 240,
 		acuteChronicRatio: 1.0,

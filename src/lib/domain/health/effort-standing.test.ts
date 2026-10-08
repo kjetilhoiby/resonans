@@ -3,6 +3,7 @@ import {
 	describeAcuteChronic,
 	describeAnchor,
 	describeBudgetStanding,
+	describeRollingEffort,
 	QUIET_RATIO
 } from './effort-standing';
 
@@ -88,5 +89,17 @@ describe('describeBudgetStanding — sykeuke', () => {
 		const v = describeBudgetStanding(200, 0, 84, true);
 		expect(v.standing).toBe('over');
 		expect(v.text).toContain('ikke en grense');
+	});
+});
+
+describe('describeRollingEffort', () => {
+	it('sier hvor de sju siste dagene ligger mot rammen', () => {
+		expect(describeRollingEffort(300, 391, 469).text).toBe('Siste sju dager: 300 i effort, under rammen din (391–469).');
+		expect(describeRollingEffort(420, 391, 469).standing).toBe('i_band');
+		expect(describeRollingEffort(500, 391, 469).text).toContain('et budsjett, ikke en grense');
+	});
+
+	it('krever ingenting i en sykeperiode', () => {
+		expect(describeRollingEffort(40, 0, 137, true).text).toContain('Ingenting kreves');
 	});
 });

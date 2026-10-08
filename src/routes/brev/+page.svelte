@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
 	import { AppPage, PageSection, PageHeader, TabButton } from '$lib/components/ui';
-	import type { LetterLens, LetterLine } from '$lib/domain/home-letter';
+	import { SECTION_TITLES, type LetterLens, type LetterLine, type LetterSection } from '$lib/domain/home-letter';
 
 	let { data } = $props();
 
@@ -23,6 +23,15 @@
 	);
 
 	const LENS_LABEL: Record<LetterLens, string> = { venter: 'venter', status: 'status' };
+
+	const SECTION_ORDER: LetterSection[] = ['maal', 'uka', 'trader', 'ellers'];
+	const sections = $derived(
+		SECTION_ORDER.map((section) => ({
+			section,
+			title: SECTION_TITLES[section],
+			lines: shown.filter((l: LetterLine) => l.section === section)
+		})).filter((s) => s.lines.length > 0)
+	);
 
 	const lastVisit = $derived(
 		data.raw.lastVisit
@@ -48,24 +57,27 @@
 		</p>
 
 		<div class="tabs" role="tablist" aria-label="Linse">
-			<TabButton active={view === 'alt'} onClick={() => (view = 'alt')}>Hele brevet</TabButton>
-			<TabButton active={view === 'venter'} onClick={() => (view = 'venter')}>Hva som venter</TabButton>
-			<TabButton active={view === 'status'} onClick={() => (view = 'status')}>Hvor du står</TabButton>
+			<TabButton active={view === 'alt'} onClick={() => (view = 'alt')}>Alt</TabButton>
+			<TabButton active={view === 'venter'} onClick={() => (view = 'venter')}>Venter</TabButton>
+			<TabButton active={view === 'status'} onClick={() => (view = 'status')}>Status</TabButton>
 		</div>
 
 		<article class="letter" data-track="brev:lesing">
 			<p class="greeting">{data.letter.greeting}</p>
-			{#if shown.length === 0}
+			{#if sections.length === 0}
 				<p class="line quiet">Ingenting å si her akkurat nå.</p>
 			{:else}
-				{#each shown as line (line.id)}
-					<p class="line">
-						{#if line.href}
-							<a href={line.href} data-track="brev:lenke">{line.text}</a>
-						{:else}
-							{line.text}
-						{/if}
-					</p>
+				{#each sections as part (part.section)}
+					<h2 class="part">{part.title}</h2>
+					{#each part.lines as line (line.id)}
+						<p class="line">
+							{#if line.href}
+								<a href={line.href} data-track="brev:lenke">{line.text}</a>
+							{:else}
+								{line.text}
+							{/if}
+						</p>
+					{/each}
 				{/each}
 			{/if}
 		</article>
@@ -74,7 +86,8 @@
 			<h2>Bak brevet</h2>
 			<p class="note">
 				Linsen står til venstre: <em>venter</em> ber om noe, <em>status</em> gjør ikke det.
-				Kilden er regelen setningen kom fra — den samme som lager push-varslene.
+				Kilden er motoren setningen kom fra — den samme som flaten eller varselet den
+				hører til.
 			</p>
 			<ul class="sources">
 				{#each data.letter.lines as line (line.id)}
@@ -84,7 +97,11 @@
 
 			{#if data.letter.dropped.length > 0}
 				<h3>Valgt bort</h3>
-				<p class="note">Reglene hadde mer å si, men hver linse får maks tre linjer.</p>
+				<p class="note">
+					Kildene hadde mer å si. Noe fikk ikke plass, og noe er erstattet av et bedre
+					styringssignal: overliggere fra i går av sju dagers løse tråder, kalenderuka
+					av de løpende sju dagene, og vektkrydderet av vektmålet.
+				</p>
 				<ul class="sources dropped">
 					{#each data.letter.dropped as line (line.id)}
 						<li><span class="tag">{LENS_LABEL[line.lens as LetterLens]}</span><span class="src">{line.source}</span>{line.text}</li>
@@ -137,6 +154,17 @@
 	.line:last-child {
 		margin-bottom: 0;
 	}
+	.part {
+		margin: 1rem 0 0.35rem;
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-secondary);
+	}
+	.greeting + .part {
+		margin-top: 0.25rem;
+	}
 	.line a {
 		color: inherit;
 		text-decoration: underline;
@@ -145,6 +173,10 @@
 	}
 	.quiet {
 		color: var(--text-secondary);
+	}
+	.behind {
+		/* Plass til den flytende «+»-knappen, som ellers ligger over siste linje. */
+		padding-bottom: 5rem;
 	}
 	.behind h2 {
 		margin: 0 0 0.4rem;
