@@ -1,4 +1,4 @@
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import type { InboundEmailPayload } from './shared';
 import type { emailRules } from '$lib/db/schema';
@@ -49,8 +49,7 @@ export async function processAiExtractionEmail(
 
 	const prompt = rule.extractionPrompt || DEFAULT_EXTRACTION_PROMPT;
 
-	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const completion = await createWithAlias('json_cheap', {
 		messages: [
 			{ role: 'system', content: prompt },
 			{ role: 'user', content: emailContent }

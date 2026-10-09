@@ -3891,6 +3891,26 @@ tilbake i `chat-stream-messages`:** tegn-for-tegn med 4 ms pause var ~2,5 s ren
 ventetid oppå et ferdig svar. `chat-completion.sdk.test.ts` kjører den ekte SDK-en
 mot en lokal SSE-server — feiler den etter en oppgradering, har kontrakten flyttet seg.
 
+**Modellaliaser:** `STEMMEGAFFEL_URL` (valgfri) slår på aliasene fra Stemmegaffel
+(`resonans-lab/stemmegaffel`). Uten den er hvert kall byte-likt det det var. Kallet går
+gjennom `createWithAlias('json_cheap', {...})` (`$lib/server/ai/model-alias.ts`), og
+reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
+`docs/changelog/2026-10-09-modellaliaser.md`.
+
+- **Laben står aldri i den kritiske stien.** Svaret holdes i prosessen og fornyes hvert
+  kvarter i bakgrunnen. Første kall venter høyst 1,5 s; svarer ikke laben, brukes standarden.
+- **Bare OpenAI, og bare direkte.** Peker aliaset på en annen leverandør eller ble det målt
+  gjennom OpenRouter, brukes standarden. Resonans har én klient til disse kallene.
+- **Aliaset bestemmer FORMEN, kallstedet INNHOLDET.** Aliaset bestemmer modellen, navnet på
+  tokentaket, om temperatur sendes og tenkenivået. Kallstedet bestemmer meldingene,
+  svarformatet og verdiene. Navneregelen i `chat-model.ts` gjettet formen av modellnavnet
+  og tok feil for gpt-5.4.
+- **En avvisning (400/404) koster ett ekstra kall, ikke en feil.** Kallet kjøres om igjen med
+  standarden, og aliaset settes til side i 30 minutter. Se `[modell-alias]` i loggen.
+- **Et kall med bilde er ikke `json_cheap`**, selv om modellen er den samme i dag.
+  `vision` er sitt eget alias, og et kall som hører hjemme der, skal flyttes dit når aliaset
+  kobles inn, ikke hit.
+
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)

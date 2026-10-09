@@ -12,7 +12,7 @@
  *   5. lander funnet i «Funn»-innboksen (finds) for triage.
  */
 
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { db } from '$lib/db';
 import { finds, type emailRules } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -125,8 +125,7 @@ export async function processFindTriageEmail(
 
 	const preview = url ? await fetchLinkPreview(url) : null;
 
-	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const completion = await createWithAlias('json_cheap', {
 		messages: [
 			{ role: 'system', content: TRIAGE_SYSTEM_PROMPT },
 			{ role: 'user', content: buildTriageContent(payload, preview, hint) }

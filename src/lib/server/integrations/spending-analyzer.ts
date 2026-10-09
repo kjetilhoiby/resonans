@@ -16,7 +16,7 @@ import { readTransactions } from '$lib/server/economics/transactions';
 import { merchantMappings } from '$lib/db/schema';
 import { normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 import { and, eq, sql, inArray } from 'drizzle-orm';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { DEFAULT_USER_ID } from '$lib/server/users';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -536,8 +536,7 @@ ${JSON.stringify(
 Returner JSON med ett objekt per handlende i samma rekkefølge:
 { "classifications": [{ "merchantKey", "category", "subcategory", "label", "emoji", "isFixed" }, ...] }`;
 
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const response = await createWithAlias('json_cheap', {
 		response_format: { type: 'json_object' },
 		messages: [
 			{ role: 'system', content: systemPrompt },
@@ -615,8 +614,7 @@ Regler for innsikter:
 Returner JSON: { "insights": ["...", "...", ...] }`;
 
 	try {
-		const response = await openai.chat.completions.create({
-			model: 'gpt-4o-mini',
+		const response = await createWithAlias('json_cheap', {
 			response_format: { type: 'json_object' },
 			messages: [{ role: 'user', content: prompt }],
 			temperature: 0.4,

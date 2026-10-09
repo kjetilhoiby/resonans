@@ -12,7 +12,7 @@
 import { db } from '$lib/db';
 import { emailRules, groceryOrders, groceryOrderLines, shoppingLists } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { findOrCreateEmailSensor, stripHtml, type InboundEmailPayload } from './shared';
 import {
@@ -87,8 +87,7 @@ async function extractOdaOrder(
 		? `${EXTRACTION_PROMPT}\n\nEkstra instruksjoner fra brukeren (følg disse i tillegg):\n${extraPrompt.trim()}`
 		: EXTRACTION_PROMPT;
 
-	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const completion = await createWithAlias('json_cheap', {
 		messages: [
 			{ role: 'system', content: systemPrompt },
 			{
