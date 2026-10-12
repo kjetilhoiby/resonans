@@ -115,7 +115,7 @@
 
       return {
         bgD: bgOuterR != null ? buildArc(c, c, innerR, bgOuterR, start, end) : null,
-        bgColor: s.bgColor ?? 'rgba(255,255,255,0.18)',
+        bgColor: s.bgColor ?? 'color-mix(in srgb, var(--text-primary) 18%, transparent)',
         d: buildArc(c, c, innerR, outerR, start, end),
         color: s.color,
         opacity: s.opacity,
@@ -143,7 +143,7 @@
   <!-- Sporlag -->
   {#if showTrack}
     {#each geom.track as d}
-      <path {d} fill="rgba(255,255,255,0.06)" />
+      <path {d} style="fill: color-mix(in srgb, var(--text-primary) 6%, transparent)" />
     {/each}
   {/if}
 
@@ -152,9 +152,8 @@
     {#if arc.bgD}
       <path
         d={arc.bgD}
-        fill={arc.bgColor}
         opacity={mounted ? arc.opacity : 0}
-        style="transition: opacity {0.25 + i * 0.015}s ease"
+        style="fill: {arc.bgColor}; transition: opacity {0.25 + i * 0.015}s ease"
       />
     {/if}
   {/each}
@@ -176,10 +175,9 @@
         text-anchor="middle"
         dominant-baseline="middle"
         font-size={arc.fontSize}
-        fill="rgba(255,255,255,0.85)"
         pointer-events="none"
         opacity={mounted ? arc.opacity : 0}
-        style="transition: opacity {0.25 + i * 0.015}s ease"
+        style="fill: var(--text-primary); transition: opacity {0.25 + i * 0.015}s ease"
       >{arc.label}</text>
     {/if}
   {/each}
@@ -196,7 +194,7 @@
       dominant-baseline="middle"
       font-size={fs}
       font-weight="600"
-      fill="white"
+      style="fill: var(--text-primary)"
     >{centerLabel}</text>
     {#if centerSublabel}
       <text
@@ -205,7 +203,7 @@
         text-anchor="middle"
         dominant-baseline="middle"
         font-size={sub}
-        fill="rgba(255,255,255,0.45)"
+        style="fill: var(--text-tertiary)"
       >{centerSublabel}</text>
     {/if}
   {/if}

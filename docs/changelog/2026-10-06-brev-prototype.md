@@ -266,6 +266,8 @@ trenger å vite.
 4. Kveldsvariant og ukentlige oppgaver (`tasks` med `frequency: 'weekly'`) i
    linja om det som ikke har fått en dag.
 
+**Fulgt opp 12. oktober 2026:** signalene står nå øverst på hjemskjermen som «I dag», uten modell. Se `2026-10-12-i-dag-pa-hjemskjermen.md`. `/brev` er målet for «flere ting» derfra.
+
 **Anbefalingen ved parkering:** ta signalene inn på hjemskjermen som korte,
 klikkbare linjer UTEN modellen (punkt 1 og 3), og la modellversjonen vente på
 testsuiten (punkt 2). Det meste av verdien brukeren pekte på — klikkbare

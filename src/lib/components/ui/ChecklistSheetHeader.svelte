@@ -69,24 +69,24 @@
 	.cs-title {
 		font-size: 1rem;
 		font-weight: 700;
-		color: #eee;
+		color: var(--text-primary);
 		margin: 0 0 2px;
 		letter-spacing: -0.01em;
 	}
 
 	.cs-subtitle {
 		font-size: 0.72rem;
-		color: #555;
+		color: var(--text-muted);
 		margin: 0;
 	}
 
 	.cs-close-btn {
 		width: 32px;
 		height: 32px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 50%;
-		color: #666;
+		color: var(--text-tertiary);
 		font-size: 0.75rem;
 		cursor: pointer;
 		display: flex;
@@ -95,15 +95,15 @@
 		flex-shrink: 0;
 		transition: color 0.12s, border-color 0.12s;
 	}
-	.cs-close-btn:hover { color: #ccc; border-color: #555; }
+	.cs-close-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
 	.cs-share-btn {
 		width: 32px;
 		height: 32px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 50%;
-		color: #888;
+		color: var(--text-secondary);
 		font-size: 1rem;
 		cursor: pointer;
 		display: flex;
@@ -113,7 +113,7 @@
 		margin-right: 6px;
 		transition: color 0.12s, border-color 0.12s;
 	}
-	.cs-share-btn:hover { color: #ccc; border-color: #555; }
+	.cs-share-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
 	.cs-header-weather {
 		flex: 1;
@@ -125,7 +125,7 @@
 
 	.cs-progress-track {
 		height: 3px;
-		background: #1e1e1e;
+		background: var(--border-color);
 		flex-shrink: 0;
 		margin: 0 20px;
 		border-radius: 999px;

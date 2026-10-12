@@ -193,9 +193,9 @@
 					{#if trailingBadge}{@render trailingBadge(item)}{/if}
 				</button>
 				<svg class="cli-parent-ring" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-					<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
+					<circle cx="10" cy="10" r={cR} fill="none" style:stroke="var(--border-color)" stroke-width="2.5"/>
 					<circle cx="10" cy="10" r={cR} fill="none"
-						stroke={completedChildren === childrenItems.length ? '#5fa080' : '#7c8ef5'}
+						style:stroke={completedChildren === childrenItems.length ? 'var(--success-text)' : 'var(--accent-light)'}
 						stroke-width="2.5"
 						stroke-dasharray="{cPct * cC} {cC}"
 						stroke-linecap="round"
@@ -335,7 +335,7 @@
 		height: 20px;
 		border: none;
 		background: transparent;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font-size: 0.9rem;
 		cursor: pointer;
 		display: flex;
@@ -347,7 +347,7 @@
 		line-height: 1;
 	}
 
-	.cli-caret:hover { color: #9cb0ff; }
+	.cli-caret:hover { color: var(--accent-muted); }
 	.cli-caret-expanded { transform: rotate(90deg); }
 
 	.cli-parent-ring {
@@ -366,7 +366,7 @@
 		transition: background 0.1s;
 	}
 
-	.cli-item:hover { background: #161616; }
+	.cli-item:hover { background: var(--bg-hover); }
 
 	/* Kanonisk «full bredde m/ramme»: kort-chrome via --card-*-tokens.
 	   Kontekster (ukeplan-gradient, tema-hue) re-skinner automatisk — bytt
@@ -386,13 +386,13 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		background: rgba(95, 160, 128, 0.12);
-		border: 1px solid rgba(95, 160, 128, 0.3);
+		background: var(--success-bg);
+		border: 1px solid var(--success-border);
 		border-radius: 999px;
 		padding: 5px 12px 5px 10px;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: #9fd9bd;
+		color: var(--success-text);
 		letter-spacing: -0.01em;
 	}
 
@@ -424,20 +424,20 @@
 
 	.cli-text {
 		font-size: 0.88rem;
-		color: #ccc;
+		color: var(--text-primary);
 		line-height: 1.4;
 		transition: color 0.15s, text-decoration 0.15s;
 	}
 
 	.cli-item-checked .cli-text {
-		color: #444;
+		color: var(--text-muted);
 		text-decoration: line-through;
 	}
 
 	.cli-item-skipped .cli-text {
-		color: #5a4040;
+		color: color-mix(in srgb, var(--error-text) 25%, var(--text-muted));
 		text-decoration: line-through;
-		text-decoration-color: #774444;
+		text-decoration-color: var(--error-border);
 	}
 
 	.cli-time-chip {
@@ -446,9 +446,9 @@
 		font-size: 0.7rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
-		color: #7c8ef5;
-		background: rgba(124, 142, 245, 0.1);
-		border: 1px solid rgba(124, 142, 245, 0.25);
+		color: var(--accent-muted);
+		background: var(--info-bg);
+		border: 1px solid var(--info-border);
 		border-radius: 5px;
 		padding: 1px 5px;
 		flex-shrink: 0;
@@ -502,8 +502,8 @@
 		flex: 1;
 		background: none;
 		border: none;
-		border-bottom: 1px solid #4a5af0;
-		color: #ccc;
+		border-bottom: 1px solid var(--accent-primary);
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 0.88rem;
 		outline: none;
@@ -516,7 +516,7 @@
 		flex-direction: column;
 		gap: 0;
 		padding: 0 12px 0 32px;
-		background: #0a0a0a;
+		background: var(--card-bg-inset);
 		border-radius: 0 0 10px 10px;
 		margin-bottom: 4px;
 	}
@@ -529,7 +529,7 @@
 		background: transparent;
 		color: inherit;
 		transition: opacity 0.1s;
-		border-bottom: 1px solid #1a1a1a;
+		border-bottom: 1px solid var(--border-subtle);
 	}
 
 	.cli-child-item:last-of-type { border-bottom: none; }
@@ -555,34 +555,34 @@
 
 	.cli-child-text {
 		font-size: 0.75rem;
-		color: #aaa;
+		color: var(--text-secondary);
 		line-height: 1.3;
 		flex: 1;
 		transition: color 0.1s, text-decoration 0.1s;
 	}
 
 	.cli-child-checked .cli-child-text {
-		color: #555;
+		color: var(--text-muted);
 		text-decoration: line-through;
 	}
 
 	.cli-child-skipped .cli-child-text {
-		color: #5a4040;
+		color: color-mix(in srgb, var(--error-text) 25%, var(--text-muted));
 		text-decoration: line-through;
-		text-decoration-color: #774444;
+		text-decoration-color: var(--error-border);
 	}
 
 	.cli-subitem-add-row {
 		padding: 6px 0 8px;
-		border-top: 1px solid #1e1e1e;
+		border-top: 1px solid var(--border-subtle);
 	}
 
 	.cli-subitem-add-input {
 		width: 100%;
 		background: transparent;
 		border: none;
-		border-bottom: 1px solid #2a2a2a;
-		color: #888;
+		border-bottom: 1px solid var(--border-color);
+		color: var(--text-tertiary);
 		padding: 4px 0;
 		font: inherit;
 		font-size: 0.75rem;
@@ -591,9 +591,9 @@
 	}
 
 	.cli-subitem-add-input:focus {
-		border-color: #4a5af0;
-		color: #ccc;
+		border-color: var(--accent-primary);
+		color: var(--text-primary);
 	}
 
-	.cli-subitem-add-input::placeholder { color: #3a3a3a; }
+	.cli-subitem-add-input::placeholder { color: var(--text-muted); }
 </style>

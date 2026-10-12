@@ -284,7 +284,8 @@
 		position: fixed;
 		inset: 0;
 		z-index: 220;
-		background: #0d0d12;
+		background: var(--bg-primary);
+		color: var(--text-primary);
 		overflow-y: auto;
 		padding: 1.5rem 1.25rem 3rem;
 	}
@@ -295,9 +296,9 @@
 		width: 36px;
 		height: 36px;
 		border-radius: 50%;
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		background: rgba(255, 255, 255, 0.04);
-		color: rgba(255, 255, 255, 0.7);
+		border: 1px solid var(--border-color);
+		background: var(--bg-card);
+		color: var(--text-secondary);
 		font-size: 1rem;
 		cursor: pointer;
 	}
@@ -312,7 +313,7 @@
 	}
 	.lk-head p {
 		margin: 0 0 1rem;
-		color: rgba(255, 255, 255, 0.6);
+		color: var(--text-secondary);
 		font-size: 0.92rem;
 	}
 	.lk-toggle {
@@ -320,7 +321,7 @@
 		align-items: center;
 		gap: 0.35rem;
 		font-size: 0.78rem;
-		color: rgba(255, 255, 255, 0.55);
+		color: var(--text-tertiary);
 		cursor: pointer;
 		margin-bottom: 1rem;
 	}
@@ -347,11 +348,11 @@
 	}
 	.lk-dim-label {
 		font-size: 0.88rem;
-		color: rgba(255, 255, 255, 0.9);
+		color: var(--text-primary);
 	}
 	.lk-match-val {
 		font-size: 0.74rem;
-		color: rgba(255, 255, 255, 0.5);
+		color: var(--text-tertiary);
 		font-style: italic;
 	}
 	.lk-slider-wrap {
@@ -375,7 +376,7 @@
 		width: 2px;
 		height: 9px;
 		border-radius: 1px;
-		background: rgba(255, 255, 255, 0.45);
+		background: var(--text-tertiary);
 		transform: translateX(-1px);
 		pointer-events: none;
 		z-index: 2;
@@ -383,7 +384,7 @@
 	.lk-goal-hint {
 		margin-top: 0.35rem;
 		font-size: 0.72rem;
-		color: rgba(255, 255, 255, 0.5);
+		color: var(--text-tertiary);
 	}
 	.lk-goal-list {
 		margin-bottom: 1.4rem;
@@ -393,11 +394,11 @@
 		width: 14px;
 		text-align: center;
 		margin-top: 0.15rem;
-		color: rgba(255, 255, 255, 0.35);
+		color: var(--text-muted);
 		font-weight: 700;
 	}
 	.lk-goal-mark-hit {
-		color: #7fd8a4;
+		color: var(--success-text);
 	}
 	.lk-imp-row {
 		display: flex;
@@ -407,7 +408,7 @@
 	}
 	.lk-imp-label {
 		font-size: 0.72rem;
-		color: rgba(255, 255, 255, 0.45);
+		color: var(--text-tertiary);
 		min-width: 9.5rem;
 	}
 	.lk-slider-imp {
@@ -420,7 +421,7 @@
 		width: 100%;
 		height: 6px;
 		border-radius: 3px;
-		background: #1e1e1e;
+		background: var(--border-color);
 		outline: none;
 		margin: 5px 0;
 	}
@@ -430,25 +431,25 @@
 		width: 18px;
 		height: 18px;
 		border-radius: 50%;
-		background: var(--lk-accent, #4b6ef5);
+		background: var(--lk-accent);
 		cursor: pointer;
-		border: 2px solid #0d0d12;
+		border: 2px solid var(--bg-primary);
 	}
 	.lk-slider::-moz-range-thumb {
 		width: 18px;
 		height: 18px;
 		border-radius: 50%;
-		background: var(--lk-accent, #4b6ef5);
+		background: var(--lk-accent);
 		cursor: pointer;
-		border: 2px solid #0d0d12;
+		border: 2px solid var(--bg-primary);
 	}
 	.lk-slider-imp::-webkit-slider-thumb {
-		background: rgba(255, 255, 255, 0.4);
+		background: var(--text-tertiary);
 		width: 14px;
 		height: 14px;
 	}
 	.lk-slider-imp::-moz-range-thumb {
-		background: rgba(255, 255, 255, 0.4);
+		background: var(--text-tertiary);
 		width: 14px;
 		height: 14px;
 	}
@@ -463,7 +464,7 @@
 		align-items: center;
 		gap: 0.3rem;
 		font-size: 0.74rem;
-		color: rgba(255, 255, 255, 0.55);
+		color: var(--text-tertiary);
 		margin: 0.4rem 0 0;
 	}
 	.lk-swatch-solid,
@@ -472,10 +473,10 @@
 		width: 10px;
 		height: 10px;
 		border-radius: 2px;
-		background: #7c8ef5;
+		background: var(--accent-light);
 	}
 	.lk-swatch-faint {
-		background: rgba(124, 142, 245, 0.25);
+		background: color-mix(in srgb, var(--accent-light) 25%, transparent);
 	}
 	.lk-sync {
 		margin-top: 1.4rem;
@@ -506,7 +507,7 @@
 	}
 	.lk-sync-text {
 		font-size: 0.86rem;
-		color: rgba(255, 255, 255, 0.78);
+		color: var(--text-secondary);
 		line-height: 1.4;
 	}
 	.lk-note {
@@ -516,7 +517,7 @@
 	.lk-note span {
 		display: block;
 		font-size: 0.8rem;
-		color: rgba(255, 255, 255, 0.55);
+		color: var(--text-tertiary);
 		margin-bottom: 0.35rem;
 	}
 	.lk-note textarea {
@@ -524,9 +525,9 @@
 		box-sizing: border-box;
 		padding: 0.6rem 0.8rem;
 		border-radius: 12px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		color: rgba(255, 255, 255, 0.92);
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		color: var(--text-primary);
 		font: inherit;
 		resize: vertical;
 	}
@@ -546,12 +547,12 @@
 		border: 1px solid transparent;
 	}
 	.lk-primary {
-		background: #4b6ef5;
-		color: white;
+		background: var(--accent-primary);
+		color: var(--accent-contrast);
 	}
 	.lk-secondary {
 		background: transparent;
-		border-color: rgba(255, 255, 255, 0.18);
-		color: rgba(255, 255, 255, 0.7);
+		border-color: var(--border-color);
+		color: var(--text-secondary);
 	}
 </style>

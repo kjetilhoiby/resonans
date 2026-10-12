@@ -32,7 +32,7 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--section-label-color, #94a3b8);
+		color: var(--section-label-color, var(--text-secondary));
 	}
 
 	.section-label.nowrap {

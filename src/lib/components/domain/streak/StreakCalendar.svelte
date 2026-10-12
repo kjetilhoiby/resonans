@@ -188,7 +188,7 @@
 						>
 							<span
 								class="sc-mark"
-								style={visual ? `--f:${visual.fill}; --ink:${visual.ink}` : undefined}
+								style={visual ? `--f:${visual.fill}; --cell-ink:${visual.ink}` : undefined}
 							>
 								{Number(cell.date.slice(8))}
 							</span>
@@ -279,7 +279,7 @@
 	.sc-nav-btn {
 		background: none;
 		border: none;
-		color: var(--color-text-secondary, #999);
+		color: var(--text-secondary);
 		cursor: pointer;
 		padding: 6px 10px;
 		border-radius: 8px;
@@ -293,7 +293,7 @@
 	.sc-title {
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: var(--color-text, #eee);
+		color: var(--text-primary);
 	}
 
 	.sc-weekdays,
@@ -316,7 +316,7 @@
 		font-size: 0.66rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 	}
 
 	/* Cella er rutenettets rute OG trykkflaten. Marken tegnes inni. */
@@ -326,12 +326,12 @@
 		justify-content: center;
 		aspect-ratio: 1;
 		border-radius: 8px;
-		background: #191919;
+		background: var(--bg-card);
 		border: none;
 		padding: 0;
 		font: inherit;
 		font-size: 0.72rem;
-		color: #8a8a8a;
+		color: var(--text-tertiary);
 	}
 
 	button.sc-day {
@@ -354,7 +354,7 @@
 		height: 100%;
 		border-radius: 7px;
 		background: var(--f, transparent);
-		color: var(--ink, inherit);
+		color: var(--cell-ink, inherit);
 	}
 
 	.sc-day.is-done .sc-mark {
@@ -364,12 +364,12 @@
 	/* Uten metrikk-skala: streakens egen aksentfarge, dempet nok til at datotallet
 	   kan leses oppå den. */
 	.sc-day.is-plain .sc-mark {
-		background: color-mix(in srgb, var(--c) 26%, #191919);
-		color: var(--color-text, #eee);
+		background: color-mix(in srgb, var(--c) 26%, var(--bg-card));
+		color: var(--text-primary);
 	}
 
 	.sc-day.is-multi .sc-mark {
-		box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink, var(--c)) 55%, transparent);
+		box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cell-ink, var(--c)) 55%, transparent);
 	}
 
 	.sc-day.is-today {
@@ -378,14 +378,14 @@
 	}
 
 	.sc-day.is-selected {
-		outline: 2px solid var(--color-text, #eee);
+		outline: 2px solid var(--text-primary);
 		outline-offset: -2px;
 	}
 
 	/* Framtida er tom, ikke glemt. */
 	.sc-day.is-future {
-		background: #131313;
-		color: #4a4a4a;
+		background: var(--bg-secondary);
+		color: var(--text-muted);
 	}
 
 	.sc-week-col {
@@ -397,7 +397,7 @@
 	.sc-week {
 		font-size: 0.62rem;
 		font-weight: 600;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 		white-space: nowrap;
 	}
 
@@ -408,13 +408,13 @@
 	.sc-summary {
 		margin: 2px 0 0;
 		font-size: 0.72rem;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 	}
 
 	.sc-read {
 		margin: 4px 0 0;
 		font-size: 0.76rem;
-		color: var(--color-text, #eee);
+		color: var(--text-primary);
 	}
 
 	.sc-legend {
@@ -437,7 +437,7 @@
 
 	.sc-legend-axis {
 		font-size: 0.62rem;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 		white-space: nowrap;
 	}
 
@@ -463,7 +463,7 @@
 		margin: 0;
 		font-size: 0.66rem;
 		line-height: 1.45;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 	}
 	/* Skravert mark: dagen finnes og krevde ingenting. Skiller seg fra en tom
 	   celle (glemt) og fra en fylt (holdt). */

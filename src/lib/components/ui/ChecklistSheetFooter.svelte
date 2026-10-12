@@ -36,17 +36,17 @@
 
 	.cs-calendar-link {
 		font-size: 0.74rem;
-		color: #8ea0ff;
+		color: var(--accent-muted);
 		text-decoration: none;
-		border: 1px solid #2f365f;
-		background: #151821;
+		border: 1px solid var(--info-border);
+		background: var(--info-bg);
 		padding: 6px 10px;
 		border-radius: 8px;
 	}
 
 	.cs-calendar-link:hover {
-		color: #c7d0ff;
-		border-color: #4653a6;
+		color: var(--text-primary);
+		border-color: var(--accent-light);
 	}
 
 	.cs-day-nav {
@@ -59,9 +59,9 @@
 		width: 30px;
 		height: 30px;
 		border-radius: 8px;
-		border: 1px solid #2f365f;
-		background: #151821;
-		color: #8ea0ff;
+		border: 1px solid var(--info-border);
+		background: var(--info-bg);
+		color: var(--accent-muted);
 		font-size: 1.1rem;
 		cursor: pointer;
 		display: flex;
@@ -73,14 +73,14 @@
 	}
 
 	.cs-day-nav-btn:hover {
-		color: #c7d0ff;
-		border-color: #4653a6;
+		color: var(--text-primary);
+		border-color: var(--accent-light);
 	}
 
 	.cs-delete-btn {
 		background: transparent;
 		border: none;
-		color: #555;
+		color: var(--text-muted);
 		font-size: 0.72rem;
 		cursor: pointer;
 		padding: 4px 0;
@@ -88,5 +88,5 @@
 		text-decoration: underline;
 		text-underline-offset: 3px;
 	}
-	.cs-delete-btn:hover { color: #e07070; }
+	.cs-delete-btn:hover { color: var(--error-text); }
 </style>

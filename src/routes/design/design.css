@@ -635,15 +635,15 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 8px;
-		background: #111;
-		border: 1px solid #222;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 16px;
 		padding: 20px;
 	}
 
 	.radial-caption {
 		font-size: 0.72rem;
-		color: #555;
+		color: var(--text-tertiary);
 		margin: 0;
 		text-align: center;
 	}

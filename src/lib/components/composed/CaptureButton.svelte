@@ -26,7 +26,8 @@
 {/if}
 
 <style>
-	/* Mørk uansett systeminnstilling, som arkene — se CaptureSheet. */
+	/* Knappen ligger i rot-layouten, utenfor AppPage; fargene kommer fra
+	   <body data-uttrykk>, som arket — se CaptureSheet. */
 	.capture-fab {
 		position: fixed;
 		right: 16px;
@@ -35,17 +36,17 @@
 		width: 52px;
 		height: 52px;
 		border-radius: 50%;
-		border: 1px solid #2a2a2a;
-		background: #161616;
-		color: #eee;
+		border: 1px solid var(--border-color);
+		background: var(--bg-card);
+		color: var(--text-primary);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--shadow-md);
 		cursor: pointer;
 	}
 	.capture-fab:hover {
-		border-color: #6b7cff;
+		border-color: var(--accent-primary);
 	}
 	@media print {
 		.capture-fab {
