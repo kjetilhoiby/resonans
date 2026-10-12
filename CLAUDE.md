@@ -888,13 +888,12 @@ står i `$lib/domain/capture.ts`.
   ikke en andre inngang på hjemskjermen; det var nettopp det brukeren påpekte.
 - **En fangst sender alle verktøyene** (`capture` i `selectToolGroups`).
   Brukeren har ikke sagt hva det er, så ingen signal kan avgjøre gruppa.
-- **Arket og knappen er mørke uansett systeminnstilling**, som de andre arkene.
-  De portaleres og arver ikke `AppPage`-variablene, så `var(--text-primary)` der
-  gir de LYSE standardverdiene fra `app.css`. Første utgave hadde usynlig
-  tittel. Fargene står som `--cs-*` øverst i stilen. **Dette er gjeld etter
-  regelen om at alle flater finnes i valgt tema**: mens en side i uttrykk A er
-  åpen bærer `<body>` A-variablene (`data-uttrykk`, se `$lib/styles/`), så
-  svaret er å lese variablene, ikke en egen mørk palett per ark.
+- **Arket og knappen følger valgt fargetema, og variablene kommer fra
+  `<body data-uttrykk>`.** De portaleres og arver ikke `AppPage`-variablene;
+  fram til oktober 2026 hadde de derfor en egen mørk palett (`--cs-*`), fordi
+  `var(--text-primary)` der ga de LYSE standardverdiene fra `app.css` — første
+  utgave hadde usynlig tittel. Nå bærer `<body>` uttrykket til siden som er
+  åpen (`AppPage`), så et portalert ark leser variablene som alt annet.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i

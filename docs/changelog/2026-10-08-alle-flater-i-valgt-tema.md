@@ -69,6 +69,30 @@ med variabler etter rolle:
   markeringene oppå bilder, readiness «lett» (oransje, ingen statusvariabel),
   den indre ringens datafarge i `GoalRing`.
 
+### Fase 3: arkene og panelene (12. oktober)
+
+Alt som åpnes fra hjemskjermen leser nå variablene: overleggene
+(`HomeOverlays`), widget-, sjekkliste- og flytarket med alle underkomponentene
+og flytstegene, `BottomSheet`, kamera-, fil- og lydpanelet, videobildevelgeren,
+helsearkene (`TrailingVolumeSheet`, `LivskompassCheckin`, `StreakHistorySheet`
+med `StreakCalendar`) og `RadialSectorChart`. `CaptureSheet`/`CaptureButton`
+har ikke lenger sin egen `--cs-*`-palett.
+
+- **Bildeoverlegg beholder mørkt med vilje**: ×-knappen og navnestripa oppå et
+  foto, letterbox rundt video. De må synes uansett hva bildet viser.
+- **Datafarger står**: sonekategoriene, båndet og volumkurven i det slepende
+  volumet, områdefargene i Livskompass, cellefargene i streak-kalenderen,
+  widgetpaletten brukeren velger fra.
+- **`var()` virker ikke i SVG-presentasjonsattributter** (`stroke="var(--x)"`).
+  Ringer og grafer flyttes med `style:stroke`/`style=`, ellers blir streken
+  stille svart.
+- **Variabler som ikke fantes** (`--danger-text`, `--color-text`,
+  `--color-text-secondary`, `--sheet-bg`) er byttet til de som finnes. De
+  hang på en hardkodet fallback, så de så ut som de virket.
+- **To plasseringsfeil** fra før er rettet: lukkeknappen i filbrikken og
+  navnestripa i kamerahistorikken var absolutt plassert uten et posisjonert
+  anker og havnet i panelets hjørne.
+
 ## Beslutninger
 
 - **Følg telefonen som standard.** Skissen heter «døgnrytme», og natt er det
@@ -100,10 +124,6 @@ med variabler etter rolle:
 
 ## Kjent rest
 
-- **Arkene og panelene på hjemskjermen** hardkoder fortsatt mørke farger:
-  `HomeOverlays`, kamera/fil/lyd, `VideoFramePicker`, `WidgetConfigSheet`,
-  `ChecklistSheet`, `FlowSheet`, `TrailingVolumeSheet`, `LivskompassCheckin`,
-  `StreakHistorySheet`. De er neste runde.
 - **`theme-color` ved kald start** er app.html sin mørke verdi til JavaScript
   har kjørt, så statuslinja i PWA-en kan blinke mørk.
 - **Galleriet**: `ringer.svelte` gir `GoalRing` mørke spor som props, og
@@ -112,5 +132,7 @@ med variabler etter rolle:
 - **Visuelle baselines** for `hjem` må oppdateres: kjør
   `VISUAL_REVIEW_CONTEXT="Hjemskjermen i uttrykk A" npm run test:visual:review`
   mot en dev-server med database.
-- **«I dag»-linjene** (signalene fra brevet øverst på `/`) er neste steg i
-  spor 3, nå som flaten har uttrykket.
+- **Temasidene, ukeplanen og resten av appen** står i det gamle mørke uttrykket.
+  Neste rom flyttes på samme måte: `uttrykk="a"` på siden, og komponentene den
+  bruker over på variablene. `LivskompassWidget` (temasidene) og
+  `RadialSectorChart` sine nabodiagrammer er kjente kandidater.
