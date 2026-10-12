@@ -180,19 +180,19 @@
 		font-weight: 700;
 		/* Eksplisitt farge: panelet portaleres til body og arver ellers hva som nå
 		   står der — i galleriet ble tittelen nesten usynlig mot bakgrunnen. */
-		color: var(--color-text, #eee);
+		color: var(--text-primary);
 	}
 
 	.sh-meta {
 		margin: 2px 0 0;
 		font-size: 0.76rem;
-		color: var(--color-text-secondary, #999);
+		color: var(--text-secondary);
 	}
 
 	.sh-close {
 		background: none;
 		border: none;
-		color: var(--color-text-secondary, #999);
+		color: var(--text-secondary);
 		cursor: pointer;
 		padding: 6px;
 		flex: 0 0 auto;
@@ -215,28 +215,28 @@
 	.sh-fact {
 		padding: 4px 10px;
 		border-radius: 999px;
-		background: #1c1c1c;
+		background: var(--bg-hover);
 		font-size: 0.72rem;
-		color: #bbb;
+		color: var(--text-secondary);
 	}
 
 	.sh-note {
 		margin: 0;
 		font-size: 0.72rem;
 		line-height: 1.5;
-		color: var(--text-muted, #777);
+		color: var(--text-tertiary);
 	}
 
 	.sh-link {
 		align-self: flex-start;
 		font-size: 0.76rem;
-		color: var(--accent-light, #7c8ef5);
+		color: var(--accent-light);
 		text-decoration: none;
 	}
 
 	.sh-error {
 		margin: 0;
 		font-size: 0.78rem;
-		color: #ee8c8c;
+		color: var(--error-text);
 	}
 </style>

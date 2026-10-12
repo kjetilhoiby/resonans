@@ -212,7 +212,7 @@
 		rolig: '#34d399',
 		graa: '#fbbf24',
 		hard: '#ef4444',
-		ukjent: '#3a3a3a'
+		ukjent: 'var(--text-muted)'
 	};
 </script>
 
@@ -283,7 +283,7 @@
 						<line
 							x1="0" x2={CHART_W}
 							y1={CHART_H * at} y2={CHART_H * at}
-							stroke="#2a2a2a" stroke-width="1"
+							style="stroke: var(--border-color)" stroke-width="1"
 						/>
 					{/each}
 					{#if view.band}
@@ -312,9 +312,9 @@
 							<line
 								x1={x(i, drawn.length)} x2={x(i, drawn.length)}
 								y1="0" y2={CHART_H}
-								stroke="#555" stroke-width="1"
+								style="stroke: var(--text-muted)" stroke-width="1"
 							/>
-							<circle cx={x(i, drawn.length)} cy={y(scrubbed.value)} r="3.5" fill="#eee" />
+							<circle cx={x(i, drawn.length)} cy={y(scrubbed.value)} r="3.5" style="fill: var(--text-primary)" />
 						{/if}
 					{/if}
 				</svg>
@@ -435,18 +435,18 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 18px 20px 8px;
-		border-bottom: 1px solid var(--border-subtle, #1e1e1e);
+		border-bottom: 1px solid var(--border-subtle);
 	}
 	.tv-header h2 {
 		margin: 0;
 		font-size: 1.05rem;
 		font-weight: 600;
-		color: var(--text-primary, #eee);
+		color: var(--text-primary);
 	}
 	.tv-close {
 		background: none;
 		border: none;
-		color: var(--text-tertiary, #777);
+		color: var(--text-tertiary);
 		font-size: 1rem;
 		cursor: pointer;
 		padding: 4px 8px;
@@ -476,13 +476,13 @@
 		border-radius: 999px;
 		padding: 6px 13px;
 		font-size: 0.82rem;
-		background: rgba(255, 255, 255, 0.07);
-		color: var(--text-secondary, #aaa);
+		background: var(--bg-hover);
+		color: var(--text-secondary);
 		cursor: pointer;
 	}
 	.tv-chip.active {
-		background: rgba(124, 142, 245, 0.2);
-		color: var(--accent-light, #7c8ef5);
+		background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+		color: var(--accent-light);
 	}
 	.tv-lead {
 		display: flex;
@@ -494,15 +494,15 @@
 		font-size: 2rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
-		color: var(--text-primary, #eee);
+		color: var(--text-primary);
 	}
 	.tv-unit {
 		font-size: 0.95rem;
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 	}
 	.tv-when {
 		font-size: 0.8rem;
-		color: var(--text-tertiary, #777);
+		color: var(--text-tertiary);
 		margin-left: auto;
 	}
 	.tv-plot {
@@ -516,7 +516,7 @@
 		justify-content: space-between;
 		font-size: 0.65rem;
 		font-variant-numeric: tabular-nums;
-		color: var(--text-muted, #555);
+		color: var(--text-muted);
 		text-align: right;
 		min-width: 26px;
 	}
@@ -531,7 +531,7 @@
 		flex-wrap: wrap;
 		gap: 4px 14px;
 		font-size: 0.72rem;
-		color: var(--text-tertiary, #777);
+		color: var(--text-tertiary);
 	}
 	.tv-key-item {
 		display: inline-flex;
@@ -553,11 +553,11 @@
 		border-radius: 0;
 	}
 	.tv-readout {
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 		font-variant-numeric: tabular-nums;
 	}
 	.tv-warn {
-		color: var(--warning-text, #fbbf24);
+		color: var(--warning-text);
 		margin: 0;
 	}
 	.tv-heading h2 {
@@ -566,22 +566,22 @@
 	.tv-subtitle {
 		margin: 2px 0 0;
 		font-size: 0.75rem;
-		color: var(--text-tertiary, #777);
+		color: var(--text-tertiary);
 	}
 	.tv-axis {
 		display: flex;
 		justify-content: space-between;
 		font-size: 0.7rem;
-		color: var(--text-muted, #555);
+		color: var(--text-muted);
 	}
 	.tv-text {
 		margin: 0;
 		font-size: 0.88rem;
 		line-height: 1.5;
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 	}
 	.tv-dim {
-		color: var(--text-tertiary, #777);
+		color: var(--text-tertiary);
 		margin: 0;
 		font-size: 0.85rem;
 	}
@@ -589,7 +589,7 @@
 		font-size: 0.78rem;
 	}
 	.tv-error {
-		color: var(--danger-text, #f87171);
+		color: var(--error-text);
 		margin: 0;
 		font-size: 0.88rem;
 	}
@@ -598,20 +598,20 @@
 		flex-direction: column;
 		gap: 8px;
 		padding-top: 6px;
-		border-top: 1px solid var(--border-subtle, #1e1e1e);
+		border-top: 1px solid var(--border-subtle);
 	}
 	.tv-section h3 {
 		margin: 0;
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: var(--text-primary, #eee);
+		color: var(--text-primary);
 	}
 	.tv-bar {
 		display: flex;
 		height: 14px;
 		border-radius: 999px;
 		overflow: hidden;
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--bg-hover);
 	}
 	.tv-seg {
 		height: 100%;
@@ -621,7 +621,7 @@
 		flex-wrap: wrap;
 		gap: 4px 14px;
 		font-size: 0.78rem;
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 	}
 	.tv-legend-item {
 		display: inline-flex;
@@ -635,7 +635,7 @@
 	}
 	.tv-link {
 		font-size: 0.85rem;
-		color: var(--accent-light, #7c8ef5);
+		color: var(--accent-light);
 		text-decoration: none;
 		padding-top: 4px;
 	}
