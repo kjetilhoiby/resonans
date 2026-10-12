@@ -2645,35 +2645,3 @@ export const sickEpisodeMock: SickEpisode = (() => {
 	};
 })();
 
-/** «I dag»-linjene på hjemskjermen (`HomeTodayZone`). Fiktive mål og punkter. */
-export const homeTodayMock = {
-	lines: [
-		{
-			id: 'event-prep:konsert',
-			text: 'Om 4 dager: Konsert i Operaen kl. 19:30. Mangler barnevakt.',
-			href: '/arrangementer',
-			kind: 'venter' as const
-		},
-		{
-			id: 'lost-items',
-			text: 'To punkter ble liggende på dager som har gått: Ringe rørleggeren og Bytte dekk.',
-			href: '/ukeplan',
-			kind: 'venter' as const
-		},
-		{
-			id: 'goal-group:w',
-			text: 'Ned til 88 kg: 90,6 kg nå, målet er 88,0 kg. På dagens tempo er du der rundt 2. mai — 6 uker før fristen. Delmålet 89 kg innen jul ligger bak planen, men hovedmålet holder.',
-			href: '/plan/mal',
-			kind: 'status' as const
-		},
-		{
-			id: 'effort-7d',
-			text: 'De siste sju dagene: 312 av rammen 260–320. Godt innenfor.',
-			href: '/tema/helse',
-			kind: 'status' as const
-		},
-		{ id: 'since-last-visit', text: 'Siden du var innom i går: to økter, 14 km.', href: null, kind: 'status' as const }
-	],
-	more: 2,
-	failed: [] as string[]
-};

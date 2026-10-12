@@ -4,8 +4,7 @@
 	import ReadinessChip from '$lib/components/domain/home/ReadinessChip.svelte';
 	import ActionPillRow from '$lib/components/domain/home/ActionPillRow.svelte';
 	import PagerDots from '$lib/components/ui/PagerDots.svelte';
-	import HomeTodayZone from '$lib/components/domain/home/HomeTodayZone.svelte';
-	import { themeButtonsMock, actionPillsMock, readinessMock, homeTodayMock } from '../mocks';
+	import { themeButtonsMock, actionPillsMock, readinessMock } from '../mocks';
 
 	const noop = () => {};
 </script>
@@ -17,11 +16,6 @@
 		Byggeklossene i hjemskjerm-sonene, trukket ut som props-drevne komponenter
 		(<code>domain/home/</code>). Sonene selv er setContext-koblede orkestratorer og demoes ikke.
 	</p>
-
-	<h3 class="subsection">HomeTodayZone — «I dag», brevets signaler som linjer</h3>
-	<div class="demo-card demo-card--wide">
-		<HomeTodayZone homeToday={Promise.resolve(homeTodayMock)} />
-	</div>
 
 	<h3 class="subsection">ThemeButtonGrid — tema-knappene</h3>
 	<div class="demo-card demo-card--wide">

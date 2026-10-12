@@ -10,7 +10,6 @@
  * ingen milepæler.
  */
 
-import { buildHomeToday, type HomeToday } from '$lib/domain/home-today';
 import { and, desc, eq, gte, inArray, like, lt } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { bookProgressLog, checklistItems, checklists, goals, sensorEvents, usageEvents } from '$lib/db/schema';
@@ -335,9 +334,6 @@ export interface HomeLetterPayload {
 	registration: DomainCoverage[] | null;
 	/** Kilder som feilet. Et brev som tier fordi en kilde døde, skal si det. */
 	failed: string[];
-	/** Målene og dagen brevet ble bygget av — «I dag»-linjene grupperer på dem. */
-	goals: LetterGoal[];
-	today: string;
 }
 
 export async function loadHomeLetter(userId: string, now: Date = new Date()): Promise<HomeLetterPayload> {
@@ -413,18 +409,6 @@ export async function loadHomeLetter(userId: string, now: Date = new Date()): Pr
 		letter,
 		raw: { digest, weight, lastVisit: lastVisit ? lastVisit.toISOString() : null },
 		registration,
-		failed,
-		goals: letterGoals,
-		today
+		failed
 	};
-}
-
-/**
- * «I dag»-linjene på hjemskjermen: brevet, gjort kort (`buildHomeToday`).
- * `failed` følger med, så flaten kan si fra når en kilde døde framfor å vise
- * færre linjer som om det var alt.
- */
-export async function loadHomeToday(userId: string, now: Date = new Date()): Promise<HomeToday & { failed: string[] }> {
-	const payload = await loadHomeLetter(userId, now);
-	return { ...buildHomeToday(payload.letter, payload.goals, payload.today), failed: payload.failed };
 }

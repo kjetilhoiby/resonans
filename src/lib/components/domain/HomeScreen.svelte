@@ -35,8 +35,6 @@
 	import type { Checklist } from '../composed/ChecklistWidget.svelte';
 
 	import HomeTitleZone from './home/HomeTitleZone.svelte';
-	import HomeTodayZone from './home/HomeTodayZone.svelte';
-	import type { HomeToday } from '$lib/domain/home-today';
 	import HomeWidgetZone from './home/HomeWidgetZone.svelte';
 	import HomeThemeZone from './home/HomeThemeZone.svelte';
 	import HomeChatZone from './home/HomeChatZone.svelte';
@@ -165,8 +163,6 @@
 		} | null;
 		activeFerie?: ActiveFerie[];
 		feriedagbokTodo?: { themeId: string; themeName: string; emoji: string } | null;
-		/** «I dag»-linjene, strømmet fra lasteren. Se HomeTodayZone. */
-		homeToday?: Promise<(HomeToday & { failed: string[] }) | null> | null;
 	}
 
 	let {
@@ -174,8 +170,7 @@
 		recentConversations,
 		programReadiness = null,
 		activeFerie = [],
-		feriedagbokTodo = null,
-		homeToday = null
+		feriedagbokTodo = null
 	}: Props = $props();
 
 	// ── Tema-state ────────────────────────────────────────────────────────
@@ -1343,7 +1338,6 @@
 	<HomeTitleZone />
 
 	<!-- SONE 1B: I dag — styringssignalene fra brevet -->
-	<HomeTodayZone {homeToday} hidden={inputExpanded} />
 
 	<!-- SONE 2: Widgets -->
 	<HomeWidgetZone />
