@@ -130,21 +130,58 @@ export async function fetchTripWeather(args: FetchWeatherArgs): Promise<Record<s
 	return result;
 }
 
+interface WeatherPlace { latitude: number; longitude: number; source: 'now' | 'home' }
+
+async function metForecast(lat: number, lng: number): Promise<TimeseriesEntry[] | null> {
+	const wxRes = await fetch(
+		`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`,
+		{ headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' } }
+	);
+	if (!wxRes.ok) return null;
+	const wxData = await wxRes.json();
+	return wxData.properties.timeseries;
+}
+
+/** Stedene fra Akser: i dag der du er (eller hjemme), resten av uka hjemme. Null uten Akser. */
+async function aksersPlaces(): Promise<{ today: WeatherPlace | null; otherDays: WeatherPlace | null } | null> {
+	try {
+		const res = await fetch('/api/day-plan/weather-location');
+		if (!res.ok) return null;
+		const body = await res.json();
+		if (!body.today && !body.otherDays) return null;
+		return body;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Ukelistas vær. Stedet kommer fra Akser når det finnes – der du er i dag, hjemme
+ * de andre dagene – og fra nettleserens posisjon ellers, som før oktober 2026.
+ */
 export async function fetchHomeWeather(weekDays: Array<{ isoDate: string }>): Promise<Record<string, DayWeatherSummary>> {
 	try {
-		const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-			navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-		);
-		const { latitude: lat, longitude: lng } = pos.coords;
-		const wxRes = await fetch(
-			`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`,
-			{ headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' } }
-		);
-		if (!wxRes.ok) return {};
-		const wxData = await wxRes.json();
-		const ts = wxData.properties.timeseries;
+		const places = await aksersPlaces();
+		let todayPlace: { latitude: number; longitude: number } | null = places?.today ?? null;
+		let otherPlace: { latitude: number; longitude: number } | null = places?.otherDays ?? places?.today ?? null;
+		if (!todayPlace || !otherPlace) {
+			const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+				navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+			);
+			const here = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+			todayPlace ??= here;
+			otherPlace ??= here;
+		}
+		const samePlace = todayPlace.latitude === otherPlace.latitude && todayPlace.longitude === otherPlace.longitude;
+		const [todaySeries, otherSeries] = await Promise.all([
+			metForecast(todayPlace.latitude, todayPlace.longitude),
+			samePlace ? Promise.resolve(null) : metForecast(otherPlace.latitude, otherPlace.longitude)
+		]);
+		const todayIso = new Intl.DateTimeFormat('sv', { timeZone: 'Europe/Oslo' }).format(new Date());
 		const result: Record<string, DayWeatherSummary> = {};
 		for (const day of weekDays) {
+			const ts = day.isoDate === todayIso || samePlace ? todaySeries : otherSeries;
+			if (!ts) continue;
 			const periods = parseDayPeriods(ts, day.isoDate);
 			if (!periods.length) continue;
 			const midday = periods.find(p => p.key === 'ettermiddag') ?? periods.find(p => p.key === 'morgen') ?? periods[0];

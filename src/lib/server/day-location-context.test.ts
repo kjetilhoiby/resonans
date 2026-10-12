@@ -8,6 +8,14 @@ describe('formatDayContextBlock', () => {
 		expect(formatDayContextBlock(base)).toBe('');
 	});
 
+	it('«nå» fra Akser alene gir en blokk', () => {
+		const out = formatDayContextBlock({
+			...base,
+			now: { state: 'stay', since: '2026-07-03T06:24:00Z', mode: null, place: { name: 'Jobb', category: 'work' } }
+		});
+		expect(out).toContain('Nå: på Jobb siden 08:24.');
+	});
+
 	it('sted i dag uten opphold', () => {
 		const out = formatDayContextBlock({ ...base, locations: ['Volda'] });
 		expect(out).toContain('Sted i dag: Volda.');

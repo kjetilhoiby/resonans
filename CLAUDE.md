@@ -579,7 +579,7 @@ iOS-appen **Akser** (`resonans-lab/akser`) sporer bevegelse i bakgrunnen og last
 den UTLEDEDE tidslinjen — opphold, reiser og etapper — aldri rå GPS. Kontrakten i
 `docs/akser-tidslinje.md`, planen i `docs/changelog/2026-10-06-akser-integrasjon.md`.
 Endepunktene: `GET /api/apps/akser/status`, `PUT /api/apps/akser/places`,
-`POST`/`DELETE /api/apps/akser/timeline`. Fasit for transportform henter den fra den
+`POST`/`DELETE /api/apps/akser/timeline` og `PUT`/`DELETE /api/apps/akser/now`. Fasit for transportform henter den fra den
 eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
 
 - **Resonans er navet.** Akser og Ekko kjenner ikke hverandre; alt de deler, deler de
@@ -611,6 +611,14 @@ eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
   den utledes av navnet. Hvert sted kobles høyst én gang, nærmeste først — Akser hadde 22
   automatiske steder rundt hjemmet. Brukerens `confirmed`/`rejected` regnes aldri ut på nytt.
   Et koblet Ekko-navn er et alias i `query_movement`.
+- **«Nå» er frivillig, grovt og uten historikk** (`app_presence`, reglene i
+  `$lib/domain/movement/presence.ts`). Ett kjent sted eller en posisjon avrundet til ~1 km,
+  én rad som overskrives, og signalet går ut av seg selv (opphold 48 t, reise 1 t). Det
+  gjelder bare I DAG: været for resten av uka hentes hjemme (`pickWeatherLocation`). Alt
+  som trenger et værsted uten koordinater går gjennom `resolveWeatherLocation`
+  (`$lib/server/movement/presence-store.ts`) – også dagsplanens vær, som falt tilbake på
+  Oslo sentrum, og ukelista, som bare hadde nettleserens posisjon. `now` i dagskonteksten
+  bærer aldri koordinater.
 - **Aksers hjem er Resonans' hjem.** `weather_forecast` uten koordinater bruker det
   (`readHomeLocation`, avrundet til ~1 km før det går til MET), og en Akser-dag inne i et
   reise-tema skriver `geoByDay` med kilde `observed`.
