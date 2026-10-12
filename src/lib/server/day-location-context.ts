@@ -18,6 +18,8 @@ import { computeStaysFromDayPlans, formatStayRange } from './stays';
 import { dayWindowInfo } from './trip-geo';
 import { readMovement } from './movement/movement-read';
 import { summarizeDay, type DaySummary } from '$lib/domain/movement/movement-summary';
+import { describePresenceNow, type PresenceNow } from '$lib/domain/movement/presence';
+import { readPresence } from './movement/presence-store';
 import {
 	isLocationItem,
 	locationDisplayName,
@@ -76,6 +78,11 @@ export interface DayContext {
 	 * Nytt felt i oktober 2026; Ekko leser det ikke ennå.
 	 */
 	observed?: Pick<DaySummary, 'entries' | 'kmByMode'>;
+	/**
+	 * Hvor brukeren er NÅ, fra Akser – bare for i dag, og bare når brukeren deler det
+	 * («Del hvor jeg er nå»). Aldri koordinater. Nytt i oktober 2026; Ekko leser det ikke ennå.
+	 */
+	now?: PresenceNow;
 }
 
 /**
@@ -100,11 +107,28 @@ export async function gatherDayContext(
 
 	const today = localIsoDay(tz, new Date());
 	const day = date ?? today;
-	const [planned, observed] = await Promise.all([
+	const [planned, observed, now] = await Promise.all([
 		gatherPlannedDay(userId, day),
-		day < today ? readObservedDay(userId, day) : Promise.resolve(undefined)
+		day < today ? readObservedDay(userId, day) : Promise.resolve(undefined),
+		day === today ? readPresenceNow(userId) : Promise.resolve(undefined)
 	]);
-	return observed ? { ...planned, observed } : planned;
+	return {
+		...planned,
+		...(observed ? { observed } : {}),
+		...(now ? { now } : {})
+	};
+}
+
+/** «Nå» fra Akser, uten værkoordinatene. Feiler stille: planen skal komme fram uansett. */
+async function readPresenceNow(userId: string): Promise<PresenceNow | undefined> {
+	try {
+		const p = await readPresence(userId);
+		if (!p) return undefined;
+		return { state: p.state, since: p.since, mode: p.mode, place: p.place };
+	} catch (err) {
+		console.warn('[day-context] kunne ikke lese «nå» fra Akser:', err instanceof Error ? err.message : err);
+		return undefined;
+	}
 }
 
 /** Akser-tidslinjen for en dag som er over. Feiler stille: planen skal komme fram uansett. */
@@ -195,9 +219,10 @@ export function movementFromItem(item: DayItem): DayMovement | null {
 
 /** Formater strukturert dagskontekst til prosa-blokken chat-prompten bruker. */
 export function formatDayContextBlock(ctx: DayContext): string {
-	if (ctx.locations.length === 0 && ctx.movement.length === 0) return '';
+	if (ctx.locations.length === 0 && ctx.movement.length === 0 && !ctx.now) return '';
 
 	const lines: string[] = [];
+	if (ctx.now) lines.push(describePresenceNow(ctx.now));
 	if (ctx.stay) {
 		lines.push(
 			`Opphold i ${ctx.stay.place} ${formatStayRange(ctx.stay)} (dag ${ctx.stay.dayNo} av ${ctx.stay.totalDays}).`
