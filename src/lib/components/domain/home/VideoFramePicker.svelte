@@ -143,7 +143,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 50;
-		background: #0b0b0b;
+		background: var(--bg-primary);
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
@@ -158,12 +158,12 @@
 	.picker-title {
 		font-size: 0.95rem;
 		font-weight: 700;
-		color: #ddd;
+		color: var(--text-primary);
 	}
 	.picker-done {
 		background: none;
 		border: none;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
@@ -178,7 +178,7 @@
 	}
 	.picker-scrub {
 		width: 100%;
-		accent-color: #4a5af0;
+		accent-color: var(--accent-primary);
 	}
 	.picker-controls {
 		display: flex;
@@ -188,13 +188,13 @@
 	}
 	.picker-time {
 		font-size: 0.8rem;
-		color: #888;
+		color: var(--text-tertiary);
 		font-variant-numeric: tabular-nums;
 	}
 	.picker-capture {
-		background: #4a5af0;
+		background: var(--accent-primary);
 		border: none;
-		color: #fff;
+		color: var(--accent-contrast);
 		border-radius: 12px;
 		padding: 10px 16px;
 		font: inherit;
@@ -208,7 +208,7 @@
 		cursor: default;
 	}
 	.picker-loading {
-		color: #666;
+		color: var(--text-tertiary);
 		font-size: 0.85rem;
 		text-align: center;
 	}
@@ -227,7 +227,7 @@
 		height: 64px;
 		width: auto;
 		border-radius: 8px;
-		border: 1px solid #2a2a2a;
+		border: 1px solid var(--border-color);
 		display: block;
 	}
 	.picker-thumb-remove {
@@ -237,9 +237,9 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
-		background: #1a1a1a;
-		border: 1px solid #333;
-		color: #ddd;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		color: var(--text-primary);
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -249,7 +249,7 @@
 	.picker-hint {
 		margin: 0;
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--text-tertiary);
 		text-align: center;
 	}
 </style>

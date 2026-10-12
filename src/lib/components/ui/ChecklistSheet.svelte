@@ -312,7 +312,7 @@
 		}
 	});
 
-	const ringColor = $derived(allDone ? '#5fa080' : '#7c8ef5');
+	const ringColor = $derived(allDone ? 'var(--success-text)' : 'var(--accent-light)');
 
 	// ── Long press / context menu ────────────────────────────────────
 	function handleItemPressStart(event: PointerEvent, item: ChecklistItem) {
@@ -761,13 +761,13 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		background: rgba(95, 160, 128, 0.12);
-		border: 1px solid rgba(95, 160, 128, 0.3);
+		background: var(--success-bg);
+		border: 1px solid var(--success-border);
 		border-radius: 999px;
 		padding: 5px 12px 5px 10px;
 		cursor: pointer;
 		font: inherit;
-		color: #9fd9bd;
+		color: var(--success-text);
 		touch-action: manipulation;
 		user-select: none;
 		-webkit-user-select: none;
@@ -775,8 +775,8 @@
 		transition: border-color 0.12s, background 0.12s;
 	}
 	.cs-location-chip:hover {
-		border-color: rgba(95, 160, 128, 0.55);
-		background: rgba(95, 160, 128, 0.18);
+		border-color: color-mix(in srgb, var(--success-text) 55%, transparent);
+		background: color-mix(in srgb, var(--success-text) 18%, transparent);
 	}
 
 	.cs-location-pin { font-size: 0.85rem; line-height: 1; }
@@ -795,7 +795,7 @@
 
 	.cs-divider {
 		height: 1px;
-		background: #1e1e1e;
+		background: var(--border-subtle);
 		margin: 6px 12px;
 		flex-shrink: 0;
 	}
@@ -817,17 +817,17 @@
 		border: none;
 		cursor: pointer;
 		padding: 10px 12px;
-		color: #666;
+		color: var(--text-tertiary);
 		font: inherit;
 		font-size: 0.78rem;
 		text-align: left;
 		transition: color 0.12s;
 	}
-	.cs-skipped-header:hover { color: #999; }
+	.cs-skipped-header:hover { color: var(--text-secondary); }
 
 	.cs-skipped-caret {
 		font-size: 0.8rem;
-		color: #555;
+		color: var(--text-muted);
 		line-height: 1;
 		transition: transform 0.2s;
 		flex-shrink: 0;
@@ -835,7 +835,7 @@
 	.cs-skipped-caret.cs-caret-expanded { transform: rotate(90deg); }
 
 	.cs-skipped-label { flex: 1; }
-	.cs-skipped-count { color: #555; font-variant-numeric: tabular-nums; }
+	.cs-skipped-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 	.cs-skipped-items {
 		display: flex;
@@ -848,32 +848,32 @@
 		display: flex;
 		gap: 8px;
 		padding: 12px 20px;
-		border-top: 1px solid #1a1a1a;
+		border-top: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 
 	.cs-add-input {
 		flex: 1;
-		background: #161616;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
-		color: #ccc;
+		color: var(--text-primary);
 		padding: 9px 12px;
 		font: inherit;
 		font-size: max(0.85rem, 16px);
 		outline: none;
 		transition: border-color 0.12s;
 	}
-	.cs-add-input:focus { border-color: #4a5af0; }
-	.cs-add-input::placeholder { color: #444; }
+	.cs-add-input:focus { border-color: var(--accent-primary); }
+	.cs-add-input::placeholder { color: var(--text-muted); }
 
 	.cs-add-btn {
 		width: 36px;
 		height: 36px;
 		border-radius: 50%;
-		background: #4a5af0;
-		border: 1px solid #5a6af8;
-		color: white;
+		background: var(--accent-primary);
+		border: 1px solid var(--accent-primary);
+		color: var(--accent-contrast);
 		cursor: pointer;
 		flex-shrink: 0;
 		display: flex;
@@ -881,6 +881,6 @@
 		justify-content: center;
 		transition: background 0.12s, opacity 0.12s;
 	}
-	.cs-add-btn:hover:not(:disabled) { background: #3a4adf; }
-	.cs-add-btn:disabled { opacity: 0.35; cursor: not-allowed; background: #2a2a2a; border-color: #2a2a2a; }
+	.cs-add-btn:hover:not(:disabled) { background: var(--accent-hover); }
+	.cs-add-btn:disabled { opacity: 0.35; cursor: not-allowed; background: var(--border-color); border-color: var(--border-color); }
 </style>

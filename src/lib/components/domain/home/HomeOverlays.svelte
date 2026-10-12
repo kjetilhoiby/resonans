@@ -559,12 +559,12 @@
 
 <style>
 	/* Slot-gate: fullskjerm-teppe mens slot-sjekkin avklares. Samme bakgrunn som
-	   FlowSheet focus-modus (#0b0b0f) og z-index rett under sheeten (201) for sømløs overgang. */
+	   FlowSheet focus-modus (--bg-primary) og z-index rett under sheeten (201) for sømløs overgang. */
 	.slot-gate {
 		position: fixed;
 		inset: 0;
 		z-index: 200;
-		background: #0b0b0f;
+		background: var(--bg-primary);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -605,7 +605,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 39;
-		background: rgba(0, 0, 0, 0.52);
+		background: var(--bg-overlay);
 	}
 
 	.widget-panel {
@@ -615,15 +615,15 @@
 		bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 		z-index: 40;
 		max-height: min(72dvh, 560px);
-		background: #111;
-		border: 1px solid #2b2b2b;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-color);
 		border-radius: 18px;
 		padding: 8px 10px 10px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		overflow: hidden;
-		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+		box-shadow: var(--shadow-md);
 	}
 
 	.widget-panel-handle {
@@ -631,7 +631,7 @@
 		height: 4px;
 		margin: 2px auto 6px;
 		border-radius: 999px;
-		background: #333;
+		background: var(--border-color);
 	}
 
 	.widget-panel-content {
@@ -652,13 +652,13 @@
 		margin: 0;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: #e6e6e6;
+		color: var(--text-primary);
 	}
 
 	.widget-panel-close {
-		border: 1px solid #333;
-		background: #191919;
-		color: #cfcfcf;
+		border: 1px solid var(--border-color);
+		background: var(--bg-input);
+		color: var(--text-secondary);
 		border-radius: 999px;
 		padding: 3px 10px;
 		font-size: 0.7rem;
@@ -666,8 +666,8 @@
 	}
 
 	.widget-panel-close:hover {
-		border-color: #4a5af0;
-		color: #fff;
+		border-color: var(--accent-primary);
+		color: var(--text-primary);
 	}
 
 	.theme-panel-close {
@@ -691,13 +691,13 @@
 		font-size: 0.66rem;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #7a7a7a;
+		color: var(--text-tertiary);
 	}
 
 	.widget-panel-empty {
 		margin: 0;
 		font-size: 0.74rem;
-		color: #727272;
+		color: var(--text-tertiary);
 	}
 
 	.widget-panel-row {
@@ -706,14 +706,14 @@
 		justify-content: space-between;
 		gap: 8px;
 		padding: 7px 8px;
-		background: #171717;
-		border: 1px solid #272727;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 	}
 
 	.widget-panel-name {
 		font-size: 0.76rem;
-		color: #d6d6d6;
+		color: var(--text-primary);
 		min-width: 0;
 		white-space: nowrap;
 		overflow: hidden;
@@ -726,9 +726,9 @@
 	}
 
 	.widget-btn {
-		border: 1px solid #333;
-		background: #1f1f1f;
-		color: #ccc;
+		border: 1px solid var(--border-color);
+		background: var(--bg-hover);
+		color: var(--text-secondary);
 		border-radius: 8px;
 		padding: 3px 7px;
 		font-size: 0.68rem;
@@ -741,8 +741,8 @@
 	}
 
 	.widget-btn-danger {
-		border-color: #5a2e2e;
-		color: #ffb4b4;
+		border-color: var(--error-border);
+		color: var(--error-text);
 	}
 
 	/* Tema-panel: full liste */
@@ -754,7 +754,7 @@
 		gap: 6px;
 		border-radius: 12px;
 		margin-bottom: 6px;
-		background: linear-gradient(90deg, hsl(var(--theme-hue) 20% 11%) 0%, hsl(var(--theme-hue) 18% 9%) 100%);
+		background: linear-gradient(90deg, color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 12%, var(--bg-card)) 0%, color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 8%, var(--bg-card)) 100%);
 		transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
 		cursor: grab;
 	}
@@ -781,8 +781,8 @@
 		height: 44px;
 		margin-bottom: 6px;
 		border-radius: 12px;
-		border: 2px dashed var(--accent-primary, hsl(228 50% 55%));
-		background: hsl(228 40% 50% / 0.1);
+		border: 2px dashed var(--accent-primary);
+		background: var(--info-bg);
 		box-sizing: border-box;
 		transition: height 0.12s ease;
 	}
@@ -792,8 +792,8 @@
 		z-index: 1000;
 		margin: 0;
 		pointer-events: none;
-		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
-		outline: 2px solid var(--accent-primary, hsl(var(--theme-hue) 60% 55%));
+		box-shadow: var(--shadow-md);
+		outline: 2px solid var(--accent-primary);
 		outline-offset: -2px;
 		transform: scale(1.03);
 		transition: none;
@@ -801,7 +801,7 @@
 
 	.tema-panel-row-handle {
 		padding: 0 4px 0 10px;
-		color: #333;
+		color: var(--text-muted);
 		font-size: 1rem;
 		flex-shrink: 0;
 		line-height: 1;
@@ -819,12 +819,12 @@
 		padding: 11px 14px 11px 0;
 		cursor: pointer;
 		font: inherit;
-		color: #ddd;
+		color: var(--text-primary);
 		text-align: left;
 	}
 
 	.tema-panel-row:hover {
-		background: linear-gradient(90deg, hsl(var(--theme-hue) 24% 14%) 0%, hsl(var(--theme-hue) 20% 11%) 100%);
+		background: linear-gradient(90deg, color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 18%, var(--bg-card)) 0%, color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 12%, var(--bg-card)) 100%);
 	}
 
 	.tema-panel-row-icon {
@@ -837,11 +837,11 @@
 		flex: 1;
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: hsl(var(--theme-hue) 22% 80%);
+		color: color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 25%, var(--text-primary));
 	}
 
 	.tema-panel-row-arrow {
-		color: #444;
+		color: var(--text-muted);
 		font-size: 0.85rem;
 	}
 
@@ -851,8 +851,8 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
-		color: hsl(var(--theme-hue) 20% 62%);
-		background: hsl(var(--theme-hue) 22% 18%);
+		color: color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 35%, var(--text-secondary));
+		background: color-mix(in srgb, hsl(var(--theme-hue) 40% 50%) 18%, var(--bg-card));
 		border-radius: 6px;
 		padding: 2px 6px;
 	}
@@ -870,14 +870,14 @@
 		content: '';
 		flex: 1;
 		height: 1px;
-		background: #2a2a2a;
+		background: var(--border-color);
 	}
 
 	.tema-panel-priority-divider span {
 		font-size: 0.58rem;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #555;
+		color: var(--text-muted);
 		white-space: nowrap;
 	}
 
@@ -885,7 +885,7 @@
 	.theme-menu-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.45);
+		background: var(--bg-overlay);
 		border: 0;
 		padding: 0;
 		z-index: 1100;
@@ -899,19 +899,19 @@
 		transform: translateX(-50%);
 		min-width: 240px;
 		max-width: 320px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 22%);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 16px;
 		padding: 8px;
 		z-index: 1101;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		box-shadow: var(--shadow-md);
 		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
 	}
 
 	.theme-menu-title {
 		padding: 10px 12px 6px;
 		font-size: 0.78rem;
-		color: hsl(228 10% 60%);
+		color: var(--text-tertiary);
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
 		overflow: hidden;
@@ -926,7 +926,7 @@
 		background: transparent;
 		border: 0;
 		border-radius: 10px;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		font-size: 0.95rem;
 		text-align: left;
 		cursor: pointer;
@@ -935,7 +935,7 @@
 
 	.theme-menu-item:hover,
 	.theme-menu-item:focus-visible {
-		background: hsl(228 19% 16%);
+		background: var(--bg-hover);
 	}
 
 	.theme-menu-item:disabled {
@@ -944,14 +944,14 @@
 	}
 
 	.theme-menu-item-danger {
-		color: hsl(8 70% 70%);
+		color: var(--error-text);
 	}
 
 	/* Snooze-meny */
 	.snooze-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.45);
+		background: var(--bg-overlay);
 		border: 0;
 		padding: 0;
 		z-index: 1000;
@@ -965,19 +965,19 @@
 		transform: translateX(-50%);
 		min-width: 240px;
 		max-width: 320px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 22%);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 16px;
 		padding: 8px;
 		z-index: 1001;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		box-shadow: var(--shadow-md);
 		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
 	}
 
 	.snooze-menu-title {
 		padding: 10px 12px 6px;
 		font-size: 0.78rem;
-		color: hsl(228 10% 60%);
+		color: var(--text-tertiary);
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
 	}
@@ -989,7 +989,7 @@
 		background: transparent;
 		border: 0;
 		border-radius: 10px;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		font-size: 0.95rem;
 		text-align: left;
 		cursor: pointer;
@@ -998,11 +998,11 @@
 
 	.snooze-opt:hover,
 	.snooze-opt:focus-visible {
-		background: hsl(228 19% 16%);
+		background: var(--bg-hover);
 	}
 
 	.snooze-opt-strong {
-		color: hsl(8 70% 70%);
+		color: var(--error-text);
 	}
 
 	@keyframes snooze-fade {

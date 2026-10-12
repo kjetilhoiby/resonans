@@ -83,7 +83,7 @@
 		text-align: left;
 	}
 	.flow-title-btn:focus-visible {
-		outline: 2px solid #3987e5;
+		outline: 2px solid var(--accent-primary);
 		outline-offset: 2px;
 	}
 	.flow-title-btn:active { opacity: 0.7; }
@@ -100,16 +100,16 @@
 		align-items: center;
 		gap: 10px;
 		padding: 12px 16px;
-		border-bottom: 1px solid #1a1a1a;
+		border-bottom: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 
-	.flow-back:hover { color: #ccc; }
+	.flow-back:hover { color: var(--text-primary); }
 
 	.flow-title {
 		font-size: 0.9rem;
 		font-weight: 700;
-		color: #aaa;
+		color: var(--text-secondary);
 	}
 
 	.flow-body {
@@ -123,11 +123,11 @@
 
 	.flow-textarea {
 		width: 100%;
-		background: #161616;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 12px;
 		padding: 12px 14px;
-		color: #ccc;
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 0.88rem;
 		line-height: 1.5;
@@ -136,14 +136,14 @@
 	}
 	.flow-textarea:focus {
 		outline: none;
-		border-color: #3c4f9f;
+		border-color: var(--accent-primary);
 	}
-	.flow-textarea::placeholder { color: #3a3a3a; }
+	.flow-textarea::placeholder { color: var(--text-muted); }
 
 	.flow-submit {
-		background: #4a5af0;
+		background: var(--accent-primary);
 		border: none;
-		color: #fff;
+		color: var(--accent-contrast);
 		border-radius: 14px;
 		padding: 13px 20px;
 		font: inherit;
@@ -153,13 +153,13 @@
 		width: 100%;
 		transition: background 0.15s, opacity 0.15s;
 	}
-	.flow-submit:hover:not(:disabled) { background: #3a4adf; }
+	.flow-submit:hover:not(:disabled) { background: var(--accent-hover); }
 	.flow-submit:disabled { opacity: 0.4; cursor: default; }
 
 	.flow-error {
 		margin: 0;
 		font-size: 0.8rem;
-		color: #e07070;
+		color: var(--error-text);
 	}
 
 	.upload-zone {
@@ -167,8 +167,8 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 10px;
-		background: #111;
-		border: 2px dashed #2a2a2a;
+		background: var(--bg-secondary);
+		border: 2px dashed var(--border-color);
 		border-radius: 18px;
 		padding: 36px 20px;
 		cursor: pointer;
@@ -176,10 +176,10 @@
 		transition: border-color 0.15s, background 0.15s;
 		font: inherit;
 	}
-	.upload-zone:hover { border-color: #3c4f9f; background: #121218; }
+	.upload-zone:hover { border-color: var(--accent-primary); background: var(--bg-hover); }
 
 	.upload-zone-icon {
-		color: #4a5af0;
+		color: var(--accent-primary);
 		opacity: 0.7;
 		display: inline-flex;
 		align-items: center;
@@ -190,13 +190,13 @@
 		margin: 0;
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: #ccc;
+		color: var(--text-primary);
 	}
 
 	.upload-zone-sub {
 		margin: 0;
 		font-size: 0.75rem;
-		color: #555;
+		color: var(--text-muted);
 	}
 
 	.img-preview {
@@ -232,13 +232,13 @@
 	.media-history {
 		margin-top: 16px;
 		padding-top: 12px;
-		border-top: 1px solid #2a2a2a;
+		border-top: 1px solid var(--border-color);
 	}
 
 	.media-history-label {
 		font-size: 0.75rem;
 		font-weight: 600;
-		color: #888;
+		color: var(--text-tertiary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin: 0 0 10px 0;
@@ -246,7 +246,7 @@
 
 	.media-history-loading {
 		font-size: 0.75rem;
-		color: #666;
+		color: var(--text-tertiary);
 		margin: 8px 0;
 	}
 
@@ -257,12 +257,14 @@
 	}
 
 	.media-history-item {
+		/* Navnestripa inni er absolutt plassert og trenger et anker. */
+		position: relative;
 		aspect-ratio: 1;
-		border: 1px solid #2a2a2a;
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
 		overflow: hidden;
 		cursor: pointer;
-		background: #0f0f0f;
+		background: var(--card-bg-inset);
 		transition: border-color 0.15s, opacity 0.15s;
 		display: flex;
 		flex-direction: column;
@@ -279,7 +281,7 @@
 	}
 
 	.media-history-item:hover {
-		border-color: #4a5af0;
+		border-color: var(--accent-primary);
 		opacity: 0.85;
 	}
 
