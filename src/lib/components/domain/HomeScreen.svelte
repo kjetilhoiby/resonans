@@ -1337,8 +1337,6 @@
 	<!-- SONE 1: Tittel -->
 	<HomeTitleZone />
 
-	<!-- SONE 1B: I dag — styringssignalene fra brevet -->
-
 	<!-- SONE 2: Widgets -->
 	<HomeWidgetZone />
 
