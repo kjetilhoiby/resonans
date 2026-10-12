@@ -87,7 +87,7 @@
 		margin: 0;
 		padding: 6px 20px 0;
 		font-size: 0.8rem;
-		color: #8a8a9a;
+		color: var(--text-tertiary);
 		text-align: right;
 	}
 
@@ -95,7 +95,7 @@
 		display: flex;
 		gap: 10px;
 		padding: 14px 20px 28px;
-		border-top: 1px solid #1a1a1a;
+		border-top: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 	.fs-btn {
@@ -108,10 +108,10 @@
 		transition: all 0.12s;
 	}
 	.fs-btn:disabled { opacity: 0.45; cursor: default; }
-	.fs-btn-primary { background: #4b6ef5; border: none; color: #fff; }
-	.fs-btn-primary:hover:not(:disabled) { background: #3d5ee0; }
-	.fs-btn-ghost { background: transparent; border: 1px solid #2a2a2a; color: #555; }
-	.fs-btn-ghost:hover:not(:disabled) { border-color: #444; color: #aaa; }
+	.fs-btn-primary { background: var(--accent-primary); border: none; color: var(--accent-contrast); }
+	.fs-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+	.fs-btn-ghost { background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); }
+	.fs-btn-ghost:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text-secondary); }
 
 	/* Focus footer */
 	.fs-focus-footer {
@@ -125,25 +125,25 @@
 		width: 48px;
 		height: 48px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		color: #888;
+		background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+		color: var(--text-tertiary);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		transition: all 0.15s;
 	}
-	.fs-focus-back:hover:not(:disabled) { color: #ccc; background: rgba(255, 255, 255, 0.1); }
+	.fs-focus-back:hover:not(:disabled) { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 	.fs-focus-back:disabled { opacity: 0.3; cursor: default; }
 
 	.fs-focus-next {
 		width: 56px;
 		height: 56px;
 		border-radius: 50%;
-		background: #e8ecf4;
+		background: var(--text-primary);
 		border: none;
-		color: #0b0b0f;
+		color: var(--bg-primary);
 		font-size: 1.5rem;
 		font-weight: 700;
 		cursor: pointer;
@@ -151,9 +151,9 @@
 		align-items: center;
 		justify-content: center;
 		transition: all 0.15s;
-		box-shadow: 0 4px 16px rgba(232, 236, 244, 0.15);
+		box-shadow: 0 4px 16px color-mix(in srgb, var(--text-primary) 15%, transparent);
 	}
-	.fs-focus-next:hover:not(:disabled) { background: #fff; box-shadow: 0 4px 20px rgba(255, 255, 255, 0.2); }
+	.fs-focus-next:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 88%, var(--bg-primary)); box-shadow: 0 4px 20px color-mix(in srgb, var(--text-primary) 20%, transparent); }
 	.fs-focus-next:disabled { opacity: 0.25; cursor: default; }
 	.fs-focus-next-arrow { font-size: 1.8rem; line-height: 1; }
 	.fs-focus-next-text { font-size: 1.3rem; }
@@ -162,9 +162,9 @@
 		width: 48px;
 		height: 48px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		color: #cbd5e1;
+		background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+		color: var(--text-secondary);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -173,17 +173,17 @@
 		margin-right: 10px;
 	}
 	.fs-focus-secondary:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.1);
-		border-color: rgba(255, 255, 255, 0.2);
-		color: #fff;
+		background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+		border-color: color-mix(in srgb, var(--text-primary) 20%, transparent);
+		color: var(--text-primary);
 	}
 	.fs-focus-secondary:disabled { opacity: 0.3; cursor: default; }
 	.fs-focus-secondary-icon { font-size: 1.5rem; line-height: 1; font-weight: 400; }
 
 	.fs-btn-secondary {
-		background: rgba(255, 255, 255, 0.06);
-		color: #cbd5e1;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+		color: var(--text-secondary);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
 		padding: 8px 14px;
 		border-radius: 10px;
 		font-weight: 500;
@@ -192,7 +192,7 @@
 		align-items: center;
 		gap: 6px;
 	}
-	.fs-btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+	.fs-btn-secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 	.fs-btn-secondary:disabled { opacity: 0.3; cursor: default; }
 	.fs-btn-secondary-label { font-size: 0.85rem; }
 </style>
