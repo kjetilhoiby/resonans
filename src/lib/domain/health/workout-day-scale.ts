@@ -52,6 +52,29 @@
  * Lys rød kan ikke bli mettet i sRGB — den blir korall. Det er en gamut-grense, ikke
  * et valg: lysheten eies av tempoet, så den kan ikke senkes for å gi rødt mer kroma.
  *
+ * ## To felt: natt og krem (oktober 2026)
+ *
+ * Feltet over er validert mot en MØRK flate. Da uttrykk A kom med blekk på krem
+ * (`docs/changelog/2026-10-08-alle-flater-i-valgt-tema.md`), lå de raske cellene
+ * på 1,2–2,7:1 mot krem — gul og korall forsvinner mot en lys flate. Krem har
+ * derfor sitt eget felt (`FIELD_KREM`), og hver dag bærer begge (`DayVisual.krem`);
+ * cellen velger med `--krem-andel` fra fargetemaet, i CSS, så valget følger
+ * temaet uten at domenelaget vet hvilket som er valgt.
+ *
+ * - **Det er KONTRASTEN mot flaten som er tempo, ikke lysheten i seg selv.** På
+ *   en mørk flate er rask lys; på krem er rask MØRK. Det leseren ser, er at de
+ *   raske dagene står fram. Lyshetsaksen er snudd med vilje, og tegnforklaringen
+ *   følger med, siden den leser det samme feltet.
+ * - **Spennet er smalt, og det er krem som setter det.** 3:1 mot #f0eadd gir et
+ *   tak på L ≈ 0,62, og mørk gul har knapt farge under L 0,45. Kulørene er derfor
+ *   dreid: kort er rav (70°), lang er bringebær (10°).
+ * - **Valgt med et rutenettsøk**, ikke for hånd, mot fem krav samtidig: ≥ 3,1:1
+ *   mot de tre krem-flatene, kroma ≥ 0,10 på alle hjørner, og ΔE ≥ 15 både
+ *   mellom hjørner med samme tempo og mellom hjørner med samme distanse.
+ *   Resultatet: ΔE 16,1/18,4 (samme tempo) og 15,3/15,2 (samme distanse).
+ * - **Samme pris som natt for rødgrønn-blinde:** de raske hjørnene skiller seg
+ *   med ΔE 4,9 under deuteranopi (natt: 3,6). Akseptert av samme grunn.
+ *
  * ## Skalaen er brukerens egen
  *
  * «Langt» og «fort» finnes ikke absolutt. Spennet regnes fra brukerens egne dager
@@ -66,9 +89,21 @@
 
 import { inkForLightness, oklchToHex } from '../oklch';
 
+/** Et fargefelt: lyshet per tempo-ende, kulør og kroma per distanse-ende. */
+export interface DayField {
+	lFast: number;
+	lSlow: number;
+	hueShort: number;
+	hueLong: number;
+	chromaShort: number;
+	chromaLong: number;
+	/** Hvor mye kroma gir seg mot den TREGE enden (natt: den mørke). */
+	chromaSlowTaper: number;
+}
+
 /**
- * Feltets fire hjørner. Validert mot flaten #141414: normalsyn-gulv ΔE 16,8 (over
- * 15) og alle fire hjørner over 3:1 kontrast.
+ * Natt-feltet. Validert mot flaten #141414: normalsyn-gulv ΔE 16,8 (over 15) og
+ * alle fire hjørner over 3:1 kontrast.
  *
  * Lysheten er tempoets akse alene — samme verdi for kort og lang tur.
  */
@@ -87,6 +122,31 @@ export const CHROMA_LONG = 0.19;
  * tok den likevel — men da uforutsigbart per kulør. Bedre å be om det som finnes.
  */
 export const CHROMA_DARK_TAPER = 0.25;
+
+export const FIELD_NATT: DayField = {
+	lFast: L_FAST,
+	lSlow: L_SLOW,
+	hueShort: HUE_SHORT,
+	hueLong: HUE_LONG,
+	chromaShort: CHROMA_SHORT,
+	chromaLong: CHROMA_LONG,
+	chromaSlowTaper: CHROMA_DARK_TAPER
+};
+
+/**
+ * Krem-feltet. Rask er MØRK her — se «To felt» øverst. Validert mot #f0eadd,
+ * #f6f1e7 og #fbf8f1 (`--bg-secondary`, `--bg-primary`, `--bg-card` i krem).
+ * Ingen tapering: den trege enden er den lyse, og der har sRGB kroma nok.
+ */
+export const FIELD_KREM: DayField = {
+	lFast: 0.47,
+	lSlow: 0.62,
+	hueShort: 70,
+	hueLong: 10,
+	chromaShort: 0.15,
+	chromaLong: 0.21,
+	chromaSlowTaper: 0
+};
 
 /** Under dette er det ingen fordeling å normalisere mot. */
 export const MIN_MEASURED_DAYS = 5;
@@ -114,10 +174,18 @@ export interface DayScale {
 	usable: boolean;
 }
 
-export interface DayVisual {
+export interface DayColor {
 	fill: string;
 	/** Skriftfarge som holder kontrast mot `fill`. */
 	ink: string;
+}
+
+/**
+ * Dagens farge i natt-feltet (`fill`/`ink`, som før) og i krem-feltet (`krem`).
+ * Begge regnes alltid; cellen velger i CSS etter fargetemaet.
+ */
+export interface DayVisual extends DayColor {
+	krem: DayColor;
 }
 
 /**
@@ -128,7 +196,10 @@ export interface DayVisual {
  */
 export const NO_METRIC_VISUAL: DayVisual = {
 	fill: oklchToHex(0.44, 0.015, 70),
-	ink: inkForLightness(0.44)
+	ink: inkForLightness(0.44),
+	// På krem: mellom de to tempo-endene i lyshet, men uten kroma, så den ikke
+	// leses som et hjørne. Over 3:1 mot krem-flatene.
+	krem: { fill: oklchToHex(0.58, 0.015, 70), ink: inkForLightness(0.58) }
 };
 
 function percentile(sorted: number[], p: number): number {
@@ -191,15 +262,21 @@ function normalize(value: number, range: { min: number; max: number }): number {
  * Delt med tegnforklaringen, så prøvene der ER feltet og ikke en håndplukket
  * etterligning av det.
  */
-export function fieldColor(paceT: number, distanceT: number): { fill: string; ink: string } {
+export function fieldColor(paceT: number, distanceT: number, field: DayField = FIELD_NATT): DayColor {
 	const p = Math.min(1, Math.max(0, paceT));
 	const d = Math.min(1, Math.max(0, distanceT));
 
-	const L = L_FAST + (L_SLOW - L_FAST) * p;
-	const hue = HUE_SHORT + (HUE_LONG - HUE_SHORT) * d;
-	const chroma = (CHROMA_SHORT + (CHROMA_LONG - CHROMA_SHORT) * d) * (1 - CHROMA_DARK_TAPER * p);
+	const L = field.lFast + (field.lSlow - field.lFast) * p;
+	const hue = field.hueShort + (field.hueLong - field.hueShort) * d;
+	const chroma =
+		(field.chromaShort + (field.chromaLong - field.chromaShort) * d) * (1 - field.chromaSlowTaper * p);
 
 	return { fill: oklchToHex(L, chroma, hue), ink: inkForLightness(L) };
+}
+
+/** Begge feltene for samme punkt. */
+function bothFields(paceT: number, distanceT: number): DayVisual {
+	return { ...fieldColor(paceT, distanceT, FIELD_NATT), krem: fieldColor(paceT, distanceT, FIELD_KREM) };
 }
 
 /**
@@ -212,7 +289,7 @@ export function dayVisual(metrics: WorkoutDayMetrics, scale: DayScale): DayVisua
 		return NO_METRIC_VISUAL;
 	}
 
-	return fieldColor(
+	return bothFields(
 		normalize(metrics.paceSecPerKm, scale.pace),
 		normalize(metrics.distanceKm, scale.distance)
 	);
@@ -229,5 +306,5 @@ export function dayVisual(metrics: WorkoutDayMetrics, scale: DayScale): DayVisua
  * som etikettene i flaten.
  */
 export function legendSamples(): DayVisual[][] {
-	return [0, 1].map((paceT) => [0, 1].map((distanceT) => fieldColor(paceT, distanceT)));
+	return [0, 1].map((paceT) => [0, 1].map((distanceT) => bothFields(paceT, distanceT)));
 }

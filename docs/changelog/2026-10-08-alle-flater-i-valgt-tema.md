@@ -93,6 +93,24 @@ har ikke lenger sin egen `--cs-*`-palett.
   navnestripa i kamerahistorikken var absolutt plassert uten et posisjonert
   anker og havnet i panelets hjørne.
 
+### Fase 4: streak-kalenderen i krem (12. oktober)
+
+Kalenderens fargefelt (`workout-day-scale.ts`) var validert bare mot mørkt. Mot
+krem lå de raske cellene på 1,2–2,7:1 (gul #e7d91c 1,22, korall #fcc4c1 1,27).
+
+- **Et eget krem-felt** (`FIELD_KREM`), og hver dag bærer begge
+  (`DayVisual.krem`). Cellen velger i CSS: `--krem-andel` er 100 % i krem og 0 %
+  i natt og gammelt mørkt (`uttrykk-*.css`), og
+  `color-mix(in srgb, <krem> var(--krem-andel), <natt>)` gir det ene eller det
+  andre eksakt. Domenelaget vet ikke hvilket tema som er valgt, og trenger ikke.
+- **Kontrasten mot flaten er tempo, ikke lysheten i seg selv.** På krem er rask
+  MØRK; tegnforklaringen følger feltet.
+- **Valgt med et rutenettsøk** mot fem krav samtidig: ≥ 3,1:1 mot alle tre
+  krem-flatene, kroma ≥ 0,10, og ΔE ≥ 15 både innen tempo og innen distanse
+  (16,1/18,4 og 15,3/15,2). Kravene står som tester.
+- Samme kjente pris som natt for rødgrønn-blinde (ΔE 4,9 under deuteranopi mot
+  natts 3,6).
+
 ## Beslutninger
 
 - **Følg telefonen som standard.** Skissen heter «døgnrytme», og natt er det
@@ -124,13 +142,6 @@ har ikke lenger sin egen `--cs-*`-palett.
 
 ## Kjent rest
 
-- **Streak-kalenderens fargeskala er validert bare mot mørkt.** Målt mot
-  krem (`--bg-secondary`, #f0eadd): de raske og mellomraske cellene ligger på
-  1,2–2,7:1 (rask-kort #e7d91c 1,22, rask-lang #fcc4c1 1,27, midten #df840a
-  2,35), altså under 3:1-gulvet CLAUDE.md sier ikke er en smakssak. I natt ligger
-  treg-lang rundt grensa, og «uten tall» var under 3:1 alt i det gamle mørke.
-  Skalaen trenger et krem-sett av hjørner, validert med palettvalidatoren i
-  `workout-day-scale.ts`, og cellene må velge sett etter fargetemaet. Neste steg.
 - **`theme-color` ved kald start** er app.html sin mørke verdi til JavaScript
   har kjørt, så statuslinja i PWA-en kan blinke mørk.
 - **Galleriet**: `ringer.svelte` gir `GoalRing` mørke spor som props, og

@@ -2284,6 +2284,12 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
   Endrer du hjørnene, kjør palettvalidatoren på nytt: normalsyn-gulvet (ΔE ≥ 15
   mellom hjørner med samme tempo) og 3:1 mot flaten er de to som IKKE er smakssaker —
   første utgave brøt begge (12,6 og 2,0:1), og det var dårlig lesbarhet for alle.
+- **Det finnes TO felt, natt og krem, og hver dag bærer begge** (`FIELD_NATT`,
+  `FIELD_KREM`, `DayVisual.krem`). Natt-feltet lå på 1,2:1 mot krem. På krem er
+  rask MØRK — det er kontrasten mot flaten som er tempo. Cellen velger i CSS med
+  `--krem-andel` (100 % i krem, 0 % ellers) gjennom `color-mix`, så domenelaget
+  aldri trenger å vite temaet. Kravene til begge feltene står som tester i
+  `workout-day-scale.test.ts`; et nytt datafelt med to sett gjør det samme.
 - **Skalaen er brukerens egne dager** (10.–90. persentil), med gulv på spennet: én
   glemt tracker skal ikke presse alle andre dager sammen, og like turer skal SE like
   ut. Under `MIN_MEASURED_DAYS` fargelegges ingenting, og flaten sier hvorfor — en
