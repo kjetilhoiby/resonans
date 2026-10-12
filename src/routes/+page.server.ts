@@ -3,7 +3,6 @@ import { themes, trainingPrograms, trainingPlans, programReadinessAssessments, t
 import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
-import { loadHomeToday } from '$lib/server/home-letter';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -207,13 +206,5 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}));
 
 	console.log('[home] load done in', Date.now() - t0, 'ms');
-	// «I dag»-linjene strømmes: brevet leser mange kilder (trening, vekt, mål),
-	// og hjemskjermen skal ikke vente på dem før den tegnes. Et feilet kall gir
-	// null, og sonen tier — resten av siden står uansett.
-	const homeToday = loadHomeToday(locals.userId).catch((err) => {
-		console.error(`[home] i dag feilet user=${locals.userId}: ${err instanceof Error ? err.message : String(err)}`);
-		return null;
-	});
-
-	return { themes: activeThemes, recentConversations, programReadiness, activeFerie, feriedagbokTodo, homeToday };
+	return { themes: activeThemes, recentConversations, programReadiness, activeFerie, feriedagbokTodo };
 };
