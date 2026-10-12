@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTtsRequest, DEFAULT_TTS_VOICE, parseSpeechSetting, RO_READING_STYLE, extractAudio, pcmSampleRate, pcmToWav, pickTtsModel, toWav } from './ro-speech-logic';
+import { buildTtsRequest, DEFAULT_TTS_VOICE, parseSpeechSetting, RO_READING_STYLE, TRANSCRIPT_HEADING, extractAudio, pcmSampleRate, pcmToWav, pickTtsModel, toWav } from './ro-speech-logic';
 
 describe('pickTtsModel', () => {
 	it('foretrekker flash framfor pro og lite, og nyeste versjon', () => {
@@ -29,13 +29,23 @@ describe('buildTtsRequest', () => {
 		expect(req.generationConfig.responseModalities).toEqual(['AUDIO']);
 		expect(req.generationConfig.speechConfig.languageCode).toBe('nb-NO');
 		expect(req.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Sulafat');
-		expect(req.contents[0].parts[0].text.endsWith('\n\nKjenn føttene.')).toBe(true);
+		expect(req.contents[0].parts[0].text.endsWith(`${TRANSCRIPT_HEADING}\nKjenn føttene.`)).toBe(true);
 	});
 	it('bruker løpeinstruksen uten setting, og stillhetens med', () => {
-		expect(buildTtsRequest('Pust.', 'Sulafat').contents[0].parts[0].text.startsWith(RO_READING_STYLE.moving)).toBe(true);
+		expect(buildTtsRequest('Pust.', 'Sulafat').contents[0].parts[0].text).toContain(RO_READING_STYLE.moving);
 		const still = buildTtsRequest('Pust.', 'Vindemiatrix', 'still').contents[0].parts[0].text;
-		expect(still.startsWith(RO_READING_STYLE.still)).toBe(true);
+		expect(still).toContain(RO_READING_STYLE.still);
 		expect(still).not.toMatch(/running/);
+	});
+	it('holder regien over manusoverskriften og bare linja under den', () => {
+		// Instruksen som prosa rett foran linja ble lest opp. Regien skal stå i sin egen
+		// blokk, og under overskriften står ingenting annet enn teksten.
+		const prompt = buildTtsRequest('Kjenn føttene. Pust.', 'Vindemiatrix', 'still').contents[0].parts[0].text;
+		const [notes, transcript] = prompt.split(`${TRANSCRIPT_HEADING}\n`);
+		expect(transcript).toBe('Kjenn føttene. Pust.');
+		expect(notes).toContain('never spoken');
+		expect(notes).not.toMatch(/Read the following/);
+		expect(prompt.split(TRANSCRIPT_HEADING)).toHaveLength(2);
 	});
 });
 
