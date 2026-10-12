@@ -59,7 +59,9 @@
       const opacity = day.isToday ? 1 : 0.85;
       return {
         bgRadius,
-        bgColor: day.isToday ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.14)',
+        bgColor: day.isToday
+          ? 'color-mix(in srgb, var(--text-primary) 22%, transparent)'
+          : 'color-mix(in srgb, var(--text-primary) 14%, transparent)',
         radius: Math.max(0, radius),
         color: '#5fa080',
         opacity,

@@ -124,6 +124,13 @@ har ikke lenger sin egen `--cs-*`-palett.
 
 ## Kjent rest
 
+- **Streak-kalenderens fargeskala er validert bare mot mørkt.** Målt mot
+  krem (`--bg-secondary`, #f0eadd): de raske og mellomraske cellene ligger på
+  1,2–2,7:1 (rask-kort #e7d91c 1,22, rask-lang #fcc4c1 1,27, midten #df840a
+  2,35), altså under 3:1-gulvet CLAUDE.md sier ikke er en smakssak. I natt ligger
+  treg-lang rundt grensa, og «uten tall» var under 3:1 alt i det gamle mørke.
+  Skalaen trenger et krem-sett av hjørner, validert med palettvalidatoren i
+  `workout-day-scale.ts`, og cellene må velge sett etter fargetemaet. Neste steg.
 - **`theme-color` ved kald start** er app.html sin mørke verdi til JavaScript
   har kjørt, så statuslinja i PWA-en kan blinke mørk.
 - **Galleriet**: `ringer.svelte` gir `GoalRing` mørke spor som props, og

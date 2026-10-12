@@ -177,7 +177,7 @@
 		</div>
 		<div class="radial-legend">
 			<div class="radial-legend-item">
-				<span class="radial-dot" style="background:rgba(255,255,255,0.18)"></span> Planlagte oppgaver
+				<span class="radial-dot" style="background:color-mix(in srgb, var(--text-primary) 18%, transparent)"></span> Planlagte oppgaver
 			</div>
 			<div class="radial-legend-item">
 				<span class="radial-dot" style="background:#5fa080"></span> Løste oppgaver
