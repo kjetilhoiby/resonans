@@ -46,7 +46,7 @@ rask»).
 |---|---|---|
 | 1. Coachen | Fase 1–6 ferdig. Kuttet måles i skygge, men **målingen sulter**. Coachen tenker ikke (Chat Completions + verktøy) | Chatte som vanlig til 20 svar med verktøykall; deretter Responses-API-et (punkt 6) |
 | 2. Én inngang | Ute til utprøving, lite brukt ennå | Les `inngang:*` igjen om et par uker |
-| 3. Hjemskjerm etter døgnet | **Brevet parkert** etter fase 7 | Signalene inn på hjemskjermen som klikkbare linjer, uten modell |
+| 3. Hjemskjerm etter døgnet | Brevet parkert; signalene står som «I dag» øverst på `/` (`2026-10-12-i-dag-pa-hjemskjermen.md`) | Les `hjem:i-dag` om en uke; kveldsvarianten |
 | 4. Visuelt uttrykk | Besluttet: A. Fargetemaet bygget, `/` tegnet i A (`2026-10-08-alle-flater-i-valgt-tema.md`) | Arkene på hjemskjermen; så «I dag»-linjene (spor 3) |
 | 5. Tre rom (struktur) | Foreslått | Etter spor 3 |
 | Sidespor: modeller | GPT-6 Luna valgbar i chatten, Sol i brevet | Testsuite som egen app (brukeren); Sol i chatten krever Responses-API-et |
@@ -206,7 +206,7 @@ dashboardtyper.
 1. ~~**Brukeren velger visuell retning** (spor 4).~~ A er besluttet.
 2. ~~**Én inngang** (spor 2).~~ Fase 1 er ute til utprøving.
 3. ~~**Hjemskjerm v1 som brev** (spor 3).~~ Prototype ferdig og parkert.
-4. **Hjemskjerm v2: «I dag» i uttrykk A.** Styringssignalene fra brevet som
+4. ~~**Hjemskjerm v2: «I dag» i uttrykk A.**~~ Ute 12. oktober. Styringssignalene fra brevet som
    korte, klikkbare linjer øverst på `/`, tegnet i A (blekk på krem, nattmodus)
    på den ene flaten. Det slår sammen spor 3 og 4 der bruken er størst, og
    prøver ut A på én side før resten. Beslutningen om «Alltid mørk» er tatt:
