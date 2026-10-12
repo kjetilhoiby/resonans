@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveWeatherLocation } from '$lib/server/movement/presence-store';
+import { localIsoDay } from '$lib/server/nudge-time';
 
 const DEFAULT_LAT = 59.9139;
 const DEFAULT_LON = 10.7522;
@@ -35,8 +37,18 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const lonParam = url.searchParams.get('lon');
 	const dayIso = url.searchParams.get('day'); // e.g. "2026-04-16"
 
-	const lat = latParam ? parseFloat(latParam) : DEFAULT_LAT;
-	const lon = lonParam ? parseFloat(lonParam) : DEFAULT_LON;
+	// Uten koordinater: der brukeren er nå (bare i dag) eller hjemmet, fra Akser.
+	// Oslo sentrum er reserven når Akser ikke er koblet til.
+	let lat = latParam ? parseFloat(latParam) : DEFAULT_LAT;
+	let lon = lonParam ? parseFloat(lonParam) : DEFAULT_LON;
+	if (!latParam || !lonParam) {
+		const today = localIsoDay('Europe/Oslo', new Date());
+		const place = await resolveWeatherLocation(locals.userId, dayIso ?? today, today);
+		if (place) {
+			lat = place.latitude;
+			lon = place.longitude;
+		}
+	}
 
 	try {
 		const metUrl = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`;
