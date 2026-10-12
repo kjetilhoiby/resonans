@@ -27,6 +27,12 @@
 	--sun: #ec5a2e;
 	--sun-text: #b83e19;
 
+	/* 100 % i krem, 0 % i natt. For DATAFARGER regnet i domenelaget med ett sett
+	   per tema (streak-kalenderen): `color-mix(in srgb, var(--krem) var(--krem-andel),
+	   var(--natt))` velger settet uten at domenelaget vet hvilket tema som er valgt.
+	   Se workout-day-scale.ts, «To felt». */
+	--krem-andel: 100%;
+
 	--font-body: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
 	--font-display: 'Petrona', Georgia, serif;
 
@@ -77,6 +83,8 @@
 html[data-fargetema='mork'] [data-uttrykk='a'] {
 	color-scheme: dark;
 
+	--krem-andel: 0%;
+
 	--ink: #f1eadb;
 	--paper: #221f18;
 	--line: #3a352c;
@@ -123,6 +131,8 @@ html[data-fargetema='mork'] [data-uttrykk='a'] {
 @media (prefers-color-scheme: dark) {
 	html:not([data-fargetema='lys']):not([data-fargetema='mork']) [data-uttrykk='a'] {
 		color-scheme: dark;
+
+		--krem-andel: 0%;
 
 		--ink: #f1eadb;
 		--paper: #221f18;

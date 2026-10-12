@@ -31,8 +31,11 @@
 
   Har dagen distanse og tempo, bærer fargen dem:
 
-    lyshet = tempo      lyst er fort, mørkt er rolig
-    kulør  = distanse   gult er kort, rødt er langt
+    lyshet = tempo      det som står fram mot flaten er fort
+    kulør  = distanse   gult/rav er kort, rødt er langt
+
+  På en mørk flate er rask lys; på krem er rask mørk (eget felt, `FIELD_KREM`,
+  valgt i CSS med `--krem-andel`). Tegnforklaringen leser det samme feltet.
 
   Det er poenget med kalenderen — å se forbi «møtte opp». Feltet bor i
   `workout-day-scale.ts`.
@@ -96,6 +99,15 @@
 	/** Fargelegges dagene? Krever både tall og en brukbar fordeling å måle mot. */
 	const scaled = $derived(scale?.usable === true && (dayMetrics?.length ?? 0) > 0);
 	const legend = $derived(legendSamples());
+
+	/**
+	 * Krem-settet i lyst tema, natt-settet ellers. `--krem-andel` er 100 % i krem
+	 * og 0 % i natt og i det gamle mørke (`$lib/styles/uttrykk-*.css`), så valget
+	 * skjer i CSS og følger temaet uten en ny render. Se workout-day-scale.ts.
+	 */
+	function pickByTheme(krem: string, natt: string): string {
+		return `color-mix(in srgb, ${krem} var(--krem-andel, 0%), ${natt})`;
+	}
 
 	/** Dagen brukeren har trykket på. Tallene skal finnes uten hover. */
 	let selected = $state<string | null>(null);
@@ -188,7 +200,9 @@
 						>
 							<span
 								class="sc-mark"
-								style={visual ? `--f:${visual.fill}; --cell-ink:${visual.ink}` : undefined}
+								style={visual
+									? `--f:${pickByTheme(visual.krem.fill, visual.fill)}; --cell-ink:${pickByTheme(visual.krem.ink, visual.ink)}`
+									: undefined}
 							>
 								{Number(cell.date.slice(8))}
 							</span>
@@ -250,7 +264,7 @@
 						{ri === 0 ? 'rask' : 'rolig'}
 					</span>
 					{#each row as sample, ci (ci)}
-						<span class="sc-swatch" style={`--f:${sample.fill}`}></span>
+						<span class="sc-swatch" style={`--f:${pickByTheme(sample.krem.fill, sample.fill)}`}></span>
 					{/each}
 				{/each}
 			</div>
