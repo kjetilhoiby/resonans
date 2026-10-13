@@ -29,21 +29,19 @@ Bare `mode=theme` på `/plan` bruker en modell (rask, `EKKO_RO_INTAKE_MODEL`, de
 ## Stemmen (`/speech`)
 
 Gemini TTS, ikke Live: Live omformulerer, og i Ro er ordlyden øvelsen. `generateContent` med
-`responseModalities: ["AUDIO"]`, `languageCode: "nb-NO"` og en leseinstruks foran teksten.
-Rå PCM pakkes som WAV før den sendes til Ekko.
+`responseModalities: ["AUDIO"]`, `languageCode: "nb-NO"` og en leseinstruks foran teksten
+(«exactly as written … calmly, slowly»). Rå PCM pakkes som WAV før den sendes til Ekko.
 
-- **Instruksen er REGI, ikke en setning foran linja.** Fram til 12. oktober 2026 sto den som
-  prosa («Read the following Norwegian text aloud exactly as written. Speak very softly …»),
-  skilt fra linja av en blank linje, og TTS-modellen leste den av og til opp — på engelsk,
-  foran første linje i meditasjonen. Nå følger prompten Googles TTS-oppsett: regien under
-  `### DIRECTOR'S NOTES` (som sier at den aldri skal leses), og linja alene under
-  `#### TRANSCRIPT` til slutt (`buildTtsPrompt`). Kallet er tilstandsløst — hver linje er et
-  eget `generateContent` uten økt — så instruksen må med hver gang; det finnes ingen «første
-  melding» å legge den i.
-- **Ekko sjekker også selv** (`RoVoiceLeakCheck`): lytter på starten av hver ny fil med
-  engelsk talegjenkjenning på telefonen og henter på nytt ved lekkasje. Sjekken kan bare
-  kjøre når talegjenkjenning er tillatt og engelsk finnes på enheten; ellers lagres fila
-  usjekket. Den er et nett, ikke rettelsen.
+- **Instruksen leses av og til opp** (på engelsk, foran linja), og Ekko fanger det selv:
+  `RoVoiceLeakCheck` lytter på starten av hver ny fil med engelsk talegjenkjenning på
+  telefonen og henter på nytt. Sjekken kan bare kjøre når talegjenkjenning er tillatt og
+  engelsk finnes på enheten; ellers lagres fila usjekket.
+- **Googles regi-oppsett ble prøvd og rullet tilbake** (12. oktober 2026): regien under
+  `### DIRECTOR'S NOTES` og linja under `#### TRANSCRIPT` stoppet lekkasjen, men Gemini
+  leste da hele linja TO ganger i samme fil. Det er verre enn lekkasjen — appen ser en
+  gyldig lydfil, og ingen sjekk fanger det. Ny form prøves på telefonen før den tas i bruk.
+- Kallet er tilstandsløst (ett `generateContent` per linje, ingen økt), så instruksen må
+  med hver gang.
 
 - **Modellen slås opp i Googles katalog** (`pickTtsModel`: flash foran pro, ikke lite,
   ikke preview, nyeste versjon) og huskes i en time. `GEMINI_TTS_MODEL` overstyrer.
