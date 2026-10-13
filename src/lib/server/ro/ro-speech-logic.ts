@@ -25,45 +25,31 @@ export function parseSpeechSetting(value: unknown): RoSpeechSetting {
 }
 
 /**
- * Leseinstruksen, som regi – ikke som en setning foran teksten.
+ * Leseinstruksen. På engelsk fordi det er slik TTS-modellene er instruert i Googles egne
+ * eksempler; teksten som leses er norsk. «Exactly as written» fordi ordlyden er øvelsen.
+ * Endrer du en av dem, må Ekko bumpe `RoVoice`-versjonen for den settingen.
  *
- * Fram til oktober 2026 sto instruksen som vanlig prosa foran linja («Read the following
- * Norwegian text aloud exactly as written. Speak very softly …»), skilt bare av en blank linje.
- * Det er nettopp formen TTS-modellen av og til leser opp: den ser én sammenhengende tekst og
- * vet ikke hvor regien slutter og manuset begynner. Brukeren hørte instruksen på engelsk
- * foran første linje i meditasjonen, og lyden ble liggende i Ekkos cache.
- *
- * Nå følger prompten oppsettet i Googles TTS-guide: regien under «DIRECTOR'S NOTES», og det
- * som skal leses under en egen «TRANSCRIPT»-overskrift til slutt. Regien sier selv at den
- * ikke skal leses. På engelsk fordi Googles eksempler er det; teksten som leses er norsk.
- *
- * Endrer du en av dem, må Ekko bumpe `RoVoice`-versjonen for den settingen – ellers spilles
- * gammel lyd fra telefonens cache.
+ * Formen er prøvd og står med vilje, også om den av og til leses opp (Ekko lytter etter det
+ * og henter på nytt, `RoVoiceLeakCheck`). 12. oktober 2026 ble den byttet mot Googles
+ * regi-oppsett (`### DIRECTOR'S NOTES` + `#### TRANSCRIPT`): da leste Gemini linja TO
+ * ganger i samme lydfil, i meditasjonen, og det ble rullet tilbake samme kveld. En dobbel
+ * linje er verre enn en lekket instruks – den ser ut som vanlig lyd for appen og fanges
+ * ikke av noen sjekk. Prøv en ny form på telefonen før den erstatter denne.
  */
 export const RO_READING_STYLE: Record<RoSpeechSetting, string> = {
 	moving:
-		'Style: calm, warm and low, like a meditation guide speaking to someone who is out running.\n' +
-		'Pacing: slow, with small natural pauses between sentences.',
+		'Read the following Norwegian text aloud exactly as written. Speak calmly, warmly and slowly, ' +
+		'in a low, quiet voice, like a meditation guide speaking to someone who is out running. ' +
+		'Leave small natural pauses between sentences.',
 	still:
-		'Style: very soft, gentle and close, like a meditation guide in a quiet room speaking to someone ' +
-		'who is sitting, lying down or doing slow yoga.\n' +
-		'Pacing: slow and unhurried. Let the voice settle at the end of each sentence, and leave longer ' +
-		'pauses between sentences.'
+		'Read the following Norwegian text aloud exactly as written. Speak very softly, gently and slowly, ' +
+		'close and unhurried, like a meditation guide in a quiet room speaking to someone who is sitting, ' +
+		'lying down or doing slow yoga. Let the voice settle at the end of each sentence, ' +
+		'and leave longer pauses between sentences.'
 };
 
-/** Overskriften over teksten som leses. Alt over den er regi. */
-export const TRANSCRIPT_HEADING = '#### TRANSCRIPT';
-
 export function buildTtsPrompt(text: string, setting: RoSpeechSetting = 'moving'): string {
-	return [
-		"### DIRECTOR'S NOTES",
-		'These notes describe how to speak. They are never spoken.',
-		'Speak only the Norwegian transcript below, exactly as written, and nothing else.',
-		RO_READING_STYLE[setting],
-		'',
-		TRANSCRIPT_HEADING,
-		text
-	].join('\n');
+	return `${RO_READING_STYLE[setting]}\n\n${text}`;
 }
 
 export function buildTtsRequest(text: string, voice: string, setting: RoSpeechSetting = 'moving') {
