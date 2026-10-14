@@ -69,6 +69,48 @@ med variabler etter rolle:
   markeringene oppå bilder, readiness «lett» (oransje, ingen statusvariabel),
   den indre ringens datafarge i `GoalRing`.
 
+### Fase 3: arkene og panelene (12. oktober)
+
+Alt som åpnes fra hjemskjermen leser nå variablene: overleggene
+(`HomeOverlays`), widget-, sjekkliste- og flytarket med alle underkomponentene
+og flytstegene, `BottomSheet`, kamera-, fil- og lydpanelet, videobildevelgeren,
+helsearkene (`TrailingVolumeSheet`, `LivskompassCheckin`, `StreakHistorySheet`
+med `StreakCalendar`) og `RadialSectorChart`. `CaptureSheet`/`CaptureButton`
+har ikke lenger sin egen `--cs-*`-palett.
+
+- **Bildeoverlegg beholder mørkt med vilje**: ×-knappen og navnestripa oppå et
+  foto, letterbox rundt video. De må synes uansett hva bildet viser.
+- **Datafarger står**: sonekategoriene, båndet og volumkurven i det slepende
+  volumet, områdefargene i Livskompass, cellefargene i streak-kalenderen,
+  widgetpaletten brukeren velger fra.
+- **`var()` virker ikke i SVG-presentasjonsattributter** (`stroke="var(--x)"`).
+  Ringer og grafer flyttes med `style:stroke`/`style=`, ellers blir streken
+  stille svart.
+- **Variabler som ikke fantes** (`--danger-text`, `--color-text`,
+  `--color-text-secondary`, `--sheet-bg`) er byttet til de som finnes. De
+  hang på en hardkodet fallback, så de så ut som de virket.
+- **To plasseringsfeil** fra før er rettet: lukkeknappen i filbrikken og
+  navnestripa i kamerahistorikken var absolutt plassert uten et posisjonert
+  anker og havnet i panelets hjørne.
+
+### Fase 4: streak-kalenderen i krem (12. oktober)
+
+Kalenderens fargefelt (`workout-day-scale.ts`) var validert bare mot mørkt. Mot
+krem lå de raske cellene på 1,2–2,7:1 (gul #e7d91c 1,22, korall #fcc4c1 1,27).
+
+- **Et eget krem-felt** (`FIELD_KREM`), og hver dag bærer begge
+  (`DayVisual.krem`). Cellen velger i CSS: `--krem-andel` er 100 % i krem og 0 %
+  i natt og gammelt mørkt (`uttrykk-*.css`), og
+  `color-mix(in srgb, <krem> var(--krem-andel), <natt>)` gir det ene eller det
+  andre eksakt. Domenelaget vet ikke hvilket tema som er valgt, og trenger ikke.
+- **Kontrasten mot flaten er tempo, ikke lysheten i seg selv.** På krem er rask
+  MØRK; tegnforklaringen følger feltet.
+- **Valgt med et rutenettsøk** mot fem krav samtidig: ≥ 3,1:1 mot alle tre
+  krem-flatene, kroma ≥ 0,10, og ΔE ≥ 15 både innen tempo og innen distanse
+  (16,1/18,4 og 15,3/15,2). Kravene står som tester.
+- Samme kjente pris som natt for rødgrønn-blinde (ΔE 4,9 under deuteranopi mot
+  natts 3,6).
+
 ## Beslutninger
 
 - **Følg telefonen som standard.** Skissen heter «døgnrytme», og natt er det
@@ -100,10 +142,6 @@ med variabler etter rolle:
 
 ## Kjent rest
 
-- **Arkene og panelene på hjemskjermen** hardkoder fortsatt mørke farger:
-  `HomeOverlays`, kamera/fil/lyd, `VideoFramePicker`, `WidgetConfigSheet`,
-  `ChecklistSheet`, `FlowSheet`, `TrailingVolumeSheet`, `LivskompassCheckin`,
-  `StreakHistorySheet`. De er neste runde.
 - **`theme-color` ved kald start** er app.html sin mørke verdi til JavaScript
   har kjørt, så statuslinja i PWA-en kan blinke mørk.
 - **Galleriet**: `ringer.svelte` gir `GoalRing` mørke spor som props, og
@@ -112,5 +150,7 @@ med variabler etter rolle:
 - **Visuelle baselines** for `hjem` må oppdateres: kjør
   `VISUAL_REVIEW_CONTEXT="Hjemskjermen i uttrykk A" npm run test:visual:review`
   mot en dev-server med database.
-- **«I dag»-linjene** (signalene fra brevet øverst på `/`) er neste steg i
-  spor 3, nå som flaten har uttrykket.
+- **Temasidene, ukeplanen og resten av appen** står i det gamle mørke uttrykket.
+  Neste rom flyttes på samme måte: `uttrykk="a"` på siden, og komponentene den
+  bruker over på variablene. `LivskompassWidget` (temasidene) og
+  `RadialSectorChart` sine nabodiagrammer er kjente kandidater.

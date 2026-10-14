@@ -296,30 +296,31 @@
 <style>
 	.fs-form { display: flex; flex-direction: column; gap: 14px; }
 	.fs-form-field { display: flex; flex-direction: column; gap: 5px; }
-	.fs-form-label { font-size: 0.82rem; font-weight: 500; color: #8899aa; }
-	.fs-required { color: hsl(0 60% 60%); margin-left: 2px; }
+	.fs-form-label { font-size: 0.82rem; font-weight: 500; color: var(--text-tertiary); }
+	.fs-required { color: var(--error-text); margin-left: 2px; }
 	.fs-form-input,
 	.fs-form-textarea,
 	.fs-form-select {
-		background: #141414;
-		border: 1px solid #1e1e1e;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 		padding: 10px 12px;
-		color: #ddd;
+		color: var(--text-primary);
 		font-size: 0.88rem;
 		font-family: inherit;
 		transition: border-color 0.12s;
 	}
 	.fs-form-input:focus, .fs-form-textarea:focus, .fs-form-select:focus {
 		outline: none;
-		border-color: #4b6ef5;
+		border-color: var(--accent-primary);
 	}
 	.fs-slider-wrap { display: flex; align-items: center; gap: 12px; }
 	.fs-slider {
 		flex: 1;
 		height: 6px;
 		border-radius: 3px;
-		background: #1e1e1e;
+		background: var(--border-color);
+		accent-color: var(--accent-primary);
 		-webkit-appearance: none;
 		appearance: none;
 	}
@@ -327,23 +328,23 @@
 		-webkit-appearance: none;
 		width: 18px; height: 18px;
 		border-radius: 50%;
-		background: #4b6ef5;
+		background: var(--accent-primary);
 		cursor: pointer;
 	}
-	.fs-slider-val { font-size: 0.9rem; font-weight: 600; color: #8ba0f5; min-width: 36px; text-align: right; }
-	.fs-slider-helper { margin: 4px 0 8px; font-size: 0.85rem; color: #94a3b8; font-style: italic; }
+	.fs-slider-val { font-size: 0.9rem; font-weight: 600; color: var(--accent-muted); min-width: 36px; text-align: right; }
+	.fs-slider-helper { margin: 4px 0 8px; font-size: 0.85rem; color: var(--text-tertiary); font-style: italic; }
 	.fs-multiselect { display: flex; flex-wrap: wrap; gap: 7px; }
 	.fs-ms-opt {
-		background: #141414;
-		border: 1px solid #1e1e1e;
-		color: #666;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		color: var(--text-tertiary);
 		padding: 7px 13px;
 		border-radius: 8px;
 		font-size: 0.82rem;
 		cursor: pointer;
 		transition: all 0.1s;
 	}
-	.fs-ms-opt.selected { background: #0d1828; border-color: #2a4080; color: #c8d4ef; }
+	.fs-ms-opt.selected { background: var(--info-bg); border-color: var(--info-border); color: var(--text-primary); }
 
 	/* Photo-gallery */
 	.fs-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -353,7 +354,7 @@
 		aspect-ratio: 4 / 3;
 		object-fit: cover;
 		border-radius: 10px;
-		border: 1px solid #1e1e1e;
+		border: 1px solid var(--border-subtle);
 	}
 	.fs-gallery-remove {
 		position: absolute;
@@ -370,28 +371,28 @@
 		place-items: center;
 	}
 	.fs-gallery-caption {
-		background: #141414;
-		border: 1px solid #1e1e1e;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
 		padding: 6px 9px;
-		color: #ddd;
+		color: var(--text-primary);
 		font-size: 0.8rem;
 		font-family: inherit;
 	}
-	.fs-gallery-caption:focus { outline: none; border-color: #4b6ef5; }
+	.fs-gallery-caption:focus { outline: none; border-color: var(--accent-primary); }
 	.fs-gallery-add {
 		aspect-ratio: 4 / 3;
-		border: 1px dashed #2e2e2e;
+		border: 1px dashed var(--border-color);
 		border-radius: 10px;
-		background: #141414;
-		color: #8899aa;
+		background: var(--bg-input);
+		color: var(--text-tertiary);
 		font-size: 0.85rem;
 		cursor: pointer;
 		transition: border-color 0.12s, color 0.12s;
 	}
-	.fs-gallery-add:hover:not(:disabled) { border-color: #4b6ef5; color: #c8d4ef; }
+	.fs-gallery-add:hover:not(:disabled) { border-color: var(--accent-primary); color: var(--text-primary); }
 	.fs-gallery-add:disabled { opacity: 0.6; cursor: default; }
-	.fs-gallery-error { margin: 6px 0 0; font-size: 0.8rem; color: hsl(0 60% 65%); }
+	.fs-gallery-error { margin: 6px 0 0; font-size: 0.8rem; color: var(--error-text); }
 
 	/* Focus-mode slider */
 	.fs-focus-slider-display {
@@ -405,7 +406,7 @@
 	.fs-focus-slider-label {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: #e8ecf4;
+		color: var(--text-primary);
 		line-height: 1.2;
 		text-align: center;
 	}
@@ -414,7 +415,7 @@
 		width: 100%;
 		height: 44px;
 		border-radius: 22px;
-		background: rgba(255, 255, 255, 0.06);
+		background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 		overflow: hidden;
 	}
 	.fs-focus-slider-fill {
@@ -422,7 +423,7 @@
 		top: 0;
 		left: 0;
 		height: 100%;
-		background: linear-gradient(90deg, #1a1a2e, #4b6ef5);
+		background: linear-gradient(90deg, color-mix(in srgb, var(--accent-primary) 25%, var(--bg-primary)), var(--accent-primary));
 		border-radius: 22px;
 		transition: width 0.08s ease-out;
 		pointer-events: none;
@@ -443,7 +444,7 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 50%;
-		background: #fff;
+		background: var(--text-primary);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 		cursor: grab;
 	}
@@ -451,7 +452,7 @@
 		width: 32px;
 		height: 32px;
 		border-radius: 50%;
-		background: #fff;
+		background: var(--text-primary);
 		border: none;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 		cursor: grab;
@@ -465,13 +466,13 @@
 		width: 100%;
 	}
 	.fs-ms-opt.fs-focus-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
 		border-radius: 14px;
 		padding: 16px 8px;
 		font-size: 0.85rem;
 		font-weight: 500;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -480,13 +481,13 @@
 		transition: all 0.15s ease;
 	}
 	.fs-ms-opt.fs-focus-card:hover {
-		background: rgba(255, 255, 255, 0.07);
-		border-color: rgba(255, 255, 255, 0.15);
+		background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+		border-color: color-mix(in srgb, var(--text-primary) 15%, transparent);
 	}
 	.fs-ms-opt.fs-focus-card.selected {
-		background: rgba(75, 110, 245, 0.12);
-		border-color: rgba(75, 110, 245, 0.4);
-		color: #c8d4ef;
+		background: var(--info-bg);
+		border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent);
+		color: var(--text-primary);
 	}
 
 	/* Focus-mode form */
@@ -505,33 +506,33 @@
 	.fs-focus-form-label {
 		align-self: flex-start;
 		font-size: 0.9rem;
-		color: #aab4c4;
+		color: var(--text-secondary);
 	}
 
 	/* Focus-mode textarea */
 	.fs-focus-form .fs-form-textarea {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
 		border-radius: 14px;
 		padding: 16px;
 		font-size: 1rem;
-		color: #ddd;
+		color: var(--text-primary);
 		text-align: left;
 		width: 100%;
 		min-height: 120px;
 	}
 	.fs-focus-form .fs-form-textarea:focus {
-		border-color: rgba(75, 110, 245, 0.4);
+		border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent);
 	}
 	.fs-focus-form .fs-form-textarea::placeholder {
-		color: #475569;
+		color: var(--text-muted);
 	}
 
 	/* Pyramid group labels */
 	.fs-pyramid-label {
 		font-size: 0.72rem;
 		font-weight: 600;
-		color: #475569;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		margin: 12px 0 6px;
@@ -539,12 +540,12 @@
 		width: 100%;
 	}
 	.fs-pyramid-active {
-		color: #8ba0f5;
+		color: var(--accent-muted);
 	}
 	.fs-pyramid-toggle {
 		background: none;
 		border: none;
-		color: #475569;
+		color: var(--text-muted);
 		font-size: 0.8rem;
 		cursor: pointer;
 		padding: 8px 0;
@@ -553,6 +554,6 @@
 		transition: color 0.15s;
 	}
 	.fs-pyramid-toggle:hover {
-		color: #8ba0f5;
+		color: var(--accent-muted);
 	}
 </style>

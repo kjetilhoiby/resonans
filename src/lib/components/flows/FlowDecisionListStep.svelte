@@ -70,14 +70,14 @@
 <style>
 	.fs-empty {
 		font-size: 1rem;
-		color: #7a9a7a;
+		color: var(--success-text);
 		text-align: center;
 		padding: 12px 0;
 		margin: 0;
 	}
 	.fs-hint {
 		font-size: 0.8rem;
-		color: #3a3a4a;
+		color: var(--text-muted);
 		margin: 0;
 	}
 	.fs-decision-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -87,19 +87,19 @@
 		gap: 10px;
 		width: 100%;
 		padding: 11px 14px;
-		background: #141414;
-		border: 1px solid #1e1e1e;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 		cursor: pointer;
 		text-align: left;
-		color: #555;
+		color: var(--text-tertiary);
 		transition: all 0.1s;
 	}
-	.fs-dec-item.carryover { background: #0d1828; border-color: #2a4080; color: #c8d4ef; }
+	.fs-dec-item.carryover { background: var(--info-bg); border-color: var(--info-border); color: var(--text-primary); }
 	.fs-dec-text { flex: 1; font-size: 0.9rem; line-height: 1.4; }
 	.fs-dec-action { font-size: 1rem; font-weight: 700; width: 22px; text-align: center; flex-shrink: 0; opacity: 0.7; }
-	.fs-dec-item.carryover .fs-dec-action { color: #4b6ef5; opacity: 1; }
-	.fs-carry-note { font-size: 0.8rem; color: #4a5a8a; margin: 0; }
+	.fs-dec-item.carryover .fs-dec-action { color: var(--accent-primary); opacity: 1; }
+	.fs-carry-note { font-size: 0.8rem; color: var(--accent-muted); margin: 0; }
 
 	/* Chips-variant: ett punkt per rad med valg under */
 	.fs-dec-row {
@@ -107,18 +107,18 @@
 		flex-direction: column;
 		gap: 8px;
 		padding: 11px 14px;
-		background: #141414;
-		border: 1px solid #1e1e1e;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 10px;
 	}
-	.fs-dec-row-text { font-size: 0.9rem; line-height: 1.4; color: #c8cddb; }
+	.fs-dec-row-text { font-size: 0.9rem; line-height: 1.4; color: var(--text-primary); }
 	.fs-dec-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 	.fs-dec-chip {
 		padding: 5px 11px;
 		border-radius: 999px;
-		border: 1px solid #2a2a2e;
+		border: 1px solid var(--border-color);
 		background: transparent;
-		color: #8a8fa0;
+		color: var(--text-tertiary);
 		font: inherit;
 		font-size: 0.78rem;
 		cursor: pointer;
@@ -126,8 +126,8 @@
 		white-space: nowrap;
 	}
 	.fs-dec-chip.active {
-		background: #0d1828;
-		border-color: #2a4080;
-		color: #c8d4ef;
+		background: var(--info-bg);
+		border-color: var(--info-border);
+		color: var(--text-primary);
 	}
 </style>

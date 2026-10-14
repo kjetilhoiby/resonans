@@ -47,7 +47,7 @@
 	.bs-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
+		background: var(--bg-overlay);
 		z-index: 200;
 	}
 
@@ -57,9 +57,9 @@
 		left: 0;
 		right: 0;
 		max-height: 90dvh;
-		background: var(--sheet-bg, #111);
+		background: var(--bg-secondary);
 		border-radius: 24px 24px 0 0;
-		border-top: 1px solid var(--sheet-border, #222);
+		border-top: 1px solid var(--border-color);
 		z-index: 201;
 		display: flex;
 		flex-direction: column;

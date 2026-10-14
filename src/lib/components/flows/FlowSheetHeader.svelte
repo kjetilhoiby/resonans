@@ -60,17 +60,17 @@
 		align-items: center;
 		gap: 10px;
 		padding: 16px 20px 12px;
-		border-bottom: 1px solid #1a1a1a;
+		border-bottom: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 
 	.fs-close {
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 50%;
 		width: 30px;
 		height: 30px;
-		color: #666;
+		color: var(--text-tertiary);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -78,7 +78,7 @@
 		flex-shrink: 0;
 		transition: color 0.12s, border-color 0.12s;
 	}
-	.fs-close:hover { color: #ccc; border-color: #555; }
+	.fs-close:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
 	.fs-title-group {
 		display: flex;
@@ -91,7 +91,7 @@
 	.fs-title {
 		font-size: 0.9rem;
 		font-weight: 700;
-		color: #eee;
+		color: var(--text-primary);
 		letter-spacing: -0.01em;
 		white-space: nowrap;
 	}
@@ -103,19 +103,19 @@
 	}
 	.fs-progress-label {
 		font-size: 0.75rem;
-		color: #3a3a4a;
+		color: var(--text-muted);
 		font-weight: 500;
 		flex-shrink: 0;
 	}
 
 	.fs-progress-bar {
 		height: 2px;
-		background: #141414;
+		background: var(--border-subtle);
 		flex-shrink: 0;
 	}
 	.fs-progress-fill {
 		height: 100%;
-		background: #4b6ef5;
+		background: var(--accent-primary);
 		transition: width 0.3s ease;
 	}
 
@@ -128,12 +128,12 @@
 		border-bottom: none;
 	}
 	.fs-focus-close {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
 		border-radius: 50%;
 		width: 40px;
 		height: 40px;
-		color: #888;
+		color: var(--text-tertiary);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -141,7 +141,7 @@
 		flex-shrink: 0;
 		transition: color 0.15s, background 0.15s;
 	}
-	.fs-focus-close:hover { color: #ccc; background: rgba(255, 255, 255, 0.1); }
+	.fs-focus-close:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 
 	.fs-dots {
 		display: flex;
@@ -152,20 +152,20 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.1);
+		background: color-mix(in srgb, var(--text-primary) 10%, transparent);
 		transition: all 0.3s ease;
 	}
 	.fs-dot-active {
-		background: #8ba0f5;
+		background: var(--accent-muted);
 		width: 10px;
 		height: 10px;
 	}
 	.fs-dot-done {
-		background: rgba(139, 160, 245, 0.4);
+		background: color-mix(in srgb, var(--accent-muted) 40%, transparent);
 	}
 	.fs-focus-counter {
 		font-size: 0.75rem;
-		color: rgba(255, 255, 255, 0.2);
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 		min-width: 40px;
 		text-align: right;

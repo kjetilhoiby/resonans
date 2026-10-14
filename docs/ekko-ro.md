@@ -32,6 +32,17 @@ Gemini TTS, ikke Live: Live omformulerer, og i Ro er ordlyden øvelsen. `generat
 `responseModalities: ["AUDIO"]`, `languageCode: "nb-NO"` og en leseinstruks foran teksten
 («exactly as written … calmly, slowly»). Rå PCM pakkes som WAV før den sendes til Ekko.
 
+- **Instruksen leses av og til opp** (på engelsk, foran linja), og Ekko fanger det selv:
+  `RoVoiceLeakCheck` lytter på starten av hver ny fil med engelsk talegjenkjenning på
+  telefonen og henter på nytt. Sjekken kan bare kjøre når talegjenkjenning er tillatt og
+  engelsk finnes på enheten; ellers lagres fila usjekket.
+- **Googles regi-oppsett ble prøvd og rullet tilbake** (12. oktober 2026): regien under
+  `### DIRECTOR'S NOTES` og linja under `#### TRANSCRIPT` stoppet lekkasjen, men Gemini
+  leste da hele linja TO ganger i samme fil. Det er verre enn lekkasjen — appen ser en
+  gyldig lydfil, og ingen sjekk fanger det. Ny form prøves på telefonen før den tas i bruk.
+- Kallet er tilstandsløst (ett `generateContent` per linje, ingen økt), så instruksen må
+  med hver gang.
+
 - **Modellen slås opp i Googles katalog** (`pickTtsModel`: flash foran pro, ikke lite,
   ikke preview, nyeste versjon) og huskes i en time. `GEMINI_TTS_MODEL` overstyrer.
 - **To stemmer, etter `setting`.** I bevegelse må stemmen bære over vind og pust; i stillhet

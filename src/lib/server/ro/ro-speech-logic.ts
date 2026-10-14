@@ -28,6 +28,13 @@ export function parseSpeechSetting(value: unknown): RoSpeechSetting {
  * Leseinstruksen. På engelsk fordi det er slik TTS-modellene er instruert i Googles egne
  * eksempler; teksten som leses er norsk. «Exactly as written» fordi ordlyden er øvelsen.
  * Endrer du en av dem, må Ekko bumpe `RoVoice`-versjonen for den settingen.
+ *
+ * Formen er prøvd og står med vilje, også om den av og til leses opp (Ekko lytter etter det
+ * og henter på nytt, `RoVoiceLeakCheck`). 12. oktober 2026 ble den byttet mot Googles
+ * regi-oppsett (`### DIRECTOR'S NOTES` + `#### TRANSCRIPT`): da leste Gemini linja TO
+ * ganger i samme lydfil, i meditasjonen, og det ble rullet tilbake samme kveld. En dobbel
+ * linje er verre enn en lekket instruks – den ser ut som vanlig lyd for appen og fanges
+ * ikke av noen sjekk. Prøv en ny form på telefonen før den erstatter denne.
  */
 export const RO_READING_STYLE: Record<RoSpeechSetting, string> = {
 	moving:

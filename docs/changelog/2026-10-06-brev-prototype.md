@@ -266,6 +266,8 @@ trenger å vite.
 4. Kveldsvariant og ukentlige oppgaver (`tasks` med `frequency: 'weekly'`) i
    linja om det som ikke har fått en dag.
 
+**Prøvd og tatt ut igjen 12. oktober 2026.** Signalene ble lagt øverst på hjemskjermen som «I dag» (#466), uten at brukeren hadde bedt om plasseringen. På telefonen tok mållinjene fem–seks linjer hver og klemte widgetene og temaknappene under til de ble kuttet. Hjemskjermen er en fast høyde der sonene deler plassen (`flex: 28 0 0`, `24 0 0`); en ny sone tar plassen fra dem, den legger seg ikke oppå. Punkt 3, plasseringen, er fortsatt åpent og brukerens å avgjøre.
+
 **Anbefalingen ved parkering:** ta signalene inn på hjemskjermen som korte,
 klikkbare linjer UTEN modellen (punkt 1 og 3), og la modellversjonen vente på
 testsuiten (punkt 2). Det meste av verdien brukeren pekte på — klikkbare

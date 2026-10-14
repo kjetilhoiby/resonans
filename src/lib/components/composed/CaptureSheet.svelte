@@ -243,23 +243,16 @@
 </BottomSheet>
 
 <style>
-	/* Arket portaleres til <body> og arver derfor ikke AppPage-variablene; som de
-	   andre arkene er det mørkt uansett systeminnstilling. Fargene står samlet her,
-	   så overgangen til det nye uttrykket (spor 4) er ett sted å endre. */
+	/* Arket portaleres til <body> og ligger utenfor AppPage sin <main>. Variablene
+	   kommer likevel fra sidens uttrykk: <body data-uttrykk> bærer dem mens siden er
+	   åpen ($lib/styles/uttrykk-a.css og uttrykk-gammel.css), så arket følger
+	   valgt fargetema. Fram til oktober 2026 hadde det en egen mørk palett (--cs-*)
+	   og var mørkt uansett systeminnstilling. */
 	.cs-root {
-		--cs-fg: #ececec;
-		--cs-fg-2: #b8b8b8;
-		--cs-muted: #8a8a8a;
-		--cs-bg: #0f0f0f;
-		--cs-field: #171717;
-		--cs-surface: #161616;
-		--cs-border: #2a2a2a;
-		--cs-accent: #6b7cff;
-		--cs-warn: #e2c27a;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
-		color: var(--cs-fg);
+		color: var(--text-primary);
 	}
 	.cs-head {
 		display: flex;
@@ -271,12 +264,12 @@
 		margin: 0;
 		font-size: 1.05rem;
 		font-weight: 650;
-		color: var(--cs-fg);
+		color: var(--text-primary);
 	}
 	.cs-close {
 		background: none;
 		border: none;
-		color: var(--cs-muted);
+		color: var(--text-tertiary);
 		padding: 6px;
 		cursor: pointer;
 		display: inline-flex;
@@ -292,18 +285,18 @@
 		box-sizing: border-box;
 		resize: none;
 		min-height: 84px;
-		background: var(--cs-field);
-		border: 1px solid var(--cs-border);
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
 		border-radius: 14px;
 		padding: 12px 14px;
-		color: var(--cs-fg);
+		color: var(--text-primary);
 		font: inherit;
 		font-size: 1rem;
 		line-height: 1.4;
 	}
 	.cs-text:focus {
 		outline: none;
-		border-color: var(--cs-accent);
+		border-color: var(--accent-primary);
 	}
 	.cs-items {
 		list-style: none;
@@ -328,9 +321,9 @@
 		height: 72px;
 		box-sizing: border-box;
 		border-radius: 10px;
-		background: var(--cs-surface);
-		border: 1px solid var(--cs-border);
-		color: var(--cs-fg-2);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		color: var(--text-secondary);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -352,9 +345,9 @@
 		width: 22px;
 		height: 22px;
 		border-radius: 50%;
-		border: 1px solid var(--cs-border);
-		background: var(--cs-bg);
-		color: var(--cs-fg-2);
+		border: 1px solid var(--border-color);
+		background: var(--bg-primary);
+		color: var(--text-secondary);
 		font-size: 0.7rem;
 		cursor: pointer;
 		padding: 0;
@@ -362,7 +355,7 @@
 	.cs-notice {
 		margin: 0;
 		font-size: 0.8rem;
-		color: var(--cs-warn);
+		color: var(--warning-text);
 	}
 	.cs-hidden {
 		display: none;
@@ -376,9 +369,9 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		background: var(--cs-surface);
-		border: 1px solid var(--cs-border);
-		color: var(--cs-fg-2);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		color: var(--text-secondary);
 		border-radius: 999px;
 		padding: 9px 13px;
 		font: inherit;
@@ -391,9 +384,9 @@
 	}
 	.cs-send {
 		margin-left: auto;
-		background: var(--cs-accent);
+		background: var(--accent-primary);
 		border: none;
-		color: #fff;
+		color: var(--accent-contrast);
 		border-radius: 999px;
 		padding: 9px 18px;
 		font: inherit;
@@ -414,7 +407,7 @@
 	}
 	.cs-foot {
 		padding: 8px 14px calc(14px + env(safe-area-inset-bottom, 0px));
-		border-top: 1px solid var(--cs-border);
+		border-top: 1px solid var(--border-color);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -430,11 +423,11 @@
 		padding: 4px 2px;
 		font: inherit;
 		font-size: 0.8rem;
-		color: var(--cs-muted);
+		color: var(--text-tertiary);
 		cursor: pointer;
 		text-decoration: none;
 	}
 	.cs-link:hover {
-		color: var(--cs-fg);
+		color: var(--text-primary);
 	}
 </style>

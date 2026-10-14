@@ -786,7 +786,7 @@
 	.fs-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.55);
+		background: var(--bg-overlay);
 		z-index: 200;
 	}
 
@@ -795,9 +795,9 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		background: #0f0f0f;
+		background: var(--bg-primary);
 		border-radius: 20px 20px 0 0;
-		border-top: 1px solid #1e1e1e;
+		border-top: 1px solid var(--border-color);
 		z-index: 201;
 		display: flex;
 		flex-direction: column;
@@ -826,17 +826,17 @@
 		margin: 6px 16px 0;
 		padding: 5px 8px 5px 14px;
 		border-radius: 999px;
-		background: var(--card-bg-inset, #0d0d0d);
-		border: 1px solid var(--card-border, #222);
+		background: var(--card-bg-inset);
+		border: 1px solid var(--border-color);
 		font-size: var(--font-size-caption, 0.72rem);
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 	}
 	.fs-draft-text { white-space: nowrap; }
 	.fs-draft-restart {
 		flex-shrink: 0;
-		background: #0d1828;
-		border: 1px solid #2a4080;
-		color: #8bb4ef;
+		background: var(--info-bg);
+		border: 1px solid var(--info-border);
+		color: var(--accent-muted);
 		padding: 4px 12px;
 		border-radius: 999px;
 		font-size: var(--font-size-caption, 0.72rem);
@@ -845,12 +845,12 @@
 		white-space: nowrap;
 		transition: background 0.12s, border-color 0.12s;
 	}
-	.fs-draft-restart:hover { background: #112038; border-color: #3a50a0; }
+	.fs-draft-restart:hover { background: color-mix(in srgb, var(--accent-primary) 18%, transparent); border-color: var(--accent-light); }
 	.fs-draft-dismiss {
 		flex-shrink: 0;
 		background: none;
 		border: none;
-		color: var(--text-secondary, #aaa);
+		color: var(--text-secondary);
 		font-size: 0.8rem;
 		line-height: 1;
 		padding: 4px 6px;
@@ -860,24 +860,24 @@
 	.fs-step-title {
 		font-size: 0.95rem;
 		font-weight: 600;
-		color: #dde;
+		color: var(--text-primary);
 		margin: 0;
 	}
 	.fs-step-prompt {
 		font-size: 0.88rem;
-		color: #7a8090;
+		color: var(--text-tertiary);
 		line-height: 1.5;
 		margin: 0;
 	}
 
 	/* Validation */
 	.fs-validation-error {
-		color: #e88;
+		color: var(--error-text);
 		font-size: 0.85rem;
 		margin: 0;
 		padding: 8px 12px;
-		background: hsl(0 40% 10%);
-		border: 1px solid hsl(0 40% 20%);
+		background: var(--error-bg);
+		border: 1px solid var(--error-border);
 		border-radius: 8px;
 	}
 
@@ -889,7 +889,7 @@
 		border-top: none;
 		max-height: none;
 		max-width: none;
-		background: #0b0b0f;
+		background: var(--bg-primary);
 	}
 
 	.fs-focus-body {
@@ -903,13 +903,13 @@
 	.fs-focus-title {
 		font-size: 1.6rem;
 		font-weight: 700;
-		color: #e8ecf4;
+		color: var(--text-primary);
 		letter-spacing: -0.02em;
 		line-height: 1.25;
 	}
 	.fs-focus-prompt {
 		font-size: 1rem;
-		color: #64748b;
+		color: var(--text-tertiary);
 		line-height: 1.5;
 		margin: 0;
 		max-width: 320px;

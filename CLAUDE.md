@@ -579,7 +579,7 @@ iOS-appen **Akser** (`resonans-lab/akser`) sporer bevegelse i bakgrunnen og last
 den UTLEDEDE tidslinjen — opphold, reiser og etapper — aldri rå GPS. Kontrakten i
 `docs/akser-tidslinje.md`, planen i `docs/changelog/2026-10-06-akser-integrasjon.md`.
 Endepunktene: `GET /api/apps/akser/status`, `PUT /api/apps/akser/places`,
-`POST`/`DELETE /api/apps/akser/timeline`. Fasit for transportform henter den fra den
+`POST`/`DELETE /api/apps/akser/timeline` og `PUT`/`DELETE /api/apps/akser/now`. Fasit for transportform henter den fra den
 eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
 
 - **Resonans er navet.** Akser og Ekko kjenner ikke hverandre; alt de deler, deler de
@@ -611,6 +611,14 @@ eksisterende `GET /api/apps/workouts`, så den lista har nå to konsumenter.
   den utledes av navnet. Hvert sted kobles høyst én gang, nærmeste først — Akser hadde 22
   automatiske steder rundt hjemmet. Brukerens `confirmed`/`rejected` regnes aldri ut på nytt.
   Et koblet Ekko-navn er et alias i `query_movement`.
+- **«Nå» er frivillig, grovt og uten historikk** (`app_presence`, reglene i
+  `$lib/domain/movement/presence.ts`). Ett kjent sted eller en posisjon avrundet til ~1 km,
+  én rad som overskrives, og signalet går ut av seg selv (opphold 48 t, reise 1 t). Det
+  gjelder bare I DAG: været for resten av uka hentes hjemme (`pickWeatherLocation`). Alt
+  som trenger et værsted uten koordinater går gjennom `resolveWeatherLocation`
+  (`$lib/server/movement/presence-store.ts`) – også dagsplanens vær, som falt tilbake på
+  Oslo sentrum, og ukelista, som bare hadde nettleserens posisjon. `now` i dagskonteksten
+  bærer aldri koordinater.
 - **Aksers hjem er Resonans' hjem.** `weather_forecast` uten koordinater bruker det
   (`readHomeLocation`, avrundet til ~1 km før det går til MET), og en Akser-dag inne i et
   reise-tema skriver `geoByDay` med kilde `observed`.
@@ -888,13 +896,12 @@ står i `$lib/domain/capture.ts`.
   ikke en andre inngang på hjemskjermen; det var nettopp det brukeren påpekte.
 - **En fangst sender alle verktøyene** (`capture` i `selectToolGroups`).
   Brukeren har ikke sagt hva det er, så ingen signal kan avgjøre gruppa.
-- **Arket og knappen er mørke uansett systeminnstilling**, som de andre arkene.
-  De portaleres og arver ikke `AppPage`-variablene, så `var(--text-primary)` der
-  gir de LYSE standardverdiene fra `app.css`. Første utgave hadde usynlig
-  tittel. Fargene står som `--cs-*` øverst i stilen. **Dette er gjeld etter
-  regelen om at alle flater finnes i valgt tema**: mens en side i uttrykk A er
-  åpen bærer `<body>` A-variablene (`data-uttrykk`, se `$lib/styles/`), så
-  svaret er å lese variablene, ikke en egen mørk palett per ark.
+- **Arket og knappen følger valgt fargetema, og variablene kommer fra
+  `<body data-uttrykk>`.** De portaleres og arver ikke `AppPage`-variablene;
+  fram til oktober 2026 hadde de derfor en egen mørk palett (`--cs-*`), fordi
+  `var(--text-primary)` der ga de LYSE standardverdiene fra `app.css` — første
+  utgave hadde usynlig tittel. Nå bærer `<body>` uttrykket til siden som er
+  åpen (`AppPage`), så et portalert ark leser variablene som alt annet.
 
 **Dashboardtypen utledes av temanavnet** (`resolveThemeDashboardKind`), ikke av
 hierarkiet. Legger du til en `DashboardKind`, må du derfor tenke på rekkefølgen i
@@ -2277,6 +2284,12 @@ Se `docs/changelog/2026-08-24-streak-historikk-og-temachips.md`. Reglene i
   Endrer du hjørnene, kjør palettvalidatoren på nytt: normalsyn-gulvet (ΔE ≥ 15
   mellom hjørner med samme tempo) og 3:1 mot flaten er de to som IKKE er smakssaker —
   første utgave brøt begge (12,6 og 2,0:1), og det var dårlig lesbarhet for alle.
+- **Det finnes TO felt, natt og krem, og hver dag bærer begge** (`FIELD_NATT`,
+  `FIELD_KREM`, `DayVisual.krem`). Natt-feltet lå på 1,2:1 mot krem. På krem er
+  rask MØRK — det er kontrasten mot flaten som er tempo. Cellen velger i CSS med
+  `--krem-andel` (100 % i krem, 0 % ellers) gjennom `color-mix`, så domenelaget
+  aldri trenger å vite temaet. Kravene til begge feltene står som tester i
+  `workout-day-scale.test.ts`; et nytt datafelt med to sett gjør det samme.
 - **Skalaen er brukerens egne dager** (10.–90. persentil), med gulv på spennet: én
   glemt tracker skal ikke presse alle andre dager sammen, og like turer skal SE like
   ut. Under `MIN_MEASURED_DAYS` fargelegges ingenting, og flaten sier hvorfor — en

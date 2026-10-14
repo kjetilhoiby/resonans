@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	buildDayScale,
 	dayVisual,
+	FIELD_KREM,
+	FIELD_NATT,
 	fieldColor,
 	legendSamples,
 	MIN_DISTANCE_SPAN_KM,
@@ -88,7 +90,8 @@ describe('dayVisual', () => {
 		const short = dayVisual(day('x', 3, 330), scale)!;
 		const long = dayVisual(day('x', 12, 330), scale)!;
 
-		expect(Object.keys(short).sort()).toEqual(['fill', 'ink']);
+		expect(Object.keys(short).sort()).toEqual(['fill', 'ink', 'krem']);
+		expect(Object.keys(short.krem).sort()).toEqual(['fill', 'ink']);
 		expect(short.fill).not.toBe(long.fill);
 	});
 
@@ -172,5 +175,91 @@ describe('legendSamples', () => {
 		const grid = legendSamples();
 		expect(grid[0][0].fill).toBe(fieldColor(0, 0).fill);
 		expect(grid[1][1].fill).toBe(fieldColor(1, 1).fill);
+	});
+});
+
+// ── Krem-feltet ─────────────────────────────────────────────────────────────
+
+function linear(hex: string): [number, number, number] {
+	return [1, 3, 5].map((i) => {
+		const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+	}) as [number, number, number];
+}
+
+function contrast(a: string, b: string): number {
+	const lum = (hex: string) => {
+		const [r, g, b2] = linear(hex);
+		return 0.2126 * r + 0.7152 * g + 0.0722 * b2;
+	};
+	const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+	return (hi + 0.05) / (lo + 0.05);
+}
+
+/** OKLab-avstand ×100, samme mål som palettvalidatoren. */
+function deltaE(a: string, b: string): number {
+	const lab = (hex: string) => {
+		const [r, g, bl] = linear(hex);
+		const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * bl);
+		const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * bl);
+		const s2 = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * bl);
+		return [
+			0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s2,
+			1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s2,
+			0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s2
+		];
+	};
+	const [p, q] = [lab(a), lab(b)];
+	return 100 * Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
+/** `--bg-secondary`, `--bg-primary` og `--bg-card` i krem (`uttrykk-a.css`). */
+const KREM_FLATER = ['#f0eadd', '#f6f1e7', '#fbf8f1'];
+const NATT_FLATE = '#141414';
+
+describe('krem-feltet', () => {
+	const corner = (pace: number, distance: number) => fieldColor(pace, distance, FIELD_KREM).fill;
+	const corners = [corner(0, 0), corner(0, 1), corner(1, 0), corner(1, 1)];
+
+	it('holder 3:1 mot alle tre krem-flatene i alle fire hjørner', () => {
+		for (const fill of corners) {
+			for (const surface of KREM_FLATER) {
+				expect(contrast(fill, surface), `${fill} mot ${surface}`).toBeGreaterThanOrEqual(3);
+			}
+		}
+	});
+
+	it('skiller hjørner med samme tempo og med samme distanse (ΔE ≥ 15)', () => {
+		expect(deltaE(corner(0, 0), corner(0, 1))).toBeGreaterThanOrEqual(15);
+		expect(deltaE(corner(1, 0), corner(1, 1))).toBeGreaterThanOrEqual(15);
+		expect(deltaE(corner(0, 0), corner(1, 0))).toBeGreaterThanOrEqual(15);
+		expect(deltaE(corner(0, 1), corner(1, 1))).toBeGreaterThanOrEqual(15);
+	});
+
+	it('snur lysheten: på krem er de raske dagene de MØRKE, så de står fram', () => {
+		const fast = contrast(corner(0, 0), KREM_FLATER[0]);
+		const slow = contrast(corner(1, 0), KREM_FLATER[0]);
+		expect(fast).toBeGreaterThan(slow);
+		expect(FIELD_KREM.lFast).toBeLessThan(FIELD_KREM.lSlow);
+		expect(FIELD_NATT.lFast).toBeGreaterThan(FIELD_NATT.lSlow);
+	});
+
+	it('følger med i hver dag og i tegnforklaringen', () => {
+		const scale = buildDayScale(spread);
+		const visual = dayVisual(day('x', 3, 300), scale)!;
+		expect(visual.krem.fill).toBe(corner(0, 0));
+		expect(legendSamples()[1][1].krem.fill).toBe(corner(1, 1));
+	});
+
+	it('gråtonen for dager uten tall synes på krem også', () => {
+		for (const surface of KREM_FLATER) {
+			expect(contrast(NO_METRIC_VISUAL.krem.fill, surface)).toBeGreaterThanOrEqual(3);
+		}
+	});
+
+	it('natt-feltet holder fortsatt 3:1 mot natt-flaten', () => {
+		for (const [p, d] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+			expect(contrast(fieldColor(p, d).fill, NATT_FLATE)).toBeGreaterThanOrEqual(3);
+		}
 	});
 });

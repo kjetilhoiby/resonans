@@ -90,7 +90,7 @@
 	}
 	.fs-chat-empty {
 		font-size: 0.88rem;
-		color: #3a3a4a;
+		color: var(--text-muted);
 		text-align: center;
 		padding: 20px 0;
 		margin: 0;

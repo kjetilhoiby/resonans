@@ -1,5 +1,5 @@
 export interface WeatherToolArgs {
-	/** Gir hjemmet fra Akser som default når modellen ikke oppgir koordinater. */
+	/** Gir stedet fra Akser (nå, ellers hjemmet) som default når modellen ikke oppgir koordinater. */
 	userId?: string;
 	latitude?: number;
 	longitude?: number;
@@ -27,12 +27,15 @@ const DEFAULT_LOCATION = {
 	timezone: 'Europe/Oslo'
 };
 
-async function homeOrNull(userId: string) {
+/** Der brukeren er nå (når Akser deler det), ellers hjemmet fra Akser. Null uten Akser. */
+async function aksersPlaceOrNull(userId: string, timezone?: string) {
 	try {
-		const { readHomeLocation } = await import('$lib/server/movement/home-location');
-		return await readHomeLocation(userId);
+		const { resolveWeatherLocation } = await import('$lib/server/movement/presence-store');
+		const { localIsoDay } = await import('$lib/server/nudge-time');
+		const today = localIsoDay(timezone ?? 'Europe/Oslo', new Date());
+		return await resolveWeatherLocation(userId, today, today);
 	} catch (error) {
-		console.warn('[weather] kunne ikke lese hjemmet fra Akser:', error instanceof Error ? error.message : error);
+		console.warn('[weather] kunne ikke lese stedet fra Akser:', error instanceof Error ? error.message : error);
 		return null;
 	}
 }
@@ -79,8 +82,8 @@ export const weatherForecastTool = {
 		const givenLatitude = clampCoordinate(args.latitude, -90, 90);
 		const givenLongitude = clampCoordinate(args.longitude, -180, 180);
 		const hasCoordinates = givenLatitude !== null && givenLongitude !== null;
-		// Uten koordinater: brukerens hjem fra Akser, ellers Oslo sentrum.
-		const home = !hasCoordinates && args.userId ? await homeOrNull(args.userId) : null;
+		// Uten koordinater: der brukeren er nå, så hjemmet (begge fra Akser), ellers Oslo sentrum.
+		const home = !hasCoordinates && args.userId ? await aksersPlaceOrNull(args.userId, args.timezone) : null;
 		const fallback = home
 			? { name: home.name, latitude: home.latitude, longitude: home.longitude }
 			: fallbackFromTimezone(args.timezone);

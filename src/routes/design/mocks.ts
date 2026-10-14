@@ -2644,3 +2644,4 @@ export const sickEpisodeMock: SickEpisode = (() => {
 		weightCaveat: WEIGHT_CAVEAT
 	};
 })();
+

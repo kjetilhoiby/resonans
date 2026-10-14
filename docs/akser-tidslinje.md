@@ -52,6 +52,8 @@ som ikke finnes lenger; ikke kopier den.)
 | `DELETE` | `/api/apps/akser/timeline?date=YYYY-MM-DD` | Slett én dag |
 | `DELETE` | `/api/apps/akser/timeline?all=true` | Slett alt fra Akser |
 | `GET` | `/api/apps/workouts?days=` | **Finnes alt.** Fasit for transportform (se under) |
+| `PUT` | `/api/apps/akser/now` | Hvor brukeren er nå – bare når «Del hvor jeg er nå» er på (se under) |
+| `DELETE` | `/api/apps/akser/now` | Delingen er slått av: slett det Resonans har |
 
 Rekkefølgen ved en synk er **steder først, så dager**. En dag som peker på et sted
 serveren ikke har fått, avvises.
@@ -201,6 +203,37 @@ for hele kallet.
 Tidspunkter **må** ha offset (`Z` eller `+02:00`). Uten den tolkes de i serverens tidssone,
 som er UTC i drift — et opphold kl. 08 ville landet kl. 10. Avviste dager skrives i
 `lastError` på sensoren, så de synes i monitoreringen.
+
+## «Hvor er jeg nå» (frivillig)
+
+Av som standard. Slår brukeren på «Del hvor jeg er nå» i Akser, sender appen ett signal ved
+ankomst og avreise, når appen åpnes, og høyst hvert 15. minutt underveis. Resonans bruker det
+til været i dag (dagsplan, ukeliste, `weather_forecast`) og til `now` i dagskonteksten
+(`/api/apps/day`, som chatten og Ekko deler).
+
+```json
+{
+  "state": "stay",
+  "since": "2026-10-12T08:24:00+02:00",
+  "generatedAt": "2026-10-12T08:40:12+02:00",
+  "placeId": "6F1C…",
+  "mode": null,
+  "approx": { "lat": 59.91, "lon": 10.75 }
+}
+```
+
+- **`state`** er `stay` eller `journey`. **`mode`** kreves på en reise (samme verdier som
+  etappene) og er forbudt på et opphold; **`placeId`** er forbudt på en reise.
+- **Et kjent sted sendes som id, ikke som posisjon.** `approx` er avrundet til to desimaler
+  (~1 km), og serveren avrunder selv også. Minst én av dem må være med.
+- **Et ukjent `placeId` gjettes ikke**: det droppes med en advarsel i svaret (`warnings`), og
+  `approx` står igjen. Stedslista kan ligge én runde bak et nytt sted.
+- **Én rad som overskrives, ingen historikk.** Det som skjedde kommer med de ferdige dagene.
+  En eldre `generatedAt` enn den lagrede gir `status: "stale"` og skriver ingenting.
+- **Signalet går ut av seg selv:** et opphold etter 48 timer uten nytt, en reise etter én time.
+  Da faller været tilbake på hjemmet.
+- **«Nå» gjelder bare i dag.** Været for resten av uka hentes hjemme: at du er på jobb nå, sier
+  ingenting om været hjemme på torsdag.
 
 ## Fasit: økter fra Resonans
 

@@ -11,6 +11,9 @@
  */
 
 [data-uttrykk='gammel'] {
+	/* Mørkt: datafarger med to sett bruker natt-settet. Se uttrykk-a.css. */
+	--krem-andel: 0%;
+
 	/* Bakgrunner */
 	--bg-primary: #0f0f0f;
 	--bg-secondary: #111;

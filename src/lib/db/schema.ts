@@ -2219,6 +2219,28 @@ export const appPlaces = pgTable('app_places', {
 }));
 
 /**
+ * «Hvor er jeg nå» fra en app (Akser), frivillig. Én rad per bruker og app som
+ * overskrives – ingen historikk. Posisjonen er avrundet til ~1 km; på et kjent sted
+ * bare stedets id. Se `$lib/domain/movement/presence.ts`.
+ */
+export const appPresence = pgTable('app_presence', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	app: text('app').notNull(),
+	/** 'stay' | 'journey' */
+	state: text('state').notNull(),
+	placeExternalId: text('place_external_id'),
+	mode: text('mode'),
+	latitude: doublePrecision('latitude'),
+	longitude: doublePrecision('longitude'),
+	since: timestamp('since', { withTimezone: true }).notNull(),
+	generatedAt: timestamp('generated_at', { withTimezone: true }).notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull()
+}, (table) => ({
+	uniqUserApp: uniqueIndex('app_presence_user_app_idx').on(table.userId, table.app)
+}));
+
+/**
  * Koblinger mellom Aksers og Ekkos steder (`app_places`). Resonans kobler, slår aldri
  * sammen. `confirmed`/`rejected` er brukerens valg og regnes aldri ut på nytt; `auto` og
  * `suggested` erstattes hver gang en stedsliste kommer inn. Reglene i
