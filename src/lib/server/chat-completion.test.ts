@@ -156,7 +156,7 @@ describe('createChatCompletionWithFallback', () => {
 		expect(second.requests[0]).not.toHaveProperty('verbosity');
 	});
 
-	it('faller tilbake på gpt-4o med de gamle parameterne når modellen avvises også uten parameterne', async () => {
+	it('faller tilbake på reserven uten tenking og ordrikhet når modellen avvises også uten parameterne', async () => {
 		const h = hooks();
 		const onFallback = vi.fn();
 		const { client, requests } = fakeClient([
@@ -173,8 +173,10 @@ describe('createChatCompletionWithFallback', () => {
 		expect(result.model).toBe('gpt-4o-2024-08-06');
 		expect(requests[1]).not.toHaveProperty('verbosity');
 		expect(requests[1]).not.toHaveProperty('reasoning_effort');
-		expect(requests[2]).toMatchObject({ model: 'gpt-4o', temperature: 0.8, max_tokens: 1000, stream: true });
-		expect(requests[2]).not.toHaveProperty('max_completion_tokens');
+		expect(requests[2]).toMatchObject({ model: 'gpt-5.4-mini', max_completion_tokens: 4000, reasoning_effort: 'none', stream: true });
+		expect(requests[2]).not.toHaveProperty('max_tokens');
+		expect(requests[2]).not.toHaveProperty('temperature');
+		expect(requests[2]).not.toHaveProperty('verbosity');
 	});
 
 	it('går rett til reserven når modellen alt er merket ubrukelig', async () => {
@@ -184,7 +186,7 @@ describe('createChatCompletionWithFallback', () => {
 		const { client, requests } = fakeClient([{ result: completion('Hei', false, 'gpt-4o-2024-08-06') }]);
 		await createChatCompletionWithFallback(client, request, sizing, { stream: hooks().stream, onFallback, memory });
 		expect(requests).toHaveLength(1);
-		expect(requests[0]).toMatchObject({ model: 'gpt-4o' });
+		expect(requests[0]).toMatchObject({ model: 'gpt-5.4-mini' });
 		expect(onFallback).toHaveBeenCalledWith('husket');
 	});
 

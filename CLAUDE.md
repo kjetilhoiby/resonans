@@ -3889,7 +3889,12 @@ på `/brev` kaller ingen verktøy og bruker derfor `gpt-6.1-sol`
 **Modellvalget gjelder ALLE runder**, også den etter verktøykallene: den runden
 skriver svaret brukeren faktisk leser, og fram til oktober 2026 var det mini der,
 uansett hva brukeren hadde valgt. En avvist forespørsel (400/404) prøves én gang med
-`gpt-4o` og logges som `[chat-model]`, men bare før første ord er strømmet — og
+reserven `gpt-5.4-mini` og logges som `[chat-model]`, men bare før første ord er
+strømmet. Reserven får den minste formen en tenkende modell tar
+(`fallbackCompletionSizing`: `max_completion_tokens`, `reasoning_effort: 'none'`,
+ingen temperatur), siden den må virke både med og uten verktøy. Den var `gpt-4o`
+fram til oktober 2026, og OpenAI pensjonerer den 14. januar 2027 — en reserve med
+en sluttdato er ikke en reserve. Og
 FØR reserven prøves samme modell uten `verbosity`/`reasoning_effort`
 (parameteren er verdt mindre enn modellen). **Avslaget huskes i prosessen**
 (`ModelRejectionMemory`, 30 min), så det betales én gang per deploy og ikke per
@@ -3905,7 +3910,8 @@ ventetid oppå et ferdig svar. `chat-completion.sdk.test.ts` kjører den ekte SD
 mot en lokal SSE-server — feiler den etter en oppgradering, har kontrakten flyttet seg.
 
 **Modellaliaser:** `STEMMEGAFFEL_URL` (valgfri) slår på aliasene fra Stemmegaffel
-(`resonans-lab/stemmegaffel`). Uten den er hvert kall byte-likt det det var. Kallet går
+(`resonans-lab/stemmegaffel`). Uten den brukes en fast standard per alias
+(`ALIAS_DEFAULTS`, med modell OG form; `json_cheap` er `gpt-6-luna`). Kallet går
 gjennom `createWithAlias('json_cheap', {...})` (`$lib/server/ai/model-alias.ts`), og
 reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
 `docs/changelog/2026-10-09-modellaliaser.md`.

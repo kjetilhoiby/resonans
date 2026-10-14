@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAlias, parseAliasPayload, resolveAlias, shouldFallBackFromAlias } from './model-alias';
+import { ALIAS_DEFAULTS, applyAlias, parseAliasPayload, resolveAlias, shouldFallBackFromAlias } from './model-alias';
 
 // Formen svaret har på /api/v1/aliaser/json_cheap 9. oktober 2026, forkortet.
 const SVAR = {
@@ -45,7 +45,7 @@ describe('parseAliasPayload', () => {
 describe('resolveAlias', () => {
 	it('bruker standarden uten laben, og sier hvorfor', () => {
 		const r = resolveAlias('json_cheap', null);
-		expect(r).toMatchObject({ model: 'gpt-4o-mini', source: 'default', params: {} });
+		expect(r).toMatchObject({ model: 'gpt-6-luna', source: 'default' });
 		expect(r.reason).toBeTruthy();
 	});
 
@@ -57,7 +57,7 @@ describe('resolveAlias', () => {
 		const google = parseAliasPayload({ ...SVAR, modell: { ...SVAR.modell, leverandor: 'google', rute: 'google', model: 'gemini-3.8-flash' } });
 		const r = resolveAlias('json_cheap', google);
 		expect(r.source).toBe('default');
-		expect(r.model).toBe('gpt-4o-mini');
+		expect(r.model).toBe('gpt-6-luna');
 		expect(r.reason).toContain('google');
 	});
 
@@ -72,9 +72,23 @@ describe('resolveAlias', () => {
 });
 
 describe('applyAlias', () => {
-	it('lar kallet være som før med standarden', () => {
+	it('gir standarden sin egen form: navnet på taket, uten temperatur, uten tenking', () => {
 		const ut = applyAlias(KALL, resolveAlias('json_cheap', null));
-		expect(ut).toEqual({ ...KALL, model: 'gpt-4o-mini' });
+		const { max_tokens: _, temperature: __, ...resten } = KALL;
+		expect(ut).toEqual({ ...resten, model: 'gpt-6-luna', max_completion_tokens: 400, reasoning_effort: 'none' });
+	});
+
+	it('gir ikke et kallsted uten tak noe tak med standarden', () => {
+		const { max_tokens: _, ...utenTak } = KALL;
+		const ut = applyAlias(utenTak, resolveAlias('json_cheap', null));
+		expect('max_completion_tokens' in ut).toBe(false);
+		expect('max_tokens' in ut).toBe(false);
+	});
+
+	// gpt-4o-mini pensjoneres 14. januar 2027. Standarden er det som svarer når
+	// laben ikke gjør det, så den kan ikke være en modell med en sluttdato.
+	it('standarden er ikke en modell OpenAI pensjonerer', () => {
+		for (const d of Object.values(ALIAS_DEFAULTS)) expect(d.model).not.toMatch(/^gpt-4/);
 	});
 
 	it('bytter navnet på tokentaket, men beholder kallstedets verdi', () => {

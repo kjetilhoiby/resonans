@@ -7,10 +7,10 @@
  *
  * Tre ting holder dette trygt:
  *
- *   - **Uten laben er kallet byte-likt det vi sendte før.** Mangler
- *     `STEMMEGAFFEL_URL`, eller svarer ikke laben, brukes standardmodellen og
- *     kallstedets egne parametere – ingenting annet. Laben står aldri i den
- *     kritiske stien.
+ *   - **Uten laben brukes en fast standard, og laben står aldri i den
+ *     kritiske stien.** Mangler `STEMMEGAFFEL_URL`, eller svarer ikke laben,
+ *     brukes `ALIAS_DEFAULTS`: en modell og formen den tar, på samme måte som et
+ *     svar fra laben.
  *   - **Bare OpenAI.** Resonans har én klient til disse kallene. Peker aliaset på
  *     en annen leverandør, brukes standarden, og grunnen sies – et kall mot feil
  *     endepunkt med feil nøkkel ville feilet for hver bruker.
@@ -23,9 +23,27 @@
 export const MODEL_ALIASES = ['json_cheap'] as const;
 export type ModelAlias = (typeof MODEL_ALIASES)[number];
 
-/** Modellen som brukes uten laben – den kallstedene hadde hardkodet. */
-export const ALIAS_DEFAULTS: Record<ModelAlias, string> = {
-	json_cheap: 'gpt-4o-mini'
+export interface AliasDefault {
+	model: string;
+	/** Formen modellen tar, i samme språk som labens `params`. */
+	params: Record<string, unknown>;
+}
+
+/**
+ * Modellen som brukes uten laben, med formen den tar.
+ *
+ * `json_cheap` sto på `gpt-4o-mini` fram til oktober 2026, den modellen
+ * kallstedene hadde hardkodet. OpenAI pensjonerer den 14. januar 2027, og en
+ * standard som slutter å svare den dagen er ikke en standard. `gpt-6-luna` er
+ * målt i Stemmegaffel på de samme oppgavene: minst like god på alle, og
+ * billigere. Den tar ikke temperatur, vil ha `max_completion_tokens`, og tenker
+ * ikke med `reasoning_effort: 'none'` – som er riktig for et uttrekk.
+ *
+ * `null` på tokentaket betyr «dette navnet, men verdien er kallstedets».
+ * Et kallsted uten tak får fortsatt ikke noe tak.
+ */
+export const ALIAS_DEFAULTS: Record<ModelAlias, AliasDefault> = {
+	json_cheap: { model: 'gpt-6-luna', params: { max_completion_tokens: null, reasoning_effort: 'none' } }
 };
 
 /** Det vi leser fra Stemmegaffels svar. Felt for felt, ingen spread. */
@@ -59,7 +77,7 @@ export function parseAliasPayload(raw: unknown): AliasPayload | null {
 export interface ResolvedAlias {
 	alias: ModelAlias;
 	model: string;
-	/** Parameterne laben har målt for modellen; tomt for standarden. */
+	/** Formen modellen tar: målt av laben, eller standardens egen. */
 	params: Record<string, unknown>;
 	source: 'stemmegaffel' | 'default';
 	/** Hvorfor standarden ble brukt, når den ble det. */
@@ -67,7 +85,7 @@ export interface ResolvedAlias {
 }
 
 export function resolveAlias(alias: ModelAlias, payload: AliasPayload | null, reasonIfMissing = 'laben er ikke konfigurert'): ResolvedAlias {
-	const fallback = (reason: string): ResolvedAlias => ({ alias, model: ALIAS_DEFAULTS[alias], params: {}, source: 'default', reason });
+	const fallback = (reason: string): ResolvedAlias => ({ alias, model: ALIAS_DEFAULTS[alias].model, params: ALIAS_DEFAULTS[alias].params, source: 'default', reason });
 	if (!payload) return fallback(reasonIfMissing);
 	if (payload.alias !== alias) return fallback(`laben svarte for «${payload.alias}», ikke «${alias}»`);
 	if (payload.provider !== 'openai' || (payload.route !== null && payload.route !== 'openai')) return fallback(`aliaset peker på ${payload.provider}, og Resonans har bare en OpenAI-klient for dette`);
@@ -78,15 +96,13 @@ export function resolveAlias(alias: ModelAlias, payload: AliasPayload | null, re
 const FORM_PARAMS = ['reasoning_effort', 'verbosity'] as const;
 
 /**
- * Kallstedets forespørsel med aliasets modell og form. Med standarden er
- * resultatet kallstedets egen forespørsel med modellen satt – byte-likt det
- * vi sendte før.
+ * Kallstedets forespørsel med aliasets modell og form. Standarden og laben går
+ * gjennom samme regel; forskjellen er bare hvor formen kom fra.
  */
 export type AliasedRequest<T> = T & { model: string } & Record<string, unknown>;
 
 export function applyAlias<T extends object>(body: T, resolved: ResolvedAlias): AliasedRequest<T> {
 	const out: Record<string, unknown> = { ...body, model: resolved.model };
-	if (resolved.source === 'default') return out as AliasedRequest<T>;
 	const p = resolved.params;
 	const inn = body as Record<string, unknown>;
 
@@ -96,7 +112,8 @@ export function applyAlias<T extends object>(body: T, resolved: ResolvedAlias): 
 		delete out.max_tokens;
 		delete out.max_completion_tokens;
 		const navn = 'max_completion_tokens' in p ? 'max_completion_tokens' : 'max_tokens';
-		out[navn] = tak ?? p[navn];
+		const verdi = tak ?? p[navn];
+		if (typeof verdi === 'number') out[navn] = verdi;
 	}
 
 	// Temperatur: laben sender den bare når modellen er målt å ta den.
@@ -112,7 +129,7 @@ export function applyAlias<T extends object>(body: T, resolved: ResolvedAlias): 
  * Skal et avvist aliaskall kjøres om igjen med standarden? Bare når OpenAI
  * avviste FORESPØRSELEN (ukjent modell, parameter den ikke tar) – samme regel
  * som `shouldFallBackToChatModel`. En 429 eller et nettverksbrudd ville bare
- * doblet trykket, og standarden er alt det vi sendte.
+ * doblet trykket. Avvises standarden selv, finnes det ingenting under den.
  */
 export function shouldFallBackFromAlias(source: ResolvedAlias['source'], status: number | undefined): boolean {
 	return source === 'stemmegaffel' && (status === 400 || status === 404);

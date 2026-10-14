@@ -4,7 +4,7 @@
  *
  * Laben står ALDRI i den kritiske stien:
  *
- *   - `STEMMEGAFFEL_URL` er bryteren. Uten den sendes kallene som før.
+ *   - `STEMMEGAFFEL_URL` er bryteren. Uten den brukes `ALIAS_DEFAULTS`.
  *   - Svaret holdes i prosessen og hentes på nytt hvert kvarter, i bakgrunnen.
  *     Første kall venter høyst `FETCH_TIMEOUT_MS` på laben; svarer den ikke,
  *     brukes standarden og forsøket gjentas ved neste frist.

@@ -122,11 +122,11 @@ describe('createChatCompletionWithFallback mot ekte SDK', () => {
 			{ stream: h.stream, onFallback: () => void (fellBack = true), memory: new ModelRejectionMemory() }
 		);
 		expect(fellBack).toBe(true);
-		expect(result.model).toBe('gpt-4o-2026');
+		expect(result.model).toBe('gpt-5.4-mini-2026');
 		// Andre forsøk: samme modell, uten verbosity.
 		expect(seen.at(-2)).toMatchObject({ model: 'avvises' });
 		expect(seen.at(-2)).not.toHaveProperty('verbosity');
-		expect(seen.at(-1)).toMatchObject({ model: 'gpt-4o', temperature: 0.8, max_tokens: 1000 });
+		expect(seen.at(-1)).toMatchObject({ model: 'gpt-5.4-mini', max_completion_tokens: 4000, reasoning_effort: 'none' });
 		expect(seen.at(-1)).not.toHaveProperty('verbosity');
 	});
 });

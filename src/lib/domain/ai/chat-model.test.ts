@@ -13,6 +13,7 @@ import {
 	shouldFallBackToChatModel,
 	DEFAULT_CHAT_MODEL,
 	FALLBACK_CHAT_MODEL,
+	fallbackCompletionSizing,
 	REASONING_TOKEN_FLOOR
 } from './chat-model';
 
@@ -225,5 +226,16 @@ describe('rejectedOptionalParams', () => {
 
 	it('dropper ingenting når ingen valgfrie ble sendt', () => {
 		expect(rejectedOptionalParams({ status: 404 }, { model: 'gpt-4o' })).toEqual([]);
+	});
+});
+
+describe('fallbackCompletionSizing', () => {
+	// gpt-4o går ut 14. januar 2027, og reserven måtte bort fra den.
+	it('reserven er ikke en modell som pensjoneres', () => {
+		expect(FALLBACK_CHAT_MODEL).not.toMatch(/^gpt-4/);
+	});
+	it('sender det minste en reasoning-modell tar imot: none, og tokentaket med gulv', () => {
+		expect(fallbackCompletionSizing(1000)).toEqual({ max_completion_tokens: 4000, reasoning_effort: 'none' });
+		expect(fallbackCompletionSizing(6000)).toEqual({ max_completion_tokens: 6000, reasoning_effort: 'none' });
 	});
 });

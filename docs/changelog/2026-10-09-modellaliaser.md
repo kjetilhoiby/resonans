@@ -36,11 +36,35 @@ JSON ut, ingen bruker som venter på ordene.
 - **Ikke flyttet, med vilje:**
   - bildekallet i `tracking-triage.ts`, `attachment-triage` og `school-plan.ts` (PDF-grenen bruker gpt-4o). Disse er `vision`.
 
+### Fase 2: pensjoneringen (14. oktober 2026)
+
+OpenAI pensjonerer `gpt-4o`, `gpt-4o-mini`, `gpt-4.1` og `gpt-4.1-mini` 14. januar 2027.
+To av dem sto som det Resonans faller tilbake på, altså det som skal svare når noe annet
+ikke gjør det.
+
+- **`json_cheap` har ny standard: `gpt-6-luna`.** `ALIAS_DEFAULTS` er nå `{ model, params }`,
+  og standarden går gjennom `applyAlias` som et svar fra laben gjør. Formen er
+  `max_completion_tokens` (med kallstedets verdi; `null` betyr at kallsteder uten tak
+  fortsatt ikke får noe), `reasoning_effort: 'none'` og ingen temperatur. Laben målte Luna
+  minst like god som `gpt-4o-mini` på alle `json_cheap`-oppgavene, til to tredjedeler av
+  prisen.
+- **Chatreserven er `gpt-5.4-mini`** (`FALLBACK_CHAT_MODEL`, `$lib/domain/ai/chat-model.ts`).
+  Den sendes med `fallbackCompletionSizing`: `max_completion_tokens` med gulv,
+  `reasoning_effort: 'none'`, ingen temperatur og ingen ordrikhet. `none` er det eneste
+  tenkenivået gpt-5.x tar over Chat Completions med verktøy, og reserven skal være den
+  forespørselen som er minst sannsynlig å bli avvist.
+- **Stemmegaffel vet om datoen.** `KJENTE_UTLOP` fyller hullet OpenRouter-katalogen har, og
+  varselvinduet er 120 dager. Et alias som peker på en av de fire modellene, flagges nå som
+  akutt.
+- **Står igjen:** `vision` (bildekallene peker fortsatt på `gpt-4o`/`gpt-4o-mini`),
+  `CHAT_DEFAULT_MODEL=legacy` (heuristikken velger `gpt-4o`) og de øvrige kallstedene med
+  en hardkodet 4o- eller 4.1-modell.
+
 ## Beslutninger
 
-- **`STEMMEGAFFEL_URL` er bryteren, og uten den er hvert kall byte-likt det det var.** Testen
-  `lar kallet være som før med standarden` vokter det. En merge endrer derfor ingenting før
-  variabelen settes i Coolify.
+- **`STEMMEGAFFEL_URL` er bryteren.** Fram til fase 2 var hvert kall byte-likt det det var
+  uten den. Etter fase 2 bruker standarden sin egen modell og form (se over), og testen
+  `gir standarden sin egen form` vokter den.
 - **Bare OpenAI, og bare direkte.** Resonans har én klient til disse kallene. Et alias som peker
   på Google, eller på en OpenAI-modell målt gjennom OpenRouter, faller tilbake på standarden med
   grunnen i loggen. En flerleverandørklient er et eget steg, og trengs først når laben anbefaler
