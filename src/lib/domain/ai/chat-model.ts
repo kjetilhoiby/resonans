@@ -16,8 +16,16 @@
  */
 
 export const DEFAULT_CHAT_MODEL = 'gpt-5.4';
-/** Modellen vi faller tilbake på når OpenAI avviser modellen eller parametrene. */
-export const FALLBACK_CHAT_MODEL = 'gpt-4o';
+/**
+ * Modellen vi faller tilbake på når OpenAI avviser modellen eller parametrene.
+ * Var `gpt-4o` fram til oktober 2026, da OpenAI varslet at den går ut
+ * 14. januar 2027. En reserve som selv er borte, gjør avvisningen til en feil
+ * hos brukeren, og det bare i den situasjonen noe annet alt har gått galt.
+ * `gpt-5.4-mini` var ikke målbart dårligere enn `gpt-5.4` på registerprøven i
+ * Stemmegaffel (oktober 2026) – målt over Responses med `medium`, mens reserven
+ * går over Chat Completions med `none`.
+ */
+export const FALLBACK_CHAT_MODEL = 'gpt-5.4-mini';
 /** Verdi for `CHAT_DEFAULT_MODEL` som gir heuristikken fra før oktober 2026. */
 export const LEGACY_CHAT_MODEL_MODE = 'legacy';
 
@@ -198,6 +206,17 @@ export function completionSizing(
 		};
 	}
 	return { temperature: opts.temperature, max_tokens: opts.maxTokens };
+}
+
+/**
+ * Parameterne reserven sendes med. Den skal være det kallet som har minst grunn
+ * til å bli avvist: tenkenivå `none` (det eneste gpt-5.x tar sammen med verktøy
+ * over Chat Completions), ingen ordrikhet, ingen temperatur. Uten tenking går
+ * ingenting av taket til resonnering, men gulvet beholdes – et svar som kappes,
+ * er reservens verste utfall.
+ */
+export function fallbackCompletionSizing(maxTokens: number): { max_completion_tokens: number; reasoning_effort: SdkReasoningEffort } {
+	return { max_completion_tokens: Math.max(maxTokens, REASONING_TOKEN_FLOOR), reasoning_effort: 'none' as SdkReasoningEffort };
 }
 
 /**

@@ -4,8 +4,8 @@ import type {
 	ChatCompletionCreateParamsNonStreaming
 } from 'openai/resources/chat/completions';
 import {
-	completionSizing,
 	describeRejection,
+	fallbackCompletionSizing,
 	rejectedOptionalParams,
 	shouldFallBackToChatModel,
 	FALLBACK_CHAT_MODEL,
@@ -101,7 +101,7 @@ const defaultMemory = new ModelRejectionMemory();
  *    (`verbosity`, `reasoning_effort`), eller uten alle hvis den ikke sier
  *    hvilken. En parameter er verdt mindre enn modellen; det var nettopp den
  *    byttehandelen den første reserven gjorde feil vei.
- * 2. **`FALLBACK_CHAT_MODEL` med de gamle parameterne**, og modellen merkes
+ * 2. **`FALLBACK_CHAT_MODEL` med `fallbackCompletionSizing`**, og modellen merkes
  *    ubrukelig så de neste rundene går rett hit.
  *
  * Hvert avslag rapporteres som et maskinnavn (`describeRejection`) til
@@ -202,6 +202,6 @@ export async function createChatCompletionWithFallback(
 	return await run({
 		...rest,
 		model: FALLBACK_CHAT_MODEL,
-		...completionSizing(FALLBACK_CHAT_MODEL, fallbackSizing)
+		...fallbackCompletionSizing(fallbackSizing.maxTokens)
 	});
 }

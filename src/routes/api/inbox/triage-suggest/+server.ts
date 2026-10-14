@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { listInboxItems } from '$lib/server/inbox';
 import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
@@ -50,8 +50,7 @@ ${itemsList}`;
 
 	let suggestions: ItemSuggestion[] = [];
 	try {
-		const response = await openai.chat.completions.create({
-			model: 'gpt-4o-mini',
+		const response = await createWithAlias('json_cheap', {
 			messages: [{ role: 'system', content: systemPrompt }],
 			response_format: { type: 'json_object' },
 			temperature: 0.3

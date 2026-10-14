@@ -1,4 +1,5 @@
 import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { db } from '$lib/db';
 import { trackingSeriesExamples } from '$lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
@@ -61,6 +62,7 @@ Svar KUN JSON:
 
 Notat fra bruker: ${params.note || '(tomt)'}`;
 
+	// Bildekallet er `vision`, ikke `json_cheap`, og flyttes når det aliaset kobles inn.
 	const completion = await openai.chat.completions.create({
 		model: 'gpt-4o-mini',
 		messages: [
@@ -176,8 +178,7 @@ Svar KUN JSON:
 		series: seriesWithExamples
 	};
 
-	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const completion = await createWithAlias('json_cheap', {
 		messages: [
 			{ role: 'system', content: prompt },
 			{
