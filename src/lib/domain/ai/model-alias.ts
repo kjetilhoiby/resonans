@@ -20,7 +20,7 @@
  *     formen ut fra modellnavnet, og gjettet feil for gpt-5.4 (8. oktober 2026).
  */
 
-export const MODEL_ALIASES = ['json_cheap'] as const;
+export const MODEL_ALIASES = ['json_cheap', 'vision'] as const;
 export type ModelAlias = (typeof MODEL_ALIASES)[number];
 
 export interface AliasDefault {
@@ -39,11 +39,20 @@ export interface AliasDefault {
  * billigere. Den tar ikke temperatur, vil ha `max_completion_tokens`, og tenker
  * ikke med `reasoning_effort: 'none'` – som er riktig for et uttrekk.
  *
+ * `vision` sto på `gpt-4o` (og `gpt-4o-mini` på ett kallsted), med samme
+ * sluttdato. Luna er målt minst like god som `gpt-4o` på alle bildeoppgavene
+ * laben har (billett, måltid, kvittering), til en tjuefemdel av prisen. Laben
+ * måler IKKE avlesning av søylehøyder i et skjermtidsbilde; se
+ * `screen-time-parser.ts` før en terskel der justeres.
+ *
  * `null` på tokentaket betyr «dette navnet, men verdien er kallstedets».
  * Et kallsted uten tak får fortsatt ikke noe tak.
  */
+const LUNA_FORM = { max_completion_tokens: null, reasoning_effort: 'none' };
+
 export const ALIAS_DEFAULTS: Record<ModelAlias, AliasDefault> = {
-	json_cheap: { model: 'gpt-6-luna', params: { max_completion_tokens: null, reasoning_effort: 'none' } }
+	json_cheap: { model: 'gpt-6-luna', params: LUNA_FORM },
+	vision: { model: 'gpt-6-luna', params: LUNA_FORM }
 };
 
 /** Det vi leser fra Stemmegaffels svar. Felt for felt, ingen spread. */

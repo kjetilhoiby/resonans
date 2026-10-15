@@ -1,4 +1,3 @@
-import { openai } from '$lib/server/openai';
 import { createWithAlias } from '$lib/server/ai/model-alias';
 import { db } from '$lib/db';
 import { trackingSeriesExamples } from '$lib/db/schema';
@@ -62,9 +61,7 @@ Svar KUN JSON:
 
 Notat fra bruker: ${params.note || '(tomt)'}`;
 
-	// Bildekallet er `vision`, ikke `json_cheap`, og flyttes når det aliaset kobles inn.
-	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+	const completion = await createWithAlias('vision', {
 		messages: [
 			{
 				role: 'user',

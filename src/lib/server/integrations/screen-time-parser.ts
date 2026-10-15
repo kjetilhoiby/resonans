@@ -14,7 +14,7 @@
  * som egne regler i prompten framfor å ligge i et «les grafen så godt du kan».
  */
 
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import {
 	normalizeCategories,
 	type ScreenTimeCategories,
@@ -142,8 +142,7 @@ export function parseNorwegianDateLabel(label: string | undefined, ref: Date = n
 export async function parseScreenTimeImage(imageUrl: string, ref: Date = new Date()): Promise<ParsedScreenTime> {
 	let parsed: Record<string, unknown>;
 	try {
-		const response = await openai.chat.completions.create({
-			model: 'gpt-4o',
+		const response = await createWithAlias('vision', {
 			max_tokens: 1800,
 			temperature: 0.1,
 			response_format: { type: 'json_object' },

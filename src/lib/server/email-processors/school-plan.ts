@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { persons, users, emailRules, sensorEvents } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { findOrCreateEmailSensor, stripHtml, type InboundEmailPayload } from './shared';
@@ -123,11 +123,8 @@ async function extractFindings(
 		});
 	}
 
-	// Bruk vision-modell når PDF er med (krever bilde-/fil-forståelse); ellers den raske.
-	const model = pdfs.length > 0 ? 'gpt-4o' : 'gpt-4o-mini';
-
-	const completion = await openai.chat.completions.create({
-		model,
+	// En PDF er `vision` (laben måler fil-forståelse der); ren e-posttekst er et vanlig uttrekk.
+	const completion = await createWithAlias(pdfs.length > 0 ? 'vision' : 'json_cheap', {
 		messages: [
 			{ role: 'system', content: buildPrompt(children, todayIso, extraPrompt) },
 			{ role: 'user', content: userContent }

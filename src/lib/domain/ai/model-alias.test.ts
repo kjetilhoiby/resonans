@@ -87,6 +87,15 @@ describe('applyAlias', () => {
 
 	// gpt-4o-mini pensjoneres 14. januar 2027. Standarden er det som svarer når
 	// laben ikke gjør det, så den kan ikke være en modell med en sluttdato.
+	it('vision har sin egen standard og sin egen form', () => {
+		const ut = applyAlias({ messages: [], max_tokens: 900, temperature: 0 }, resolveAlias('vision', null));
+		expect(ut).toEqual({ messages: [], model: 'gpt-6-luna', max_completion_tokens: 900, reasoning_effort: 'none' });
+	});
+
+	it('godtar ikke et svar laben ga for json_cheap som vision', () => {
+		expect(resolveAlias('vision', parseAliasPayload(SVAR)).source).toBe('default');
+	});
+
 	it('standarden er ikke en modell OpenAI pensjonerer', () => {
 		for (const d of Object.values(ALIAS_DEFAULTS)) expect(d.model).not.toMatch(/^gpt-4/);
 	});

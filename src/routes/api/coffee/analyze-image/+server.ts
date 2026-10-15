@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 
 /**
  * POST /api/coffee/analyze-image
@@ -37,8 +37,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o',
+	const response = await createWithAlias('vision', {
 		messages: [
 			{
 				role: 'user',

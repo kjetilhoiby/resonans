@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { parsePctBox, pctBoxToPixelCrop } from '$lib/server/book-cover-crop';
@@ -70,8 +70,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const mimeType = imageFile.type || 'image/jpeg';
 	const dataURI = `data:${mimeType};base64,${base64}`;
 
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o',
+	const response = await createWithAlias('vision', {
 		messages: [
 			{
 				role: 'user',
