@@ -1,7 +1,7 @@
 # Modellaliaser fra Stemmegaffel: `json_cheap` først
 
 Dato: 2026-10-09
-Status: pågår (`json_cheap` er bygget; `vision`, `prose`, `reasoning` og `fast_tools` står igjen)
+Status: pågår (`json_cheap` og `vision` er bygget; `prose`, `reasoning` og `fast_tools` står igjen)
 
 ## Kontekst
 
@@ -56,9 +56,30 @@ ikke gjør det.
 - **Stemmegaffel vet om datoen.** `KJENTE_UTLOP` fyller hullet OpenRouter-katalogen har, og
   varselvinduet er 120 dager. Et alias som peker på en av de fire modellene, flagges nå som
   akutt.
-- **Står igjen:** `vision` (bildekallene peker fortsatt på `gpt-4o`/`gpt-4o-mini`),
-  `CHAT_DEFAULT_MODEL=legacy` (heuristikken velger `gpt-4o`) og de øvrige kallstedene med
-  en hardkodet 4o- eller 4.1-modell.
+- **Står igjen etter fase 2:** `vision` (tatt i fase 3), `CHAT_DEFAULT_MODEL=legacy`
+  (heuristikken velger `gpt-4o`) og de øvrige kallstedene med en hardkodet 4o- eller
+  4.1-modell.
+
+### Fase 3: `vision` (15. oktober 2026)
+
+- `vision` er et alias med samme standard som `json_cheap`: `gpt-6-luna` med
+  `reasoning_effort: 'none'` og ingen temperatur. Laben målte Luna minst like god som
+  `gpt-4o` på alle bildeoppgavene den har (billett 0,96 mot 0,94, måltid 0,96 mot 0,94,
+  kvittering 1,0 begge, og billettprofilen P3 0,93 mot 0,91), til en tjuefemdel av prisen.
+  Laben foreslo selv byttet, som akutt, da utløpsdatoen kom inn.
+- Kallstedene som er flyttet til `vision`: `attachment-extract.ts` (videorammer),
+  `file-extraction.ts` (bildebeskrivelse), `screen-time-parser.ts`, bildekallet i
+  `tracking-triage.ts`, `analyze-meal-image`, `api/coffee/analyze-image` og
+  `api/books/analyze-image`.
+- **Fire kallsteder valgte modell etter om det fantes et bilde, og deles nå på samme
+  måte:** `ticket-reader.ts`, `estimate-intake.ts`, `api/attachment-triage` og
+  `school-plan.ts` (PDF-er) går til `vision` med bilde eller fil, og til `json_cheap`
+  med bare tekst.
+- **Laben måler ikke skjermtidsbildet.** Parseren leser søylehøyder, og terskelen på
+  57 minutter i `screen-time-attention.ts` er satt etter hvordan `gpt-4o` leste en søyle
+  som traff taket. Ser filtreringen ut til å slutte å virke etter byttet, er det her man
+  skal lete; ikke juster terskelen før en måling viser at avlesningen har flyttet seg.
+- Ikke flyttet: `dream-service.ts` sin `visionModel` er en livsVISJON, ikke et bilde.
 
 ## Beslutninger
 
@@ -95,6 +116,5 @@ ikke gjør det.
 
 ## Neste
 
-- `vision`: bildekallene over, `attachment-triage`, `ticket-reader`, skjermtidsparseren.
 - `prose` og `reasoning` krever at Responses-spørsmålet er avgjort for de modellene laben anbefaler.
 - `fast_tools` (hovedchatten) til sist, etter de andre.

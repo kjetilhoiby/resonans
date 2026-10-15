@@ -2410,8 +2410,8 @@ Se `docs/changelog/2026-08-26-skjermtid-oppmerksomhet.md`. Reglene rent i
   **leses ut av timeprofilen** (ingen konfigurasjon). At en treningscoach med
   skjermen på under en løpetur ikke teller, kan ingen timeprofil avsløre — det må
   brukeren si (`ignoredApps`). Ikke slå dem sammen.
-- **Terskelen er 57 minutter, ikke 60.** Timeprofilen leses av GPT-4o fra
-  søylehøyder i et skjermbilde, så en søyle som traff taket kommer tilbake som
+- **Terskelen er 57 minutter, ikke 60.** Timeprofilen leses av en bildemodell
+  (aliaset `vision`; `gpt-4o` da terskelen ble satt) fra søylehøyder i et skjermbilde, så en søyle som traff taket kommer tilbake som
   57–63. En terskel på 60 slipper gjennom nettopp de timene regelen finnes for.
 - **Én full time er en film; to på rad er skjermen som står på.**
   `MIN_PASSIVE_RUN_HOURS` = 2 er den ene knappen som avgjør aggressiviteten, og
@@ -3911,8 +3911,8 @@ mot en lokal SSE-server — feiler den etter en oppgradering, har kontrakten fly
 
 **Modellaliaser:** `STEMMEGAFFEL_URL` (valgfri) slår på aliasene fra Stemmegaffel
 (`resonans-lab/stemmegaffel`). Uten den brukes en fast standard per alias
-(`ALIAS_DEFAULTS`, med modell OG form; `json_cheap` er `gpt-6-luna`). Kallet går
-gjennom `createWithAlias('json_cheap', {...})` (`$lib/server/ai/model-alias.ts`), og
+(`ALIAS_DEFAULTS`, med modell OG form; både `json_cheap` og `vision` er `gpt-6-luna`).
+Kallet går gjennom `createWithAlias('json_cheap' | 'vision', {...})` (`$lib/server/ai/model-alias.ts`), og
 reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
 `docs/changelog/2026-10-09-modellaliaser.md`.
 
@@ -3926,9 +3926,11 @@ reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
   og tok feil for gpt-5.4.
 - **En avvisning (400/404) koster ett ekstra kall, ikke en feil.** Kallet kjøres om igjen med
   standarden, og aliaset settes til side i 30 minutter. Se `[modell-alias]` i loggen.
-- **Et kall med bilde er ikke `json_cheap`**, selv om modellen er den samme i dag.
-  `vision` er sitt eget alias, og et kall som hører hjemme der, skal flyttes dit når aliaset
-  kobles inn, ikke hit.
+- **Et kall med bilde er `vision`, ikke `json_cheap`**, selv om standardmodellen er den
+  samme. Et kallsted som tar både bilde og tekst velger alias per kall
+  (`'imageUrls' in source ? 'vision' : 'json_cheap'`), slik `ticket-reader.ts` gjør.
+  Laben måler billetter, måltider og kvitteringer, men ikke søylehøydene i et
+  skjermtidsbilde.
 
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 

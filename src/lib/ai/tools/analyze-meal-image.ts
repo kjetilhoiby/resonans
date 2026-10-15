@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 
 export const analyzeMealImageTool = {
 	name: 'analyze_meal_image',
@@ -16,8 +16,7 @@ Returns confidence score; nutrition is a best-effort guess and should be present
 	execute: async (args: { imageUrl: string; servings?: number }) => {
 		const servings = args.servings ?? 1;
 
-		const response = await openai.chat.completions.create({
-			model: 'gpt-4o',
+		const response = await createWithAlias('vision', {
 			messages: [
 				{
 					role: 'user',

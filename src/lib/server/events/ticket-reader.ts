@@ -15,7 +15,7 @@
  * og testet. Her ligger bare kallet.
  */
 
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import {
 	detectAttachmentKind,
 	uploadAndExtractAttachment,
@@ -189,9 +189,8 @@ async function askModel(source: ModelSource, note: string): Promise<Record<strin
 		userContent = `Les denne billetten.${hint}\n\n${source.text.slice(0, 12_000)}`;
 	}
 
-	const completion = await openai.chat.completions.create({
-		// Vision krever gpt-4o; ren tekst klarer mini, og en billett er kort.
-		model: 'imageUrls' in source ? 'gpt-4o' : 'gpt-4o-mini',
+	// Et bilde er `vision`; ren tekst er et vanlig uttrekk, og en billett er kort.
+	const completion = await createWithAlias('imageUrls' in source ? 'vision' : 'json_cheap', {
 		messages: [
 			{ role: 'system', content: SYSTEM_PROMPT },
 			{ role: 'user', content: userContent as never }

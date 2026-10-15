@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import {
 	buildImageSignature,
 	computeByteHash,
@@ -219,8 +219,7 @@ JSON-format:
 
 	const userText = `Her er vedlegget som nettopp ble lastet opp. Lag et første triage-steg.\n\n${attachmentContext}`;
 
-	const completion = await openai.chat.completions.create({
-		model: params.kind === 'image' ? 'gpt-4o' : 'gpt-4o-mini',
+	const completion = await createWithAlias(params.kind === 'image' ? 'vision' : 'json_cheap', {
 		messages: [
 			{ role: 'system', content: systemPrompt },
 			params.kind === 'image'

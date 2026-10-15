@@ -8,6 +8,7 @@
  */
 
 import { openai } from './openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 
 // @ts-ignore
 const BufferGlobal = Buffer;
@@ -49,8 +50,7 @@ async function extractPdf(buffer: Buffer): Promise<string> {
 }
 
 async function extractImage(cloudinaryUrl: string): Promise<string> {
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o',
+	const response = await createWithAlias('vision', {
 		max_tokens: 1500,
 		messages: [
 			{

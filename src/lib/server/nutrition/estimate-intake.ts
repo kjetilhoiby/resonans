@@ -1,4 +1,4 @@
-import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { referenceTableForPrompt } from '$lib/domain/nutrition/food-reference';
 import {
 	describeItem,
@@ -18,8 +18,6 @@ import {
  * Selve tolkningen av svaret bor i `$lib/domain/nutrition/estimate`
  * (`parseEstimateResponse`) og er testet der — denne fila er kallet og prompten.
  */
-
-const MODEL = 'gpt-4o';
 
 const RESPONSE_SHAPE = `{
   "label": "kort norsk beskrivelse av måltidet",
@@ -137,8 +135,8 @@ export async function estimateIntake(input: EstimateIntakeInput): Promise<Nutrit
 		throw new NutritionEstimateError('Beskriv måltidet eller legg ved et bilde.');
 	}
 
-	const response = await openai.chat.completions.create({
-		model: MODEL,
+	// Med bilde er det `vision`; en beskrivelse i tekst er et vanlig uttrekk.
+	const response = await createWithAlias(input.imageUrl ? 'vision' : 'json_cheap', {
 		messages: [
 			{ role: 'system', content: systemPrompt() },
 			{ role: 'user', content: buildUserContent(input) }

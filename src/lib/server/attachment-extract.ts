@@ -15,6 +15,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
+import { createWithAlias } from '$lib/server/ai/model-alias';
 import { pickFrameOffsets, formatTimestamp } from '$lib/media/video-frame-timing';
 import JSZip from 'jszip';
 
@@ -325,8 +326,7 @@ async function describeFrameImages(images: Array<{ label: string; url: string }>
 		content.push({ type: 'image_url', image_url: { url: image.url, detail: 'low' } });
 	}
 
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o',
+	const response = await createWithAlias('vision', {
 		max_tokens: 500,
 		messages: [
 			{
