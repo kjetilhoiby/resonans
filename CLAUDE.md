@@ -946,10 +946,21 @@ Se `docs/changelog/2026-08-06-gemini-ephemeral-tokens.md`. Logikken i
   `?access_token=`, ikke `BidiGenerateContent` med `?key=`. Endepunktet returnerer hele
   URL-en nettopp fordi feilen gir en 4xx uten forklaring.
 - **Modellnavn hardkodes ikke som en påstand.** De skifter fra uke til uke.
-  `GEMINI_LIVE_MODEL` overstyrer defaulten, og `GET /api/apps/gemini/models` lister hva
-  Google tilbyr nå — filtrert på `supportedGenerationMethods`, ikke på om navnet
-  inneholder «live». `defaultIsStale` flagger at defaulten er forsvunnet fra katalogen;
-  det er tilstanden der minting fortsetter å virke helt til noen prøver å koble til.
+  `GET /api/apps/gemini/models` lister hva Google tilbyr nå — filtrert på
+  `supportedGenerationMethods`, ikke på om navnet inneholder «live». `defaultIsStale`
+  flagger at defaulten er forsvunnet fra katalogen; det er tilstanden der minting
+  fortsetter å virke helt til noen prøver å koble til.
+- **Modellen kommer fra aliaset `live` i Stemmegaffel, ikke fra en miljøvariabel.**
+  `GEMINI_LIVE_MODEL` og `GEMINI_LIVE_COACH_MODEL` leses ikke lenger (oktober 2026).
+  Rekkefølgen (`resolveLiveModel`, reglene i `$lib/domain/ai/live-model.ts`): Ekkos
+  valg i Live-debug, ellers aliasets modell, ellers aliasets **reserve**, ellers
+  `DEFAULT_LIVE_MODEL`. En modell hoppes over når den er STENGT (stengedatoen fra laben
+  er i dag eller tidligere) eller BORTE fra Googles katalog. Reserven velges i laben
+  bare blant Live-modeller et menneske har prøvd på telefonen — 2.5 native-audio
+  avviser lyd inn (1007, se under), så en automatisk valgt reserve kunne gjort vondt
+  verre. Laben bytter aldri aliaset selv; at Resonans tar reserven den dagen modellen
+  stenger, er ikke et bytte. Et bytte gjøres på `/aliaser/live` i laben, uten deploy.
+  Se `docs/changelog/2026-10-19-live-modellen-fra-aliaset.md`.
 - **`uses` handler ikke om nettverksglipp.** Reetablering av en økt teller ikke som en
   bruk hos Google, så glipp underveis er gratis. Defaulten på 2 dekker en kald omstart der
   appen mistet resumption-handtaket.
@@ -3858,8 +3869,8 @@ innlogging hjelper BARE når refresh-tokenet mangler. Se
 
 **Gemini realtime (Ekko):** `GEMINI_API_KEY` (påkrevd for `/api/apps/gemini/*`; uten den
 svarer endepunktene 503, ikke 502 — det er en konfigurasjonsfeil hos oss, og appen skal
-ikke prøve igjen i sløyfe). `GEMINI_LIVE_MODEL` overstyrer standardmodellen.
-`GEMINI_LIVE_COACH_MODEL` (valgfri) overstyrer modellen for coach-profilen.
+ikke prøve igjen i sløyfe). Modellen kommer fra aliaset `live` i Stemmegaffel
+(`STEMMEGAFFEL_URL`); `GEMINI_LIVE_MODEL` og `GEMINI_LIVE_COACH_MODEL` leses ikke lenger.
 `GEMINI_LIVE_DISABLED_PROFILES` (valgfri, kommaseparert) er kill switch per token-profil.
 Modellen kan også velges per enhet i Ekko (Innstillinger → Live-stemme → Modell); appen sender
 `model` i token-forespørselen, og serveren validerer navnet mot Googles katalog.
@@ -3931,6 +3942,9 @@ reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
   (`'imageUrls' in source ? 'vision' : 'json_cheap'`), slik `ticket-reader.ts` gjør.
   Laben måler billetter, måltider og kvitteringer, men ikke søylehøydene i et
   skjermtidsbilde.
+- **Aliaset `live` (Gemini Live for Ekko) deler hentingen, ikke reglene.** Minnet og
+  tidsgrensene bor i `$lib/server/ai/lab-alias.ts`; valget i `$lib/domain/ai/live-model.ts`,
+  med stengedato og reserve. Se «Gemini realtime (Ekko)» over.
 
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 

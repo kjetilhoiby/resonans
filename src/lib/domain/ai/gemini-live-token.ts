@@ -59,13 +59,16 @@ import { toolsForProfile, type GeminiTool, type TokenProfile } from './gemini-li
  * Modellnavnene hos Google skifter fra uke til uke, så denne konstanten er
  * garantert å bli feil på et tidspunkt. Derfor tre ting:
  *
- * 1. `GEMINI_LIVE_MODEL` i miljøet overstyrer den, uten en kodeendring.
+ * 1. Aliaset `live` i Stemmegaffel bestemmer modellen, med en reserve for dagen
+ *    den stenger (`$lib/domain/ai/live-model.ts`). Denne brukes bare når laben
+ *    ikke svarer, eller både modellen og reserven er ubrukelige.
  * 2. `GET /api/apps/gemini/models` lister hva Google faktisk tilbyr NÅ, så valget
  *    kan tas på ferske data framfor på denne linja.
  * 3. Avviser Google modellen, videreformidles meldingen ordrett til appen — feilen
  *    skal være selvforklarende, ikke «Gemini feilet».
  *
- * Verdien her er hentet fra Googles eksempelkode 6. august 2026.
+ * Verdien her er hentet fra Googles eksempelkode 6. august 2026. Google stenger
+ * den 17. november 2026; byttes den ikke før, er standarden død den dagen.
  */
 export const DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 
@@ -191,7 +194,7 @@ function positiveInt(value: unknown, fallback: number): number {
 /**
  * `models/`-prefikset er påkrevd i setupen.
  *
- * Vi legger det på framfor å kreve det: både `GEMINI_LIVE_MODEL` og et modellnavn
+ * Vi legger det på framfor å kreve det: både aliaset fra laben og et modellnavn
  * fra en logg vil naturlig skrives uten prefiks, og en 400 fra Google på et
  * manglende prefiks er en unødvendig runde.
  */
@@ -286,7 +289,7 @@ export function redactApiKeys(message: string, key?: string | null): string {
 }
 
 export interface LiveModelInfo {
-	/** Uten `models/`-prefiks, klart til å settes i `GEMINI_LIVE_MODEL`. */
+	/** Uten `models/`-prefiks, samme form som aliaset `live` i Stemmegaffel. */
 	id: string;
 	name: string;
 	displayName: string | null;
