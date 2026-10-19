@@ -18,6 +18,10 @@ import {
  * modellens egen erklæring om at den kan brukes over WebSocket, og ikke på om
  * navnet inneholder «live».
  *
+ * `effectiveDefault` kommer fra aliaset `live` i Stemmegaffel; `source` sier om
+ * det var aliasets modell, reserven (modellen er stengt eller borte fra
+ * katalogen) eller standarden i koden, og `reasons` hvorfor.
+ *
  * `defaultIsStale: true` betyr at modellen vi ville brukt ikke finnes i katalogen
  * lenger. Det er verdt å se etter: minting fortsetter å virke, og feilen dukker
  * ikke opp før noen prøver å koble til.

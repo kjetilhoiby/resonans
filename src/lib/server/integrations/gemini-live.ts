@@ -12,7 +12,8 @@ import {
 	type LiveTokenRequestOptions,
 	type ParsedAuthToken
 } from '$lib/domain/ai/gemini-live-token';
-import type { TokenProfile } from '$lib/domain/ai/gemini-live-profiles';
+import { chooseLiveModel, parseLiveAliasPayload, type LiveModelChoice, type LiveModelSource } from '$lib/domain/ai/live-model';
+import { labAliasPayload, logAliasChoice } from '$lib/server/ai/lab-alias';
 
 /**
  * Minter kortlevde Gemini Live-tokens på Ekkos vegne.
@@ -56,21 +57,48 @@ function readApiKey(): string {
 	return key;
 }
 
-export function configuredLiveModel(): string | null {
-	return env.GEMINI_LIVE_MODEL?.trim() || null;
+/** Katalogen holdes et kvarter: den spørres ved hver minting, og den skifter med uker, ikke minutter. */
+const CATALOGUE_TTL_MS = 15 * 60_000;
+let catalogueCache: { ids: Set<string>; at: number } | null = null;
+
+/**
+ * Live-modellenes id-er i Googles katalog nå, eller `null` når vi ikke vet. Kaster
+ * aldri: en katalog vi ikke fikk hentet skal ikke stoppe en minting, bare la være
+ * å hindre noe.
+ */
+async function liveCatalogueIds(): Promise<Set<string> | null> {
+	if (catalogueCache && Date.now() - catalogueCache.at < CATALOGUE_TTL_MS) return catalogueCache.ids;
+	try {
+		const { models } = await fetchLiveCatalogue();
+		// Tom katalog er ikke bevis på at modellene er borte, bare på at vi ikke vet.
+		if (!models.length) return null;
+		catalogueCache = { ids: new Set(models.map((m) => m.id)), at: Date.now() };
+		return catalogueCache.ids;
+	} catch {
+		return null;
+	}
 }
 
 /**
- * Coach-profilen kan trenge en annen modell enn assistenten (lavere latens
- * veier tyngre enn resonnering når man løper). `GEMINI_LIVE_COACH_MODEL` er
- * valgfri og faller tilbake til den vanlige modellkjeden — én env å sette den
- * dagen behovet er målt, ingen kodeendring.
+ * Modellen et token låses til når appen ikke har valgt selv: aliaset `live` i
+ * Stemmegaffel, reserven når modellen er stengt eller borte, ellers
+ * `DEFAULT_LIVE_MODEL`. Reglene i `$lib/domain/ai/live-model.ts`.
+ *
+ * Erstatter `GEMINI_LIVE_MODEL` og `GEMINI_LIVE_COACH_MODEL` (oktober 2026). Begge
+ * leses ikke lenger; et bytte gjøres i laben.
  */
-function configuredModelForProfile(profile: TokenProfile): string | null {
-	if (profile === 'coach') {
-		return env.GEMINI_LIVE_COACH_MODEL?.trim() || configuredLiveModel();
-	}
-	return configuredLiveModel();
+export async function resolveLiveModel(catalogue?: Set<string> | null): Promise<LiveModelChoice> {
+	const [{ payload, reason }, ids] = await Promise.all([
+		labAliasPayload('live', parseLiveAliasPayload),
+		catalogue === undefined ? liveCatalogueIds() : Promise.resolve(catalogue)
+	]);
+	const choice = chooseLiveModel({ payload, missingReason: reason || undefined, catalogue: ids, today: new Date().toISOString().slice(0, 10) });
+	logAliasChoice(
+		'live',
+		`${choice.source}:${choice.model}`,
+		`[gemini-live] modell ${choice.model} (${choice.source}${choice.reasons.length ? `: ${choice.reasons.join('; ')}` : ''})`
+	);
+	return choice;
 }
 
 /** Feilteksten fra et Google-svar, uten at nøkkelen kan lekke med. */
@@ -96,8 +124,8 @@ export async function mintLiveToken(
 	const profile = opts.profile ?? 'voice-test';
 	const body = buildAuthTokenRequest({
 		...opts,
-		// Miljøvariabelen er standarden; et eksplisitt valg fra kallstedet vinner.
-		model: opts.model ?? configuredModelForProfile(profile),
+		// Aliaset er standarden; et eksplisitt valg fra kallstedet vinner.
+		model: opts.model ?? (await resolveLiveModel()).model,
 		now: opts.now ?? new Date(),
 		profile
 	});
@@ -168,8 +196,10 @@ export interface LiveModelCatalogue {
 	models: LiveModelInfo[];
 	/** Modellen et token får hvis ingenting velges. */
 	effectiveDefault: string;
-	/** Sann når `GEMINI_LIVE_MODEL` er satt i miljøet. */
-	fromEnv: boolean;
+	/** Hvor den kom fra: aliaset i Stemmegaffel, aliasets reserve, eller standarden i koden. */
+	source: LiveModelSource;
+	/** Hvorfor noe over i rekkefølgen ble hoppet over. */
+	reasons: string[];
 	/**
 	 * Sann når den gjeldende defaulten ikke finnes i katalogen lenger.
 	 *
@@ -181,17 +211,9 @@ export interface LiveModelCatalogue {
 	defaultIsStale: boolean;
 }
 
-/**
- * Live-modellene Google tilbyr NÅ.
- *
- * Finnes fordi modellnavnene skifter fra uke til uke. Et hardkodet navn i koden
- * vår er en påstand med utløpsdato; dette endepunktet er et spørsmål.
- */
-export async function listLiveModels(): Promise<LiveModelCatalogue> {
+/** Googles katalog, filtrert på Live. Kaster ved feil; `listLiveModels` og endepunktet sier fra. */
+async function fetchLiveCatalogue(): Promise<{ models: LiveModelInfo[] }> {
 	const key = readApiKey();
-	const envModel = configuredLiveModel();
-	const effectiveDefault = envModel ?? DEFAULT_LIVE_MODEL;
-
 	let response: Response;
 	try {
 		response = await fetch(MODELS_ENDPOINT, { headers: { 'x-goog-api-key': key } });
@@ -213,12 +235,27 @@ export async function listLiveModels(): Promise<LiveModelCatalogue> {
 	} catch {
 		throw new GeminiTokenMintError('Modellkatalogen fra Google var ikke JSON.', 502);
 	}
+	// `isDefault` settes av `listLiveModels`, som vet hva defaulten er.
+	return { models: selectLiveModels(payload, DEFAULT_LIVE_MODEL) };
+}
 
-	const models = selectLiveModels(payload, effectiveDefault);
+/**
+ * Live-modellene Google tilbyr NÅ.
+ *
+ * Finnes fordi modellnavnene skifter fra uke til uke. Et hardkodet navn i koden
+ * vår er en påstand med utløpsdato; dette endepunktet er et spørsmål.
+ */
+export async function listLiveModels(): Promise<LiveModelCatalogue> {
+	const { models: raw } = await fetchLiveCatalogue();
+	const ids = raw.length ? new Set(raw.map((m) => m.id)) : null;
+	if (ids) catalogueCache = { ids, at: Date.now() };
+	const choice = await resolveLiveModel(ids);
+	const models = raw.map((m) => ({ ...m, isDefault: m.id === choice.model }));
 	return {
 		models,
-		effectiveDefault,
-		fromEnv: envModel !== null,
+		effectiveDefault: choice.model,
+		source: choice.source,
+		reasons: choice.reasons,
 		// Tom katalog er ikke bevis på en utdatert default — da vet vi bare ikke.
 		defaultIsStale: models.length > 0 && !models.some((m) => m.isDefault)
 	};

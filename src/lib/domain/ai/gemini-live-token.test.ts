@@ -230,7 +230,7 @@ describe('selectLiveModels', () => {
 		expect(models.map((m) => m.id)).toEqual(['gemini-4-audio']);
 	});
 
-	it('stripper models/-prefikset, klart til GEMINI_LIVE_MODEL', () => {
+	it('stripper models/-prefikset', () => {
 		const models = katalog([
 			{ name: 'models/gemini-3.1-flash-live-preview', supportedGenerationMethods: ['bidiGenerateContent'] }
 		]);

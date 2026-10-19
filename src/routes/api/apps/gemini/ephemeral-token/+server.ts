@@ -76,11 +76,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		return json({ error: 'profile_disabled', profile }, { status: 403 });
 	}
 
-	// Modellvalg fra appen (Live-debug). Formålet er A/B mellom Live-modeller uten at noen må
-	// inn i deploy-oppsettet og sette en env — men valget VALIDERES mot Googles katalog før det får
-	// låses inn i et token. Et fritt modellnavn her ville gjort tokenet til en nøkkel mot en
+	// Modellvalg fra appen (Live-debug). Formålet er A/B mellom Live-modeller på én telefon, uten å
+	// bytte aliaset `live` for alle — men valget VALIDERES mot Googles katalog før det får
+	// låses inn i et token. Uten valg bestemmer aliaset (`resolveLiveModel`). Et fritt modellnavn her ville gjort tokenet til en nøkkel mot en
 	// vilkårlig modell på vår kvote, og det er nettopp det `bidiGenerateContentSetup` låser.
-	// Uten override rører vi ikke katalogen: den koster et kall til Google.
 	let modelOverride: string | null = null;
 	const requestedModel = typeof body?.model === 'string' ? body.model.trim() : '';
 	if (requestedModel) {
