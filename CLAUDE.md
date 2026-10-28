@@ -413,7 +413,7 @@ Sensorer (Withings, SpareBank1, Spond, Dropbox, Strava, Tesla)
 
 Google OAuth via `@auth/sveltekit`. Allowlist-gated (`allowed_emails`). API-ruter aksepterer også `x-resonans-user-id`-header og API-hemmeligheter (`user_api_secrets`).
 
-Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
+Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`, `/oauth/*`, `/.well-known/oauth-*`, `/mcp` (de tre siste autentiserer selv — se `docs/mcp.md`).
 
 **En offentlig sti som utsteder legitimasjon leser brukeren fra ØKTA, aldri
 gjennom `resolveRequestUserId`.** Se
@@ -572,6 +572,22 @@ konsument, og kan slettes eller endres ut fra treff i dette repoet alene. Endrer
 *en* server (en hemmelighet eller en offentlig adresse — Gemini-tokens, Strava/Tesla-OAuth,
 live-delingen), B er en Resonans-funksjon vist i appen, C er data inn til navet. A holdes
 flyttbart under eget prefiks, uten avhengigheter til tabeller funksjonen ikke eier.
+
+### Ekstern API-flate (MCP: Claude og ChatGPT)
+
+Resonans er en MCP-server på `/mcp` med egen OAuth-server (`/.well-known/*`,
+`/oauth/*`). Se `docs/mcp.md` og `docs/changelog/2026-10-28-mcp-server.md`.
+
+- **Verktøyene er `ASSISTANT_TOOLS`** (minus quiz/forteller) — et nytt verktøy i
+  `shared-tools.ts` når også Claude og ChatGPT. Skriv aldri et eget MCP-skjema.
+- **`rsm_`-token gjelder bare `/mcp`**, `rsn_`-hemmeligheter bare `/api`. Hold dem fra
+  hverandre.
+- **`/oauth/token` og `/oauth/revoke` er unntatt CSRF-sjekken** (`$lib/server/csrf.ts`,
+  `csrf.checkOrigin: false` i `svelte.config.js`). SvelteKits egen sjekk avviste skjema-POST
+  uten `Origin` i drift — men ikke i dev. Endrer du CSRF-oppsettet, test mot `npm run build`.
+- **`adaptSharedTool` setter `userId` ETTER argumentene.** Snu aldri rekkefølgen tilbake:
+  med MCP er klienten en tredjepart.
+- **Samtykkesiden leser brukeren fra økta**, som `/api/apps/callback`.
 
 ### Ekstern API-flate (Akser)
 

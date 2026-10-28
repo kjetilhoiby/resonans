@@ -111,6 +111,7 @@ export const PAGE_ROUTE_PATTERNS: readonly string[] = [
 	'/live/[token]',
 	'/maanedsplan',
 	'/notater',
+	'/oauth/authorize',
 	'/partner-invite/[token]',
 	'/plan/drommer',
 	'/plan/mal',

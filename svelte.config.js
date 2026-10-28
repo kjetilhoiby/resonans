@@ -17,6 +17,10 @@ const config = {
 
 	kit: {
 		adapter: adapter(),
+		// Gjenskapt i hooks.server.ts (`csrfHandle`, `$lib/server/csrf.ts`) med unntak
+		// for OAuth-token-endepunktet, som må ta imot skjema-POST fra Claude og
+		// ChatGPT uten Origin-header. SvelteKits egen sjekk kan ikke unntas per rute.
+		csrf: { checkOrigin: false },
 		version: {
 			// Poll _app/version.json så `updated` (i $app/state) oppdager nye deploys
 			// i kjørende økter — rotlayouten gjør full reload ved neste navigasjon.

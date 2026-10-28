@@ -36,6 +36,19 @@ describe('adaptSharedTool', () => {
 		expect(result.echoed).toEqual({ userId: 'user-1', source: 'test', action: 'les' });
 	});
 
+	// Med MCP-serveren er klienten en tredjepart. Skjemaet skjuler userId, men
+	// ingenting hindrer en klient i å sende feltet likevel.
+	it('lar ikke argumentene overstyre userId eller injiserte verdier', async () => {
+		const adapted = adaptSharedTool(fakeTool, { inject: { source: 'test' } });
+		const result = (await adapted.run('user-1', {
+			action: 'les',
+			userId: 'noen-andre',
+			source: 'forfalsket'
+		})) as { echoed: Record<string, unknown> };
+		expect(result.echoed.userId).toBe('user-1');
+		expect(result.echoed.source).toBe('test');
+	});
+
 	it('bruker eksplisitt parametersSchema for verktøy uten zod-parameters', () => {
 		const executeOnly = { name: 'bar', execute: async () => ({}) };
 		const schema = { type: 'object', properties: { x: { type: 'number' } }, required: ['x'] };

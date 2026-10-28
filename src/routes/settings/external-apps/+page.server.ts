@@ -6,6 +6,8 @@ import {
 	listUserApiSecrets,
 	revokeUserApiSecret
 } from '$lib/server/api-secrets';
+import { listConnectedClients, revokeUserGrant } from '$lib/server/oauth/oauth-store';
+import { mcpResourceUrl } from '$lib/server/oauth/oauth-logic';
 import type { Actions, PageServerLoad } from './$types';
 
 function parseDays(daysRaw: FormDataEntryValue | null): number | null {
@@ -60,20 +62,28 @@ function parseExpiresAt(formData: FormData): { expiresAt: Date | null; error?: s
 	return { expiresAt };
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const load: PageServerLoad = async ({ locals, url }) => {
 	await ensureUser(locals.userId);
+	const mcp = {
+		url: mcpResourceUrl(url.origin),
+		clients: await listConnectedClients(locals.userId)
+	};
 	try {
 		return {
 			origin: url.origin,
 			tableReady: true,
-			secrets: await listUserApiSecrets(locals.userId)
+			secrets: await listUserApiSecrets(locals.userId),
+			mcp
 		};
 	} catch (error) {
 		if (error instanceof ApiSecretsStorageNotReadyError) {
 			return {
 				origin: url.origin,
 				tableReady: false,
-				secrets: [] as Awaited<ReturnType<typeof listUserApiSecrets>>
+				secrets: [] as Awaited<ReturnType<typeof listUserApiSecrets>>,
+				mcp
 			};
 		}
 		throw error;
@@ -81,6 +91,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions = {
+	disconnectMcpClient: async ({ request, locals }) => {
+		const formData = await request.formData();
+		const grantIdRaw = formData.get('grantId');
+		const grantId = typeof grantIdRaw === 'string' ? grantIdRaw.trim() : '';
+		if (!UUID_PATTERN.test(grantId)) {
+			return fail(400, { error: 'Mangler tilkoblings-id.' });
+		}
+		if (!(await revokeUserGrant(locals.userId, grantId))) {
+			return fail(404, { error: 'Fant ikke en aktiv tilkobling med den ID-en.' });
+		}
+		return { success: true, message: 'Tilkoblingen er koblet fra.' };
+	},
 	createSecret: async ({ request, locals }) => {
 		await ensureUser(locals.userId);
 		const formData = await request.formData();

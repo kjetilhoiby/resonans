@@ -1,5 +1,6 @@
 import { sequence } from '@sveltejs/kit/hooks';
-import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { json, redirect, text, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { isForbiddenCrossSiteForm } from '$lib/server/csrf';
 import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
@@ -70,6 +71,31 @@ function warnOnceIfUnsecured() {
 	console.warn(warning);
 }
 
+/**
+ * SvelteKits CSRF-sjekk, med unntak for OAuth-token-endepunktet. Står først i
+ * sekvensen fordi SvelteKits egen kjørte før alle hooks. Se `$lib/server/csrf.ts`.
+ */
+const csrfHandle: Handle = async ({ event, resolve }) => {
+	const { request, url } = event;
+	if (
+		isForbiddenCrossSiteForm({
+			isDev: dev,
+			method: request.method,
+			contentType: request.headers.get('content-type'),
+			origin: request.headers.get('origin'),
+			urlOrigin: url.origin,
+			pathname: url.pathname
+		})
+	) {
+		const message = `Cross-site ${request.method} form submissions are forbidden`;
+		if (request.headers.get('accept') === 'application/json') {
+			return json({ message }, { status: 403 });
+		}
+		return text(message, { status: 403 });
+	}
+	return resolve(event);
+};
+
 const authorizationHandle: Handle = async ({ event, resolve }) => {
 	// Uten Google-oppsett har vi ingen innlogging å kreve, så en fersk klone skal
 	// kunne kjøres uten OAuth. `dev &&` er ikke overflødig ved siden av
@@ -138,6 +164,7 @@ const fargetemaHandle: Handle = async ({ event, resolve }) => {
 };
 
 export const handle: Handle = sequence(
+	csrfHandle,
 	fargetemaHandle,
 	authenticationHandle,
 	authorizationHandle,
