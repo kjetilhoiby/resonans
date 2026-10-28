@@ -12,6 +12,13 @@
  */
 
 import { ASSISTANT_TOOLS, type AssistantTool } from '$lib/server/assistant/tools';
+import { adaptSharedTool } from '$lib/server/assistant/shared-tools';
+import { queryPlanTool } from '$lib/ai/tools/query-plan';
+import { managePlanItemTool } from '$lib/ai/tools/manage-plan-item';
+import { queryAgendaTool } from '$lib/ai/tools/query-agenda';
+import { queryRoutinesTool } from '$lib/ai/tools/query-routines';
+import { queryGoalsTool } from '$lib/ai/tools/query-goals';
+import { manageGoalTaskTool } from '$lib/ai/tools/manage-goal-task';
 import { QUIZ_ASSISTANT_TOOLS } from '$lib/server/assistant/quiz-tools';
 import { STORY_ASSISTANT_TOOLS } from '$lib/server/assistant/story-tools';
 
@@ -19,9 +26,26 @@ const EXCLUDED = new Set(
 	[...QUIZ_ASSISTANT_TOOLS, ...STORY_ASSISTANT_TOOLS].map((tool) => tool.definition.function.name)
 );
 
-export const MCP_TOOLS: AssistantTool[] = ASSISTANT_TOOLS.filter(
-	(tool) => !EXCLUDED.has(tool.definition.function.name)
-);
+/**
+ * Planleggingsverktøyene (docs/mcp.md, «Planlegging»): les og skriv dags- og
+ * ukeplanen, samlet agenda med Spond, rutinepunkter med gjennomføring, og
+ * måloppgaver. Modulene er delte (`$lib/ai/tools/`) og kan registreres på
+ * web-chatten og Ekko senere; foreløpig bare her, så ingen av de to får en
+ * større verktøyliste uten at det er bestemt.
+ */
+const PLANNING_TOOLS: AssistantTool[] = [
+	adaptSharedTool(queryPlanTool),
+	adaptSharedTool(managePlanItemTool),
+	adaptSharedTool(queryAgendaTool),
+	adaptSharedTool(queryRoutinesTool),
+	adaptSharedTool(queryGoalsTool),
+	adaptSharedTool(manageGoalTaskTool)
+];
+
+export const MCP_TOOLS: AssistantTool[] = [
+	...ASSISTANT_TOOLS.filter((tool) => !EXCLUDED.has(tool.definition.function.name)),
+	...PLANNING_TOOLS
+];
 
 /** Lese-verktøy uten et `query_`/`find_`-prefiks. */
 const READ_ONLY_NAMES = new Set([
@@ -60,4 +84,22 @@ export function toolAnnotations(name: string): McpToolAnnotations {
 		destructiveHint: !readOnly && name.startsWith('manage_'),
 		openWorldHint: OPEN_WORLD_NAMES.has(name)
 	};
+}
+
+const MCP_TOOL_BY_NAME = new Map(MCP_TOOLS.map((tool) => [tool.definition.function.name, tool]));
+
+/**
+ * Kjør et MCP-verktøy. Egen kjører fordi `runAssistantTool` bare kjenner
+ * assistentens liste — planleggingsverktøyene står ikke der. Samme kontrakt:
+ * ukjent navn og kastet feil blir `{ error }`, og feilen logges.
+ */
+export async function runMcpTool(userId: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+	const tool = MCP_TOOL_BY_NAME.get(name);
+	if (!tool) return { error: `Ukjent verktøy: ${name}` };
+	try {
+		return await tool.run(userId, args);
+	} catch (error) {
+		console.error(`[mcp] verktøy ${name} feilet:`, error);
+		return { error: 'Verktøykall feilet' };
+	}
 }

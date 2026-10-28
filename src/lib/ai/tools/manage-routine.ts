@@ -25,7 +25,7 @@ Eksempler: "Lørdag morgen" (støvsuge, vaske bad), "Hverdagskveld" (matpakker, 
 
 action=list: list alle rutiner.
 action=create: opprett ny. Krever title, slot, daysOfWeek (0=søndag..6=lørdag), items.
-action=update: oppdater eksisterende. Krever id og samme felter som create.
+action=update: oppdater eksisterende. Krever id; felter du ikke sender beholdes. items ERSTATTER hele lista — send alle punktene som skal være med (hent dem med query_routines).
 action=delete: deaktiver (soft delete). Krever id.
 
 slot styrer når rutinen vises på hjemskjermen:
@@ -82,6 +82,24 @@ daysOfWeek-eksempler:
 			if (!args.id || !UUID_RE.test(args.id)) return { error: 'id må være en UUID' };
 			await deleteRoutineDefinition(userId, args.id);
 			return { ok: true, id: args.id };
+		}
+
+		// update: felt som ikke er sendt, hentes fra rutinen som den er — ellers ville
+		// en endring av ett punkt kreve at modellen gjentok tittel, slot og ukedager,
+		// og et glemt felt ble en valideringsfeil i beste fall.
+		if (action === 'update') {
+			if (!args.id || !UUID_RE.test(args.id)) return { error: 'id må være en UUID for update' };
+			const existing = await getRoutineDefinition(userId, args.id);
+			if (!existing) return { error: `Fant ingen rutine med id ${args.id}. Hent id-ene med query_routines.` };
+			args = {
+				...args,
+				title: args.title ?? existing.title,
+				emoji: args.emoji ?? existing.emoji,
+				slot: args.slot ?? existing.slot,
+				daysOfWeek: args.daysOfWeek ?? existing.daysOfWeek,
+				items: args.items ?? existing.items,
+				active: args.active ?? existing.active
+			};
 		}
 
 		// create / update

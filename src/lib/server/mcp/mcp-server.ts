@@ -11,9 +11,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { buildTimeContext } from '$lib/server/assistant/assistant';
-import { runAssistantTool } from '$lib/server/assistant/tools';
 import type { AccessTokenAuth } from '$lib/server/oauth/oauth-store';
-import { MCP_TOOLS, toolAnnotations } from './mcp-tools';
+import { MCP_TOOLS, runMcpTool, toolAnnotations } from './mcp-tools';
 
 const SERVER_INFO = { name: 'resonans', title: 'Resonans', version: '1.0.0' };
 
@@ -63,7 +62,7 @@ function buildServer(auth: AccessTokenAuth): Server {
 		const args = (request.params.arguments ?? {}) as Record<string, unknown>;
 
 		const startedAt = Date.now();
-		const result = await runAssistantTool(auth.userId, name, args);
+		const result = await runMcpTool(auth.userId, name, args);
 		const isError = !!result && typeof result === 'object' && 'error' in result;
 		console.info(
 			`[mcp] ${name} klient=${auth.clientId} ${isError ? 'feil' : 'ok'} ${Date.now() - startedAt}ms`
