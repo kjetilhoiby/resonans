@@ -71,6 +71,77 @@ klient ──POST /mcp, Authorization: Bearer rsm_at_… ─▶ verktøyene, som
 - Logglinjer: `[oauth]` (registrering, ny tilkobling) og `[mcp] <verktøy> klient=… ok|feil
   <ms>` — lesbare over `GET /api/admin/logs?grep=[mcp]`.
 
+## Planlegging
+
+Seks verktøy i tillegg til assistentens sett, alle i `$lib/ai/tools/` og registrert i
+`MCP_TOOLS` (`$lib/server/mcp/mcp-tools.ts`). Ingen nye tabeller. Se
+`docs/changelog/2026-10-28-mcp-planlegging.md` for gap-analysen de kom fra.
+
+| Verktøy | Leser/skriver | Bygger på |
+|---|---|---|
+| `query_plan` | dagslister og ukelister | `checklists` med `week:…:day:…` / `week:…` |
+| `manage_plan_item` | create, update, move, complete, reopen, skip, delete | `plan-service.ts` → `checklist-item-mutations.ts` |
+| `query_agenda` | oppgaver, Spond, billetthendelser, rutiner, trening | `agenda-service.ts` |
+| `query_routines` | rutinepunktene og gjennomføring per punkt | `routine_definitions` + instansene, `routine-stats.ts` |
+| `query_goals` | mål, måloppgaver, framdrift denne perioden | `goals`, `tasks`, `progress` |
+| `manage_goal_task` | find_similar, update, pause, resume, complete, archive | `goal-tasks.ts` |
+
+`manage_routine update` beholder nå feltene som ikke sendes, så en rutine kan endres
+uten å gjenta tittel, slot og ukedager.
+
+**Regler**
+
+- **Et planpunkt er en `checklist_items`-rad på en dag- eller ukeliste**, ikke en ny
+  modell. Oppretting går gjennom `buildChecklistItemFields` som i appen, så et punkt fra
+  ChatGPT er ikke til å skille fra et punkt skrevet på hjemskjermen.
+- **Avkryssing, redigering og sletting bor i `checklist-item-mutations.ts`**, delt med
+  `PATCH/DELETE /api/checklists/[id]/items/[itemId]`. Logikken lå inline i endepunktet
+  fram til oktober 2026; en MCP-kopi ville mangle framdrift på koblet måloppgave,
+  streak-runden og speilingen til ukepunktet — ferdig i ChatGPT, halv i appen.
+- **`move` flytter SAMME rad** (ny `checklistId`). Det er ikke appens «utsett», som
+  kopierer og stryker originalen med vilje (sporet er poenget). En flytting er en
+  rettelse.
+- **Klokkeslett er lokal veggklokke** (`metadata.timeHour/timeMinute`), ikke et
+  tidspunkt. `startsAt` med offset regnes ved utlesing (`osloLocalToIso`, to runder så
+  timene rett etter et sommertidsskifte blir riktige). Klokkeslettet sendes som
+  `startTime`, ikke i teksten; ny tekst beholder det.
+- **To vern mot duplikater:** `idempotencyKey` (lagres i `metadata.idempotencyKey`), og
+  et ÅPENT punkt med samme tekst i samme liste. Begge gir det eksisterende punktet med
+  `alreadyExisted: true`. Et avkrysset punkt med samme tekst er ikke et duplikat.
+- **Uten dato havner et punkt i denne ukas ukeliste**, aldri på en gjettet dag.
+- **Bare dag- og ukelister kan endres herfra.** Et rutine- eller prosjektpunkt gir
+  `not_a_plan_item`.
+- **Feil har en `code`:** `not_found`, `invalid_argument`, `not_a_plan_item`.
+  «Finnes ikke» og «ikke din» gir samme svar, så id-er ikke kan prøves ut.
+- **Agendaen skriver ingenting.** Rutinene leses som definisjoner, ikke gjennom
+  `materializeRoutinesForDates`, som lager instansene den finner mangler.
+- **Spond-hendelser er referanser** (`source`, `externalId`, `personName`, `rsvp`),
+  aldri kopier i planen. `rsvp` kommer fra `spondRsvp` (`$lib/domain/plan-items.ts`),
+  som ukeplanen også bruker. `not_invited` er skillet mellom «barnet spiller» og «gruppa
+  inviterer til å se en kamp». Datoen er Oslo-datoen; ukeplanen bruker fortsatt
+  UTC-datoen, så en hendelse mellom midnatt og 02 havner der en dag for tidlig.
+- **Rutinegjennomføring måles bare på dager rutinen ble ÅPNET** (instansen lages når
+  hjemskjermen eller ukeplanen viser den). En umålt dag er ukjent, ikke «ikke gjort»;
+  svaret skiller `scheduledDays` fra `daysOpened` og sier det i `note`.
+- **`find_similar` gir alle oppgavene under målet**, rangert, med `likelyDuplicate`.
+  Den delte `findSimilarTasks` regner Levenshtein på hele strengen, og «Løpe 3 ganger i
+  uka» mot «Løpe» er der 21 % lik.
+- **Måloppgaver eies via målet** (`tasks` har ingen `user_id`). Status er nå `active`,
+  `paused`, `completed` eller `archived`; alle eksisterende lesere filtrerer på
+  `active`, så de tre andre forsvinner fra ukeplanen uten at noe annet endres.
+
+**Ikke på web-chatten eller Ekko ennå.** Verktøyene er delte moduler, men bare
+registrert i MCP. Å legge dem i `shared-tools.ts` gir Ekko dem; web-chatten trenger
+utførelse i `routes/api/chat/+server.ts` og en gruppe i `TOOL_GROUP_MAP`.
+
+**Belastningsoversikt (P2) er ikke bygget.** Agendaen har alt et slikt oppslag ville
+lest — Spond med start og slutt, punkter med varighet, rutiner med estimat, planlagte
+økter — og ChatGPT kan summere den selv. Et eget `query_commitments` ville vært en
+tynn sum over `loadAgenda` (bundne minutter per dag, antall punkter uten estimat, pluss
+søvn fra `query_sleep`), et par timers arbeid. Det bør vente til agendaen er brukt og
+det viser seg om summen må være på serveren. Kapasitet eller «ledig tid» skal den uansett
+ikke oppgi: ingen av kildene vet når brukeren er opptatt utenom det som er ført opp.
+
 ## Teste lokalt
 
 Token-endepunktet må testes mot en PROD-build (CSRF-sjekken). Mot podman-basen:

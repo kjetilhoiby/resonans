@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { spondRsvp } from '$lib/domain/plan-items';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
@@ -403,7 +404,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	// Group Spond events by ISO date, including RSVP status for the account holder's family
 	const myMemberIds: string[] = (spondSensor?.config as any)?.myMemberIds ?? [];
-	const myMemberSet = new Set(myMemberIds);
 
 	const spondEventsByDay: Record<string, Array<{
 		id: string;
@@ -422,19 +422,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const dayKey = (e.timestamp as Date).toISOString().slice(0, 10);
 		if (!spondEventsByDay[dayKey]) spondEventsByDay[dayKey] = [];
 
-		// Determine RSVP for the account holder's family members
-		let rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown' = 'unknown';
-		if (myMemberSet.size > 0) {
-			const acceptedIds: string[] = d?.responses?.acceptedIds ?? [];
-			const declinedIds: string[] = d?.responses?.declinedIds ?? [];
-			const unansweredIds: string[] = d?.responses?.unansweredIds ?? [];
-			const isAccepted = acceptedIds.some((id: string) => myMemberSet.has(id));
-			const isDeclined = declinedIds.some((id: string) => myMemberSet.has(id));
-			const isUnanswered = unansweredIds.some((id: string) => myMemberSet.has(id));
-			if (isAccepted) rsvp = 'accepted';
-			else if (isDeclined) rsvp = 'declined';
-			else if (isUnanswered) rsvp = 'unanswered';
-		}
+		// Svaret til familiens medlemmer. Regelen bor i `spondRsvp` (delt med MCP-agendaen);
+		// ukeplanen viser bare fire tilstander, så venteliste og «ikke invitert» står som ukjent.
+		const fullRsvp = spondRsvp(d?.responses, myMemberIds);
+		const rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown' =
+			fullRsvp === 'accepted' || fullRsvp === 'declined' || fullRsvp === 'unanswered' ? fullRsvp : 'unknown';
 
 		spondEventsByDay[dayKey].push({
 			id: e.id,

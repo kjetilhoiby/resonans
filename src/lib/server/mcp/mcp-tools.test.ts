@@ -12,6 +12,17 @@ describe('MCP_TOOLS', () => {
 		}
 	});
 
+	it('har planleggingsverktøyene', () => {
+		for (const expected of ['query_plan', 'manage_plan_item', 'query_agenda', 'query_routines', 'query_goals', 'manage_goal_task']) {
+			expect(names).toContain(expected);
+		}
+	});
+
+	it('merker planskriving som destruktiv og planlesing som read-only', () => {
+		expect(toolAnnotations('manage_plan_item').destructiveHint).toBe(true);
+		expect(toolAnnotations('query_agenda').readOnlyHint).toBe(true);
+	});
+
 	it('holder Ekkos quiz og forteller utenfor', () => {
 		expect(names.some((name) => name.startsWith('story_') || name.startsWith('quiz_'))).toBe(false);
 		expect(names).not.toContain('trip_companions');

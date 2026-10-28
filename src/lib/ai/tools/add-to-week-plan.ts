@@ -5,6 +5,7 @@ import { localIsoWeek } from '$lib/domains/livskompass/dimensions';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
 import { recordLivskompassGoals } from '$lib/server/livskompass-checkin';
+import { findOrCreateWeekChecklist } from '$lib/server/email-processors/day-checklist';
 import { normalizeWeekPlanItems, type WeekPlanItemInput } from './week-plan-items';
 
 const MAX_REPEAT = 12;
@@ -40,16 +41,7 @@ export const addToWeekPlanTool = {
 		const context = `week:${week}`;
 		const weekNum = week.split('-W')[1] ?? '';
 
-		let checklist = await db.query.checklists.findFirst({
-			where: and(eq(checklists.userId, userId), eq(checklists.context, context))
-		});
-		if (!checklist) {
-			const [created] = await db
-				.insert(checklists)
-				.values({ userId, title: `Uke ${weekNum}`, emoji: '🗓️', context })
-				.returning();
-			checklist = created;
-		}
+		const checklist = await findOrCreateWeekChecklist(userId, week);
 		if (!checklist) return { error: 'Kunne ikke opprette ukelisten.' };
 
 		const existing = await db.query.checklistItems.findMany({
@@ -75,7 +67,7 @@ export const addToWeekPlanTool = {
 				? { source: 'livskompass', livskompassDimension: input.dimension }
 				: {};
 			const rows = Array.from({ length: count }, (_, i) => ({
-				checklistId: checklist!.id,
+				checklistId: checklist.id,
 				userId,
 				text: count > 1 ? `${fields.text} (${i + 1}/${count})` : fields.text,
 				startDate: fields.startDate,

@@ -29,6 +29,25 @@ export async function findOrCreateDayChecklist(userId: string, isoDate: string) 
 	return created;
 }
 
+/**
+ * Finn eller opprett ukelista for en ISO-uke (context `week:YYYY-Www`) — punktene
+ * uten dag, som ukeplanen viser øverst.
+ */
+export async function findOrCreateWeekChecklist(userId: string, weekKey: string) {
+	const context = `week:${weekKey}`;
+	const existing = await db.query.checklists.findFirst({
+		where: and(eq(checklists.userId, userId), eq(checklists.context, context))
+	});
+	if (existing) return existing;
+
+	const weekNum = weekKey.split('-W')[1] ?? '';
+	const [created] = await db
+		.insert(checklists)
+		.values({ userId, title: `Uke ${weekNum}`, emoji: '🗓️', context })
+		.returning();
+	return created;
+}
+
 export type DatedItem = {
 	isoDate: string; // dagen punktet skal vises på
 	text: string;

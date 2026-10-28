@@ -588,6 +588,11 @@ Resonans er en MCP-server på `/mcp` med egen OAuth-server (`/.well-known/*`,
 - **`adaptSharedTool` setter `userId` ETTER argumentene.** Snu aldri rekkefølgen tilbake:
   med MCP er klienten en tredjepart.
 - **Samtykkesiden leser brukeren fra økta**, som `/api/apps/callback`.
+- **Planleggingsverktøyene (`query_plan`, `manage_plan_item`, `query_agenda`,
+  `query_routines`, `query_goals`, `manage_goal_task`) er bare i MCP.** Et planpunkt er en
+  `checklist_items`-rad på en dag-/ukeliste. Avkryssing og sletting går gjennom
+  `$lib/server/checklist-item-mutations.ts`, delt med appens endepunkt — skriv aldri en
+  andre avkryssing. Se «Planlegging» i `docs/mcp.md`.
 
 ### Ekstern API-flate (Akser)
 
