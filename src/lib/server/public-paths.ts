@@ -8,7 +8,19 @@
  */
 
 /** Stier med undersider som også skal være offentlige. Prefiksmatch. */
-const PUBLIC_PATH_PREFIXES = ['/auth', '/_app', '/design', '/partner-invite', '/share', '/live'];
+const PUBLIC_PATH_PREFIXES = [
+	'/auth',
+	'/_app',
+	'/design',
+	'/partner-invite',
+	'/share',
+	'/live',
+	// OAuth for MCP-serveren (docs/mcp.md). Oppdagelse, registrering og token må
+	// nås uten innlogging; samtykkesiden sjekker økta selv, fordi hooks ellers
+	// sender til /auth uten spørrestrengen der hele forespørselen står.
+	'/.well-known/oauth-',
+	'/oauth/'
+];
 
 /**
  * API-stier med undersider som også skal være offentlige. Prefiksmatch.
@@ -62,7 +74,11 @@ const PUBLIC_API_PREFIXES = [
  */
 const PUBLIC_API_EXACT = ['/api/health', '/api/diagnostikk', '/api/diagnostikk/bruk'];
 
-const PUBLIC_EXACT = ['/robots.txt', '/favicon.ico'];
+/**
+ * `/mcp` autentiserer selv med OAuth-token (`rsm_at_`), ikke med økt eller
+ * `rsn_`-hemmelighet. Eksakt, så en framtidig `/mcp/noe` må be om tilgang selv.
+ */
+const PUBLIC_EXACT = ['/robots.txt', '/favicon.ico', '/mcp'];
 
 /**
  * Fjerner én etterfølgende skråstrek. Hooks kjører før SvelteKit normaliserer

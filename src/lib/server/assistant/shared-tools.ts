@@ -95,7 +95,12 @@ export function adaptSharedTool(tool: SharedToolLike, opts: AdaptOptions = {}): 
 			type: 'function',
 			function: { name: tool.name, description, parameters }
 		},
-		run: async (userId, args) => tool.execute({ userId, ...opts.inject, ...args })
+		// Modellens argumenter FØRST: `userId` og de injiserte verdiene settes av
+		// serveren og skal ikke kunne overstyres av en verktøyparameter. Fram til
+		// oktober 2026 sto `...args` sist, så et `userId` i argumentene vant —
+		// skjemaet skjulte feltet, men ingenting hindret en klient i å sende det.
+		// Med MCP-serveren er klienten en tredjepart, og da er det en tilgangsgrense.
+		run: async (userId, args) => tool.execute({ ...args, userId, ...opts.inject })
 	};
 }
 

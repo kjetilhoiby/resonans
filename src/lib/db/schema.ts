@@ -84,6 +84,56 @@ export const userApiSecrets = pgTable('user_api_secrets', {
 	idxUserLastUsed: index('user_api_secrets_user_last_used_idx').on(table.userId, table.lastUsedAt)
 }));
 
+/**
+ * OAuth-klienter for MCP-serveren (Claude, ChatGPT, …), registrert av klienten selv
+ * via `/oauth/register` (RFC 7591). Se docs/mcp.md.
+ *
+ * Registreringen er åpen med vilje — den gir ingen tilgang. Tilgang krever at en
+ * innlogget bruker godkjenner klienten på samtykkesiden.
+ */
+export const oauthClients = pgTable('oauth_clients', {
+	clientId: text('client_id').primaryKey(),
+	clientName: text('client_name'),
+	redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+	/** 'none' (offentlig klient, bare PKCE), 'client_secret_post' eller 'client_secret_basic'. */
+	tokenEndpointAuthMethod: text('token_endpoint_auth_method').notNull().default('none'),
+	clientSecretHash: text('client_secret_hash'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+/** Engangskoder fra samtykket. Slettes idet de veksles inn. */
+export const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
+	codeHash: text('code_hash').primaryKey(),
+	clientId: text('client_id').references(() => oauthClients.clientId, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	redirectUri: text('redirect_uri').notNull(),
+	codeChallenge: text('code_challenge').notNull(),
+	scope: text('scope').notNull(),
+	expiresAt: timestamp('expires_at').notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+/**
+ * Én rad per godkjent tilkobling. Access- og refresh-token roteres PÅ raden, så
+ * «koble fra» i innstillingene er én `revoked_at`, og lista viser tilkoblinger —
+ * ikke hvert token som har vært utstedt.
+ */
+export const oauthGrants = pgTable('oauth_grants', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	clientId: text('client_id').references(() => oauthClients.clientId, { onDelete: 'cascade' }).notNull(),
+	scope: text('scope').notNull(),
+	accessTokenHash: text('access_token_hash').notNull().unique(),
+	accessExpiresAt: timestamp('access_expires_at').notNull(),
+	refreshTokenHash: text('refresh_token_hash').notNull().unique(),
+	refreshExpiresAt: timestamp('refresh_expires_at').notNull(),
+	lastUsedAt: timestamp('last_used_at'),
+	revokedAt: timestamp('revoked_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserActive: index('oauth_grants_user_active_idx').on(table.userId, table.revokedAt)
+}));
+
 export const allowedEmails = pgTable('allowed_emails', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	email: text('email').notNull().unique(),

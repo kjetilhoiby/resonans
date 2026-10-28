@@ -7,6 +7,20 @@
 	let copiedSecret = $state(false);
 
 	const secrets = $derived(data.secrets ?? []);
+	const mcpClients = $derived(data.mcp?.clients ?? []);
+	let copiedMcpUrl = $state(false);
+
+	async function copyMcpUrl() {
+		try {
+			await navigator.clipboard.writeText(data.mcp.url);
+			copiedMcpUrl = true;
+			setTimeout(() => {
+				copiedMcpUrl = false;
+			}, 1800);
+		} catch {
+			copiedMcpUrl = false;
+		}
+	}
 	const tableReady = $derived(data.tableReady !== false);
 	const createdSecret = $derived((form as ActionData & { createdSecret?: string })?.createdSecret ?? null);
 	const actionMessage = $derived((form as ActionData & { message?: string })?.message ?? null);
@@ -68,6 +82,39 @@
 			<pre>{createdSecret}</pre>
 		</SectionCard>
 	{/if}
+
+	<SectionCard title="Claude og ChatGPT (MCP)">
+		<p>
+			Legg til Resonans som connector i Claude eller ChatGPT med adressen under. Du logger inn med
+			Google og godkjenner tilkoblingen — ingen secret å lime inn.
+		</p>
+		<pre>{data.mcp.url}</pre>
+		<div class="secret-copy-row">
+			<Button type="button" variant="secondary" onClick={copyMcpUrl}>{copiedMcpUrl ? 'Kopiert' : 'Kopier adresse'}</Button>
+		</div>
+		<p class="muted">
+			Claude: Innstillinger → Connectors → Legg til egendefinert connector. ChatGPT: Innstillinger →
+			Apps og connectors → Opprett (krever utviklermodus).
+		</p>
+
+		{#if mcpClients.length > 0}
+			<div class="secret-list mcp-clients">
+				{#each mcpClients as client (client.grantId)}
+					<div class="secret-row">
+						<div>
+							<p class="secret-title">{client.clientName ?? 'Ukjent app'}</p>
+							{#if client.redirectHost}<p class="secret-meta">{client.redirectHost}</p>{/if}
+							<p class="secret-meta">Koblet til: {fmt(client.createdAt)} · Sist brukt: {fmt(client.lastUsedAt)}</p>
+						</div>
+						<form method="POST" action="?/disconnectMcpClient">
+							<input type="hidden" name="grantId" value={client.grantId} />
+							<Button variant="danger" type="submit">Koble fra</Button>
+						</form>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</SectionCard>
 
 	<SectionCard title="Opprett nytt secret">
 		<form method="POST" action="?/createSecret" class="stack">
@@ -247,6 +294,10 @@ await req.loadJSON()`}</pre>
 	.secret-list {
 		display: grid;
 		gap: 0.75rem;
+	}
+
+	.mcp-clients {
+		margin-top: 1rem;
 	}
 
 	.secret-row {

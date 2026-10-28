@@ -115,3 +115,27 @@ describe('isPublicPath — resten krever auth', () => {
 		expect(isPublicPath('/api/apps/coach')).toBe(false);
 	});
 });
+
+describe('isPublicPath — OAuth og MCP', () => {
+	it('slipper gjennom oppdagelse, registrering, token og samtykke', () => {
+		expect(isPublicPath('/.well-known/oauth-protected-resource')).toBe(true);
+		expect(isPublicPath('/.well-known/oauth-protected-resource/mcp')).toBe(true);
+		expect(isPublicPath('/.well-known/oauth-authorization-server')).toBe(true);
+		expect(isPublicPath('/oauth/register')).toBe(true);
+		expect(isPublicPath('/oauth/token')).toBe(true);
+		expect(isPublicPath('/oauth/authorize')).toBe(true);
+	});
+
+	// /mcp autentiserer selv med OAuth-token; en understi skal be om tilgang selv.
+	it('/mcp er eksakt', () => {
+		expect(isPublicPath('/mcp')).toBe(true);
+		expect(isPublicPath('/mcp/')).toBe(true);
+		expect(isPublicPath('/mcp/noe')).toBe(false);
+		expect(isPublicPath('/mcpx')).toBe(false);
+	});
+
+	it('åpner ikke andre well-known-stier eller /oauth uten skråstrek', () => {
+		expect(isPublicPath('/.well-known/annet')).toBe(false);
+		expect(isPublicPath('/oauthx')).toBe(false);
+	});
+});
