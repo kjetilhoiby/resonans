@@ -142,6 +142,42 @@ søvn fra `query_sleep`), et par timers arbeid. Det bør vente til agendaen er b
 det viser seg om summen må være på serveren. Kapasitet eller «ledig tid» skal den uansett
 ikke oppgi: ingen av kildene vet når brukeren er opptatt utenom det som er ført opp.
 
+## Retningssamtalen
+
+Den kvartalsvise ærlighetssjekken (flyten `retning_kvartal` i appen, se
+`docs/changelog/2026-07-12-retning-livsintervju.md`) kan føres i Claude eller ChatGPT og
+lagres som om den var ført i appen. Se `docs/changelog/2026-10-28-mcp-retningssamtale.md`.
+
+| Verktøy | Gjør |
+|---|---|
+| `query_direction` | Retningen per horisont (med `authored`), verdiene, forrige gap-notat, syntesene av siste måned og uke, tidligere samtaler, kvartalets status — og `guidance`, arbeidsmåten |
+| `save_direction_conversation` | Gap-notat, transkript og eventuelt justert kvartalsvisjon |
+
+Fulltekst av tidligere samtaler hentes med `query_reflections` (kind `retningssamtale`),
+som MCP alt hadde.
+
+- **Én lagring for begge flatene.** `saveDirectionConversation`
+  (`$lib/server/direction/direction-conversation.ts`) brukes av `/api/retning/kvartal` og
+  verktøyet. Gap-notatet (`retningsgap`) ERSTATTES per kvartal og er det coachen i appen
+  viser som «KJENTE GAP»; transkriptet (`retningssamtale`) legges alltid til; en
+  kvartalsvisjon superseder den forrige. Den lagrede samtalen fjerner også hurtighandlingen
+  på hjemskjermen.
+- **Arbeidsmåten er delt med flyten** (`DIRECTION_CONVERSATION_ROLE`, `_METHOD` og `_TONE`
+  i `$lib/flows/retning-kvartal.ts`). Endres instruksen, endres den begge steder.
+- **Transkriptet er påkrevd**, og et MCP-transkript merkes i toppen: replikkene er
+  gjengitt av assistenten, ikke lagret fortløpende som i appen. Brukerens replikker skal
+  stå ordrett. En senere leser (og `query_reflections`) skal kunne se forskjellen.
+- **Godkjenningen skjer i klienten.** Beskrivelsen ber modellen vise gap-notatet og
+  visjonsteksten og lagre først på et ja. Verktøyet er ikke merket destruktivt — det
+  sletter ingenting — så klienten spør ikke av seg selv.
+- **Et nytt kall med samme transkript gir ingen ny rad** (`transcriptAlreadySaved`), og
+  samme visjonstekst ingen ny visjon (`visionUnchanged`). Append-only gjelder samtaler,
+  ikke nettverksforsøk.
+- **Kvartalet er Oslo-kvartalet.** `periodKey` kan settes til et tidligere kvartal, aldri
+  et framtidig. Appens rute regnet fram til nå kvartalet av serverens UTC-klokke.
+- **Uten egenformulert retning henviser verktøyet til livsintervjuet** i appen. Et
+  AI-utkast skal ikke holdes opp mot hverdagen som om det var brukerens ord.
+
 ## Teste lokalt
 
 Token-endepunktet må testes mot en PROD-build (CSRF-sjekken). Mot podman-basen:
@@ -160,6 +196,7 @@ gjør hele flyten i nettleseren.
 
 ## Kjent rest
 
+- Livsintervjuet (fem steg) og revisjon av ti-, fem- og ettårsvisjonen finnes bare i appen.
 - Ingen scope-inndeling: en tilkobling får alle verktøyene, lesing og skriving.
 - Client ID Metadata Documents (CIMD) støttes ikke; klientene faller tilbake på DCR.
 - Ingen rydding av klienter som aldri fikk en tilkobling (én rad per forlatt registrering).

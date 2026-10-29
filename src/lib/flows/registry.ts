@@ -14,7 +14,13 @@ import {
 	parseStatusBlock
 } from './birthday-interview';
 import { livskompassDoorOpeners, livsintervjuStepPrompt, parseLongTermGoals, resolveKilde } from './livsintervju';
-import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
+import {
+	DIRECTION_CONVERSATION_METHOD,
+	DIRECTION_CONVERSATION_ROLE,
+	DIRECTION_CONVERSATION_TONE,
+	parseVisionBlock,
+	quarterPeriodKey
+} from './retning-kvartal';
 import {
 	HODEDUMP_DECISION_OPTIONS,
 	hodedumpFlokeOptions,
@@ -2047,19 +2053,19 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					return {
 						prompt: 'Nytt kvartal. Hold retningen min opp mot hvordan jeg faktisk har levd.',
 						systemPrompt: [
-							'Dette er retningssamtalen — den kvartalsvise ærlighetssjekken. Brukeren har formulert en langsiktig retning; din jobb er å holde den opp mot hvordan livet faktisk har sett ut, og ikke la noen av delene slippe unna.',
+							DIRECTION_CONVERSATION_ROLE,
 							'',
 							retning ? `RETNINGEN (brukerens egne ord):\n${retning}` : 'RETNINGEN: ingen formulert ennå — foreslå å starte livsintervjuet i stedet, og hold denne samtalen kort.',
 							verdier ? `\nVERDIENE:\n${verdier}` : '',
 							synteser ? `\nHVA HVERDAGEN FAKTISK VISER (LLM-synteser av siste periode):\n${synteser}` : '',
 							'',
-							'Arbeidsmåte: Åpne med det tydeligste gapet du ser mellom retningen og syntesen — konkret, uten innpakning («du sa X, men perioden viser Y»). Still ETT spørsmål om gangen. Bruk query-verktøyene hvis du trenger tall. La brukeren også fortelle hva syntesene IKKE fanger. Anerkjenn det som faktisk er på linje — ærlighet går begge veier.',
+							DIRECTION_CONVERSATION_METHOD,
 							'',
 							'Etter HVER respons: oppdater et gap-notat mellom markørene <status> og </status> — 2–5 linjer om hvor uttalt retning og levd liv spriker (og hva som er på linje), i brukerens egne ord. Blokken er INTERN (skjules og blir del av chat-konteksten fremover). Ikke nevn den.',
 							'',
 							'Hvis samtalen lander på en justert prioritering for kvartalet, oppsummer den mellom markørene <visjon> og </visjon> — 2–4 setninger i førsteperson. Kun når brukeren faktisk har landet noe; ellers utelat markørene.',
 							'',
-							'Når samtalen ebber ut, si at gap-notatet lagres ved levering. Norsk. Tone: varm og skarp — du peker på gapene fordi retningen er brukerens egen og du vil at den skal bli virkelig. Se først, utfordre så.'
+							`Når samtalen ebber ut, si at gap-notatet lagres ved levering. ${DIRECTION_CONVERSATION_TONE}`
 						]
 							.filter(Boolean)
 							.join('\n')

@@ -19,6 +19,8 @@ import { queryAgendaTool } from '$lib/ai/tools/query-agenda';
 import { queryRoutinesTool } from '$lib/ai/tools/query-routines';
 import { queryGoalsTool } from '$lib/ai/tools/query-goals';
 import { manageGoalTaskTool } from '$lib/ai/tools/manage-goal-task';
+import { queryDirectionTool } from '$lib/ai/tools/query-direction';
+import { saveDirectionConversationTool } from '$lib/ai/tools/save-direction-conversation';
 import { QUIZ_ASSISTANT_TOOLS } from '$lib/server/assistant/quiz-tools';
 import { STORY_ASSISTANT_TOOLS } from '$lib/server/assistant/story-tools';
 
@@ -42,9 +44,17 @@ const PLANNING_TOOLS: AssistantTool[] = [
 	adaptSharedTool(manageGoalTaskTool)
 ];
 
+/**
+ * Retningssamtalen (docs/mcp.md, «Retningssamtalen»): den kvartalsvise
+ * ærlighetssjekken, ført i Claude eller ChatGPT og lagret som om den var ført i
+ * appen. Web-chatten har flyten; derfor bare her.
+ */
+const DIRECTION_TOOLS: AssistantTool[] = [adaptSharedTool(queryDirectionTool), adaptSharedTool(saveDirectionConversationTool)];
+
 export const MCP_TOOLS: AssistantTool[] = [
 	...ASSISTANT_TOOLS.filter((tool) => !EXCLUDED.has(tool.definition.function.name)),
-	...PLANNING_TOOLS
+	...PLANNING_TOOLS,
+	...DIRECTION_TOOLS
 ];
 
 /** Lese-verktøy uten et `query_`/`find_`-prefiks. */

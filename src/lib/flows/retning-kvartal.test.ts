@@ -3,8 +3,14 @@ import {
 	quarterPeriodKey,
 	daysIntoQuarter,
 	isInQuarterWindow,
-	parseVisionBlock
+	parseVisionBlock,
+	isValidQuarterKey,
+	quarterKeyFromIsoDate,
+	compareQuarterKeys,
+	sameTranscript,
+	DIRECTION_CONVERSATION_METHOD
 } from './retning-kvartal';
+import { FLOWS } from './registry';
 
 describe('quarterPeriodKey', () => {
 	it('gir riktig kvartal for alle årstider', () => {
@@ -42,5 +48,42 @@ describe('parseVisionBlock', () => {
 	it('gir tom streng uten markører — løs prosa lagres aldri som visjon', () => {
 		expect(parseVisionBlock('Kanskje du bør prioritere søvn?')).toBe('');
 		expect(parseVisionBlock('')).toBe('');
+	});
+});
+
+describe('kvartalsnøkler for MCP', () => {
+	it('godtar bare formen 2026-Q4', () => {
+		expect(isValidQuarterKey('2026-Q4')).toBe(true);
+		expect(isValidQuarterKey('2026-Q5')).toBe(false);
+		expect(isValidQuarterKey('2026-q4')).toBe(false);
+		expect(isValidQuarterKey('Q4')).toBe(false);
+		expect(isValidQuarterKey(undefined)).toBe(false);
+	});
+
+	it('tar kvartalet av datoen, også på grensene', () => {
+		expect(quarterKeyFromIsoDate('2026-01-01')).toBe('2026-Q1');
+		expect(quarterKeyFromIsoDate('2026-03-31')).toBe('2026-Q1');
+		expect(quarterKeyFromIsoDate('2026-10-01')).toBe('2026-Q4');
+		expect(quarterKeyFromIsoDate('2026-12-31')).toBe('2026-Q4');
+	});
+
+	it('sammenligner over årsskiftet', () => {
+		expect(compareQuarterKeys('2026-Q4', '2027-Q1')).toBeLessThan(0);
+		expect(compareQuarterKeys('2027-Q1', '2026-Q4')).toBeGreaterThan(0);
+		expect(compareQuarterKeys('2026-Q3', '2026-Q3')).toBe(0);
+	});
+});
+
+describe('sameTranscript', () => {
+	it('ser bort fra mellomrom og linjeskift i kantene og inni', () => {
+		expect(sameTranscript('Du: hei\n\nResonans: hallo ', ' Du: hei Resonans:  hallo')).toBe(true);
+		expect(sameTranscript('Du: hei', 'Du: Hei')).toBe(false);
+	});
+});
+
+describe('retningssamtalen i appen', () => {
+	it('bruker den delte arbeidsmåten, som MCP-verktøyet også sender', () => {
+		const step = FLOWS.retning_kvartal.steps![0] as unknown as { buildPrompts: (d: Record<string, unknown>) => { systemPrompt: string } };
+		expect(step.buildPrompts({}).systemPrompt).toContain(DIRECTION_CONVERSATION_METHOD);
 	});
 });

@@ -23,6 +23,13 @@ describe('MCP_TOOLS', () => {
 		expect(toolAnnotations('query_agenda').readOnlyHint).toBe(true);
 	});
 
+	it('har retningssamtalen, der lagringen skriver uten å regnes som sletting', () => {
+		expect(names).toContain('query_direction');
+		expect(names).toContain('save_direction_conversation');
+		expect(toolAnnotations('query_direction').readOnlyHint).toBe(true);
+		expect(toolAnnotations('save_direction_conversation')).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+	});
+
 	it('holder Ekkos quiz og forteller utenfor', () => {
 		expect(names.some((name) => name.startsWith('story_') || name.startsWith('quiz_'))).toBe(false);
 		expect(names).not.toContain('trip_companions');
