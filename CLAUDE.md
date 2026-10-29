@@ -593,6 +593,11 @@ Resonans er en MCP-server på `/mcp` med egen OAuth-server (`/.well-known/*`,
   `checklist_items`-rad på en dag-/ukeliste. Avkryssing og sletting går gjennom
   `$lib/server/checklist-item-mutations.ts`, delt med appens endepunkt — skriv aldri en
   andre avkryssing. Se «Planlegging» i `docs/mcp.md`.
+- **Retningssamtalen (`query_direction`, `save_direction_conversation`) er bare i MCP**; appen har
+  flyten. Begge lagrer gjennom `saveDirectionConversation`
+  (`$lib/server/direction/direction-conversation.ts`), og arbeidsmåten er delte konstanter i
+  `$lib/flows/retning-kvartal.ts` — skriv aldri en andre lagring eller en andre instruks. Se
+  «Retningssamtalen» i `docs/mcp.md`.
 
 ### Ekstern API-flate (Akser)
 
