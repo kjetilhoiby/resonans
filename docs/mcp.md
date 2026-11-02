@@ -178,6 +178,35 @@ som MCP alt hadde.
 - **Uten egenformulert retning henviser verktøyet til livsintervjuet** i appen. Et
   AI-utkast skal ikke holdes opp mot hverdagen som om det var brukerens ord.
 
+## Middagsplan og historikk
+
+Mat-verktøyene er assistentens (`query_food`, `manage_meal_plan`, `manage_recipe`,
+`manage_pantry`), ikke egne MCP-verktøy. De ble strammet opp etter at Claude måtte
+skrive «Spist» i notatfeltet for å etterregistrere middager. Se
+`docs/changelog/2026-11-02-middagsplan-og-historikk.md`.
+
+| Spørsmål | Kall |
+|---|---|
+| Hva skal vi spise? | `query_food` `meal_plan` (standard denne og neste uke, eller `weekContext`/`fromDate`/`toDate`) |
+| Hva spiste vi? | `query_food` `history` (standard 28 dager): radene + mest spist, sist spist, droppet, takeaway |
+| Hvilke retter har vi? | `query_food` `meals`, med `favorite`, `takeaway`, `timesEaten`, `lastEaten`, `nextPlanned` (`withRecipe` for ingredienser) |
+| Vi spiste X | `manage_meal_plan` `status: 'eaten'` (update på planen, eller create) |
+| Planen ble ikke fulgt | gammel rad `skipped`, ny rad `eaten` |
+| Takeaway | `manage_meal_plan` `takeaway: true` |
+| Favoritt | `manage_recipe` `favorite: true` |
+
+- **Plan og historikk er samme rad; `meal_plans.status` skiller dem** (`planned`, `eaten`,
+  `skipped`). Reglene står i `$lib/domains/food/meal-log.ts`.
+- **Avkrysset «middag: X» i ukeplanen BETYR spist**, og statusen speiles begge veier
+  (`meal-plan-sync.ts`). Et hoppet-over punkt er `skipped`; et utsatt er fortsatt planlagt.
+- **En plan på en dag som har vært, uten bekreftelse, leses som `unconfirmed`**, ikke som
+  spist. Historikken sier hvor mye av den som er bekreftet (`confirmedShare`).
+- **`eaten` på en framtidig dato avvises.**
+- **Takeaway er en tagg på retten**, ikke på raden. Den teller i historikken, men blir
+  aldri foreslått i onsdagsøkta og gir ingen handleliste.
+- **Favoritt og `wantMore` er to ting:** favoritt er bevist (taggen `favoritt`),
+  `wantMore` er en ambisjon. Begge løfter retten i forslagene.
+
 ## Teste lokalt
 
 Token-endepunktet må testes mot en PROD-build (CSRF-sjekken). Mot podman-basen:

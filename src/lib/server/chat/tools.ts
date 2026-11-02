@@ -27,9 +27,12 @@ import { filmResearchToolDefinition } from '$lib/ai/tools/film-research';
 import { logHungerTool } from '$lib/ai/tools/log-hunger';
 import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
 import { logSleepDisturbanceTool } from '$lib/ai/tools/log-sleep-disturbance';
+import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { manageNutritionTargetsTool } from '$lib/ai/tools/manage-nutrition-targets';
+import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
+import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { queryMovementTool } from '$lib/ai/tools/query-movement';
 import { queryNutritionTool } from '$lib/ai/tools/query-nutrition';
 import { querySleepTool } from '$lib/ai/tools/query-sleep';
@@ -1114,89 +1117,9 @@ export const CHAT_TOOLS = [
 					}
 				}
 			},
-			{
-				type: 'function' as const,
-				function: {
-					name: 'query_food',
-					description: 'Hent mat-data: måltider, ukemeny, pantry/fryserinnhold. queryType: meals (måltidsliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
-					parameters: {
-						type: 'object',
-						properties: {
-							queryType: { type: 'string', enum: ['meals', 'meal_plan', 'pantry', 'expiring_soon'] },
-							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
-							location: { type: 'string', enum: ['pantry', 'fridge', 'freezer'] },
-							days: { type: 'number' },
-							limit: { type: 'number' }
-						},
-						required: ['queryType']
-					}
-				}
-			},
-			{
-				type: 'function' as const,
-				function: {
-					name: 'manage_recipe',
-					description: 'Opprett, oppdater eller slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, bilde). action=create krever title; ingredients er valgfritt. action=update/delete krever id.',
-					parameters: {
-						type: 'object',
-						properties: {
-							action: { type: 'string', enum: ['create', 'update', 'delete'] },
-							id: { type: 'string' },
-							title: { type: 'string' },
-							description: { type: 'string' },
-							ingredients: {
-								type: 'array',
-								items: {
-									type: 'object',
-									properties: {
-										name: { type: 'string' },
-										quantity: { type: 'number' },
-										unit: { type: 'string' },
-										optional: { type: 'boolean' }
-									},
-									required: ['name']
-								}
-							},
-							instructions: { type: 'array', items: { type: 'string' } },
-							prepTimeMin: { type: 'number' },
-							cookTimeMin: { type: 'number' },
-							servings: { type: 'number' },
-							tags: { type: 'array', items: { type: 'string' } },
-							mainProtein: { type: 'string', description: 'kjøtt/kylling/svin/fisk/torsk/vegetar/egg — la stå tom for retter uten fast protein-struktur' },
-							mainCarb: { type: 'string', description: 'pasta/potet/ris/brød/couscous/nudler' },
-							greens: { type: 'string', description: 'salat/kokte grønnsaker/rotgrønnsaker osv.' },
-							wantMore: { type: 'boolean', description: 'true hvis familien ønsker mer av denne — løftes i forslag' },
-							effortLevel: { type: 'string', enum: ['lav', 'middels', 'høy'] },
-							imageUrl: { type: 'string' },
-							sourceUrl: { type: 'string' }
-						},
-						required: ['action']
-					}
-				}
-			},
-			{
-				type: 'function' as const,
-				function: {
-					name: 'manage_meal_plan',
-					description: 'Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad (kun navn) som senere kan utvides med oppskrift via manage_recipe.',
-					parameters: {
-						type: 'object',
-						properties: {
-							action: { type: 'string', enum: ['create', 'update', 'delete'] },
-							id: { type: 'string' },
-							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
-							date: { type: 'string', description: 'YYYY-MM-DD' },
-							mealType: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
-							mealId: { type: 'string' },
-							mealName: { type: 'string', description: 'Navn på måltid; auto-opprettes hvis ikke mealId er gitt' },
-							notes: { type: 'string' },
-							servings: { type: 'number' },
-							photoUrl: { type: 'string' }
-						},
-						required: ['action']
-					}
-				}
-			},
+			openAiFunctionDefinition(queryFoodTool),
+			openAiFunctionDefinition(manageRecipeTool),
+			openAiFunctionDefinition(manageMealPlanTool),
 			{
 				type: 'function' as const,
 				function: {

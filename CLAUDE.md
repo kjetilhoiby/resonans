@@ -599,6 +599,22 @@ Resonans er en MCP-server på `/mcp` med egen OAuth-server (`/.well-known/*`,
   `$lib/flows/retning-kvartal.ts` — skriv aldri en andre lagring eller en andre instruks. Se
   «Retningssamtalen» i `docs/mcp.md`.
 
+### Matloggen: planlagt og spist er samme rad
+
+Se `docs/changelog/2026-11-02-middagsplan-og-historikk.md`. Reglene står i
+`$lib/domains/food/meal-log.ts`, speilet i `meal-plan-sync.ts`.
+
+- **`meal_plans.status` er `planned` | `eaten` | `skipped`.** Fram til november 2026 fantes
+  den ikke. MCP-klienten skrev da «Spist» i `notes`, og alle leserne trodde at en plan
+  var spist. Alt som spør «hva spiste vi» skal filtrere på status, og droppede planer er
+  aldri bruk av retten.
+- **Avkrysset «middag: X» i ukeplanen ER registreringen**, og speilet går begge veier.
+  Lag aldri en egen «marker som spist».
+- **En plan på en dag som har vært, uten bekreftelse, leses som `unconfirmed`**
+  (`readMealStatus`). Den lagres aldri slik, og den telles aldri som spist.
+- **Takeaway og favoritt er TAGGER på retten** (`takeaway`, `favoritt`). Takeaway foreslås
+  aldri å lage. `wantMore` er en ambisjon, ikke en favoritt.
+
 ### Ekstern API-flate (Akser)
 
 iOS-appen **Akser** (`resonans-lab/akser`) sporer bevegelse i bakgrunnen og laster opp

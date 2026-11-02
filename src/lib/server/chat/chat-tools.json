@@ -1929,7 +1929,7 @@
 		"type": "function",
 		"function": {
 			"name": "query_food",
-			"description": "Hent mat-data: måltider, ukemeny, pantry/fryserinnhold. queryType: meals (måltidsliste), meal_plan (krever weekContext \"YYYY-W##\"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).",
+			"description": "Les familiens mat: retter/oppskrifter, middagsplan, middagshistorikk og lager.\n\nqueryType:\n- 'meal_plan': PLANEN — hva vi skal spise. Standard denne og neste uke; weekContext («2026-W45») eller fromDate/toDate overstyrer. Hver rad har id, dato, rettens navn (mealTitle), status og takeaway.\n- 'history': HISTORIKKEN — hva vi faktisk spiste. Standard siste 28 dager (days/fromDate/toDate overstyrer). Gir radene pluss en oppsummering: mest spiste retter med antall og sist spist, droppede planer, takeaway-andel. Bruk dette for «når hadde vi ramen sist», «hva spiser vi mest», «vi har hatt mye pasta i det siste».\n- 'meals': kartoteket av retter, med favoritt, takeaway, timesEaten og lastEaten. Ingredienser og fremgangsmåte er med bare når withRecipe=true (tungt).\n- 'pantry': lageret, valgfritt filtrert på location (pantry/fridge/freezer).\n- 'expiring_soon': varer som går ut innen days dager (standard 7).\n\nStatus på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unconfirmed'. 'unconfirmed' er en plan på en dag som har vært, uten at noen har bekreftet den — si at den var planlagt, ikke at den ble spist.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -1938,15 +1938,35 @@
 						"enum": [
 							"meals",
 							"meal_plan",
+							"history",
 							"pantry",
 							"expiring_soon"
 						]
 					},
 					"weekContext": {
+						"description": "ISO-uke, f.eks. \"2026-W45\" (meal_plan/history)",
+						"type": "string"
+					},
+					"fromDate": {
+						"description": "YYYY-MM-DD (meal_plan/history)",
+						"type": "string"
+					},
+					"toDate": {
+						"description": "YYYY-MM-DD (meal_plan/history)",
+						"type": "string"
+					},
+					"mealType": {
+						"description": "Filtrer plan/historikk på måltid",
 						"type": "string",
-						"description": "ISO-uke, f.eks. \"2026-W17\""
+						"enum": [
+							"breakfast",
+							"lunch",
+							"dinner",
+							"snack"
+						]
 					},
 					"location": {
+						"description": "Filtrer lageret",
 						"type": "string",
 						"enum": [
 							"pantry",
@@ -1955,7 +1975,20 @@
 						]
 					},
 					"days": {
+						"description": "history: dager bakover; expiring_soon: dager fram",
 						"type": "number"
+					},
+					"search": {
+						"description": "meals: søk i navnet",
+						"type": "string"
+					},
+					"favoritesOnly": {
+						"description": "meals: bare familiefavoritter",
+						"type": "boolean"
+					},
+					"withRecipe": {
+						"description": "meals: ta med ingredienser og fremgangsmåte",
+						"type": "boolean"
 					},
 					"limit": {
 						"type": "number"
@@ -1971,7 +2004,7 @@
 		"type": "function",
 		"function": {
 			"name": "manage_recipe",
-			"description": "Opprett, oppdater eller slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, bilde). action=create krever title; ingredients er valgfritt. action=update/delete krever id.",
+			"description": "Create, update or delete a meal/recipe owned by the user.\n\nA meal is the building block in the food universe — primarily a name (e.g. \"kjøttkaker\"),\nwith optional recipe details (ingredients, instructions, images, nutrition). Use this when\nthe user wants to attach an oppskrift to a meal, edit an existing one, or remove it.\nFor 'create' you must supply title; ingredients are optional. For 'update'/'delete' supply id.\n\nKomponerte middager kan struktureres med mainProtein (kjøtt/kylling/svin/fisk/torsk/vegetar/egg),\nmainCarb (pasta/potet/ris/brød/couscous/nudler) og greens — dette gjør at systemet kan generere\nvarianter ved å bytte råvarer. La feltene stå tomme for retter som ikke passer (suppe, taco, pizza).\neffortLevel er lav/middels/høy.\n\nTo ulike ting, ikke bland dem:\n- favorite=true: en BEVIST familiefavoritt («alle elsker ramen»). Settes som taggen «favoritt»; andre tagger røres ikke.\n- wantMore=true: en AMBISJON — noe familien vil spise oftere, men ikke nødvendigvis gjør.\nBegge løfter retten i forslagene. Takeaway/restaurant settes med takeaway=true; slike retter foreslås aldri å lage.\n\nUkjente mengder: utelat quantity/unit framfor å gjette — et tomt felt er ærlig, et gjettet tall havner på handlelista.\nFor å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -1984,7 +2017,9 @@
 						]
 					},
 					"id": {
-						"type": "string"
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
 					},
 					"title": {
 						"type": "string"
@@ -2001,10 +2036,24 @@
 									"type": "string"
 								},
 								"quantity": {
-									"type": "number"
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "null"
+										}
+									]
 								},
 								"unit": {
-									"type": "string"
+									"anyOf": [
+										{
+											"type": "string"
+										},
+										{
+											"type": "null"
+										}
+									]
 								},
 								"optional": {
 									"type": "boolean"
@@ -2037,27 +2086,60 @@
 						}
 					},
 					"mainProtein": {
-						"type": "string",
-						"description": "kjøtt/kylling/svin/fisk/torsk/vegetar/egg — la stå tom for retter uten fast protein-struktur"
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"mainCarb": {
-						"type": "string",
-						"description": "pasta/potet/ris/brød/couscous/nudler"
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"greens": {
-						"type": "string",
-						"description": "salat/kokte grønnsaker/rotgrønnsaker osv."
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"favorite": {
+						"description": "Familiefavoritt (taggen «favoritt»)",
+						"type": "boolean"
+					},
+					"takeaway": {
+						"description": "Takeaway/restaurant — foreslås aldri å lage",
+						"type": "boolean"
 					},
 					"wantMore": {
-						"type": "boolean",
-						"description": "true hvis familien ønsker mer av denne — løftes i forslag"
+						"description": "Ønsker mer av — en ambisjon, ikke en favoritt",
+						"type": "boolean"
 					},
 					"effortLevel": {
-						"type": "string",
-						"enum": [
-							"lav",
-							"middels",
-							"høy"
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": [
+									"lav",
+									"middels",
+									"høy"
+								]
+							},
+							{
+								"type": "null"
+							}
 						]
 					},
 					"imageUrl": {
@@ -2077,7 +2159,7 @@
 		"type": "function",
 		"function": {
 			"name": "manage_meal_plan",
-			"description": "Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad (kun navn) som senere kan utvides med oppskrift via manage_recipe.",
+			"description": "Legg til, endre eller fjern et måltid på en dato — både PLANEN (hva vi skal spise) og HISTORIKKEN (hva vi faktisk spiste). Det er samme rad; status skiller dem.\n\nstatus:\n- 'planned' (standard): planlagt, ikke spist ennå.\n- 'eaten': spist. Bruk ved etterregistrering («på tirsdag hadde vi taco»), og når en plan ble fulgt («vi spiste ramen i går» → update status='eaten'). Ikke lov på framtidige datoer.\n- 'skipped': planen ble droppet. Ble den erstattet av noe annet, sett den gamle til 'skipped' og opprett det de faktisk spiste med status='eaten' — da står både planen og historikken riktig.\nSkriv ALDRI «Spist» i notes; det er hva status er til. Statusen speiles mot avkryssingen av «middag: …»-punktet i ukeplanen (avkrysset = spist, hoppet over = droppet), begge veier.\n\nTakeaway, restaurant og ferdigmat: sett takeaway=true. Retten tagges da som takeaway, telles i historikken, men foreslås aldri som noe å lage og gir ingen handleliste.\n\nRett: knytt til et lagret måltid via mealId, eller send mealName — eksakt navn-treff gjenbruker retten, ellers opprettes en ny med bare navnet (oppskrift legges på senere via manage_recipe). Sjekk query_food (meals) først så du ikke lager «Ramen» ved siden av «ramen med egg».\n\nweekContext utledes av date og kan utelates. Endringer speiles til dagens sjekkliste i ukeplanen som «middag: …».",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -2090,17 +2172,17 @@
 						]
 					},
 					"id": {
-						"type": "string"
-					},
-					"weekContext": {
+						"description": "Planradens id (fra query_food) — påkrevd for update/delete",
 						"type": "string",
-						"description": "ISO-uke, f.eks. \"2026-W17\""
+						"format": "uuid",
+						"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
 					},
 					"date": {
-						"type": "string",
-						"description": "YYYY-MM-DD"
+						"description": "YYYY-MM-DD — påkrevd for create",
+						"type": "string"
 					},
 					"mealType": {
+						"description": "Standard dinner ved create",
 						"type": "string",
 						"enum": [
 							"breakfast",
@@ -2109,20 +2191,48 @@
 							"snack"
 						]
 					},
+					"status": {
+						"description": "'planned' | 'eaten' | 'skipped' — se beskrivelsen",
+						"type": "string",
+						"enum": [
+							"planned",
+							"eaten",
+							"skipped"
+						]
+					},
 					"mealId": {
-						"type": "string"
+						"description": "Kobling til en lagret rett",
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid",
+								"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"mealName": {
-						"type": "string",
-						"description": "Navn på måltid; auto-opprettes hvis ikke mealId er gitt"
+						"description": "Rettens navn; gjenbruker eksakt treff, ellers opprettes en ny rett",
+						"type": "string"
+					},
+					"takeaway": {
+						"description": "true for takeaway/restaurant/ferdigmat",
+						"type": "boolean"
 					},
 					"notes": {
+						"description": "Fritekst om akkurat denne middagen (f.eks. «doblet porsjonen»), ikke status",
 						"type": "string"
 					},
 					"servings": {
 						"type": "number"
 					},
 					"photoUrl": {
+						"type": "string"
+					},
+					"weekContext": {
+						"description": "ISO-uke, f.eks. \"2026-W17\". Utledes av date hvis utelatt.",
 						"type": "string"
 					}
 				},

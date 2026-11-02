@@ -22,7 +22,12 @@ import {
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
 import { syncStaysForDate } from '$lib/server/stays';
-import { afterMealItemWritten, afterMealItemDeleted, moveMealPlanToDate } from '$lib/server/services/meal-plan-sync';
+import {
+	afterMealItemWritten,
+	afterMealItemDeleted,
+	afterMealItemStateChanged,
+	moveMealPlanToDate
+} from '$lib/server/services/meal-plan-sync';
 import { shouldParentBeChecked } from '$lib/components/domain/ukeplan/week-schedule-logic';
 import { logStreakRound, deleteStreakRound } from '$lib/server/services/streak-service';
 
@@ -271,6 +276,16 @@ export async function updateChecklistItem(
 		(updated.metadata?.mealType || updated.metadata?.linkedMealPlanId)
 	) {
 		runInBackground(afterMealItemWritten(userId, updated, editedContext));
+	}
+
+	// (Av)krysning eller hopp-over av et middagspunkt → planradens status (matlogg).
+	// Avkryssingen ER registreringen av at middagen ble spist; se meal-log.ts.
+	if (
+		(body.checked !== undefined || body.skipped !== undefined) &&
+		updated &&
+		typeof updated.metadata?.linkedMealPlanId === 'string'
+	) {
+		runInBackground(afterMealItemStateChanged(userId, updated));
 	}
 
 	// (Av)krysning: kjør link-bivirkninger for punktet (fremdrift + speiling til
