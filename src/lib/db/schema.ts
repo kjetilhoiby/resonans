@@ -1004,9 +1004,13 @@ export const mealPlans = pgTable('meal_plans', {
 	notes: text('notes'),
 	servings: integer('servings').default(5).notNull(), // FAMILY_DEFAULT_SERVINGS — 2 voksne + 3 barn
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
+	// 'planned' | 'eaten' | 'skipped' — plan mot historikk ($lib/domains/food/meal-log.ts).
+	// Speiles mot avkryssingen av «middag: X» i ukeplanen, begge veier.
+	status: text('status').notNull().default('planned'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
+	idxMealPlansUserStatusDate: index('meal_plans_user_status_date_idx').on(table.userId, table.status, table.date),
 	idxMealPlansUserWeek: index('meal_plans_user_week_idx').on(table.userId, table.weekContext),
 	idxMealPlansUserDate: index('meal_plans_user_date_idx').on(table.userId, table.date),
 	idxMealPlansUserMeal: index('meal_plans_user_meal_idx').on(table.userId, table.mealId)

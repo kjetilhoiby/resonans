@@ -2,9 +2,10 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems } from '$lib/db/schema';
-import { and, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 import { suggestWeekDinners, scoreMeal, type SuggestibleMeal } from '$lib/domains/food/meal-suggestions';
+import { isTakeawayMeal } from '$lib/domains/food/meal-log';
 import { generateVariants } from '$lib/domains/food/composition';
 import { getWeekShoppingList } from '$lib/server/services/shopping-list-service';
 import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync';
@@ -27,11 +28,12 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			lastPlannedDate: sql<string | null>`max(${mealPlans.date})`
 		})
 		.from(mealPlans)
-		.where(eq(mealPlans.userId, userId))
+		.where(and(eq(mealPlans.userId, userId), ne(mealPlans.status, 'skipped')))
 		.groupBy(mealPlans.mealId);
 	const statsByMeal = new Map(stats.map((s) => [s.mealId, s]));
 
-	const suggestible: SuggestibleMeal[] = allMeals.map((meal) => ({
+	// Takeaway er historikk, ikke noe å lage — aldri et forslag (meal-log.ts).
+	const suggestible: SuggestibleMeal[] = allMeals.filter((meal) => !isTakeawayMeal(meal.tags)).map((meal) => ({
 		id: meal.id,
 		title: meal.title,
 		tags: meal.tags,

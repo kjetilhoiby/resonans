@@ -3,6 +3,18 @@ import { db } from '$lib/db';
 import { meals } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { normalizeComponent } from '$lib/domains/food/composition';
+import { TAKEAWAY_TAG, withTag } from '$lib/domains/food/meal-log';
+
+/** favorite/takeaway er tagger; flagget legges oppå tags-lista (eksplisitt eller lagret). */
+function applyFlagTags(
+	tags: string[],
+	flags: { favorite?: boolean; takeaway?: boolean }
+): string[] {
+	let next = tags;
+	if (flags.favorite !== undefined) next = withTag(next, 'favoritt', flags.favorite);
+	if (flags.takeaway !== undefined) next = withTag(next, TAKEAWAY_TAG, flags.takeaway);
+	return next;
+}
 
 const ingredientSchema = z.object({
 	name: z.string(),
@@ -23,7 +35,15 @@ For 'create' you must supply title; ingredients are optional. For 'update'/'dele
 Komponerte middager kan struktureres med mainProtein (kjøtt/kylling/svin/fisk/torsk/vegetar/egg),
 mainCarb (pasta/potet/ris/brød/couscous/nudler) og greens — dette gjør at systemet kan generere
 varianter ved å bytte råvarer. La feltene stå tomme for retter som ikke passer (suppe, taco, pizza).
-Sett wantMore=true for retter familien ønsker mer av (løftes i forslag), og effortLevel (lav/middels/høy).`,
+effortLevel er lav/middels/høy.
+
+To ulike ting, ikke bland dem:
+- favorite=true: en BEVIST familiefavoritt («alle elsker ramen»). Settes som taggen «favoritt»; andre tagger røres ikke.
+- wantMore=true: en AMBISJON — noe familien vil spise oftere, men ikke nødvendigvis gjør.
+Begge løfter retten i forslagene. Takeaway/restaurant settes med takeaway=true; slike retter foreslås aldri å lage.
+
+Ukjente mengder: utelat quantity/unit framfor å gjette — et tomt felt er ærlig, et gjettet tall havner på handlelista.
+For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.`,
 
 	parameters: z.object({
 		userId: z.string(),
@@ -40,7 +60,9 @@ Sett wantMore=true for retter familien ønsker mer av (løftes i forslag), og ef
 		mainProtein: z.string().nullable().optional(),
 		mainCarb: z.string().nullable().optional(),
 		greens: z.string().nullable().optional(),
-		wantMore: z.boolean().optional(),
+		favorite: z.boolean().optional().describe('Familiefavoritt (taggen «favoritt»)'),
+		takeaway: z.boolean().optional().describe('Takeaway/restaurant — foreslås aldri å lage'),
+		wantMore: z.boolean().optional().describe('Ønsker mer av — en ambisjon, ikke en favoritt'),
 		effortLevel: z.enum(['lav', 'middels', 'høy']).nullable().optional(),
 		imageUrl: z.string().optional(),
 		sourceUrl: z.string().optional()
@@ -61,6 +83,8 @@ Sett wantMore=true for retter familien ønsker mer av (løftes i forslag), og ef
 		mainProtein?: string | null;
 		mainCarb?: string | null;
 		greens?: string | null;
+		favorite?: boolean;
+		takeaway?: boolean;
 		wantMore?: boolean;
 		effortLevel?: 'lav' | 'middels' | 'høy' | null;
 		imageUrl?: string;
@@ -81,7 +105,7 @@ Sett wantMore=true for retter familien ønsker mer av (løftes i forslag), og ef
 					prepTimeMin: args.prepTimeMin,
 					cookTimeMin: args.cookTimeMin,
 					servings: args.servings ?? 2,
-					tags: args.tags ?? [],
+					tags: applyFlagTags(args.tags ?? [], args),
 					mainProtein: args.mainProtein !== undefined ? normalizeComponent('protein', args.mainProtein) : null,
 					mainCarb: args.mainCarb !== undefined ? normalizeComponent('carb', args.mainCarb) : null,
 					greens: args.greens !== undefined ? normalizeComponent('greens', args.greens) : null,
@@ -104,7 +128,18 @@ Sett wantMore=true for retter familien ønsker mer av (løftes i forslag), og ef
 			if (args.prepTimeMin !== undefined) updates.prepTimeMin = args.prepTimeMin;
 			if (args.cookTimeMin !== undefined) updates.cookTimeMin = args.cookTimeMin;
 			if (args.servings !== undefined) updates.servings = args.servings;
-			if (args.tags !== undefined) updates.tags = args.tags;
+			if (args.tags !== undefined || args.favorite !== undefined || args.takeaway !== undefined) {
+				let baseTags = args.tags;
+				if (baseTags === undefined) {
+					const current = await db.query.meals.findFirst({
+						where: and(eq(meals.id, args.id), eq(meals.userId, args.userId)),
+						columns: { tags: true }
+					});
+					if (!current) return { error: 'meal not found' };
+					baseTags = current.tags;
+				}
+				updates.tags = applyFlagTags(baseTags, args);
+			}
 			if (args.mainProtein !== undefined) updates.mainProtein = normalizeComponent('protein', args.mainProtein);
 			if (args.mainCarb !== undefined) updates.mainCarb = normalizeComponent('carb', args.mainCarb);
 			if (args.greens !== undefined) updates.greens = normalizeComponent('greens', args.greens);
