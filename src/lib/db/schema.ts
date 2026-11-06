@@ -857,7 +857,7 @@ export const checklistItems = pgTable('checklist_items', {
 		// Skole/barnehage-uttrekk — hvilken person og hva slags funn
 		personId?: string;
 		personName?: string;
-		findingType?: 'todo' | 'bring' | 'event' | 'return';
+		findingType?: 'todo' | 'bring' | 'event' | 'return' | 'pickup';
 		emailSubject?: string;
 		// Appliance task metadata
 		applianceChore?: boolean; // Husarbeid generert fra en apparat-syklus (kilde-markør)

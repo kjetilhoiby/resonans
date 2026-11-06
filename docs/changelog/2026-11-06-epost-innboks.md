@@ -73,3 +73,21 @@ ble levert. **Hemmeligheten må regnes som lekket og roteres** (Coolify →
   sier fra, men bare til den som åpner dem.
 - `GET /api/email/inbound` er uautentisert med vilje og avslører bare at
   tjenesten finnes og hvilken scriptversjon som gjelder.
+
+## Biblioteket (samme dag)
+
+Deichman sender fire typer: påminnelse om forfall, purring, 2. purring og
+hentemelding. Gmail-filtret tok bare påminnelsene (`subject:Forfall`), og er nå
+`subject:(forfall OR purring OR hentemelding)`. Prosessoren leste bare den første
+tittelen, hoppet over purringer (de har ingen dato) og lagde et nytt punkt ved
+hver fornyelse.
+
+- Parseren bor rent i `$lib/domain/library-email.ts` (testet, også det gamle
+  formatet fra før mars 2026).
+- Ett punkt per lån i «Bibliotek-bøker», nøklet på strekkoden. En fornyelse
+  flytter punktet og dagspunktet.
+- Purring → dagens liste; 2. purring nevner gebyret.
+- Hentemelding → «Hent: tittel på Bøler (nr. 13)» med hentefrist, på dagens liste.
+  En senere påminnelse for samme strekkode lukker hentepunktet.
+- Dagspunktet har `linkedChecklistItemId` mot bibliotekspunktet, så én avkryssing
+  holder.
