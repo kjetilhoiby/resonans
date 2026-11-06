@@ -68,9 +68,7 @@ describe('isPublicPath — prefikser med reelle undersider', () => {
 	});
 
 	it('slipper gjennom webhooks og OAuth-callbacks', () => {
-		expect(isPublicPath('/api/email-inbound')).toBe(true);
 		expect(isPublicPath('/api/email/inbound')).toBe(true);
-		expect(isPublicPath('/api/workouts/email-inbound')).toBe(true);
 		expect(isPublicPath('/api/scheduler/trigger')).toBe(true);
 		expect(isPublicPath('/api/apps/authorize')).toBe(true);
 		expect(isPublicPath('/api/apps/callback')).toBe(true);
@@ -96,6 +94,11 @@ describe('isPublicPath — prefikser med reelle undersider', () => {
 });
 
 describe('isPublicPath — resten krever auth', () => {
+	it('har ikke de gamle e-post-endepunktene åpne', () => {
+		expect(isPublicPath('/api/email-inbound')).toBe(false);
+		expect(isPublicPath('/api/workouts/email-inbound')).toBe(false);
+	});
+
 	it('holder appen og de øvrige API-ene lukket', () => {
 		expect(isPublicPath('/')).toBe(false);
 		expect(isPublicPath('/tema/helse')).toBe(false);

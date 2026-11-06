@@ -1,199 +1,63 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { db } from '$lib/db';
-import { emailRules, sensors, users } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { processWorkoutEmail } from '$lib/server/email-processors/workout';
-import { processAiExtractionEmail } from '$lib/server/email-processors/ai-extraction';
-import { processRawStoreEmail } from '$lib/server/email-processors/raw-store';
-import { processLibraryEmail } from '$lib/server/email-processors/library';
-import { processSchoolPlanEmail } from '$lib/server/email-processors/school-plan';
-import { processOdaReceiptEmail } from '$lib/server/email-processors/oda-receipt';
-import { processFindTriageEmail } from '$lib/server/email-processors/find-triage';
-import { findOrCreateEmailSensor, type InboundEmailPayload } from '$lib/server/email-processors/shared';
+import { readEmailWebhookToken, verifyEmailWebhookToken } from '$lib/server/email/auth';
+import { CURRENT_SCRIPT_VERSION, INBOUND_SERVICE, parseInboundPayload } from '$lib/server/email/inbound';
+import { processInboundEmail, resolveInboundUser } from '$lib/server/email/process-inbound';
 
-function timingSafeEqual(a: string, b: string): boolean {
-	if (a.length !== b.length) return false;
-	let mismatch = 0;
-	for (let i = 0; i < a.length; i++) {
-		mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-	}
-	return mismatch === 0;
-}
+/**
+ * Gmail → Resonans. Postes av Apps Script-malen i
+ * `$lib/server/email/apps-script-template.ts` (hentes fra /settings/sources).
+ *
+ * Statuskodene styrer scriptet: 2xx fjerner labelen, alt annet lar den stå så
+ * meldingen prøves igjen (script v2 flytter den til «Resonans/Feilet» etter
+ * gjentatte forsøk). Derfor er en ukjent mottaker 422, ikke 200 — fram til
+ * november 2026 svarte endepunktet 200 og e-posten forsvant.
+ *
+ * Alle svar bærer `service`, så scriptet kan se at det faktisk snakker med
+ * Resonans. Se `inbound.ts` for hvorfor.
+ */
 
-function extractRecipientEmail(raw: string): string {
-	const trimmed = raw.trim().toLowerCase();
-	const angle = trimmed.match(/<([^>]+)>/);
-	if (angle) return angle[1].trim();
-	return trimmed;
-}
-
-function matchesPattern(value: string, pattern: string): boolean {
-	if (!pattern) return true;
-	const lower = value.toLowerCase();
-	const p = pattern.toLowerCase();
-	if (p.startsWith('*') && p.endsWith('*')) {
-		return lower.includes(p.slice(1, -1));
-	}
-	if (p.startsWith('*')) {
-		return lower.endsWith(p.slice(1));
-	}
-	if (p.endsWith('*')) {
-		return lower.startsWith(p.slice(0, -1));
-	}
-	return lower === p || lower.includes(p);
-}
-
-type RuleMatch = typeof emailRules.$inferSelect;
-
-async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmailPayload, appUrl?: string) {
-	switch (rule.processingType) {
-		case 'workout_files': {
-			const sensor = await findOrCreateEmailSensor(userId, 'workout_files');
-			const result = await processWorkoutEmail(userId, sensor, payload, appUrl);
-			await db.update(sensors).set({ lastSync: new Date(), updatedAt: new Date() }).where(eq(sensors.id, sensor.id));
-			return result;
-		}
-		case 'library': {
-			return await processLibraryEmail(userId, payload);
-		}
-		case 'school_plan': {
-			return await processSchoolPlanEmail(userId, payload, rule, appUrl);
-		}
-		case 'oda_receipt': {
-			return await processOdaReceiptEmail(userId, payload, rule);
-		}
-		case 'find_triage': {
-			return await processFindTriageEmail(userId, payload, rule);
-		}
-		case 'ai_extraction': {
-			const sensor = await findOrCreateEmailSensor(userId, 'email_ai_extraction');
-			const result = await processAiExtractionEmail(userId, sensor, payload, rule);
-			await db.update(sensors).set({ lastSync: new Date(), updatedAt: new Date() }).where(eq(sensors.id, sensor.id));
-			return result;
-		}
-		case 'raw_store':
-		default: {
-			const sensor = await findOrCreateEmailSensor(userId, 'email_raw_store');
-			const result = await processRawStoreEmail(userId, sensor, payload, rule);
-			await db.update(sensors).set({ lastSync: new Date(), updatedAt: new Date() }).where(eq(sensors.id, sensor.id));
-			return result;
-		}
-	}
-}
+/** Uautentisert sjekk: scriptet sender ingenting før dette svaret er riktig. */
+export const GET: RequestHandler = async () => {
+	return json({ service: INBOUND_SERVICE, scriptVersion: CURRENT_SCRIPT_VERSION });
+};
 
 export const POST: RequestHandler = async ({ request, url }) => {
-	const token = url.searchParams.get('token');
-	const secret = env.EMAIL_WEBHOOK_SECRET;
+	const reply = (body: Record<string, unknown>, status = 200) =>
+		json({ service: INBOUND_SERVICE, ...body }, { status });
 
-	if (!secret || !token || !timingSafeEqual(token, secret)) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
+	if (!verifyEmailWebhookToken(readEmailWebhookToken(request, url))) {
+		return reply({ error: 'Unauthorized' }, 401);
 	}
 
-	let raw: Record<string, any>;
+	let raw: Record<string, unknown>;
 	try {
 		raw = await request.json();
 	} catch {
-		return json({ error: 'Invalid JSON' }, { status: 400 });
+		return reply({ error: 'Invalid JSON' }, 400);
 	}
 
-	const payload: InboundEmailPayload = {
-		UserEmail: raw.UserEmail ?? raw.to ?? '',
-		From: raw.From ?? raw.from ?? '',
-		Subject: raw.Subject ?? raw.subject,
-		TextBody: raw.TextBody ?? raw.bodyText,
-		HtmlBody: raw.HtmlBody ?? raw.htmlBody,
-		Label: raw.Label ?? raw.label,
-		GmailMessageId: raw.GmailMessageId ?? raw.gmailMessageId,
-		GmailDate: raw.GmailDate ?? raw.gmailDate ?? (raw.internalDate ? String(raw.internalDate) : undefined),
-		Attachments: (raw.Attachments ?? raw.attachments ?? []).map((a: any) => ({
-			Name: a.Name ?? a.name ?? '',
-			Content: a.Content ?? a.base64 ?? '',
-			ContentType: a.ContentType ?? a.contentType ?? 'application/octet-stream',
-			ContentLength: a.ContentLength ?? a.size ?? 0,
-		})),
-	};
+	const payload = parseInboundPayload(raw);
 
-	const userEmail = extractRecipientEmail(payload.UserEmail);
-
-	let user = userEmail
-		? await db.query.users.findFirst({ where: eq(users.email, userEmail) })
-		: null;
-
+	const user = await resolveInboundUser(payload);
 	if (!user) {
-		const label = (payload.Label ?? '').toLowerCase().trim();
-		if (label) {
-			const rulesWithUser = await db
-				.select({ userId: emailRules.userId })
-				.from(emailRules)
-				.where(eq(emailRules.isActive, true))
-				.groupBy(emailRules.userId);
-			for (const { userId } of rulesWithUser) {
-				const u = await db.query.users.findFirst({ where: eq(users.id, userId) });
-				if (u) { user = u; break; }
-			}
-		}
+		console.warn('[email-inbound] ukjent mottaker, label:', payload.Label ?? '(ingen)');
+		return reply({ error: 'unknown_user', hint: 'Ingen Resonans-bruker med denne adressen.' }, 422);
 	}
 
-	if (!user) {
-		return json({ skipped: true, reason: 'unknown_user', hint: userEmail || 'no email in payload' });
-	}
+	const outcome = await processInboundEmail(user.id, payload, env.ORIGIN ?? url.origin);
 
-	const label = (payload.Label ?? '').toLowerCase().trim();
-	const subject = payload.Subject ?? '';
-	const fromField = payload.From ?? '';
-
-	// 1) Match user-defined rules (label, sender, subject)
-	const rules = await db.query.emailRules.findMany({
-		where: and(
-			eq(emailRules.userId, user.id),
-			eq(emailRules.isActive, true)
-		)
-	});
-
-	const matchedRules = rules.filter(rule => {
-		const labelOk = !rule.labelPattern || (label && matchesPattern(label, rule.labelPattern));
-		const senderOk = !rule.senderPattern || matchesPattern(fromField, rule.senderPattern);
-		const subjectOk = !rule.subjectPattern || matchesPattern(subject, rule.subjectPattern);
-		// At least one pattern must be set for a rule to match
-		const hasPatterns = rule.labelPattern || rule.senderPattern || rule.subjectPattern;
-		return hasPatterns && labelOk && senderOk && subjectOk;
-	});
-
-	if (matchedRules.length > 0) {
-		const results: Array<{ ruleId: string; ruleName: string; success: boolean; detail?: any }> = [];
-		const appUrl = env.ORIGIN ?? url.origin;
-
-		for (const rule of matchedRules) {
-			try {
-				const result = await executeRule(user.id, rule, payload, appUrl);
-
-				await db.update(emailRules).set({
-					lastMatchedAt: new Date(),
-					matchCount: (rule.matchCount ?? 0) + 1,
-					updatedAt: new Date(),
-				}).where(eq(emailRules.id, rule.id));
-
-				results.push({ ruleId: rule.id, ruleName: rule.name, success: true, detail: result });
-			} catch (error) {
-				console.error(`[email-inbound] rule "${rule.name}" failed:`, error);
-				results.push({ ruleId: rule.id, ruleName: rule.name, success: false, detail: String(error) });
-			}
-		}
-
-		return json({ success: true, rulesMatched: results.length, results });
-	}
-
-	// 2) Last resort: workout attachments without label or rule
-	const hasWorkoutAttachments = (payload.Attachments ?? []).some(
-		a => a.Name?.toLowerCase().endsWith('.gpx') || a.Name?.toLowerCase().endsWith('.tcx')
+	return reply(
+		{
+			success: outcome.status !== 'failed',
+			status: outcome.status,
+			duplicate: outcome.duplicate,
+			handler: outcome.handler,
+			rulesMatched: outcome.results.length,
+			results: outcome.results.map((r) => ({ ruleName: r.ruleName, success: r.success })),
+			label: payload.Label || undefined
+		},
+		outcome.status === 'failed' ? 500 : 200
 	);
-	if (hasWorkoutAttachments) {
-		const sensor = await findOrCreateEmailSensor(user.id, 'workout_files');
-		const result = await processWorkoutEmail(user.id, sensor, payload);
-		return json({ success: true, handler: 'workout_fallback', ...result });
-	}
-
-	return json({ skipped: true, reason: 'no_matching_rules', label: label || undefined });
 };
