@@ -2,7 +2,7 @@ import { parseWorkoutFile } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
-import { buildWorkoutData } from '$lib/server/email/handlers/workout';
+import { buildWorkoutData } from '$lib/server/email/workout-data';
 import type { InboundEmailPayload } from './shared';
 
 export async function processWorkoutEmail(

@@ -108,8 +108,7 @@
 			emailWebhookConfigured={data.emailWebhookConfigured}
 			emailEndpoint={data.emailEndpoint}
 			emailAppsScriptSource={data.emailAppsScriptSource}
-			emailImports={data.emailImports}
-			userEmail={data.user?.email}
+			emailInbound={data.emailInbound}
 			people={data.people}
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />

@@ -1,11 +1,22 @@
 <script lang="ts">
 	import { Button, Input, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
+	import { extractApiErrorMessage } from '$lib/client/api-error';
 
-	type EmailImports = {
+	type EmailInbound = {
 		last7Days: number;
-		workouts: number;
-		libraryItems: number;
+		health: { tone: 'ok' | 'warn'; text: string; outdatedScript: boolean };
+		recent: Array<{
+			id: string;
+			label: string | null;
+			from: string | null;
+			subject: string | null;
+			status: string;
+			ruleNames: string[];
+			error: string | null;
+			attempts: number;
+			at: string;
+		}>;
 	};
 
 	type Person = { id: string; name: string; kind?: string };
@@ -14,17 +25,17 @@
 		emailWebhookConfigured: boolean;
 		emailEndpoint: string;
 		emailAppsScriptSource: string | null;
-		emailImports: EmailImports;
-		userEmail?: string | null;
+		emailInbound: EmailInbound;
 		people?: Person[];
 	}
 
-	let { emailWebhookConfigured, emailEndpoint, emailAppsScriptSource, emailImports, userEmail, people = [] }: Props = $props();
+	let { emailWebhookConfigured, emailEndpoint, emailAppsScriptSource, emailInbound, people = [] }: Props = $props();
 
 	let emailScriptCopied = $state(false);
 	let emailEndpointCopied = $state(false);
 	let emailTestRunning = $state(false);
 	let emailTestResult = $state<{ ok: boolean; message: string } | null>(null);
+	let emailTest = $state({ label: '', from: '', subject: '' });
 	let emailGuideOpen = $state(false);
 
 	// Email rules
@@ -99,55 +110,41 @@
 		}
 	}
 
+	// Tørrkjøring mot de ekte reglene: hvilke treffer en e-post med denne
+	// labelen, avsenderen og emnet? Kjører ingen prosessor.
 	async function runEmailTest() {
-		if (!userEmail) {
-			emailTestResult = { ok: false, message: 'Mangler bruker-e-post.' };
-			return;
-		}
 		emailTestRunning = true;
 		emailTestResult = null;
 		try {
-			const dueDate = new Date();
-			dueDate.setDate(dueDate.getDate() + 7);
-			const dd = String(dueDate.getDate()).padStart(2, '0');
-			const mm = String(dueDate.getMonth() + 1).padStart(2, '0');
-			const yyyy = dueDate.getFullYear();
-
 			const res = await fetch('/api/settings/email-test', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					gmailMessageId: `test-${Date.now()}`,
-					gmailThreadId: `test-thread-${Date.now()}`,
-					internalDate: Date.now(),
-					from: 'no-reply@bibliotek.no',
-					to: userEmail,
-					subject: 'Lånefrist nærmer seg',
-					bodyText: `Hei!\n\nDu må levere boken "Resonans testbok" innen ${dd}.${mm}.${yyyy}.\n\nVennlig hilsen,\nBiblioteket`,
-					label: 'Resonans/Bibliotek',
-					attachments: []
-				})
+				body: JSON.stringify(emailTest)
 			});
-			const body = await res.json();
-			if (res.ok) {
-				emailTestResult = {
-					ok: true,
-					message: `Test-respons: ${JSON.stringify(body)}`
-				};
-			} else {
-				emailTestResult = {
-					ok: false,
-					message: `Status ${res.status}: ${JSON.stringify(body)}`
-				};
+			const text = await res.text();
+			if (!res.ok) {
+				emailTestResult = { ok: false, message: extractApiErrorMessage(res.status, text) };
+				return;
 			}
+			const body = JSON.parse(text) as { matched: Array<{ name: string }> };
+			emailTestResult = body.matched.length > 0
+				? { ok: true, message: `Treffer: ${body.matched.map((r) => r.name).join(', ')}` }
+				: { ok: false, message: 'Ingen regel treffer. E-posten blir mottatt, men ikke behandlet.' };
 		} catch (err) {
-			emailTestResult = {
-				ok: false,
-				message: err instanceof Error ? err.message : String(err)
-			};
+			emailTestResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
 		} finally {
 			emailTestRunning = false;
 		}
+	}
+
+	const STATUS_TEXT: Record<string, string> = {
+		processed: 'Behandlet',
+		no_match: 'Ingen regel',
+		failed: 'Feilet'
+	};
+
+	function formatWhen(iso: string): string {
+		return new Date(iso).toLocaleString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	}
 
 	function resetRuleForm() {
@@ -235,16 +232,10 @@
 			generere en hemmelighet og deploye på nytt.
 		</p>
 	{:else}
-		<div class="email-stats">
-			<span class="ok">Aktiv</span>
-			<span class="muted">·</span>
-			<span>{emailImports.last7Days} e-poster siste 7 dager</span>
-			{#if emailImports.last7Days > 0}
-				<span class="muted">
-					({emailImports.workouts} treninger, {emailImports.libraryItems} bibliotek)
-				</span>
-			{/if}
-		</div>
+		<p class={emailInbound.health.tone === 'ok' ? 'ok' : 'warn'}>{emailInbound.health.text}</p>
+		{#if emailInbound.last7Days > 0}
+			<p class="email-rule-stats">{emailInbound.last7Days} e-poster mottatt siste 7 dager.</p>
+		{/if}
 	{/if}
 
 	<h3>Regler</h3>
@@ -367,6 +358,44 @@
 		{/if}
 	{/if}
 
+	{#if emailInbound.recent.length > 0}
+		<hr class="section-divider" />
+		<h3>Siste e-poster</h3>
+		<ul class="inbound-list">
+			{#each emailInbound.recent as item (item.id)}
+				<li class="inbound-item">
+					<div class="inbound-head">
+						<span class="inbound-status status-{item.status}">{STATUS_TEXT[item.status] ?? item.status}</span>
+						<span class="inbound-subject">{item.subject || '(uten emne)'}</span>
+					</div>
+					<p class="email-rule-stats">
+						{formatWhen(item.at)}{item.label ? ` · ${item.label}` : ''}{item.ruleNames.length ? ` · ${item.ruleNames.join(', ')}` : ''}{item.attempts > 1 ? ` · ${item.attempts} forsøk` : ''}
+					</p>
+					{#if item.error}
+						<p class="inbound-error">{item.error}</p>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
+	<hr class="section-divider" />
+	<h3>Test reglene</h3>
+	<p class="field-hint">Hvilke regler treffer en e-post med denne labelen, avsenderen og emnet? Ingenting blir behandlet.</p>
+	<div class="test-grid">
+		<Input className="input" bind:value={emailTest.label} placeholder="Label, f.eks. Resonans/Oda" dataTrack="epost-test:label" />
+		<Input className="input" bind:value={emailTest.from} placeholder="Avsender, f.eks. Oda <hei@oda.com>" dataTrack="epost-test:avsender" />
+		<Input className="input" bind:value={emailTest.subject} placeholder="Emne" dataTrack="epost-test:emne" />
+	</div>
+	<div class="row">
+		<Button variant="secondary" onClick={runEmailTest} disabled={emailTestRunning}>
+			{emailTestRunning ? 'Tester…' : 'Test'}
+		</Button>
+	</div>
+	{#if emailTestResult}
+		<p class={emailTestResult.ok ? 'ok' : 'warn'}>{emailTestResult.message}</p>
+	{/if}
+
 	{#if emailWebhookConfigured}
 		<hr class="section-divider" />
 		<h3>Gmail-tilkobling (Apps Script)</h3>
@@ -389,9 +418,9 @@
 			<p class="field-title">Apps Script-kildekode</p>
 			<p class="muted">
 				Lim inn dette i <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a>
-				→ nytt prosjekt → <code>Code.gs</code>. Endepunkt og token er
-				pre-utfylt. Sett en tidsutløser som kjører <code>syncResonans</code>
-				hvert 5. minutt.
+				→ prosjektet ditt → <code>Code.gs</code> (erstatt alt). Endepunkt og token er
+				fylt ut. Kjør <code>testResonans</code> én gang, deretter
+				<code>installTrigger</code>, som setter opp utløseren selv.
 			</p>
 			<div class="row">
 				<Button variant="secondary" onClick={copyAppsScript}>
@@ -428,9 +457,15 @@
 					tilgang til Gmail).
 				</li>
 				<li>
-					Sett en tidsutløser: klokke-ikonet → <em>Add Trigger</em> →
-					funksjon <code>syncResonans</code>, type <em>Time-driven</em>,
-					intervall <em>Every 5 minutes</em>.
+					Velg <code>testResonans</code> og klikk <em>Run</em>. Loggen skal si «OK».
+				</li>
+				<li>
+					Velg <code>installTrigger</code> og klikk <em>Run</em>. Den fjerner gamle
+					utløsere og kjører <code>syncResonans</code> hvert 5. minutt.
+				</li>
+				<li>
+					E-poster som feiler gjentatte ganger flyttes til labelen
+					<code>Resonans/Feilet</code>. Flytt dem tilbake når feilen er rettet.
 				</li>
 				<li>
 					Test ved å merke en e-post med en Resonans-label og vente
@@ -444,6 +479,17 @@
 <style>
 	.ok { color: var(--success-text); margin: 0.6rem 0 0; }
 	.err { color: var(--error-text); margin: 0.6rem 0 0; }
+	.warn { color: var(--warning-text); margin: 0.6rem 0 0; }
+
+	.inbound-list { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+	.inbound-item { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: var(--bg-primary); }
+	.inbound-head { display: flex; gap: 0.5rem; align-items: baseline; min-width: 0; }
+	.inbound-subject { color: var(--text-primary); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.inbound-status { flex-shrink: 0; font-size: 0.72rem; color: var(--text-secondary); }
+	.inbound-status.status-processed { color: var(--success-text); }
+	.inbound-status.status-failed { color: var(--error-text); }
+	.inbound-error { margin: 0.25rem 0 0; font-size: 0.78rem; color: var(--error-text); overflow-wrap: anywhere; }
+	.test-grid { display: grid; gap: 0.5rem; margin-bottom: 0.6rem; }
 	.field { margin-bottom: 0.9rem; }
 	.field label { display: block; margin-bottom: 0.4rem; color: var(--text-secondary); font-size: 0.82rem; }
 	.field-title { margin: 0 0 0.4rem; color: var(--text-secondary); font-size: 0.82rem; }
@@ -567,14 +613,6 @@
 	}
 
 	/* Email source */
-	.email-stats {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-		align-items: center;
-		font-size: 0.88rem;
-		margin: 0 0 0.5rem;
-	}
 	.section-divider {
 		border: none;
 		border-top: 1px solid var(--border-color);
