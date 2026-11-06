@@ -91,3 +91,20 @@ hver fornyelse.
   En senere påminnelse for samme strekkode lukker hentepunktet.
 - Dagspunktet har `linkedChecklistItemId` mot bibliotekspunktet, så én avkryssing
   holder.
+
+## Skolemeldinger fra appen (samme dag)
+
+Skolen sender ikke lenger e-post. Ukeplanen deles fra skoleappen som PDF og sendes
+fra brukeren til seg selv (emne = filnavnet, tom tekst). Da står verken skole
+eller barn i avsenderen, og planen sier «Ukeplan 46 2B», ikke navnet.
+
+- `$lib/domain/school-grade.ts` (testet): trinn fra fødselsdato (skoleåret starter
+  1. august; født 2019 → 2. trinn 2026/27), trinn fra tekst («2B», «2. trinn») og
+  barnet som går på trinnet, bare når det er entydig.
+- Prompten får barna med trinn («Erle (2. trinn)») og returnerer `trinn`.
+  Rekkefølgen for person: navnet i funnet → fast person på regelen → barnet på
+  trinnet → ingen.
+- Testet mot ukeplan uke 46: «2B» → trinn 2 → riktig barn på alle seks funn.
+
+Kjent rest: lekser og andre funn uten dato havner bare i oppsummeringen, ikke
+på ukelista. Tidlig eller sen skolestart krever fast person på regelen.
