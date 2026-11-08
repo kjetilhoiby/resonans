@@ -1,159 +1,33 @@
-import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
-import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
-import { sendGoogleChatMessage } from '$lib/server/google-chat';
-import { eq } from 'drizzle-orm';
-import { addChoresForCycle } from '$lib/server/services/chore-service';
+/**
+ * Etterbehandling av Ping-hendelser (vaskemaskin, oppvaskmaskin, tørketrommel).
+ *
+ * Fram til november 2026 sendte denne fila push (og Google Chat som reserve) når
+ * et apparat startet, når programmet ble kjent igjen og når det var ferdig. Heime
+ * har tatt over ansvaret for maskinene, og varslene fra Resonans ble da dobbelt
+ * opp. Pushen er fjernet; loggen er ikke det — hendelsene skrives fortsatt i
+ * `sensor_events` av `/api/apps/event`, programgjenkjenningen lagres som
+ * `appliance_match`, og en ferdig syklus legger fortsatt husarbeidet på hjem.
+ * Se docs/changelog/2026-11-08-apparater-uten-push.md.
+ *
+ * Skal pushen tilbake, hører den hjemme i Heime, ikke her: to apper som varsler
+ * om den samme maskinen er nettopp det som ble ryddet bort.
+ */
 
-import type { MatchResult } from '$lib/server/services/appliance-profile-service';
+import { addChoresForCycle } from '$lib/server/services/chore-service';
 
 type PingEventData = {
 	event: string;
 	appliance: string;
 	cycle_id?: string;
-	power_watts?: number;
 	duration_minutes?: number;
-	total_kwh?: number;
-	estimated_minutes_remaining?: number;
 };
 
-function formatDuration(minutes: number): string {
-	const h = Math.floor(minutes / 60);
-	const m = Math.round(minutes % 60);
-	if (h > 0) return `${h}t ${m}min`;
-	return `${m} min`;
+/** Det som skal skje når Ping melder en hendelse — i dag bare husarbeidet ved ferdig syklus. */
+export async function afterPingEvent(args: { userId: string; data: PingEventData }): Promise<void> {
+	const { userId, data } = args;
+	if (data.event !== 'finished') return;
+
+	await addChoresForCycle(userId, data.appliance, data.cycle_id, data.duration_minutes).catch((err) =>
+		console.error('[ping-chore]', err)
+	);
 }
-
-function formatClockEstimate(minutesRemaining: number): string {
-	const finish = new Date(Date.now() + minutesRemaining * 60_000);
-	return finish.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Oslo' });
-}
-
-export async function notifyPingEvent(args: {
-	userId: string;
-	appUrl: string;
-	data: PingEventData;
-}) {
-	const { userId, appUrl, data } = args;
-
-	const user = await db.query.users.findFirst({
-		where: eq(users.id, userId),
-		columns: {
-			id: true,
-			googleChatWebhook: true,
-			notificationSettings: true
-		}
-	});
-	if (!user) return { sent: false };
-
-	const settings = (user.notificationSettings ?? {}) as {
-		applianceCycles?: { enabled?: boolean; notifyStart?: boolean; notifyFinish?: boolean };
-	};
-	if (settings.applianceCycles?.enabled === false) return { sent: false };
-
-	const name = data.appliance;
-	let title: string;
-	let body: string;
-	let tag: string;
-
-	if (data.event === 'started') {
-		if (settings.applianceCycles?.notifyStart === false) return { sent: false };
-
-		const estimate = data.estimated_minutes_remaining
-			? ` — ferdig ca. ${formatClockEstimate(data.estimated_minutes_remaining)}`
-			: '';
-
-		title = `${name} startet`;
-		body = `${name} er i gang${estimate}`;
-		tag = `ping-start-${data.cycle_id ?? name}`;
-	} else if (data.event === 'finished') {
-		if (settings.applianceCycles?.notifyFinish === false) return { sent: false };
-
-		// Husarbeidet samles i chores-view på hjem (ikke dagslista). Claiming
-		// («Legg i min dag») skjer derfra — varselet er bare et signal.
-		const duration = data.duration_minutes ? formatDuration(data.duration_minutes) : '';
-		const kwh = data.total_kwh ? `${data.total_kwh} kWh` : '';
-		const stats = [duration, kwh].filter(Boolean).join(', ');
-
-		title = `${name} er ferdig!`;
-		body = stats;
-		tag = `ping-finish-${data.cycle_id ?? name}`;
-	} else {
-		return { sent: false };
-	}
-
-	// Lenk alltid til apparat-siden — ren '/' ville trigget slot-sjekkinnen på hjemskjermen.
-	// ?ref=push-markøren gjør at hjemskjermen lar være å åpne fullskjerm-sjekkin.
-	let notifyUrl = `${appUrl}/?ref=push`;
-	if (data.cycle_id) {
-		notifyUrl = `${appUrl}/apparat/${encodeURIComponent(name)}`;
-	}
-
-	const delivery = await PushDeliveryService.deliverToUser({
-		userId,
-		payload: { title, body, url: notifyUrl, tag },
-		onGone: 'disable'
-	});
-	let sent = delivery.sent > 0;
-
-	if (!sent && user.googleChatWebhook) {
-		const delivered = await sendGoogleChatMessage(
-			user.googleChatWebhook,
-			{ text: `*${title}*\n${body}` }
-		);
-		if (delivered) sent = true;
-	}
-
-	if (data.event === 'finished') {
-		await addChoresForCycle(
-			userId,
-			data.appliance,
-			data.cycle_id,
-			data.duration_minutes
-		).catch((err) => console.error('[ping-chore]', err));
-	}
-
-	return { sent };
-}
-
-export async function notifyPingMatch(args: {
-	userId: string;
-	appUrl: string;
-	appliance: string;
-	cycleId: string;
-	match: MatchResult;
-}) {
-	const { userId, appUrl, appliance, cycleId, match } = args;
-
-	const user = await db.query.users.findFirst({
-		where: eq(users.id, userId),
-		columns: { id: true, googleChatWebhook: true, notificationSettings: true }
-	});
-	if (!user) return;
-
-	const settings = (user.notificationSettings ?? {}) as {
-		applianceCycles?: { enabled?: boolean };
-	};
-	if (settings.applianceCycles?.enabled === false) return;
-
-	const finishTime = formatClockEstimate(match.estimatedRemainingMinutes);
-	const title = `${appliance}: ${match.programName}`;
-	const body = `Ferdig ca. ${finishTime}`;
-	const tag = `ping-match-${cycleId}`;
-
-	const notifyUrl = `${appUrl}/apparat/${encodeURIComponent(appliance)}`;
-
-	const delivery = await PushDeliveryService.deliverToUser({
-		userId,
-		payload: { title, body, url: notifyUrl, tag },
-		onGone: 'disable'
-	});
-
-	if (delivery.sent === 0 && user.googleChatWebhook) {
-		await sendGoogleChatMessage(
-			user.googleChatWebhook,
-			{ text: `*${title}*\n${body}` }
-		);
-	}
-}
-

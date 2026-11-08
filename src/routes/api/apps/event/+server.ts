@@ -5,7 +5,7 @@ import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { notifyPingEvent, notifyPingMatch } from '$lib/server/ping-notifications';
+import { afterPingEvent } from '$lib/server/ping-notifications';
 import { getProfiles, matchRunningCycle } from '$lib/server/services/appliance-profile-service';
 import { runInBackground } from '$lib/server/run-in-background';
 
@@ -34,16 +34,17 @@ async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promis
 	return created.id;
 }
 
-const matchNotified = new Set<string>();
+// Programgjenkjenningen lagres én gang per syklus. Den varslet også (push) fram
+// til november 2026; Heime eier apparatvarslene nå, se ping-notifications.ts.
+const matchRecorded = new Set<string>();
 
 async function handleProgressMatching(
 	userId: string,
 	sensorId: string,
-	appUrl: string,
 	data: { appliance: string; cycle_id?: string; watt_buckets_1min_so_far: number[]; timestamp?: string }
 ) {
 	const cycleId = data.cycle_id;
-	if (!cycleId || matchNotified.has(cycleId)) return;
+	if (!cycleId || matchRecorded.has(cycleId)) return;
 
 	const profiles = await getProfiles(userId, data.appliance);
 	if (profiles.length === 0) return;
@@ -52,7 +53,7 @@ async function handleProgressMatching(
 	const match = matchRunningCycle(data.watt_buckets_1min_so_far, profiles, elapsedMinutes);
 	if (!match) return;
 
-	matchNotified.add(cycleId);
+	matchRecorded.add(cycleId);
 
 	const estimatedFinishAt = new Date(
 		Date.now() + match.estimatedRemainingMinutes * 60_000
@@ -81,14 +82,6 @@ async function handleProgressMatching(
 		},
 		{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 	);
-
-	await notifyPingMatch({
-		userId,
-		appUrl,
-		appliance: data.appliance,
-		cycleId,
-		match
-	});
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -144,19 +137,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		);
 
 		if (app.id === 'ping' && result.inserted) {
-			const appUrl = new URL(request.url).origin;
 			const pingData = { event: eventType, ...((data ?? {}) as Record<string, unknown>) } as any;
 
-			runInBackground(
-				notifyPingEvent({
-					userId,
-					appUrl,
-					data: pingData
-				})
-			);
+			runInBackground(afterPingEvent({ userId, data: pingData }));
 
 			if (dataType === 'appliance_progress' && pingData.watt_buckets_1min_so_far?.length) {
-				runInBackground(handleProgressMatching(userId, sensorId, appUrl, pingData));
+				runInBackground(handleProgressMatching(userId, sensorId, pingData));
 			}
 		}
 
