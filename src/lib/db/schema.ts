@@ -42,7 +42,8 @@ export const users = pgTable('users', {
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
 		workoutImports?: { enabled: boolean };
-		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
+		// applianceCycles (push ved apparatstart/-slutt) er fjernet nov. 2026 — Heime eier
+		// apparatvarslene. Gamle rader kan fortsatt bære nøkkelen; ingenting leser den.
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
 		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett.
 		// Fraværende felt/enabled = på (opt-out); time default "09:00".
