@@ -34,8 +34,6 @@ const PUBLIC_PATH_PREFIXES = [
 const PUBLIC_API_PREFIXES = [
 	'/api/cron',
 	'/api/scheduler/trigger',
-	'/api/workouts/email-inbound',
-	'/api/email-inbound',
 	'/api/email/inbound',
 	'/api/apps/authorize',
 	'/api/apps/callback',

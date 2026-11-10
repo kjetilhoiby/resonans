@@ -515,6 +515,22 @@ Se `docs/changelog/2026-09-04-jobber-som-star-fast.md`. Reglene rent i
   Sveipen arver `FOR UPDATE SKIP LOCKED` og er trygg på flere instanser uten
   lederlås, som køen ellers.
 
+### E-post fra Gmail
+
+Apps Script → `POST /api/email/inbound` → `email_rules` → `email-processors/`. Se
+`docs/changelog/2026-11-06-epost-innboks.md`.
+
+- **Malen i `/settings/sources` er eneste kilde til scriptet**
+  (`$lib/server/email/apps-script-template.ts`). Endrer du den, øk
+  `CURRENT_SCRIPT_VERSION`; innstillingene sier da fra til brukeren. Det
+  installerte scriptet ble aldri oppdatert da appen flyttet fra Vercel, og postet
+  e-post og hemmelighet til et Vercel-navn med ny eier i over to måneder.
+- **Alle svar fra endepunktet bærer `service`**, og scriptet sender ingenting før
+  en GET har bekreftet det. Fjern det aldri.
+- **Statuskoden styrer scriptet:** 2xx fjerner labelen, alt annet lar den stå.
+  En e-post som ikke kan legges hos riktig bruker er en feil (422), aldri 200.
+- `email_inbound_log` dedupliserer per Gmail-melding. Innholdet lagres ikke der.
+
 ### Ekstern API-flate (Ekko)
 
 iOS-appen **Ekko** (`resonans-lab/ekko`) snakker utelukkende med `/api/apps/*`, pluss

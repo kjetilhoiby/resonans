@@ -42,7 +42,8 @@ export const users = pgTable('users', {
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
 		workoutImports?: { enabled: boolean };
-		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
+		// applianceCycles (push ved apparatstart/-slutt) er fjernet nov. 2026 — Heime eier
+		// apparatvarslene. Gamle rader kan fortsatt bære nøkkelen; ingenting leser den.
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
 		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett.
 		// Fraværende felt/enabled = på (opt-out); time default "09:00".
@@ -857,7 +858,7 @@ export const checklistItems = pgTable('checklist_items', {
 		// Skole/barnehage-uttrekk — hvilken person og hva slags funn
 		personId?: string;
 		personName?: string;
-		findingType?: 'todo' | 'bring' | 'event' | 'return';
+		findingType?: 'todo' | 'bring' | 'event' | 'return' | 'pickup';
 		emailSubject?: string;
 		// Appliance task metadata
 		applianceChore?: boolean; // Husarbeid generert fra en apparat-syklus (kilde-markør)
@@ -3434,6 +3435,36 @@ export const emailRules = pgTable('email_rules', {
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
 	idxUserActive: index('email_rules_user_active_idx').on(table.userId, table.isActive),
+}));
+
+// Innboks-logg for /api/email/inbound: dedupe per Gmail-melding, utfall per
+// regel og synlighet i innstillingene. Innholdet lagres ikke. Se migrasjon 0079.
+export type EmailInboundRuleResult = {
+	ruleId: string;
+	ruleName: string;
+	success: boolean;
+	detail?: unknown;
+};
+
+export const emailInboundLog = pgTable('email_inbound_log', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	gmailMessageId: text('gmail_message_id').notNull(),
+	gmailThreadId: text('gmail_thread_id'),
+	label: text('label'),
+	fromAddress: text('from_address'),
+	subject: text('subject'),
+	receivedAt: timestamp('received_at'),
+	status: text('status').notNull(), // 'processed' | 'no_match' | 'failed'
+	rules: jsonb('rules').$type<EmailInboundRuleResult[]>().notNull().default([]),
+	error: text('error'),
+	attempts: integer('attempts').notNull().default(1),
+	scriptVersion: integer('script_version'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+	uniqUserMessage: uniqueIndex('email_inbound_log_user_message_idx').on(table.userId, table.gmailMessageId),
+	idxUserUpdated: index('email_inbound_log_user_updated_idx').on(table.userId, table.updatedAt),
 }));
 
 export const emailRulesRelations = relations(emailRules, ({ one }) => ({

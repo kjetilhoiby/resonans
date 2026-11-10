@@ -9,6 +9,7 @@ import { addDatedItems, type DatedItem } from './day-checklist';
 import { createConversation, addMessage } from '$lib/server/conversations';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { sendGoogleChatMessage } from '$lib/server/google-chat';
+import { childForGrade, describeChildForPrompt, parseGradeHint } from '$lib/domain/school-grade';
 
 type EmailRule = typeof emailRules.$inferSelect;
 
@@ -25,6 +26,7 @@ interface Extraction {
 	kilde: string;
 	sammendrag: string;
 	digest: string; // tapsfri gjengivelse av ALT innhold — sikkerhetsnett mot at funn-strukturen glipper
+	trinn: number | null; // klassetrinnet meldingen gjelder («2B» → 2), når det står
 	funn: Finding[];
 }
 
@@ -54,6 +56,7 @@ Returner KUN gyldig JSON med denne strukturen:
 {
   "kilde": "barnehage" | "skole" | "sfo" | "annet",
   "sammendrag": "én kort setning om hva e-posten gjelder",
+  "trinn": tallet for klassetrinnet meldingen gjelder (f.eks. 2 for «2B» eller «2. trinn»), eller null,
   "digest": "en FULLSTENDIG og trofast gjengivelse av ALT relevant innhold, som markdown-punktliste. Ikke utelat noe en forelder kan trenge — ta med datoer, tider, navn, beskjeder og detaljer selv om de ikke passer som et eget 'funn'. Dette er sikkerhetsnettet.",
   "funn": [
     {
@@ -70,6 +73,7 @@ Returner KUN gyldig JSON med denne strukturen:
 Regler:
 - "bring" = noe barnet må ha med seg. "event" = en aktivitet/tur/hendelse på en dato. "todo" = noe forelderen må gjøre. "info" = viktig opplysning uten egen dato (f.eks. endret åpningstid).
 - Bruk barnets navn i "person" kun når du er rimelig sikker. Ellers null.
+- Meldinger deles ofte fra skoleappen uten barnets navn, men med klassen (f.eks. «Ukeplan 46 2B»). Går nøyaktig ett av de kjente barna på det trinnet, gjelder meldingen det barnet: bruk navnet i "person".
 - Ikke finn på datoer. Sett "dato": null hvis den ikke kan utledes trygt.
 - Ta med avvik som "stenger tidligere" som egne funn (type "info" eller "event" med dato hvis kjent).
 - "digest" skal være KOMPLETT (alt relevant tas med). "funn" skal være KONSERVATIV — kun ting du er trygg på er handlingsrettet. Er du i tvil, la det stå i "digest" og dropp det som "funn"; da går ingenting tapt.
@@ -141,6 +145,7 @@ async function extractFindings(
 			kilde: parsed.kilde ?? 'annet',
 			sammendrag: parsed.sammendrag ?? '',
 			digest: typeof parsed.digest === 'string' ? parsed.digest : '',
+			trinn: Number.isInteger(parsed.trinn) && (parsed.trinn as number) >= 1 && (parsed.trinn as number) <= 10 ? (parsed.trinn as number) : null,
 			funn: Array.isArray(parsed.funn) ? parsed.funn : []
 		};
 	} catch {
@@ -176,9 +181,10 @@ export async function processSchoolPlanEmail(
 	// Hent brukerens barn (navn + aliaser) for person-ruting.
 	const children = await db.query.persons.findMany({
 		where: and(eq(persons.userId, userId), eq(persons.kind, 'child'), eq(persons.archived, false)),
-		columns: { id: true, name: true, aliases: true }
+		columns: { id: true, name: true, aliases: true, birthDate: true }
 	});
-	const childNames = children.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
+	// Navnet med trinn («Nils (2. trinn)»), så modellen kan koble «2B» til barnet.
+	const childNames = children.flatMap((c) => [describeChildForPrompt(c, todayIso), ...(c.aliases ?? [])]);
 
 	const extraction = await extractFindings(payload, childNames, todayIso, rule.extractionPrompt);
 	if (!extraction || (extraction.funn.length === 0 && !extraction.digest.trim())) {
@@ -190,6 +196,15 @@ export async function processSchoolPlanEmail(
 	const defaultPersonName: string | null =
 		children.find((c) => c.id === rule.personId)?.name ?? null;
 
+	// Uten fast person på regelen: barnet på trinnet meldingen gjelder. Modellens
+	// «trinn» først, ellers det som står i emne/tekst. Se $lib/domain/school-grade.
+	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
+	const grade = extraction.trinn ?? parseGradeHint(`${payload.Subject ?? ''}\n${body}`);
+	const gradeChild = defaultPersonId ? null : childForGrade(children, grade, todayIso);
+	const fallbackPerson = defaultPersonId
+		? { id: defaultPersonId, name: defaultPersonName }
+		: { id: gradeChild?.id ?? null, name: gradeChild?.name ?? null };
+
 	function resolvePerson(name: string | null): { id: string | null; name: string | null } {
 		if (name) {
 			const match = children.find(
@@ -199,7 +214,7 @@ export async function processSchoolPlanEmail(
 			);
 			if (match) return { id: match.id, name: match.name };
 		}
-		return { id: defaultPersonId, name: defaultPersonName };
+		return fallbackPerson;
 	}
 
 	const baseMeta = {
@@ -263,6 +278,8 @@ export async function processSchoolPlanEmail(
 				sammendrag: extraction.sammendrag,
 				digest: extraction.digest,
 				funn: extraction.funn,
+				trinn: grade,
+				personId: fallbackPerson.id ?? undefined,
 				emailSubject: payload.Subject,
 				emailFrom: payload.From
 			},
@@ -286,7 +303,9 @@ export async function processSchoolPlanEmail(
 		success: true,
 		datedItems: inserted,
 		infoFindings: infoFindings.length,
-		totalFindings: extraction.funn.length
+		totalFindings: extraction.funn.length,
+		grade,
+		gradeChild: gradeChild?.name ?? null
 	};
 }
 

@@ -51,7 +51,6 @@ export const GUARDED_DATA_TYPES: GuardedDataType[] = [
 			'routes/api/apps/strava/sync/+server.ts',
 			// Per kilde er hele poenget: «hva kom inn fra hvem».
 			'lib/server/withings-sync-notifications.ts',
-			'routes/settings/sources/+page.server.ts',
 			// Skrive-/vedlikeholdsstier som opererer på rå rader.
 			// Skjuling MÅ treffe den rå raden: flagget bor på `sensor_events`, og
 			// oppslaget er én bestemt rad på id — ikke en telling over flere.

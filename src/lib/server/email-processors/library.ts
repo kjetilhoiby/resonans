@@ -1,147 +1,196 @@
 import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import type { InboundEmailPayload } from './shared';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import { loanItemText, loanKey, parseLibraryEmail, type LibraryLoan, type ParsedLibraryEmail } from '$lib/domain/library-email';
+import { stripHtml, type InboundEmailPayload } from './shared';
 import { addDatedItems } from './day-checklist';
 
-const NORWEGIAN_MONTHS: Record<string, number> = {
-	januar: 1, jan: 1,
-	februar: 2, feb: 2,
-	mars: 3, mar: 3,
-	april: 4, apr: 4,
-	mai: 5,
-	juni: 6, jun: 6,
-	juli: 7, jul: 7,
-	august: 8, aug: 8,
-	september: 9, sep: 9, sept: 9,
-	oktober: 10, okt: 10,
-	november: 11, nov: 11,
-	desember: 12, des: 12
-};
+/**
+ * Deichman-e-post → bibliotekslista («Bibliotek-bøker») + dagslista.
+ *
+ * - Ett punkt per lån, nøklet på strekkoden (`metadata.libraryKey`). En fornyelse
+ *   gir en ny påminnelse med ny dato: da FLYTTES punktet og dagspunktet, i stedet
+ *   for at det kommer et nytt. Fram til november 2026 ble hver påminnelse et nytt
+ *   punkt, og bare den første tittelen i e-posten ble lest.
+ * - Purring legger boka på DAGENS liste. Purringen har ingen dato, bare «for 5
+ *   dager siden», og ble derfor hoppet over helt.
+ * - Hentemelding er et eget punkt («Hent: … på Bøler (nr. 13)») med hentefrist.
+ *   En senere påminnelse for samme strekkode betyr at boka ble hentet, og lukker
+ *   hentepunktet.
+ * - Dagspunktet peker på bibliotekspunktet (`linkedChecklistItemId`), så det å
+ *   krysse av på dagen krysser av i bibliotekslista også.
+ *
+ * Et lån som er levert får ingen e-post. Punktet lukkes når brukeren krysser av.
+ */
 
-function findDueDate(text: string): Date | null {
-	const numeric = text.match(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})\b/);
-	if (numeric) {
-		const day = parseInt(numeric[1], 10);
-		const month = parseInt(numeric[2], 10);
-		let year = parseInt(numeric[3], 10);
-		if (year < 100) year += 2000;
-		if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-			return new Date(Date.UTC(year, month - 1, day));
-		}
-	}
+type Family = 'return' | 'pickup';
 
-	const named = text.toLowerCase().match(/\b(\d{1,2})\.?\s+([a-zæøå]+)\.?(?:\s+(\d{2,4}))?\b/);
-	if (named) {
-		const day = parseInt(named[1], 10);
-		const month = NORWEGIAN_MONTHS[named[2]];
-		let year = named[3] ? parseInt(named[3], 10) : new Date().getUTCFullYear();
-		if (year < 100) year += 2000;
-		if (month && day >= 1 && day <= 31) {
-			const candidate = new Date(Date.UTC(year, month - 1, day));
-			if (!named[3] && candidate.getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000) {
-				candidate.setUTCFullYear(year + 1);
-			}
-			return candidate;
-		}
-	}
-
-	return null;
-}
-
-function extractBookTitle(subject: string, body: string): string | null {
-	const patterns = [
-		/(?:tittel|bok|lånt|tittelen|forfatter\/tittel)\s*:\s*(.+)/i,
-		/lever[a-zæøå]*\s+(?:tilbake\s+)?["«](.+?)["»]/i,
-		/["«]([^"»]{3,80})["»]/
-	];
-
-	const haystack = `${subject}\n${body}`;
-	for (const re of patterns) {
-		const m = haystack.match(re);
-		if (m && m[1]) {
-			const title = m[1].trim().split('\n')[0].trim();
-			if (title.length >= 2 && title.length <= 200) return title;
-		}
-	}
-
-	return null;
+function osloIsoDate(date: Date): string {
+	return date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
 }
 
 async function findOrCreateLibraryChecklist(userId: string) {
 	const existing = await db.query.checklists.findFirst({
-		where: and(
-			eq(checklists.userId, userId),
-			eq(checklists.context, 'bibliotek')
-		)
+		where: and(eq(checklists.userId, userId), eq(checklists.context, 'bibliotek'))
 	});
 	if (existing) return existing;
 
-	const [created] = await db.insert(checklists).values({
-		userId,
-		title: 'Bibliotek-bøker',
-		emoji: '📚',
-		context: 'bibliotek'
-	}).returning();
-
+	const [created] = await db
+		.insert(checklists)
+		.values({ userId, title: 'Bibliotek-bøker', emoji: '📚', context: 'bibliotek' })
+		.returning();
 	return created;
+}
+
+async function findOpenLoanItem(userId: string, checklistId: string, key: string, family: Family) {
+	return db.query.checklistItems.findFirst({
+		where: and(
+			eq(checklistItems.userId, userId),
+			eq(checklistItems.checklistId, checklistId),
+			eq(checklistItems.checked, false),
+			sql`${checklistItems.metadata}->>'libraryKey' = ${key}`,
+			sql`${checklistItems.metadata}->>'findingType' = ${family}`
+		)
+	});
+}
+
+/** Fjern dagspunkter som ennå ikke er krysset av, så punktet kan legges på en ny dag. */
+async function removeOpenDayItems(userId: string, libraryItemId: string) {
+	await db
+		.delete(checklistItems)
+		.where(
+			and(
+				eq(checklistItems.userId, userId),
+				eq(checklistItems.checked, false),
+				ne(checklistItems.id, libraryItemId),
+				sql`${checklistItems.metadata}->>'linkedChecklistItemId' = ${libraryItemId}`
+			)
+		);
+}
+
+function dueDateFor(parsed: ParsedLibraryEmail, existingDue: string | null, receivedIso: string): string | null {
+	if (parsed.kind === 'reminder' || parsed.kind === 'pickup') return parsed.deadline ?? existingDue;
+	// Purring: fristen er passert. Behold den vi kjenner, ellers dagen purringen kom.
+	return existingDue ?? receivedIso;
+}
+
+/** Dagen punktet skal stå på i dagslista, eller null når den er passert. */
+function dayFor(parsed: ParsedLibraryEmail, dueDate: string | null, todayIso: string): string | null {
+	if (parsed.kind === 'reminder') {
+		if (!dueDate) return null;
+		return dueDate >= todayIso ? dueDate : null;
+	}
+	if (parsed.kind === 'pickup') {
+		return !dueDate || dueDate >= todayIso ? todayIso : null;
+	}
+	return todayIso; // purring: i dag
+}
+
+async function upsertLoan(args: {
+	userId: string;
+	checklistId: string;
+	loan: LibraryLoan;
+	parsed: ParsedLibraryEmail;
+	payload: InboundEmailPayload;
+	receivedIso: string;
+	todayIso: string;
+}): Promise<'created' | 'updated'> {
+	const { userId, checklistId, loan, parsed, payload, receivedIso, todayIso } = args;
+	const key = loanKey(loan);
+	const family: Family = parsed.kind === 'pickup' ? 'pickup' : 'return';
+	const text = loanItemText(loan, parsed);
+
+	const existing = await findOpenLoanItem(userId, checklistId, key, family);
+	const dueDate = dueDateFor(parsed, existing?.dueDate ?? null, receivedIso);
+
+	const metadata = {
+		...(existing?.metadata ?? {}),
+		source: 'email_inbound',
+		label: payload.Label,
+		gmailMessageId: payload.GmailMessageId,
+		from: payload.From,
+		emailSubject: payload.Subject,
+		findingType: family,
+		libraryKey: key,
+		libraryKind: parsed.kind,
+		libraryTitle: loan.title,
+		libraryAuthor: loan.author ?? undefined,
+		libraryBarcode: loan.barcode ?? undefined,
+		libraryFeeNok: parsed.feeNok ?? undefined,
+		libraryBlocked: parsed.blocked || undefined,
+		libraryPickupBranch: parsed.pickupBranch ?? undefined
+	};
+
+	let itemId: string;
+	let outcome: 'created' | 'updated';
+	if (existing) {
+		await db
+			.update(checklistItems)
+			.set({ text, dueDate, endDate: dueDate, metadata })
+			.where(eq(checklistItems.id, existing.id));
+		itemId = existing.id;
+		outcome = 'updated';
+	} else {
+		const [created] = await db
+			.insert(checklistItems)
+			.values({ checklistId, userId, text, dueDate, endDate: dueDate, metadata })
+			.returning({ id: checklistItems.id });
+		itemId = created.id;
+		outcome = 'created';
+	}
+
+	// En påminnelse for en bok vi ventet på å hente: den er hentet.
+	if (parsed.kind === 'reminder') {
+		const pickup = await findOpenLoanItem(userId, checklistId, key, 'pickup');
+		if (pickup) {
+			await db
+				.update(checklistItems)
+				.set({ checked: true, checkedAt: new Date() })
+				.where(eq(checklistItems.id, pickup.id));
+			await removeOpenDayItems(userId, pickup.id);
+		}
+	}
+
+	await removeOpenDayItems(userId, itemId);
+	const day = dayFor(parsed, dueDate, todayIso);
+	if (day) {
+		await addDatedItems(userId, [
+			{
+				isoDate: day,
+				text,
+				dueDate: dueDate ?? undefined,
+				metadata: {
+					source: 'email_inbound',
+					gmailMessageId: payload.GmailMessageId,
+					findingType: family,
+					linkedChecklistItemId: itemId
+				}
+			}
+		]);
+	}
+
+	return outcome;
 }
 
 export async function processLibraryEmail(userId: string, payload: InboundEmailPayload) {
 	const subject = payload.Subject ?? '';
-	const body = payload.TextBody ?? '';
+	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
+	const receivedMs = Number(payload.GmailDate);
+	const receivedIso = osloIsoDate(Number.isFinite(receivedMs) && receivedMs > 0 ? new Date(receivedMs) : new Date());
+	const todayIso = osloIsoDate(new Date());
 
-	const dueDate = findDueDate(body) ?? findDueDate(subject);
-	if (!dueDate) {
-		return { skipped: true, reason: 'no_due_date' };
-	}
-
-	const title = extractBookTitle(subject, body);
-	const text = title ? `Lever bok: ${title}` : `Lever bok fra biblioteket (${subject})`;
+	const parsed = parseLibraryEmail(subject, body, receivedIso);
+	if (!parsed) return { skipped: true, reason: 'not_a_loan_email' };
+	if (parsed.loans.length === 0) return { skipped: true, reason: 'no_loans_found', kind: parsed.kind };
 
 	const checklist = await findOrCreateLibraryChecklist(userId);
-
-	const gmailMessageId = payload.GmailMessageId;
-	if (gmailMessageId) {
-		const existing = await db.query.checklistItems.findFirst({
-			where: and(
-				eq(checklistItems.userId, userId),
-				eq(checklistItems.checklistId, checklist.id),
-				sql`metadata->>'gmailMessageId' = ${gmailMessageId}`
-			)
-		});
-		if (existing) {
-			return { skipped: true, reason: 'already_imported' };
-		}
+	let created = 0;
+	let updated = 0;
+	for (const loan of parsed.loans) {
+		const outcome = await upsertLoan({ userId, checklistId: checklist.id, loan, parsed, payload, receivedIso, todayIso });
+		if (outcome === 'created') created += 1;
+		else updated += 1;
 	}
 
-	const dueDateStr = dueDate.toISOString().slice(0, 10);
-
-	const itemMeta = {
-		source: 'email_inbound',
-		label: payload.Label,
-		gmailMessageId,
-		from: payload.From,
-		findingType: 'return' as const
-	};
-
-	await db.insert(checklistItems).values({
-		checklistId: checklist.id,
-		userId,
-		text,
-		endDate: dueDateStr,
-		dueDate: dueDateStr,
-		metadata: itemMeta
-	});
-
-	// Vis fristen i dagslisten på innleveringsdagen, så den ikke blir liggende
-	// glemt i bibliotek-lista.
-	const today = new Date().toISOString().slice(0, 10);
-	if (dueDateStr >= today) {
-		await addDatedItems(userId, [
-			{ isoDate: dueDateStr, text, dueDate: dueDateStr, metadata: itemMeta }
-		]);
-	}
-
-	return { success: true, imported: 1 };
+	return { success: true, kind: parsed.kind, loans: parsed.loans.length, created, updated };
 }

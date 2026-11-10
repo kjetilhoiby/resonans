@@ -2,22 +2,8 @@ import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
-export interface InboundEmailPayload {
-	UserEmail: string;
-	From: string;
-	Subject?: string;
-	TextBody?: string;
-	HtmlBody?: string;
-	Label?: string;
-	Attachments?: Array<{
-		Name: string;
-		Content: string; // base64
-		ContentType: string;
-		ContentLength: number;
-	}>;
-	GmailMessageId?: string;
-	GmailDate?: string;
-}
+// Formen bor i $lib/server/email/inbound.ts sammen med parseren.
+export type { InboundEmailPayload } from '$lib/server/email/inbound';
 
 /** Strip HTML til ren tekst — delt av prosessorene som leser HtmlBody. */
 export function stripHtml(html: string): string {
