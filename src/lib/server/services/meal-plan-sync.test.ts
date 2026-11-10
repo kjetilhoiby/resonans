@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldAdoptItem, mealItemFieldsFor, dayDateFromContext } from './meal-plan-sync';
+import { shouldAdoptItem, mealItemFieldsFor, dayDateFromContext, itemStateUpdateFor } from './meal-plan-sync';
 
 describe('shouldAdoptItem', () => {
 	it('adopterer uavkrysset middagspunkt med samme tittel', () => {
@@ -85,5 +85,55 @@ describe('dayDateFromContext', () => {
 		expect(dayDateFromContext('week:2026-W31')).toBeNull();
 		expect(dayDateFromContext('tur')).toBeNull();
 		expect(dayDateFromContext(null)).toBeNull();
+	});
+});
+
+describe('shouldAdoptItem med status', () => {
+	it('adopterer et avkrysset punkt når planen sier spist — ellers blir det to «middag: Taco»', () => {
+		expect(
+			shouldAdoptItem({ checked: true, text: 'middag: Taco', metadata: {} }, 'dinner', 'Taco', 'eaten')
+		).toBe(true);
+	});
+
+	it('en ny plan arver aldri haken fra et spist punkt', () => {
+		expect(
+			shouldAdoptItem({ checked: true, text: 'middag: Taco', metadata: {} }, 'dinner', 'Taco', 'planned')
+		).toBe(false);
+	});
+});
+
+describe('itemStateUpdateFor', () => {
+	const now = new Date('2026-11-02T18:00:00Z');
+
+	it('gjør ingenting når punktet alt speiler statusen', () => {
+		expect(itemStateUpdateFor({ checked: true, skippedAt: null }, 'eaten', now)).toBeNull();
+		expect(itemStateUpdateFor({ checked: false, skippedAt: null }, 'planned', now)).toBeNull();
+	});
+
+	it('spist hakker av og rydder hopp-over', () => {
+		expect(itemStateUpdateFor({ checked: false, skippedAt: now }, 'eaten', now)).toEqual({
+			checked: true,
+			checkedAt: now,
+			skippedAt: null
+		});
+	});
+
+	it('beholder et eksisterende avkryssingstidspunkt', () => {
+		const earlier = new Date('2026-11-01T17:00:00Z');
+		expect(itemStateUpdateFor({ checked: true, checkedAt: earlier, skippedAt: null }, 'eaten', now)).toBeNull();
+	});
+
+	it('droppet hopper over og fjerner haken', () => {
+		expect(itemStateUpdateFor({ checked: true, skippedAt: null }, 'skipped', now)).toEqual({
+			checked: false,
+			checkedAt: null,
+			skippedAt: now
+		});
+	});
+
+	it('et utsatt punkt leses som planlagt og røres ikke', () => {
+		expect(
+			itemStateUpdateFor({ checked: false, skippedAt: now, snoozedToDate: '2026-11-04' }, 'planned', now)
+		).toBeNull();
 	});
 });

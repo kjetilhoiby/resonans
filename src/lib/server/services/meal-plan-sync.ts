@@ -19,7 +19,7 @@
 
 import { db } from '$lib/db';
 import { checklistItems, checklists, mealPlans, meals } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import {
 	buildMealItemText,
 	detectMealPrefix,
@@ -27,6 +27,13 @@ import {
 	type MealType
 } from '$lib/domains/food';
 import { dayContextForDate, isoWeekKeyForDate } from '$lib/server/iso-week';
+import {
+	isMealPlanStatus,
+	isTakeawayMeal,
+	TAKEAWAY_TAG,
+	statusFromChecklistItem,
+	type MealPlanStatus
+} from '$lib/domains/food/meal-log';
 import { findOrCreateMealId } from '$lib/server/task-intent-parser';
 
 type MealPlanRow = typeof mealPlans.$inferSelect;
@@ -43,9 +50,12 @@ type ItemMetadata = NonNullable<ChecklistItemRow['metadata']>;
 export function shouldAdoptItem(
 	item: { checked: boolean; text: string; metadata?: { linkedMealPlanId?: string; mealType?: string } | null },
 	mealType: MealType,
-	title: string
+	title: string,
+	status: MealPlanStatus = 'planned'
 ): boolean {
-	if (item.checked) return false;
+	// Et avkrysset punkt er en middag som er spist. Det kan bare beskrive en plan
+	// som også sier spist — ellers ville en ny plan for samme rett arvet haken.
+	if (item.checked && status !== 'eaten') return false;
 	if (item.metadata?.linkedMealPlanId) return false;
 	const meal = detectMealPrefix(item.text);
 	return (
@@ -70,6 +80,22 @@ export function mealItemFieldsFor(
 			...(plan.mealId ? { linkedMealId: plan.mealId } : {})
 		}
 	};
+}
+
+/**
+ * Feltene et dag-punkt må få for å speile en status, eller null når punktet alt
+ * står riktig. Et utsatt punkt (skippedAt + snoozedToDate) leses som «planlagt»
+ * og røres ikke av en plan som fortsatt er planlagt.
+ */
+export function itemStateUpdateFor(
+	item: { checked: boolean; checkedAt?: Date | null; skippedAt: Date | null; snoozedToDate?: string | null },
+	status: MealPlanStatus,
+	now: Date = new Date()
+): { checked: boolean; checkedAt: Date | null; skippedAt: Date | null } | null {
+	if (statusFromChecklistItem(item) === status) return null;
+	if (status === 'eaten') return { checked: true, checkedAt: item.checkedAt ?? now, skippedAt: null };
+	if (status === 'skipped') return { checked: false, checkedAt: null, skippedAt: now };
+	return { checked: false, checkedAt: null, skippedAt: null };
 }
 
 /** Utled dag-dato («YYYY-MM-DD») fra en sjekkliste-kontekst, ellers null. */
@@ -107,6 +133,19 @@ async function findOrCreateDayChecklist(userId: string, dateIso: string) {
 	return created.id;
 }
 
+/** Dagen er ferdig når alle punktene er hakket av eller hoppet over. */
+async function refreshDayCompletion(checklistId: string): Promise<void> {
+	const items = await db.query.checklistItems.findMany({
+		where: eq(checklistItems.checklistId, checklistId),
+		columns: { checked: true, skippedAt: true }
+	});
+	const done = items.length > 0 && items.every((item) => item.checked || item.skippedAt);
+	await db
+		.update(checklists)
+		.set({ completedAt: done ? sql`coalesce(${checklists.completedAt}, now())` : null })
+		.where(eq(checklists.id, checklistId));
+}
+
 /**
  * Speil en meal_plan-rad som dag-punkt. Finner eksisterende punkt via
  * linkedMealPlanId, adopterer et løst «middag: …»-punkt med samme mealType,
@@ -122,35 +161,37 @@ export async function syncMealPlanToDayItem(userId: string, plan: MealPlanRow): 
 		where: and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.userId, userId))
 	});
 
+	const status: MealPlanStatus = isMealPlanStatus(plan.status) ? plan.status : 'planned';
 	const linked = items.find((item) => item.metadata?.linkedMealPlanId === plan.id);
 	const target =
-		linked ?? items.find((item) => shouldAdoptItem(item, plan.mealType as MealType, title)) ?? null;
+		linked ?? items.find((item) => shouldAdoptItem(item, plan.mealType as MealType, title, status)) ?? null;
 
 	if (target) {
 		const fields = mealItemFieldsFor(plan, title, (target.metadata ?? {}) as Record<string, unknown>);
-		if (target.text !== fields.text || target.metadata?.linkedMealPlanId !== plan.id) {
+		const stateUpdate = itemStateUpdateFor(target, status);
+		if (target.text !== fields.text || target.metadata?.linkedMealPlanId !== plan.id || stateUpdate) {
 			await db
 				.update(checklistItems)
-				.set({ text: fields.text, metadata: fields.metadata as ItemMetadata })
+				.set({ text: fields.text, metadata: fields.metadata as ItemMetadata, ...(stateUpdate ?? {}) })
 				.where(eq(checklistItems.id, target.id));
 		}
+		if (stateUpdate) await refreshDayCompletion(checklistId);
 		return;
 	}
 
 	const maxSort = items.reduce((max, item) => Math.max(max, item.sortOrder), 0);
 	const fields = mealItemFieldsFor(plan, title);
+	const initialState = itemStateUpdateFor({ checked: false, skippedAt: null }, status);
 	await db.insert(checklistItems).values({
 		checklistId,
 		userId,
 		text: fields.text,
 		sortOrder: maxSort + 1,
-		metadata: fields.metadata as ItemMetadata
+		metadata: fields.metadata as ItemMetadata,
+		...(initialState ?? {})
 	});
-	// Nytt uavkrysset punkt → dagen er ikke lenger «ferdig».
-	await db
-		.update(checklists)
-		.set({ completedAt: null })
-		.where(eq(checklists.id, checklistId));
+	// Nytt punkt → dagen er «ferdig» bare hvis det nye punktet også er det.
+	await refreshDayCompletion(checklistId);
 }
 
 /** Fjern dag-punktet som speiler en meal_plan (ved sletting eller datoflytting). */
@@ -292,6 +333,29 @@ export async function afterMealItemWritten(
 	}
 }
 
+/**
+ * Etter at et dag-punkt er hakket av, hoppet over eller gjenåpnet: speil det til
+ * planradens status. Avkryssingen ER registreringen av at middagen ble spist.
+ */
+export async function afterMealItemStateChanged(
+	userId: string,
+	item: Pick<ChecklistItemRow, 'metadata' | 'checked' | 'skippedAt' | 'snoozedToDate'>
+): Promise<void> {
+	const linkedMealPlanId = item.metadata?.linkedMealPlanId;
+	if (typeof linkedMealPlanId !== 'string') return;
+	const status = statusFromChecklistItem(item);
+	await db
+		.update(mealPlans)
+		.set({ status, updatedAt: new Date() })
+		.where(
+			and(
+				eq(mealPlans.id, linkedMealPlanId),
+				eq(mealPlans.userId, userId),
+				sql`${mealPlans.status} IS DISTINCT FROM ${status}`
+			)
+		);
+}
+
 /** Etter at et dag-punkt er slettet: slett meal_plans-raden det speilet. */
 export async function afterMealItemDeleted(
 	userId: string,
@@ -316,6 +380,9 @@ export type UpsertMealPlanParams = {
 	notes?: string | null;
 	servings?: number;
 	photoUrl?: string | null;
+	status?: MealPlanStatus;
+	/** Retten er takeaway/restaurant — tagges på retten, aldri foreslått å lage. */
+	takeaway?: boolean;
 };
 
 /**
@@ -342,6 +409,8 @@ export async function upsertMealPlan(
 			where: and(eq(mealPlans.id, params.id), eq(mealPlans.userId, userId))
 		});
 		if (!existing) return null;
+		const effectiveMealId = mealId !== undefined ? mealId : existing.mealId;
+		if (params.takeaway && effectiveMealId) await markMealTakeaway(userId, effectiveMealId);
 
 		const updates: Record<string, unknown> = { updatedAt: new Date() };
 		if (params.date !== undefined) {
@@ -353,6 +422,7 @@ export async function upsertMealPlan(
 		if (params.notes !== undefined) updates.notes = params.notes;
 		if (params.servings !== undefined) updates.servings = params.servings;
 		if (params.photoUrl !== undefined) updates.photoUrl = params.photoUrl;
+		if (params.status !== undefined) updates.status = params.status;
 
 		const [updated] = await db
 			.update(mealPlans)
@@ -369,6 +439,7 @@ export async function upsertMealPlan(
 	}
 
 	if (!params.date || !params.mealType) return null;
+	if (params.takeaway && mealId) await markMealTakeaway(userId, mealId);
 	const [created] = await db
 		.insert(mealPlans)
 		.values({
@@ -379,7 +450,8 @@ export async function upsertMealPlan(
 			mealId: mealId ?? null,
 			notes: params.notes ?? null,
 			servings: params.servings ?? FAMILY_DEFAULT_SERVINGS,
-			photoUrl: params.photoUrl ?? null
+			photoUrl: params.photoUrl ?? null,
+			status: params.status ?? 'planned'
 		})
 		.returning();
 
@@ -387,6 +459,19 @@ export async function upsertMealPlan(
 		await syncMealPlanToDayItem(userId, created);
 	}
 	return created ?? null;
+}
+
+/** Tagg en rett som takeaway (idempotent). Fjernes aldri automatisk. */
+async function markMealTakeaway(userId: string, mealId: string): Promise<void> {
+	const meal = await db.query.meals.findFirst({
+		where: and(eq(meals.id, mealId), eq(meals.userId, userId)),
+		columns: { tags: true }
+	});
+	if (!meal || isTakeawayMeal(meal.tags)) return;
+	await db
+		.update(meals)
+		.set({ tags: [...meal.tags, TAKEAWAY_TAG], updatedAt: new Date() })
+		.where(and(eq(meals.id, mealId), eq(meals.userId, userId)));
 }
 
 /** Slett en meal_plan og dag-punktet som speiler den. */
@@ -420,4 +505,36 @@ export async function getWeekMealPlansWithTitles(userId: string, weekContext: st
 		.orderBy(sql`${mealPlans.date} asc, ${mealPlans.mealType} asc`);
 
 	return rows.map((row) => ({ ...row.plan, mealTitle: row.mealTitle }));
+}
+
+/**
+ * Planrader i et datovindu med rettens navn og takeaway-merke. Felles leser for
+ * `query_food` (plan og historikk) — historikken er de samme radene, lest med
+ * status (se meal-log.ts).
+ */
+export async function getMealPlansWithTitlesInRange(
+	userId: string,
+	fromDate: string,
+	toDate: string,
+	opts: { mealType?: string } = {}
+) {
+	const conditions = [
+		eq(mealPlans.userId, userId),
+		gte(mealPlans.date, fromDate),
+		lte(mealPlans.date, toDate)
+	];
+	if (opts.mealType) conditions.push(eq(mealPlans.mealType, opts.mealType));
+	const rows = await db
+		.select({ plan: mealPlans, mealTitle: meals.title, mealTags: meals.tags })
+		.from(mealPlans)
+		.leftJoin(meals, eq(mealPlans.mealId, meals.id))
+		.where(and(...conditions))
+		.orderBy(asc(mealPlans.date), asc(mealPlans.mealType));
+
+	return rows.map((row) => ({
+		...row.plan,
+		status: isMealPlanStatus(row.plan.status) ? row.plan.status : ('planned' as MealPlanStatus),
+		mealTitle: row.mealTitle,
+		takeaway: isTakeawayMeal(row.mealTags)
+	}));
 }

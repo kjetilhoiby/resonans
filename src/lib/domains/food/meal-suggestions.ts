@@ -3,6 +3,7 @@
 // AI-forslag er en bevisst utsatt utvidelse; chat-fluktveien dekker det behovet.
 
 import { normalizeIngredientName } from './oda';
+import { FAVORITE_TAGS } from './meal-log';
 
 export type SuggestibleMeal = {
 	id: string;
@@ -11,6 +12,8 @@ export type SuggestibleMeal = {
 	prepTimeMin?: number | null;
 	cookTimeMin?: number | null;
 	ingredients: Array<{ name: string }>;
+	// Droppede planer (status 'skipped') er IKKE med — en rett som ble erstattet
+	// av takeaway har ikke vært spist, og skal ikke straffes som «nylig brukt».
 	lastPlannedDate: string | null; // ISO-dato
 	timesPlanned: number;
 	wantMore?: boolean; // «ønsker mer av» — brukerens ambisjon, løfter retten
@@ -22,7 +25,6 @@ export type DaySuggestion = {
 	alternatives: Array<{ mealId: string; title: string; reason: string }>;
 };
 
-const FAVORITE_TAGS = ['favoritt', 'favorite', 'slager'];
 const QUICK_TAGS = ['rask', 'quick', 'enkel'];
 const QUICK_TOTAL_MINUTES = 30;
 const ALTERNATIVES_PER_DAY = 3;
@@ -76,7 +78,7 @@ export function scoreMeal(
 
 	const lowerTags = meal.tags.map((t) => t.toLowerCase());
 
-	if (lowerTags.some((t) => FAVORITE_TAGS.includes(t))) {
+	if (lowerTags.some((t) => (FAVORITE_TAGS as readonly string[]).includes(t))) {
 		score += 2;
 		reasons.push('familiefavoritt');
 	}

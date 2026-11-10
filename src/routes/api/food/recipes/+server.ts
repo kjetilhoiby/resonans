@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { meals, mealPlans } from '$lib/db/schema';
-import { eq, desc, and, ilike, sql } from 'drizzle-orm';
+import { eq, desc, and, ilike, ne, sql } from 'drizzle-orm';
 import { escapeLike } from '$lib/utils/like-escape';
 
 // GET /api/food/recipes?q=&tag=&withStats=1 — oppskriftskartoteket.
@@ -38,7 +38,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			lastPlannedDate: sql<string | null>`max(${mealPlans.date})`
 		})
 		.from(mealPlans)
-		.where(eq(mealPlans.userId, userId))
+		// Droppede planer er ikke bruk (meal-log.ts).
+		.where(and(eq(mealPlans.userId, userId), ne(mealPlans.status, 'skipped')))
 		.groupBy(mealPlans.mealId);
 
 	const statsByMeal = new Map(stats.map((s) => [s.mealId, s]));

@@ -2,7 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems, foodSettings } from '$lib/db/schema';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, ne, sql } from 'drizzle-orm';
+import { isTakeawayMeal } from '$lib/domains/food/meal-log';
 import { openai } from '$lib/server/openai';
 import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 
@@ -30,8 +31,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		})
 		.from(meals)
 		.where(eq(meals.userId, userId));
+	// Takeaway står i historikken (titlene under), men er aldri noe å lage (meal-log.ts).
+	const cookable = catalog.filter((m) => !isTakeawayMeal(m.tags));
 
-	if (catalog.length === 0) {
+	if (cookable.length === 0) {
 		return json({ error: 'Kartoteket er tomt — legg inn noen retter først.' }, { status: 400 });
 	}
 
@@ -44,7 +47,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			and(
 				eq(mealPlans.userId, userId),
 				eq(mealPlans.mealType, 'dinner'),
-				gte(mealPlans.date, fourWeeksAgo)
+				gte(mealPlans.date, fourWeeksAgo),
+				// En droppet plan er ikke noe familien spiste.
+				ne(mealPlans.status, 'skipped')
 			)
 		)
 		.orderBy(sql`${mealPlans.date} asc`);
@@ -62,7 +67,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.map((p) => `${p.name} (${p.location}${p.expiresAt ? `, går ut ${p.expiresAt}` : ''})`)
 		.join(', ');
 
-	const catalogLines = catalog
+	const catalogLines = cookable
 		.map((m) => {
 			const time = (m.prepTimeMin ?? 0) + (m.cookTimeMin ?? 0);
 			return `- ${m.id} | ${m.title}${m.tags.length ? ` [${m.tags.join(', ')}]` : ''}${time ? ` (${time} min)` : ''}`;
@@ -123,7 +128,7 @@ Returner KUN gyldig JSON:
 		return json({ error: 'AI-svaret kunne ikke tolkes. Prøv igjen.' }, { status: 502 });
 	}
 
-	const validIds = new Set(catalog.map((m) => m.id));
+	const validIds = new Set(cookable.map((m) => m.id));
 	const byDate = new Map(
 		(parsed.days ?? [])
 			.filter((d) => d?.date && d?.title)

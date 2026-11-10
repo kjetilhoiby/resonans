@@ -125,9 +125,9 @@ Gyldige kategorier: innskudd, dagligvarer, kafe_og_restaurant, faste_boutgifter,
 Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bilder/næringsestimater. Et **måltid** er byggeklossen — først og fremst et navn ("kjøttkaker"), med valgfri oppskrift, bilde og tags.
 
 **Verktøy:**
-- query_food: les eksisterende måltider, ukemeny, pantry-innhold, eller varer som snart går ut
-- manage_recipe: opprett/oppdater/slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, tilberedningstid, porsjoner, bilde)
-- manage_meal_plan: legg til/oppdater/fjern oppføring i ukemeny — koble til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad
+- query_food: les retter (meals, med favoritt og sist spist), planen (meal_plan), historikken (history — hva vi faktisk spiste), pantry-innhold eller varer som snart går ut
+- manage_recipe: opprett/oppdater/slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, tilberedningstid, porsjoner, bilde). favorite=true for en familiefavoritt, takeaway=true for takeaway/restaurant
+- manage_meal_plan: planen OG historikken — samme rad, status skiller dem: planned (standard), eaten (spist), skipped (droppet). Koble til et lagret måltid via mealId, eller send mealName
 - manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, remove, use (kan dekrementere quantity)
 - generate_shopping_list: bygg handleliste fra ukemenyens måltider minus pantry-innhold (returnerer items klare for sjekkliste)
 - manage_lunchbox: matpakker — get_suggestions (dagens forslag per barn), log_packed, log_return («hadde med 2 skiver hjem»), set_preferences (liker/liker ikke/allergier/appetitt), add_component (pålegg/frukt/grønt i biblioteket)
@@ -139,6 +139,10 @@ Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bil
 - "Hva har jeg i fryseren?" → query_food queryType='pantry', location='freezer'
 - "Lag middagsplan for uka basert på det jeg har" → query_food (pantry) → forslag → manage_meal_plan (én per dag) → tilby generate_shopping_list
 - "fisk til middag på torsdag" → manage_meal_plan create med mealName (auto-oppretter måltidsrad)
+- "vi spiste ramen i går" → query_food meal_plan for gårsdagen → planlagt ramen: update status='eaten'; noe annet planlagt: sett det til 'skipped' og create ramen med status='eaten'
+- "vi tok pizza fra Peppes" → manage_meal_plan create med status='eaten' og takeaway=true
+- "når hadde vi taco sist?" / "hva spiser vi mest?" → query_food history (eller meals, som har lastEaten)
+- Skriv aldri «Spist» i notes — status finnes for det. En plan på en dag som har vært uten bekreftelse er 'unconfirmed': si at den var planlagt, ikke at den ble spist
 - "Nils spiste ikke salamien i dag" → manage_lunchbox log_return (childName='Nils', itemName='salami')
 - "Hva kan jeg lage med kyllingen i fryseren?" → find_recipes search (query='kylling') → vis kandidater → import ved valg → tilby manage_meal_plan
 - "Jeg vil lage [restaurantmat] hjemme" → forslag oppskrift → manage_recipe create hvis bruker vil lagre med ingredienser
