@@ -36,7 +36,7 @@ En gjennomgang av mat-verktøyene fant mer enn det ene feltet:
 
 ### Fase 1: status på planraden
 
-- Migrasjon `0079_meal_plan_status.sql`: `status text NOT NULL DEFAULT 'planned'`.
+- Migrasjon `0080_meal_plan_status.sql`: `status text NOT NULL DEFAULT 'planned'`.
   Eksisterende data fylles fra speilet: avkryssede dag-punkter gir `eaten`, og punkter som
   er hoppet over (uten utsettelse) gir `skipped`. Rader med «Spist» i notatet blir
   `eaten`, og notatet ryddes når det bare var «Spist» og raden har en rett. Uten rett er
