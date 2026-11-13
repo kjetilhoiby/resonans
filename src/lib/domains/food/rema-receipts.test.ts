@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	REMA_REDIRECT_URI,
 	buildRemaAuthorizeUrl,
+	describeRowsShape,
 	parseRemaCallbackInput,
 	parseTransactionHeads,
 	parseTransactionRows,
@@ -171,5 +172,25 @@ describe('parseTransactionRows', () => {
 		]);
 		expect(rejected).toBe(1);
 		expect(lines[0]).toMatchObject({ name: 'KJØTTDEIG 400G', ean: null, category: 'kjott_fisk', discount: null });
+	});
+
+	it('navngir feltene på avviste linjer, aldri verdiene', () => {
+		const { rejectedFields } = parseTransactionRows({
+			rows: [{ prodtxt1: 'MELK', amount: 20 }, { amount: 2, pantType: 'flaske' }, { discount: 5 }]
+		});
+		expect(rejectedFields).toEqual(['amount', 'discount', 'pantType']);
+	});
+});
+
+describe('describeRowsShape', () => {
+	it('ser gjennom innpakningen — Rema pakker lista i et objekt', () => {
+		expect(describeRowsShape({ rows: [{ prodtxt1: 'X', amount: 1 }], total: 1 })).toEqual({
+			wrapperKeys: ['rows', 'total'],
+			rowKeys: ['amount', 'prodtxt1']
+		});
+	});
+
+	it('sier at det ikke finnes innpakning når svaret er en ren liste', () => {
+		expect(describeRowsShape([{ b: 1, a: 2 }])).toEqual({ wrapperKeys: null, rowKeys: ['a', 'b'] });
 	});
 });

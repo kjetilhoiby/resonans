@@ -42,6 +42,20 @@ seg uten varsel; vi bruker det bare til brukerens egne kvitteringer.
   slår nå sammen linjene fra alle ukas ordrer, og kortet sier det når de er flere.
 - Kortet het «Siste Oda-handel»; nå «Siste handel · <butikk>».
 
+### Fase 3: Første synk i prod, og en død diagnose
+
+Første kjøring 13. november 2026: `listet=631 importert=40 linjer=398 igjen=591
+feilet=0 avviste_linjer=10`. Innloggingen, kodebyttet og begge lese-endepunktene
+virket som gisten beskrev.
+
+Linja med feltnavnene kom aldri. Den logget bare når varelinje-svaret var en
+ren liste, og Rema pakker lista inn i et objekt (`{ rows: [...] }`) — parseren
+tålte innpakningen, loggingen gjorde det ikke. `describeRowsShape` ser nå
+gjennom den og navngir innpakningens nøkler, og `parseTransactionRows` bærer
+`rejectedFields`: feltnavnene på linjene som avvises (de ti hadde verken
+`productDescription` eller `prodtxt1`), så de kan kjennes igjen uten å logge
+innholdet.
+
 ## Beslutninger
 
 - **Ingen callback — koden limes inn.** Vi bruker Æ-appens offentlige klient
