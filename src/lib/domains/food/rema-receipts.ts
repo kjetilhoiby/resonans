@@ -239,17 +239,50 @@ function lineCategory(productGroup: string | null, name: string): GroceryCategor
 	return guessCategory(name);
 }
 
+function rowsList(payload: unknown): unknown[] | null {
+	if (Array.isArray(payload)) return payload;
+	if (payload && typeof payload === 'object' && Array.isArray((payload as { rows?: unknown }).rows)) {
+		return (payload as { rows: unknown[] }).rows;
+	}
+	return null;
+}
+
+function sortedKeys(value: unknown): string[] {
+	return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).sort() : [];
+}
+
+/**
+ * Formen på varelinje-svaret, som FELTNAVN — aldri verdier. Kontrakten er lest
+ * ut av en app og kan endre seg; det er navnene som avslører det. Første utgave
+ * logget bare når svaret var en ren liste, og Rema pakker lista inn i et objekt,
+ * så diagnosen var død fra første kjøring.
+ */
+export function describeRowsShape(payload: unknown): {
+	/** Nøklene på toppnivå når lista er pakket inn, ellers null. */
+	wrapperKeys: string[] | null;
+	/** Nøklene på første varelinje. */
+	rowKeys: string[];
+} {
+	const list = rowsList(payload);
+	return {
+		wrapperKeys: Array.isArray(payload) ? null : sortedKeys(payload),
+		rowKeys: list ? sortedKeys(list[0]) : []
+	};
+}
+
 /** `GET /v1/bella/transaction/v2/rows/{tid}` → varelinjer. */
 export function parseTransactionRows(payload: unknown): {
 	lines: RemaReceiptLine[];
 	rejected: number;
+	/**
+	 * Feltnavnene (union) på linjene som ble avvist — så en avvist pantelinje
+	 * eller rabattlinje med andre navn kan kjennes igjen uten å logge innholdet.
+	 */
+	rejectedFields: string[];
 } {
-	const list = Array.isArray(payload)
-		? payload
-		: payload && typeof payload === 'object' && Array.isArray((payload as { rows?: unknown }).rows)
-			? (payload as { rows: unknown[] }).rows
-			: null;
+	const list = rowsList(payload);
 	if (!list) throw new Error('Uventet svar fra Rema: varelinjene er ikke en liste');
+	const rejectedFields = new Set<string>();
 
 	const lines: RemaReceiptLine[] = [];
 	let rejected = 0;
@@ -262,6 +295,7 @@ export function parseTransactionRows(payload: unknown): {
 		const name = text(row.productDescription) ?? text(row.prodtxt1);
 		if (!name) {
 			rejected++;
+			for (const key of Object.keys(row)) rejectedFields.add(key);
 			continue;
 		}
 		const unitPrice = finiteNumber(row.unitPrice);
@@ -280,5 +314,5 @@ export function parseTransactionRows(payload: unknown): {
 			category: lineCategory(productGroup, name)
 		});
 	}
-	return { lines, rejected };
+	return { lines, rejected, rejectedFields: [...rejectedFields].sort() };
 }

@@ -21,6 +21,7 @@ import { groceryOrderLines, groceryOrders, sensors, shoppingLists } from '$lib/d
 import { and, eq } from 'drizzle-orm';
 import { guessPantryLocation } from '$lib/domains/food/grocery';
 import {
+	describeRowsShape,
 	parseTransactionHeads,
 	parseTransactionRows,
 	selectTransactionsToFetch,
@@ -132,6 +133,7 @@ async function runSync(
 	let rejectedLines = 0;
 	let failed = 0;
 	let loggedKeys = false;
+	const rejectedFields = new Set<string>();
 
 	for (const [index, head] of toFetch.entries()) {
 		if (index > 0) await sleep(ROWS_CALL_SPACING_MS);
@@ -149,8 +151,12 @@ async function runSync(
 
 		// Feltnavnene (aldri verdiene) logges én gang per kjøring: kontrakten er
 		// lest ut av en app, og det er navnene som endrer seg uten varsel.
-		if (!loggedKeys && Array.isArray(rowsPayload) && rowsPayload[0] && typeof rowsPayload[0] === 'object') {
-			console.log(`[rema] varelinjefelt: ${Object.keys(rowsPayload[0]).sort().join(',')}`);
+		if (!loggedKeys) {
+			const shape = describeRowsShape(rowsPayload);
+			console.log(
+				`[rema] varelinjefelt: ${shape.rowKeys.join(',') || '<ingen>'}` +
+					(shape.wrapperKeys ? ` innpakning: ${shape.wrapperKeys.join(',')}` : '')
+			);
 			loggedKeys = true;
 		}
 
@@ -163,6 +169,7 @@ async function runSync(
 			continue;
 		}
 		rejectedLines += parsed.rejected;
+		for (const field of parsed.rejectedFields) rejectedFields.add(field);
 
 		const wrote = await writeReceipt(userId, head, parsed.lines, weekListCache);
 		if (wrote) {
@@ -185,6 +192,9 @@ async function runSync(
 			`linjer=${result.linesImported} igjen=${result.remaining} feilet=${result.failed} ` +
 			`avvist_hoder=${result.rejectedHeads} avviste_linjer=${result.rejectedLines}`
 	);
+	if (rejectedFields.size > 0) {
+		console.log(`[rema] avviste linjer hadde feltene: ${[...rejectedFields].sort().join(',')}`);
+	}
 	return result;
 }
 
