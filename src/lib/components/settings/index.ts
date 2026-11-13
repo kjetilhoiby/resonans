@@ -4,6 +4,7 @@ export { default as SpondSourceCard } from './SpondSourceCard.svelte';
 export { default as GoogleSheetsSourceCard } from './GoogleSheetsSourceCard.svelte';
 export { default as StravaSourceCard } from './StravaSourceCard.svelte';
 export { default as TeslaSourceCard } from './TeslaSourceCard.svelte';
+export { default as RemaSourceCard } from './RemaSourceCard.svelte';
 export { default as EmailRulesCard } from './EmailRulesCard.svelte';
 export { default as FixTrainingHistoryCard } from './FixTrainingHistoryCard.svelte';
 export { default as EffortReprojectCard } from './EffortReprojectCard.svelte';

@@ -2,13 +2,15 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { groceryOrders, groceryOrderLines, shoppingLists } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { compareShoppingListToOrder } from '$lib/domains/food/grocery';
 import { type ShoppingListItem } from '$lib/server/services/shopping-list-service';
 
 // GET /api/food/grocery-orders/[id]/comparison — plan vs. kjøp.
-// Sammenligner ukas handleliste mot kvitteringens varelinjer:
-// kjøpte vi det vi planla, hva manglet, hva kom utenom lista?
+// Sammenligner ukas handleliste mot varelinjene fra ALLE ukas handler:
+// kjøpte vi det vi planla, hva manglet, hva kom utenom lista? Handlelista er
+// en ukesliste, og med Rema-kvitteringer er en uke flere butikkturer — mot én
+// av dem alene ville resten av lista stått som «manglet».
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const userId = locals.userId;
 
@@ -30,10 +32,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 				)
 			});
 
+	const weekOrders = await db
+		.select({ id: groceryOrders.id })
+		.from(groceryOrders)
+		.where(and(eq(groceryOrders.userId, userId), eq(groceryOrders.weekContext, order.weekContext)));
 	const lines = await db
 		.select()
 		.from(groceryOrderLines)
-		.where(eq(groceryOrderLines.orderId, order.id));
+		.where(inArray(groceryOrderLines.orderId, weekOrders.map((o) => o.id)));
 
 	if (!list) {
 		return json({
@@ -52,6 +58,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	return json({
 		comparison,
 		shoppingListId: list.id,
-		weekContext: order.weekContext
+		weekContext: order.weekContext,
+		ordersInWeek: weekOrders.length
 	});
 };

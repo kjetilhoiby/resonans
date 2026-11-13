@@ -12,6 +12,9 @@ const FRESHNESS_THRESHOLDS: Record<string, { maxStalenessMs: number; label: stri
 	spond: { maxStalenessMs: 48 * 3600_000, label: 'Spond' },
 	rescuetime: { maxStalenessMs: 26 * 3600_000, label: 'RescueTime' },
 	tesla: { maxStalenessMs: 26 * 3600_000, label: 'Tesla' },
+	// Synken går annenhver time 05–21 UTC; nattehullet er åtte timer. Tolv timer
+	// uten vellykket kontakt betyr at innloggingen har dødd, ikke at ingen handlet.
+	rema1000: { maxStalenessMs: 12 * 3600_000, label: 'Rema 1000' },
 	// Akser laster opp når iOS vekker appen, ikke på et klokkeslett. To døgn uten
 	// kontakt betyr at appen ikke kjører (utløpt profil, slått av), ikke at du satt stille.
 	akser: { maxStalenessMs: 48 * 3600_000, label: 'Akser' },

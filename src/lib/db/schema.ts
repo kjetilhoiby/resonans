@@ -1156,15 +1156,16 @@ export const lunchboxReturns = pgTable('lunchbox_returns', {
 	idxComponent: index('lunchbox_returns_component_idx').on(table.componentId, table.date)
 }));
 
-// ─── Dagligvare-ordrer (Oda) ───────────────────────────────────
-// Strukturerte ordrer/kvitteringer parset fra e-post (email_rules processingType
-// 'oda_receipt'). Kvittering etter levering oppdaterer ordrebekreftelsens rad
-// via unik (user, provider, order_ref).
+// ─── Dagligvare-ordrer (Oda, Rema 1000) ────────────────────────
+// Strukturerte ordrer/kvitteringer. Oda parses fra e-post (email_rules
+// processingType 'oda_receipt'); kvittering etter levering oppdaterer
+// ordrebekreftelsens rad via unik (user, provider, order_ref). Rema 1000
+// hentes fra Æ-appens API (provider 'rema1000', order_ref = transaksjons-id).
 export const groceryOrders = pgTable('grocery_orders', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	provider: text('provider').notNull().default('oda'),
-	orderRef: text('order_ref'), // Odas ordrenummer fra e-posten
+	orderRef: text('order_ref'), // Odas ordrenummer fra e-posten / Remas transaksjons-id
 	kind: text('kind').notNull().default('receipt'), // 'order_confirmation' | 'receipt'
 	orderDate: date('order_date'),
 	deliveryDate: date('delivery_date'),
@@ -1175,6 +1176,8 @@ export const groceryOrders = pgTable('grocery_orders', {
 	emailSubject: text('email_subject'),
 	shoppingListId: uuid('shopping_list_id').references(() => shoppingLists.id, { onDelete: 'set null' }),
 	pantryAppliedAt: timestamp('pantry_applied_at'), // null = ikke lagt i lager ennå
+	storeName: text('store_name'), // butikk (Rema) — Oda har ingen
+	purchasedAt: timestamp('purchased_at'), // kjøpstidspunkt (Rema); Oda har bare datoer
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
@@ -1183,7 +1186,7 @@ export const groceryOrders = pgTable('grocery_orders', {
 	idxUserWeek: index('grocery_orders_user_week_idx').on(table.userId, table.weekContext)
 }));
 
-// Varelinjer fra Oda-ordre. pantry_item_id settes når linja er lagt i lager.
+// Varelinjer fra Oda-ordre / Rema-kvittering. pantry_item_id settes når linja er lagt i lager.
 export const groceryOrderLines = pgTable('grocery_order_lines', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
@@ -1197,9 +1200,13 @@ export const groceryOrderLines = pgTable('grocery_order_lines', {
 	pantryLocationGuess: text('pantry_location_guess'), // 'pantry' | 'fridge' | 'freezer' | null
 	pantryItemId: uuid('pantry_item_id').references(() => pantryItems.id, { onDelete: 'set null' }),
 	sortOrder: integer('sort_order').notNull().default(0),
+	ean: text('ean'), // EAN/GTIN fra kvitteringen (Rema) — stabil produktidentitet
+	discount: decimal('discount'), // rabatt i kroner; total_price er FØR rabatt
+	productGroup: text('product_group'), // kjedens varegruppe («Ost»)
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
-	idxOrder: index('grocery_order_lines_order_idx').on(table.orderId)
+	idxOrder: index('grocery_order_lines_order_idx').on(table.orderId),
+	idxUserEan: index('grocery_order_lines_user_ean_idx').on(table.userId, table.ean).where(sql`${table.ean} IS NOT NULL`)
 }));
 
 // Memories - Stabile, kuraterte fakta om brukeren som AI husker.
