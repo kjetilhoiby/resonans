@@ -4,7 +4,7 @@ Instruksjoner for agenter som jobber med dette repoet. Primærspråk i UI, komme
 
 ## Prosjekt
 
-Resonans er en personlig AI-coach (SvelteKit 2 + TypeScript) som kobler helsedata, økonomi, familieplanlegging og trening gjennom en norskspråklig chat med GPT-4o. Data hentes fra Withings, SpareBank1, Spond, Dropbox og Strava, aggregeres i sensor_events → sensor_aggregates → domain_signals, og presenteres via tema-dashboards og proaktive Google Chat-nudges.
+Resonans er en personlig AI-coach (SvelteKit 2 + TypeScript) som kobler helsedata, økonomi, familieplanlegging og trening gjennom en norskspråklig chat med GPT-4o. Data hentes fra Withings, SpareBank1, Spond, Dropbox, Strava og Rema 1000, aggregeres i sensor_events → sensor_aggregates → domain_signals, og presenteres via tema-dashboards og proaktive Google Chat-nudges.
 
 ## Kommandoer
 
@@ -3448,6 +3448,25 @@ Manuell søvnregistrering, se `docs/changelog/2026-08-03-sovnlogger.md`.
   opprettet en dupp tretten timer fram i tid. Bruk `validateNapStart`
   (`$lib/domain/sleep/nap-fields.ts`) på alle skrivinger med et brukeroppgitt klokkeslett.
 
+### Rema 1000-kvitteringer: et uoffisielt API, lest som det
+
+Se `docs/changelog/2026-11-13-rema-kvitteringer.md`. Reglene rent i
+`$lib/domains/food/rema-receipts.ts`, synken i
+`$lib/server/integrations/rema-sync.ts`, kortet `RemaSourceCard`.
+
+- **Kvitteringene er rader i `grocery_orders`**, `provider = 'rema1000'`,
+  `order_ref` = transaksjons-id. Alt som leser ordrene må tåle FLERE per uke:
+  sorter på `purchased_at`, og plan-mot-kjøp er hele uka, aldri én ordre.
+- **Koden limes inn — det finnes ingen callback.** Vi låner Æ-appens klient, og
+  redirecten er Remas side som sender koden til `bella://`. PKCE-verifikatoren
+  ligger kryptert i en httpOnly-cookie mellom de to stegene, og `state` MÅ være
+  alfanumerisk, ellers gir redirect-siden `WrongState`.
+- **Alt fra API-et valideres felt for felt, aldri spredd.** Kontrakten er lest
+  ut av en app og endrer seg uten varsel; feltnavnene logges som `[rema]`.
+- **`REMA_APIM_SUBSCRIPTION_KEY` hører i miljøet, ikke i koden.**
+- Tokens: samme oppskrift som SpareBank1 (lesing på id, lås, re-lesing).
+- `total_price` er FØR rabatt. Forbruk telles fortsatt fra banken.
+
 ### Arrangementer: en billett er ikke en oppgave
 
 Se `docs/changelog/2026-09-17-arrangementer-og-billetter.md`. Reglene rent i
@@ -4003,6 +4022,11 @@ reglene bor rent i `$lib/domain/ai/model-alias.ts`. Se
 - **Aliaset `live` (Gemini Live for Ekko) deler hentingen, ikke reglene.** Minnet og
   tidsgrensene bor i `$lib/server/ai/lab-alias.ts`; valget i `$lib/domain/ai/live-model.ts`,
   med stengedato og reserve. Se «Gemini realtime (Ekko)» over.
+
+**Rema 1000 (Æ):** `REMA_APIM_SUBSCRIPTION_KEY` (påkrevd for kvitteringssynken —
+Æ-appens nøkkel til Remas API-gateway, står i gisten changelog-dokumentet viser
+til; uten den svarer `/api/sensors/rema/connect/start` 503). `REMA_APP_VERSION`
+(valgfri) overstyrer `x-app-version`.
 
 **Websøk:** `TAVILY_API_KEY` (Tavily — brukes av det generelle `web_search`-verktøyet i chatten (`runWebResearch` → oppsummerte funn med kilder, kan lagres på tema via `saveToTheme`), bok-research og `find_recipes` (oppskriftssøk fra lager/preferanser); uten nøkkel degraderer søk til tomme resultater)
 

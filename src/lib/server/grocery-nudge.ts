@@ -7,7 +7,7 @@
  * timebasert cron + lokal tidsmatching + dedup via nudge_events.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { groceryOrders, groceryOrderLines, nudgeEvents, shoppingLists, themes, users } from '$lib/db/schema';
 import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
@@ -100,12 +100,15 @@ export async function sendGroceryWeeklyNudge(
 		return { sent: false, reason: 'no-grocery-data' };
 	}
 
-	// Plan-vs-kjøp fra ukas Oda-ordre (hvis både ordre og handleliste finnes)
+	// Plan-vs-kjøp fra ukas handler (hvis både ordre og handleliste finnes).
+	// ALLE ordrene i uka: med Rema-kvitteringer er en uke typisk tre-fire
+	// butikkturer, og én av dem alene ville gjort resten av lista til «manglet».
 	let planVsKjop: { bought: number; missing: number; impulse: number } | null = null;
-	const order = await db.query.groceryOrders.findFirst({
-		where: and(eq(groceryOrders.userId, userId), eq(groceryOrders.weekContext, lastWeekKey))
-	});
-	if (order) {
+	const weekOrders = await db
+		.select({ id: groceryOrders.id })
+		.from(groceryOrders)
+		.where(and(eq(groceryOrders.userId, userId), eq(groceryOrders.weekContext, lastWeekKey)));
+	if (weekOrders.length > 0) {
 		const list = await db.query.shoppingLists.findFirst({
 			where: and(
 				eq(shoppingLists.userId, userId),
@@ -117,7 +120,7 @@ export async function sendGroceryWeeklyNudge(
 			const lines = await db
 				.select({ name: groceryOrderLines.name, category: groceryOrderLines.category })
 				.from(groceryOrderLines)
-				.where(eq(groceryOrderLines.orderId, order.id));
+				.where(inArray(groceryOrderLines.orderId, weekOrders.map((o) => o.id)));
 			const comparison = compareShoppingListToOrder(
 				(list.items as ShoppingListItem[]).map((item) => ({ text: item.name })),
 				lines

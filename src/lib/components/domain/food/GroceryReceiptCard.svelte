@@ -1,5 +1,6 @@
 <!--
-  GroceryReceiptCard — siste Oda-ordre på mat-dashboardet: totalsum,
+  GroceryReceiptCard — siste dagligvarehandel (Oda-ordre eller Rema-kvittering)
+  på mat-dashboardet: totalsum,
   «Legg i lager»-knapp (ett trykk, ikke automatikk), ekspanderbare varelinjer
   per kategori, og plan-vs-kjøp («kjøpte vi det vi planla?»).
 -->
@@ -19,6 +20,9 @@
 	};
 	type Order = {
 		id: string;
+		provider: string;
+		storeName: string | null;
+		purchasedAt: string | null;
 		kind: string;
 		orderRef: string | null;
 		deliveryDate: string | null;
@@ -30,6 +34,8 @@
 
 	let order = $state<Order | null>(null);
 	let comparison = $state<PlanVsPurchase | null>(null);
+	/** Plan-mot-kjøp gjelder hele uka; flere handler sies, så tallene ikke leses som denne kvitteringen. */
+	let ordersInWeek = $state(1);
 	let expanded = $state(false);
 	let applying = $state(false);
 	let loading = $state(true);
@@ -46,6 +52,7 @@
 				if (cmpRes.ok) {
 					const cmp = await cmpRes.json();
 					comparison = cmp.comparison;
+					ordersInWeek = cmp.ordersInWeek ?? 1;
 				}
 			}
 		}
@@ -76,6 +83,9 @@
 		return GROCERY_CATEGORY_META[category as GroceryCategory] ?? GROCERY_CATEGORY_META.annet;
 	}
 
+	const PROVIDER_LABEL: Record<string, string> = { oda: 'Oda', rema1000: 'Rema 1000' };
+	const providerLabel = $derived(order ? (PROVIDER_LABEL[order.provider] ?? order.provider) : '');
+
 	const linesByCategory = $derived.by(() => {
 		if (!order) return [];
 		const groups = new Map<string, Line[]>();
@@ -89,7 +99,7 @@
 </script>
 
 {#if !loading && order}
-	<SectionCard tone="subtle" title="🧾 Siste Oda-handel">
+	<SectionCard tone="subtle" title={`🧾 Siste handel · ${order.storeName ?? providerLabel}`}>
 		<div class="gr-head">
 			<div class="gr-copy">
 				<span class="gr-title">
@@ -99,6 +109,7 @@
 				<span class="gr-sub">
 					{order.lines.length} varer · {formatAmount(order.totalAmount)}
 					{#if order.deliveryDate}· levert {order.deliveryDate}{/if}
+					{#if order.purchasedAt}· {new Date(order.purchasedAt).toLocaleString('nb-NO', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}{/if}
 				</span>
 			</div>
 			{#if !order.pantryAppliedAt}
@@ -112,6 +123,7 @@
 
 		{#if comparison}
 			<div class="gr-comparison">
+				{#if ordersInWeek > 1}<span class="gr-cmp-item gr-muted">Ukelista mot alle {ordersInWeek} handler i uka:</span>{/if}
 				<span class="gr-cmp-item">✅ Som planlagt ({comparison.bought.length})</span>
 				{#if comparison.missing.length > 0}
 					<span class="gr-cmp-item gr-warn">⚠️ Manglet ({comparison.missing.length}: {comparison.missing.slice(0, 3).join(', ')}{comparison.missing.length > 3 ? '…' : ''})</span>

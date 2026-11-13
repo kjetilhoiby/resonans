@@ -149,6 +149,14 @@ export const CRON_JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/rema-sync',
+		// Annenhver time 05–21 UTC (06/07–22/23 Oslo). Kvitteringen ligger hos
+		// Rema minutter etter kjøpet; oftere enn dette er mas mot et uoffisielt API.
+		schedule: '25 5-21/2 * * *',
+		description: 'Rema 1000-kvitteringer fra Æ-appens API (alle brukere, maks 40 nye per kjøring)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/tesla-sync',
 		schedule: '*/15 5-22 * * *', // hvert 15. minutt 05:00–22:00 UTC — konservativt for ikke å holde bilen våken
 		description: 'Tesla vehicle_data synk (alle brukere) — batteri/posisjon/km-stand',

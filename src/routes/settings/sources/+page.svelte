@@ -8,6 +8,7 @@
 		StravaSourceCard,
 		StravaImportCard,
 		TeslaSourceCard,
+		RemaSourceCard,
 		EmailRulesCard,
 		FixTrainingHistoryCard,
 		EffortReprojectCard,
@@ -33,6 +34,7 @@
 	let googleSheetsConnected = $state(false);
 	let spondConnected = $state(false);
 	let teslaConnected = $state(false);
+	let remaConnected = $state(false);
 
 	const connectedCount = $derived(
 		(withingsConnected ? 1 : 0) +
@@ -40,6 +42,7 @@
 		(googleSheetsConnected ? 1 : 0) +
 		(spondConnected ? 1 : 0) +
 		(teslaConnected ? 1 : 0) +
+		(remaConnected ? 1 : 0) +
 		(webhook.trim().length > 0 ? 1 : 0)
 	);
 
@@ -72,7 +75,7 @@
 	<PageSection>
 	<PageHeader
 		title="Kilder"
-		subtitle={`${connectedCount}/5 tilkoblet`}
+		subtitle={`${connectedCount}/7 tilkoblet`}
 		titleHref="/settings"
 		titleLabel="Gå til innstillinger"
 	/>
@@ -113,6 +116,7 @@
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
+		<RemaSourceCard onConnectedChange={(c) => remaConnected = c} />
 		<!-- Akser og Ekko: stedene kobles i Resonans, og forslagene besvares her. -->
 		<PlaceLinksCard />
 		<StravaSourceCard />
