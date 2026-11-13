@@ -30,6 +30,11 @@ describe('MCP_TOOLS', () => {
 		expect(toolAnnotations('save_direction_conversation')).toMatchObject({ readOnlyHint: false, destructiveHint: false });
 	});
 
+	it('har dagligvarekjøpene, som bare leser', () => {
+		expect(names).toContain('query_groceries');
+		expect(toolAnnotations('query_groceries')).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+	});
+
 	it('holder Ekkos quiz og forteller utenfor', () => {
 		expect(names.some((name) => name.startsWith('story_') || name.startsWith('quiz_'))).toBe(false);
 		expect(names).not.toContain('trip_companions');

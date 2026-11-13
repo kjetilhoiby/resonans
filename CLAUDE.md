@@ -3466,6 +3466,9 @@ Se `docs/changelog/2026-11-13-rema-kvitteringer.md`. Reglene rent i
 - **`REMA_APIM_SUBSCRIPTION_KEY` hører i miljøet, ikke i koden.**
 - Tokens: samme oppskrift som SpareBank1 (lesing på id, lås, re-lesing).
 - `total_price` er FØR rabatt. Forbruk telles fortsatt fra banken.
+- **MCP leser dem med `query_groceries`** (bare MCP, som planleggingsverktøyene).
+  Regningen bor i `$lib/domains/food/grocery-purchases.ts`; samme vare er samme EAN,
+  og prisendring regnes på ordinær pris. Se «Dagligvarekjøp» i `docs/mcp.md`.
 
 ### Arrangementer: en billett er ikke en oppgave
 
