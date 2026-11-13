@@ -21,6 +21,7 @@ import { queryGoalsTool } from '$lib/ai/tools/query-goals';
 import { manageGoalTaskTool } from '$lib/ai/tools/manage-goal-task';
 import { queryDirectionTool } from '$lib/ai/tools/query-direction';
 import { saveDirectionConversationTool } from '$lib/ai/tools/save-direction-conversation';
+import { queryGroceriesTool } from '$lib/ai/tools/query-groceries';
 import { QUIZ_ASSISTANT_TOOLS } from '$lib/server/assistant/quiz-tools';
 import { STORY_ASSISTANT_TOOLS } from '$lib/server/assistant/story-tools';
 
@@ -51,10 +52,18 @@ const PLANNING_TOOLS: AssistantTool[] = [
  */
 const DIRECTION_TOOLS: AssistantTool[] = [adaptSharedTool(queryDirectionTool), adaptSharedTool(saveDirectionConversationTool)];
 
+/**
+ * Dagligvarekjøpene (docs/mcp.md, «Dagligvarekjøp»): Rema-kvitteringer og
+ * Oda-ordrer med varelinjer. Bare lesing, og foreløpig bare her — samme valg
+ * som planleggingsverktøyene.
+ */
+const GROCERY_TOOLS: AssistantTool[] = [adaptSharedTool(queryGroceriesTool)];
+
 export const MCP_TOOLS: AssistantTool[] = [
 	...ASSISTANT_TOOLS.filter((tool) => !EXCLUDED.has(tool.definition.function.name)),
 	...PLANNING_TOOLS,
-	...DIRECTION_TOOLS
+	...DIRECTION_TOOLS,
+	...GROCERY_TOOLS
 ];
 
 /** Lese-verktøy uten et `query_`/`find_`-prefiks. */

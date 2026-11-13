@@ -178,6 +178,37 @@ som MCP alt hadde.
 - **Uten egenformulert retning henviser verktøyet til livsintervjuet** i appen. Et
   AI-utkast skal ikke holdes opp mot hverdagen som om det var brukerens ord.
 
+## Dagligvarekjøp
+
+`query_groceries` leser Rema 1000-kvitteringene (fra Æ-appen) og Oda-ordrene med
+varelinjer. Bare lesing, og bare i MCP, som planleggingsverktøyene. Regningen bor i
+`$lib/domains/food/grocery-purchases.ts`, hentingen i `$lib/server/food/grocery-purchases.ts`.
+Se `docs/changelog/2026-11-13-rema-kvitteringer.md`.
+
+| queryType | Svarer på | Standardvindu |
+|---|---|---|
+| `summary` | antall handler, sum, per kategori, butikk og uke/måned | 90 dager |
+| `receipts` | kvitteringene, nyeste først (`includeLines` for varene) | 30 dager |
+| `products` | per vare: antall kjøp, mengde, betalt, rabatt, snittpris (`search`, `sort`) | 90 dager |
+| `product_history` | hvert kjøp av varene som treffer `search`, med prisendring | hele historikken |
+
+- **Samme vare er samme EAN**, ellers samme normaliserte navn. Oda har ingen EAN, så en
+  vare kjøpt begge steder blir to rader.
+- **`totalPrice` er FØR rabatt, `paid` etter.** Prisendringen regnes på ordinær
+  enhetspris, så en tilbudsuke ikke ser ut som et prisfall.
+- **Kvitteringens beløp er kjedens total**, ikke summen av linjene — linjer kan være
+  avvist. Mangler totalen, merkes beløpet `amountIsLineSum`.
+- **Kategoriandelene regnes av linjene** og summerer til 1; en total kan ikke deles på
+  kategorier.
+- **Dette er ikke dagligvareforbruket.** Det er summen av kvitteringene vi har; kjøp i
+  andre kjeder finnes ikke her. Beskrivelsen sender modellen til `query_economics` for
+  totalen, og ber den si hvilken kilde et kronetall kommer fra.
+- **`coverage` sier hvor langt dataene rekker per kilde**, så et tomt vindu før første
+  kvittering ikke leses som «ikke kjøpt».
+- **Søket krever alle ordene** i varenavnet, i vilkårlig rekkefølge, eller en EAN eksakt.
+  Treffer det flere varer, holdes de fra hverandre — «melk» er flere varer, og å slå dem
+  sammen ville gjort et varebytte til en prisendring.
+
 ## Middagsplan og historikk
 
 Mat-verktøyene er assistentens (`query_food`, `manage_meal_plan`, `manage_recipe`,

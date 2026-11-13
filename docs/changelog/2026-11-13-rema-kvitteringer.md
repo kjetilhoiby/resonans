@@ -56,6 +56,15 @@ gjennom den og navngir innpakningens nøkler, og `parseTransactionRows` bærer
 `productDescription` eller `prodtxt1`), så de kan kjennes igjen uten å logge
 innholdet.
 
+### Fase 4: `query_groceries` i MCP-serveren
+
+Ett lese-verktøy over kvitteringene, registrert i `MCP_TOOLS` som
+planleggingsverktøyene (ikke web-chatten eller Ekko ennå). Fire spørsmål:
+sammendrag, kvitteringer, varer og prishistorikk for én vare. Domenet i
+`$lib/domains/food/grocery-purchases.ts` (testet), hentingen i
+`$lib/server/food/grocery-purchases.ts`. Reglene står i `docs/mcp.md`,
+«Dagligvarekjøp».
+
 ## Beslutninger
 
 - **Ingen callback — koden limes inn.** Vi bruker Æ-appens offentlige klient
@@ -102,7 +111,7 @@ innholdet.
   `[rema-token]`-linjene i `/api/admin/logs` sier hva som skjedde.
 - Bankens dagligvarebeløp og kvitteringene er ikke koblet: samme kjøp finnes
   begge steder, og forbruk skal fortsatt telles fra banken.
-- Ingen chat-verktøy over varelinjene ennå (`query_food` dekker dem ikke), og
-  EAN brukes ikke til noe annet enn å lagres.
+- `query_groceries` finnes bare i MCP; web-chatten og Ekko har ikke varelinjene.
+  `query_food` dekker dem ikke.
 - `x-app-version` er låst til 3.0.12 (kan overstyres med `REMA_APP_VERSION`).
   Avviser Rema gamle appversjoner en dag, er det første sted å se.
