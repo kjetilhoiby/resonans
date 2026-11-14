@@ -13,6 +13,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { buildTimeContext } from '$lib/server/assistant/assistant';
 import type { AccessTokenAuth } from '$lib/server/oauth/oauth-store';
 import { MCP_TOOLS, runMcpTool, toolAnnotations } from './mcp-tools';
+import { describeMcpBody } from './mcp-request-log';
 
 const SERVER_INFO = { name: 'resonans', title: 'Resonans', version: '1.0.0' };
 
@@ -50,7 +51,11 @@ function buildServer(auth: AccessTokenAuth): Server {
 		instructions: instructions(new Date())
 	});
 
-	server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolList() }));
+	server.setRequestHandler(ListToolsRequestSchema, async () => {
+		const tools = toolList();
+		console.info(`[mcp] tools/list klient=${auth.clientId} antall=${tools.length}`);
+		return { tools };
+	});
 
 	server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		const { name } = request.params;
@@ -77,6 +82,14 @@ function buildServer(auth: AccessTokenAuth): Server {
 }
 
 export async function handleMcpRequest(request: Request, auth: AccessTokenAuth): Promise<Response> {
+	// Hvilke metoder klienten ber om, og hvem den er — ikke argumentene.
+	const { methods, client } = describeMcpBody(await request.clone().json().catch(() => null));
+	if (methods.some((m) => m !== 'tools/call')) {
+		console.info(
+			`[mcp] forespørsel klient=${auth.clientId} metoder=${methods.join(',')}` + (client ? ` fra=${client}` : '')
+		);
+	}
+
 	const server = buildServer(auth);
 	const transport = new WebStandardStreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,
