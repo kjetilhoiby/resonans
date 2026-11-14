@@ -70,13 +70,13 @@ klient ──POST /mcp, Authorization: Bearer rsm_at_… ─▶ verktøyene, som
   økt-id. GET og DELETE på `/mcp` gir 405. To containere kan svare annenhver gang.
 - Logglinjer: `[oauth]` (registrering, ny tilkobling), `[mcp] <verktøy> klient=… ok|feil
   <ms>`, og — siden november 2026 — `[mcp] forespørsel … metoder=… fra=<klient>@<versjon>`
-  for alt annet enn verktøykall, pluss `[mcp] tools/list … antall=… versjon=…`. Lesbare
-  over `GET /api/admin/logs?grep=[mcp]`. Bare metoder og klientinfo, aldri argumenter.
-  De kom til da `query_groceries` ikke dukket opp i ChatGPT, og ingenting kunne si om
-  ChatGPT i det hele tatt spurte etter lista.
-- **`serverInfo.version` bærer et fingeravtrykk av verktøysettet** (`1.1.0+<hash>`).
-  Den sto fast på `1.0.0`, så en klient som mellomlagrer verktøylista per versjon aldri
-  kunne se at et verktøy var kommet til.
+  for alt annet enn verktøykall, pluss `[mcp] tools/list … antall=…`. Lesbare over
+  `GET /api/admin/logs?grep=[mcp]`. Bare metoder og klientinfo, aldri argumenter.
+- **Et nytt verktøy når ikke ChatGPT av seg selv.** ChatGPT henter verktøylista når
+  connectoren legges til, og ellers bare med en egen knapp for å laste verktøyene på
+  nytt i connectorens innstillinger. Å koble fra og til igjen var ikke nok: i november
+  2026 gikk det timer før `query_groceries` dukket opp, mens serveren hele tiden listet
+  det. Ser `[mcp] tools/list` riktig ut i loggen, ligger feilen hos klienten.
 
 ## Planlegging
 

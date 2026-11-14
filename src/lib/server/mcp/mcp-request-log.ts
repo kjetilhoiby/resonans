@@ -3,14 +3,13 @@
  * tatt?» kan besvares fra `/api/admin/logs?grep=[mcp]`.
  *
  * Fram til november 2026 logget serveren bare `tools/call`. Da `query_groceries`
- * ikke dukket opp i ChatGPT etter timer med ny tilkobling, kunne vi ikke se om
- * klienten spurte etter lista, hvilken klient den var, eller hva den fikk.
+ * ikke dukket opp i ChatGPT, kunne vi ikke se om klienten spurte etter lista.
+ * Årsaken viste seg å være ChatGPT: verktøylista lastes bare på nytt med en egen
+ * knapp i connectorens innstillinger, ikke ved å koble til på nytt.
  *
  * Bare METODER og klientens navn/versjon fra `initialize` logges — aldri
  * argumenter, som kan bære brukerdata.
  */
-
-import { createHash } from 'node:crypto';
 
 interface JsonRpcLike {
 	method?: unknown;
@@ -36,13 +35,4 @@ export function describeMcpBody(body: unknown): { methods: string[]; client: str
 		.filter((m): m is string => m !== null);
 	const client = messages.map(clientInfoOf).find((c) => c !== null) ?? null;
 	return { methods, client };
-}
-
-/**
- * Et kort fingeravtrykk av verktøysettet (navnene, sortert). Står i
- * `serverInfo.version`, så en klient som mellomlagrer verktøylista per
- * serverversjon ser at noe er endret når et verktøy kommer til eller forsvinner.
- */
-export function toolsetFingerprint(names: string[]): string {
-	return createHash('sha256').update([...names].sort().join('\n')).digest('hex').slice(0, 8);
 }

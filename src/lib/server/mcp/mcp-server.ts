@@ -13,15 +13,9 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { buildTimeContext } from '$lib/server/assistant/assistant';
 import type { AccessTokenAuth } from '$lib/server/oauth/oauth-store';
 import { MCP_TOOLS, runMcpTool, toolAnnotations } from './mcp-tools';
-import { describeMcpBody, toolsetFingerprint } from './mcp-request-log';
+import { describeMcpBody } from './mcp-request-log';
 
-/**
- * Versjonen bærer et fingeravtrykk av verktøysettet. Den sto fast på 1.0.0, så
- * en klient som mellomlagrer verktøylista per serverversjon kunne aldri se at
- * et nytt verktøy hadde kommet til.
- */
-const TOOLSET = toolsetFingerprint(MCP_TOOLS.map((tool) => tool.definition.function.name));
-const SERVER_INFO = { name: 'resonans', title: 'Resonans', version: `1.1.0+${TOOLSET}` };
+const SERVER_INFO = { name: 'resonans', title: 'Resonans', version: '1.0.0' };
 
 function instructions(now: Date): string {
 	return [
@@ -59,7 +53,7 @@ function buildServer(auth: AccessTokenAuth): Server {
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
 		const tools = toolList();
-		console.info(`[mcp] tools/list klient=${auth.clientId} antall=${tools.length} versjon=${SERVER_INFO.version}`);
+		console.info(`[mcp] tools/list klient=${auth.clientId} antall=${tools.length}`);
 		return { tools };
 	});
 

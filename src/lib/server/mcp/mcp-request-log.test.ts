@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeMcpBody, toolsetFingerprint } from './mcp-request-log';
+import { describeMcpBody } from './mcp-request-log';
 
 describe('describeMcpBody', () => {
 	it('leser metoden og klienten fra initialize', () => {
@@ -25,13 +25,5 @@ describe('describeMcpBody', () => {
 	it('tåler en kropp som ikke er JSON-RPC', () => {
 		expect(describeMcpBody(null)).toEqual({ methods: [], client: null });
 		expect(describeMcpBody('tull')).toEqual({ methods: [], client: null });
-	});
-});
-
-describe('toolsetFingerprint', () => {
-	it('endres når et verktøy kommer til, men ikke av rekkefølgen', () => {
-		const before = toolsetFingerprint(['a', 'b']);
-		expect(toolsetFingerprint(['b', 'a'])).toBe(before);
-		expect(toolsetFingerprint(['a', 'b', 'query_groceries'])).not.toBe(before);
 	});
 });
