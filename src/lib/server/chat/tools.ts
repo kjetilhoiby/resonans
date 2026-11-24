@@ -29,6 +29,8 @@ import { logNutritionTool } from '$lib/ai/tools/log-nutrition';
 import { logSleepDisturbanceTool } from '$lib/ai/tools/log-sleep-disturbance';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { manageNutritionTargetsTool } from '$lib/ai/tools/manage-nutrition-targets';
+import { managePantryTool } from '$lib/ai/tools/manage-pantry';
+import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { manageWeightMeasurementTool } from '$lib/ai/tools/manage-weight-measurement';
 import { queryEgenfrekvensTool } from '$lib/ai/tools/query-egenfrekvens';
@@ -1120,28 +1122,7 @@ export const CHAT_TOOLS = [
 			openAiFunctionDefinition(queryFoodTool),
 			openAiFunctionDefinition(manageRecipeTool),
 			openAiFunctionDefinition(manageMealPlanTool),
-			{
-				type: 'function' as const,
-				function: {
-					name: 'manage_pantry',
-					description: 'Oppdater pantry/fryser/kjøleskap. action: add (krever name+location), update (krever id), remove (krever id), use (krever id, kan oppgi consumeQuantity).',
-					parameters: {
-						type: 'object',
-						properties: {
-							action: { type: 'string', enum: ['add', 'update', 'remove', 'use'] },
-							id: { type: 'string' },
-							name: { type: 'string' },
-							location: { type: 'string', enum: ['pantry', 'fridge', 'freezer'] },
-							quantity: { type: 'number' },
-							unit: { type: 'string' },
-							expiresAt: { type: 'string', description: 'YYYY-MM-DD' },
-							notes: { type: 'string' },
-							consumeQuantity: { type: 'number' }
-						},
-						required: ['action']
-					}
-				}
-			},
+			openAiFunctionDefinition(managePantryTool),
 			{
 				type: 'function' as const,
 				function: {
@@ -1203,21 +1184,7 @@ export const CHAT_TOOLS = [
 					}
 				}
 			},
-			{
-				type: 'function' as const,
-				function: {
-					name: 'generate_shopping_list',
-					description: 'Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
-					parameters: {
-						type: 'object',
-						properties: {
-							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
-							includeOptional: { type: 'boolean' }
-						},
-						required: ['weekContext']
-					}
-				}
-			},
+			openAiFunctionDefinition(generateShoppingListTool),
 			{
 				type: 'function' as const,
 				function: {

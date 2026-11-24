@@ -17,13 +17,14 @@
 		fullskjerms-overlays; handlelisten under er samme komponent som øktas steg 2 og 3.
 	</p>
 
-	<h3 class="subsection">FoodDashboard — ukemeny, lager med faste varer (⭐) og budsjett</h3>
+	<h3 class="subsection">FoodDashboard — ukemeny med status (✓ spist, ✕ droppet, ? ubekreftet), lager med faste varer (⭐), buffer og bekreftelsesalder (⚠), og budsjett</h3>
 	<p class="section-desc">
 		Matpakke- og kvitteringskortene henter egne data og er tomme i demoen.
 		To middager samme dag = kresne-barn-dag.
 	</p>
 	<div class="demo-card demo-card--wide">
 		<FoodDashboard
+			todayIso="2026-07-22"
 			weekContext="2026-W30"
 			mealPlans={foodMealPlansMock}
 			pantry={foodPantryMock}

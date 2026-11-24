@@ -13,6 +13,7 @@ import { mealPlans, meals, pantryItems, shoppingLists } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { normalizeIngredientName, odaSearchUrl } from '$lib/domains/food/oda';
 import { osloTodayIso } from '$lib/server/iso-week';
+import { needsFromPlans, planShopping, type CoveredNeed } from '$lib/domains/food/shopping-needs';
 
 type Ingredient = {
 	name: string;
@@ -30,61 +31,22 @@ export type ShoppingListItem = {
 	sources: string[];
 	checked: boolean;
 	manual: boolean;
+	/** Beholdningen er ukjent, gammel eller i en annen enhet — sjekk før du kjøper. */
+	uncertain?: boolean;
+	/** Hvorfor varen står der (lager, buffer, usikkerhet). */
+	note?: string | null;
 };
 
 export type AggregatedIngredient = {
 	name: string;
-	quantity?: number;
+	quantity?: number | null;
 	unit?: string | null;
 	sources: string[];
+	uncertain?: boolean;
+	note?: string | null;
 };
 
-type PlanLike = { mealId: string | null; servings: number };
 type MealLike = { id: string; title: string; servings: number; ingredients: Ingredient[] };
-
-/**
- * Ekspander ukens planer til aggregerte ingredienser: skaler mengder etter
- * porsjoner, hopp over pantry-treff, slå sammen like varer. Ren funksjon.
- */
-export function aggregateIngredients(
-	plans: PlanLike[],
-	mealsById: Map<string, MealLike>,
-	pantryNames: Set<string>,
-	opts: { includeOptional?: boolean } = {}
-): AggregatedIngredient[] {
-	const aggregated = new Map<string, AggregatedIngredient>();
-
-	for (const plan of plans) {
-		if (!plan.mealId) continue;
-		const meal = mealsById.get(plan.mealId);
-		if (!meal) continue;
-		const scale = meal.servings > 0 ? plan.servings / meal.servings : 1;
-
-		for (const ing of meal.ingredients) {
-			if (ing.optional && !opts.includeOptional) continue;
-			const key = normalizeIngredientName(ing.name);
-			if (!key || pantryNames.has(key)) continue;
-
-			const existing = aggregated.get(key);
-			const scaledQty = ing.quantity != null ? ing.quantity * scale : undefined;
-			if (existing) {
-				if (scaledQty != null && existing.quantity != null && existing.unit === (ing.unit ?? null)) {
-					existing.quantity += scaledQty;
-				}
-				if (!existing.sources.includes(meal.title)) existing.sources.push(meal.title);
-			} else {
-				aggregated.set(key, {
-					name: ing.name,
-					quantity: scaledQty,
-					unit: ing.unit ?? null,
-					sources: [meal.title]
-				});
-			}
-		}
-	}
-
-	return Array.from(aggregated.values());
-}
 
 /**
  * Slå sammen en regenerert liste med den eksisterende: avhukinger og manuelt
@@ -122,7 +84,9 @@ export function toShoppingListItem(
 		unit: entry.unit ?? null,
 		sources: entry.sources,
 		checked: false,
-		manual: opts.manual ?? false
+		manual: opts.manual ?? false,
+		...(entry.uncertain ? { uncertain: true } : {}),
+		...(entry.note ? { note: entry.note } : {})
 	};
 }
 
@@ -131,12 +95,20 @@ export function withOdaUrl<T extends { name: string }>(item: T): T & { odaUrl: s
 	return { ...item, odaUrl: odaSearchUrl(item.name) };
 }
 
-/** Bygg ukas handleliste fra meal_plans minus pantry (uten å lagre). */
+/**
+ * Bygg ukas handleliste: rettenes behov summert i felles enhet, minus det som
+ * faktisk ligger hjemme, pluss det som mangler i bufferen på basisvarer.
+ * Reglene bor i $lib/domains/food/shopping-needs.ts; her hentes bare dataene.
+ */
 export async function buildWeekShoppingList(
 	userId: string,
 	weekContext: string,
 	opts: { includeOptional?: boolean; extraItems?: string[] } = {}
-): Promise<{ items: ShoppingListItem[]; meta: { pantrySkipped: number; mealCount: number; planIds: string[] } }> {
+): Promise<{
+	items: ShoppingListItem[];
+	meta: { pantrySkipped: number; mealCount: number; planIds: string[]; uncertainCount: number };
+	covered: CoveredNeed[];
+}> {
 	const plans = await db
 		.select()
 		.from(mealPlans)
@@ -151,23 +123,21 @@ export async function buildWeekShoppingList(
 	);
 
 	const pantry = await db.select().from(pantryItems).where(eq(pantryItems.userId, userId));
-	const today = osloTodayIso();
-	// Tomme varer (quantity 0) og utgåtte varer teller ikke som «på lager» —
-	// de skal ikke undertrykke ingredienser fra oppskriftene.
-	const inStock = (p: (typeof pantry)[number]) =>
-		!(p.quantity != null && Number(p.quantity) === 0) && !(p.expiresAt && p.expiresAt < today);
-	const pantryNames = new Set(pantry.filter(inStock).map((p) => normalizeIngredientName(p.name)));
-
-	const aggregated = aggregateIngredients(plans, mealsById, pantryNames, opts);
-	const items = aggregated.map((entry) => toShoppingListItem(entry));
-
-	// Faste varer (staples — frukt/grønt/nøtter m.m.): legg på lista når de er
-	// tomme eller utgått, så det alltid finnes lettvinte matpakke-alternativer.
-	for (const staple of pantry.filter((p) => p.isStaple && !inStock(p))) {
-		const normalized = normalizeIngredientName(staple.name);
-		if (items.some((item) => item.normalizedName === normalized)) continue;
-		items.push(toShoppingListItem({ name: staple.name, sources: ['fast vare'] }));
-	}
+	const { items: suggestions, covered } = planShopping({
+		needs: needsFromPlans(plans, mealsById, opts),
+		stock: pantry.map((p) => ({
+			name: p.name,
+			quantity: p.quantity != null ? Number(p.quantity) : null,
+			unit: p.unit,
+			confirmedAt: p.confirmedAt,
+			expiresAt: p.expiresAt,
+			isStaple: p.isStaple,
+			targetQuantity: p.targetQuantity != null ? Number(p.targetQuantity) : null
+		})),
+		now: new Date(),
+		todayIso: osloTodayIso()
+	});
+	const items = suggestions.map((entry) => toShoppingListItem(entry));
 
 	for (const extra of opts.extraItems ?? []) {
 		const name = extra.trim();
@@ -179,10 +149,12 @@ export async function buildWeekShoppingList(
 
 	return {
 		items,
+		covered,
 		meta: {
-			pantrySkipped: pantryNames.size,
+			pantrySkipped: covered.length,
 			mealCount: linkedMeals.length,
-			planIds: plans.map((p) => p.id)
+			planIds: plans.map((p) => p.id),
+			uncertainCount: items.filter((item) => item.uncertain).length
 		}
 	};
 }

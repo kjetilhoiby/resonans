@@ -3,11 +3,11 @@ import { buildWeekShoppingList } from '$lib/server/services/shopping-list-servic
 
 export const generateShoppingListTool = {
 	name: 'generate_shopping_list',
-	description: `Build a shopping list for a given week's meal plan, subtracting items already in pantry/fridge/freezer.
+	description: `Lag handleforslag for en uke: rettenes ingredienser (skalert til porsjonene og summert på tvers av retter), minus det som ligger i lageret, pluss det som mangler i bufferen på faste varer.
 
-Reads meal plans for weekContext, expands linked meals' ingredients, then removes ingredients
-that match a pantry item by name (case-insensitive). Returns a deduplicated list ready to be
-turned into checklist items.`,
+Mengder trekkes fra når enhetene passer (vekt mot vekt, volum mot volum, antall mot antall). Droppede middager handles ikke inn.
+
+Varer med uncertain=true står på lista fordi beholdningen er usikker: ukjent mengde, en annen enhet enn oppskriften, eller lageret er ikke bekreftet på over to uker. Si det til brukeren med note-teksten — ikke stryk dem og ikke legg dem til som sikre. covered er det som trolig finnes hjemme.`,
 
 	parameters: z.object({
 		userId: z.string(),
@@ -16,7 +16,7 @@ turned into checklist items.`,
 	}),
 
 	execute: async (args: { userId: string; weekContext: string; includeOptional?: boolean }) => {
-		const { items, meta } = await buildWeekShoppingList(args.userId, args.weekContext, {
+		const { items, meta, covered } = await buildWeekShoppingList(args.userId, args.weekContext, {
 			includeOptional: args.includeOptional
 		});
 
@@ -29,9 +29,12 @@ turned into checklist items.`,
 						: item.quantity != null
 							? `${item.name} (${item.quantity})`
 							: item.name,
-				sources: item.sources
+				sources: item.sources,
+				...(item.uncertain ? { uncertain: true } : {}),
+				...(item.note ? { note: item.note } : {})
 			})),
-			pantrySkipped: meta.pantrySkipped,
+			covered,
+			uncertainCount: meta.uncertainCount,
 			mealCount: meta.mealCount
 		};
 	}

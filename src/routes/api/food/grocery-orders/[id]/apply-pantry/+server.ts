@@ -69,7 +69,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 						: existing.quantity;
 			await db
 				.update(pantryItems)
-				.set({ quantity: newQty, addedAt: new Date() })
+				.set({ quantity: newQty, addedAt: new Date(), confirmedAt: new Date() })
 				.where(eq(pantryItems.id, existing.id));
 			existing.quantity = newQty;
 			pantryItemId = existing.id;

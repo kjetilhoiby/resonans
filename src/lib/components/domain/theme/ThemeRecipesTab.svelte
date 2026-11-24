@@ -1,12 +1,14 @@
 <!--
   ThemeRecipesTab — «Oppskrifter»-fanen på mat-temaet. Oppskriftskartoteket:
-  søk, hurtig-oppretting (bare navn), og redigering via RecipeSheet.
+  søk, hurtig-oppretting (bare navn), middagskortet (MealCardSheet) ved trykk,
+  og redigering via RecipeSheet fra kortet.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import Skeleton from '../../ui/Skeleton.svelte';
 	import RecipeSheet, { type RecipeLike } from '../food/RecipeSheet.svelte';
+	import MealCardSheet from '../food/MealCardSheet.svelte';
 	import { componentEmoji, isComposed } from '$lib/domains/food/composition';
 
 	type RecipeRow = RecipeLike & {
@@ -20,6 +22,7 @@
 	let newTitle = $state('');
 	let creating = $state(false);
 	let selected = $state<RecipeRow | null>(null);
+	let cardId = $state<string | null>(null);
 	let importOpen = $state(false);
 	let importUrl = $state('');
 	let importing = $state(false);
@@ -69,6 +72,11 @@
 				newTitle = '';
 				// Åpne kortet med en gang, så «✨ Foreslå oppskrift» er rett for hånden.
 				selected = row;
+			} else if (res.status === 409) {
+				// Retten finnes alt (annen skrivemåte): åpne den framfor å lage en duplikat.
+				const data = await res.json();
+				newTitle = '';
+				selected = recipes.find((r) => r.id === data.meal?.id) ?? { ...data.meal, timesPlanned: 0, lastPlannedDate: null };
 			}
 		} finally {
 			creating = false;
@@ -206,7 +214,7 @@
 		<SectionLabel tag="h2">{filtered.length} {filtered.length === 1 ? 'oppskrift' : 'oppskrifter'}</SectionLabel>
 		<div class="recipes-list">
 			{#each filtered as recipe (recipe.id)}
-				<button class="recipe-card" onclick={() => (selected = recipe)} data-track="oppskrifter:apne">
+				<button class="recipe-card" onclick={() => (cardId = recipe.id)} data-track="oppskrifter:apne">
 					<div class="recipe-card-main">
 						<span class="recipe-title">
 							{#if recipe.wantMore}<span class="recipe-star" title="Ønsker mer av">⭐</span>{/if}
@@ -231,6 +239,19 @@
 		</div>
 	{/if}
 </div>
+
+{#if cardId}
+	<MealCardSheet
+		mealId={cardId}
+		onclose={() => (cardId = null)}
+		onedit={(id) => {
+			const recipe = recipes.find((r) => r.id === id);
+			cardId = null;
+			if (recipe) selected = recipe;
+		}}
+		onchanged={load}
+	/>
+{/if}
 
 {#if selected}
 	<RecipeSheet

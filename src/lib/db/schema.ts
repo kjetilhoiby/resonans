@@ -1031,7 +1031,12 @@ export const pantryItems = pgTable('pantry_items', {
 	notes: text('notes'),
 	// Fast vare — skal alltid finnes hjemme (frukt, grønt, nøtter til matpakkene).
 	// Tomme staples (quantity 0 / utgått) legges automatisk på ukas handleliste.
-	isStaple: boolean('is_staple').notNull().default(false)
+	isStaple: boolean('is_staple').notNull().default(false),
+	// Sist noen bekreftet at mengden stemmer ($lib/domains/food/shopping-needs.ts).
+	// Settes ved registrering, endret mengde, kvittering og «✓ Stemmer».
+	confirmedAt: timestamp('confirmed_at').defaultNow(),
+	// Ønsket buffer for en fast vare («ett brød i fryseren»). null = ingen buffer.
+	targetQuantity: decimal('target_quantity')
 }, (table) => ({
 	idxPantryUserLocation: index('pantry_items_user_location_idx').on(table.userId, table.location),
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
@@ -1069,11 +1074,14 @@ export const shoppingLists = pgTable('shopping_lists', {
 		sources: string[]; // hvilke retter varen kommer fra, eller 'manuell'
 		checked: boolean;
 		manual: boolean; // lagt til av bruker, overlever regenerering
+		uncertain?: boolean; // usikker beholdning — sjekk før kjøp (shopping-needs.ts)
+		note?: string | null; // hvorfor varen står der
 	}>>().notNull().default([]),
 	meta: jsonb('meta').$type<{
 		pantrySkipped?: number;
 		mealCount?: number;
 		planIds?: string[];
+		uncertainCount?: number;
 	}>().notNull().default({}),
 	generatedAt: timestamp('generated_at').defaultNow().notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),

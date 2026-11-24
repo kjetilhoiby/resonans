@@ -1929,7 +1929,7 @@
 		"type": "function",
 		"function": {
 			"name": "query_food",
-			"description": "Les familiens mat: retter/oppskrifter, middagsplan, middagshistorikk og lager.\n\nqueryType:\n- 'meal_plan': PLANEN — hva vi skal spise. Standard denne og neste uke; weekContext («2026-W45») eller fromDate/toDate overstyrer. Hver rad har id, dato, rettens navn (mealTitle), status og takeaway.\n- 'history': HISTORIKKEN — hva vi faktisk spiste. Standard siste 28 dager (days/fromDate/toDate overstyrer). Gir radene pluss en oppsummering: mest spiste retter med antall og sist spist, droppede planer, takeaway-andel. Bruk dette for «når hadde vi ramen sist», «hva spiser vi mest», «vi har hatt mye pasta i det siste».\n- 'meals': kartoteket av retter, med favoritt, takeaway, timesEaten og lastEaten. Ingredienser og fremgangsmåte er med bare når withRecipe=true (tungt).\n- 'pantry': lageret, valgfritt filtrert på location (pantry/fridge/freezer).\n- 'expiring_soon': varer som går ut innen days dager (standard 7).\n\nStatus på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unconfirmed'. 'unconfirmed' er en plan på en dag som har vært, uten at noen har bekreftet den — si at den var planlagt, ikke at den ble spist.",
+			"description": "Les familiens mat: retter/oppskrifter, middagsplan, middagshistorikk og lager.\n\nqueryType:\n- 'meal_plan': PLANEN — hva vi skal spise. Standard denne og neste uke; weekContext («2026-W45») eller fromDate/toDate overstyrer. Hver rad har id, dato, rettens navn (mealTitle), status og takeaway.\n- 'history': HISTORIKKEN — hva vi faktisk spiste. Standard siste 28 dager (days/fromDate/toDate overstyrer). Gir radene pluss en oppsummering: mest spiste retter med antall og sist spist, droppede planer, takeaway-andel. Bruk dette for «når hadde vi ramen sist», «hva spiser vi mest», «vi har hatt mye pasta i det siste».\n- 'meals': kartoteket av retter, med favoritt, takeaway, timesEaten og lastEaten. Ingredienser og fremgangsmåte er med bare når withRecipe=true (tungt). possibleDuplicates lister retter med samme navn i ulik skrivemåte — foreslå manage_recipe merge.\n- 'pantry': lageret, valgfritt filtrert på location (pantry/fridge/freezer). Hver vare har confirmedAt, confirmedText («bekreftet for 3 uker siden») og stale=true når beholdningen er eldre enn to uker. En gammel beholdning er en gjetning: si når den sist ble bekreftet, og spør heller enn å love at noe finnes. targetQuantity er ønsket buffer for en fast vare.\n- 'expiring_soon': varer som går ut innen days dager (standard 7).\n\nStatus på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unconfirmed'. 'unconfirmed' er en plan på en dag som har vært, uten at noen har bekreftet den — si at den var planlagt, ikke at den ble spist.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -2004,7 +2004,7 @@
 		"type": "function",
 		"function": {
 			"name": "manage_recipe",
-			"description": "Create, update or delete a meal/recipe owned by the user.\n\nA meal is the building block in the food universe — primarily a name (e.g. \"kjøttkaker\"),\nwith optional recipe details (ingredients, instructions, images, nutrition). Use this when\nthe user wants to attach an oppskrift to a meal, edit an existing one, or remove it.\nFor 'create' you must supply title; ingredients are optional. For 'update'/'delete' supply id.\n\nKomponerte middager kan struktureres med mainProtein (kjøtt/kylling/svin/fisk/torsk/vegetar/egg),\nmainCarb (pasta/potet/ris/brød/couscous/nudler) og greens — dette gjør at systemet kan generere\nvarianter ved å bytte råvarer. La feltene stå tomme for retter som ikke passer (suppe, taco, pizza).\neffortLevel er lav/middels/høy.\n\nTo ulike ting, ikke bland dem:\n- favorite=true: en BEVIST familiefavoritt («alle elsker ramen»). Settes som taggen «favoritt»; andre tagger røres ikke.\n- wantMore=true: en AMBISJON — noe familien vil spise oftere, men ikke nødvendigvis gjør.\nBegge løfter retten i forslagene. Takeaway/restaurant settes med takeaway=true; slike retter foreslås aldri å lage.\n\nUkjente mengder: utelat quantity/unit framfor å gjette — et tomt felt er ærlig, et gjettet tall havner på handlelista.\nFor å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.",
+			"description": "Create, update or delete a meal/recipe owned by the user.\n\nA meal is the building block in the food universe — primarily a name (e.g. \"kjøttkaker\"),\nwith optional recipe details (ingredients, instructions, images, nutrition). Use this when\nthe user wants to attach an oppskrift to a meal, edit an existing one, or remove it.\nFor 'create' you must supply title; ingredients are optional. For 'update'/'delete' supply id.\n\nKomponerte middager kan struktureres med mainProtein (kjøtt/kylling/svin/fisk/torsk/vegetar/egg),\nmainCarb (pasta/potet/ris/brød/couscous/nudler) og greens — dette gjør at systemet kan generere\nvarianter ved å bytte råvarer. La feltene stå tomme for retter som ikke passer (suppe, taco, pizza).\neffortLevel er lav/middels/høy.\n\nTo ulike ting, ikke bland dem:\n- favorite=true: en BEVIST familiefavoritt («alle elsker ramen»). Settes som taggen «favoritt»; andre tagger røres ikke.\n- wantMore=true: en AMBISJON — noe familien vil spise oftere, men ikke nødvendigvis gjør.\nBegge løfter retten i forslagene. Takeaway/restaurant settes med takeaway=true; slike retter foreslås aldri å lage.\n\nUkjente mengder: utelat quantity/unit framfor å gjette — et tomt felt er ærlig, et gjettet tall havner på handlelista.\nFor å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.\n\nDuplikater: create gjenbruker en rett med samme navn (store/små bokstaver og tegnsetting teller ikke) og svarer duplicate=true — oppdater den med update framfor å lage en ny. Finnes to retter for samme ting (query_food meals viser possibleDuplicates), slå dem sammen med action='merge': id er duplikaten som forsvinner, mergeIntoId retten som beholdes. Planene, erfaringene og historikken flyttes over; ingenting går tapt. Spør brukeren før du slår sammen.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -2013,8 +2013,15 @@
 						"enum": [
 							"create",
 							"update",
-							"delete"
+							"delete",
+							"merge"
 						]
+					},
+					"mergeIntoId": {
+						"description": "merge: retten som beholdes (id er duplikaten som slås inn)",
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
 					},
 					"id": {
 						"type": "string",
@@ -2246,7 +2253,7 @@
 		"type": "function",
 		"function": {
 			"name": "manage_pantry",
-			"description": "Oppdater pantry/fryser/kjøleskap. action: add (krever name+location), update (krever id), remove (krever id), use (krever id, kan oppgi consumeQuantity).",
+			"description": "Legg til, endre, bekreft eller fjern varer i lageret (skap, kjøleskap, fryser).\n\naction:\n- 'add': ny vare (name + location). Mengde og enhet er valgfritt, men handlelista trekker bare fra mengder den kjenner.\n- 'update': endre en vare (id). En ny mengde regnes som en bekreftelse av beholdningen.\n- 'confirm': «det stemmer» — bekrefter beholdningen uten å endre tallet (id). Bruk når brukeren sier at noe fortsatt ligger der.\n- 'use': brukt (id); consumeQuantity trekker fra mengden.\n- 'remove': fjern varen (id).\n\nHver vare har en dato for når beholdningen sist ble bekreftet (confirmedAt i query_food). Handlelista stoler ikke på en beholdning som er eldre enn to uker — den legger varen på lista merket som usikker. Spør heller enn å gjette når brukeren lurer på om noe finnes hjemme.\n\nFaste varer (isStaple=true) skal alltid finnes hjemme. targetQuantity er ønsket buffer («ett brød i fryseren» = name «Brød», location «freezer», isStaple true, targetQuantity 1): handlelista fyller opp til den. Uten targetQuantity legges en fast vare på lista først når den er tom.",
 			"parameters": {
 				"type": "object",
 				"properties": {
@@ -2255,12 +2262,15 @@
 						"enum": [
 							"add",
 							"update",
+							"confirm",
 							"remove",
 							"use"
 						]
 					},
 					"id": {
-						"type": "string"
+						"type": "string",
+						"format": "uuid",
+						"pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
 					},
 					"name": {
 						"type": "string"
@@ -2274,19 +2284,57 @@
 						]
 					},
 					"quantity": {
-						"type": "number"
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"unit": {
-						"type": "string"
+						"description": "g, kg, dl, l, stk … tom = antall",
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"expiresAt": {
-						"type": "string",
-						"description": "YYYY-MM-DD"
+						"description": "YYYY-MM-DD",
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"notes": {
 						"type": "string"
 					},
+					"isStaple": {
+						"description": "Fast vare som alltid skal finnes hjemme",
+						"type": "boolean"
+					},
+					"targetQuantity": {
+						"description": "Ønsket buffer for en fast vare, i varens enhet. null fjerner bufferen.",
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
 					"consumeQuantity": {
+						"description": "Mengde å trekke fra ved action=use",
 						"type": "number"
 					}
 				},
@@ -2464,15 +2512,16 @@
 		"type": "function",
 		"function": {
 			"name": "generate_shopping_list",
-			"description": "Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.",
+			"description": "Lag handleforslag for en uke: rettenes ingredienser (skalert til porsjonene og summert på tvers av retter), minus det som ligger i lageret, pluss det som mangler i bufferen på faste varer.\n\nMengder trekkes fra når enhetene passer (vekt mot vekt, volum mot volum, antall mot antall). Droppede middager handles ikke inn.\n\nVarer med uncertain=true står på lista fordi beholdningen er usikker: ukjent mengde, en annen enhet enn oppskriften, eller lageret er ikke bekreftet på over to uker. Si det til brukeren med note-teksten — ikke stryk dem og ikke legg dem til som sikre. covered er det som trolig finnes hjemme.",
 			"parameters": {
 				"type": "object",
 				"properties": {
 					"weekContext": {
-						"type": "string",
-						"description": "ISO-uke, f.eks. \"2026-W17\""
+						"description": "ISO week, e.g. \"2026-W17\"",
+						"type": "string"
 					},
 					"includeOptional": {
+						"description": "Include optional ingredients (default false)",
 						"type": "boolean"
 					}
 				},

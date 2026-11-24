@@ -56,7 +56,8 @@
 					greens: card.composition.greens
 				})
 			});
-			if (res.ok) {
+			// 409 = retten finnes alt; bruk den framfor å lage en duplikat.
+			if (res.ok || res.status === 409) {
 				const data = await res.json();
 				return data.meal?.id;
 			}

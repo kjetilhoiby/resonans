@@ -1,3 +1,4 @@
+import { afterMealItemStateChanged } from '$lib/server/services/meal-plan-sync';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
@@ -42,14 +43,21 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			return json({ error: 'Elementet tilhører ikke denne delingen' }, { status: 404 });
 		}
 
-		await db
+		const [updatedItem] = await db
 			.update(checklistItems)
 			.set({
 				checked: body.checked,
 				checkedAt: body.checked ? now : null,
 				checkedViaShareTokenId: body.checked ? share.tokenId : null
 			})
-			.where(eq(checklistItems.id, body.itemId));
+			.where(eq(checklistItems.id, body.itemId))
+			.returning();
+
+		// Middagspunkt hukket av via en delt lenke er like mye «spist» som i appen
+		// (meal-log.ts) — denne veien går utenom checklist-item-mutations.ts.
+		if (updatedItem && typeof updatedItem.metadata?.linkedMealPlanId === 'string') {
+			await afterMealItemStateChanged(share.ownerUserId, updatedItem);
+		}
 
 		// Reflekter ferdig-status på sjekklisten hvis alle items er sjekka/skipped
 		await syncChecklistCompletion(share.resourceId);

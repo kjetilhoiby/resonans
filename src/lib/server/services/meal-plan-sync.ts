@@ -26,7 +26,7 @@ import {
 	FAMILY_DEFAULT_SERVINGS,
 	type MealType
 } from '$lib/domains/food';
-import { dayContextForDate, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { dayContextForDate, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 import {
 	isMealPlanStatus,
 	isTakeawayMeal,
@@ -238,6 +238,8 @@ export async function moveMealPlanToDate(
 		.set({
 			date: newDateIso,
 			weekContext: isoWeekKeyForDate(newDateIso),
+			// En middag flyttet til en dag som ikke har vært, er ikke spist (meal-log.ts).
+			status: sql`CASE WHEN ${mealPlans.status} = 'eaten' AND ${newDateIso}::date > (now() AT TIME ZONE 'Europe/Oslo')::date THEN 'planned' ELSE ${mealPlans.status} END`,
 			updatedAt: new Date()
 		})
 		.where(and(eq(mealPlans.id, planId), eq(mealPlans.userId, userId)));
@@ -423,6 +425,15 @@ export async function upsertMealPlan(
 		if (params.servings !== undefined) updates.servings = params.servings;
 		if (params.photoUrl !== undefined) updates.photoUrl = params.photoUrl;
 		if (params.status !== undefined) updates.status = params.status;
+		// En middag flyttet til en dag som ikke har vært, kan ikke være spist —
+		// samme regel som moveMealPlanToDate.
+		else if (
+			params.date !== undefined &&
+			existing.status === 'eaten' &&
+			params.date > osloTodayIso()
+		) {
+			updates.status = 'planned';
+		}
 
 		const [updated] = await db
 			.update(mealPlans)
@@ -492,19 +503,25 @@ export async function deleteMealPlan(
 	return true;
 }
 
-/** Hent alle meal_plans for en uke med måltids-titler (delt av API + dashboard). */
+/** Hent alle meal_plans for en uke med måltids-titler, status og takeaway (delt av API + dashboard). */
 export async function getWeekMealPlansWithTitles(userId: string, weekContext: string) {
 	const rows = await db
 		.select({
 			plan: mealPlans,
-			mealTitle: meals.title
+			mealTitle: meals.title,
+			mealTags: meals.tags
 		})
 		.from(mealPlans)
 		.leftJoin(meals, eq(mealPlans.mealId, meals.id))
 		.where(and(eq(mealPlans.userId, userId), eq(mealPlans.weekContext, weekContext)))
 		.orderBy(sql`${mealPlans.date} asc, ${mealPlans.mealType} asc`);
 
-	return rows.map((row) => ({ ...row.plan, mealTitle: row.mealTitle }));
+	return rows.map((row) => ({
+		...row.plan,
+		status: isMealPlanStatus(row.plan.status) ? row.plan.status : ('planned' as MealPlanStatus),
+		mealTitle: row.mealTitle,
+		takeaway: isTakeawayMeal(row.mealTags)
+	}));
 }
 
 /**

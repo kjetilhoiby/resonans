@@ -4,6 +4,8 @@ import { meals, mealPlans, pantryItems } from '$lib/db/schema';
 import { eq, and, gte, lte, desc, asc, ne, sql } from 'drizzle-orm';
 import { getMealPlansWithTitlesInRange } from '$lib/server/services/meal-plan-sync';
 import { addDaysIso, datesForIsoWeek, osloTodayIso } from '$lib/server/iso-week';
+import { describeStockAge, isStockStale, PANTRY_STALE_DAYS } from '$lib/domains/food/shopping-needs';
+import { findDuplicateGroups } from '$lib/domains/food/meal-card';
 import {
 	isFavoriteMeal,
 	isTakeawayMeal,
@@ -58,8 +60,8 @@ export const queryFoodTool = {
 queryType:
 - 'meal_plan': PLANEN — hva vi skal spise. Standard denne og neste uke; weekContext («2026-W45») eller fromDate/toDate overstyrer. Hver rad har id, dato, rettens navn (mealTitle), status og takeaway.
 - 'history': HISTORIKKEN — hva vi faktisk spiste. Standard siste 28 dager (days/fromDate/toDate overstyrer). Gir radene pluss en oppsummering: mest spiste retter med antall og sist spist, droppede planer, takeaway-andel. Bruk dette for «når hadde vi ramen sist», «hva spiser vi mest», «vi har hatt mye pasta i det siste».
-- 'meals': kartoteket av retter, med favoritt, takeaway, timesEaten og lastEaten. Ingredienser og fremgangsmåte er med bare når withRecipe=true (tungt).
-- 'pantry': lageret, valgfritt filtrert på location (pantry/fridge/freezer).
+- 'meals': kartoteket av retter, med favoritt, takeaway, timesEaten og lastEaten. Ingredienser og fremgangsmåte er med bare når withRecipe=true (tungt). possibleDuplicates lister retter med samme navn i ulik skrivemåte — foreslå manage_recipe merge.
+- 'pantry': lageret, valgfritt filtrert på location (pantry/fridge/freezer). Hver vare har confirmedAt, confirmedText («bekreftet for 3 uker siden») og stale=true når beholdningen er eldre enn to uker. En gammel beholdning er en gjetning: si når den sist ble bekreftet, og spør heller enn å love at noe finnes. targetQuantity er ønsket buffer for en fast vare.
 - 'expiring_soon': varer som går ut innen days dager (standard 7).
 
 Status på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unconfirmed'. 'unconfirmed' er en plan på en dag som har vært, uten at noen har bekreftet den — si at den var planlagt, ikke at den ble spist.`,
@@ -157,7 +159,14 @@ Status på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unc
 							: {})
 					};
 				});
-				return { meals: result, total: filtered.length };
+				const possibleDuplicates = findDuplicateGroups(rows).map((group) =>
+					group.map((m) => ({ id: m.id, title: m.title }))
+				);
+				return {
+					meals: result,
+					total: filtered.length,
+					...(possibleDuplicates.length ? { possibleDuplicates } : {})
+				};
 			}
 
 			case 'meal_plan':
@@ -220,7 +229,15 @@ Status på en plan- eller historikkrad: 'planned', 'eaten', 'skipped' eller 'unc
 					.from(pantryItems)
 					.where(and(...conditions))
 					.orderBy(asc(pantryItems.location), asc(pantryItems.name));
-				return { pantry: rows };
+				const now = new Date();
+				return {
+					pantry: rows.map((row) => ({
+						...row,
+						confirmedText: describeStockAge(row.confirmedAt, now),
+						stale: isStockStale(row.confirmedAt, now)
+					})),
+					staleAfterDays: PANTRY_STALE_DAYS
+				};
 			}
 
 			case 'expiring_soon': {

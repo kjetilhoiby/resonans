@@ -1592,24 +1592,32 @@ export const mockChatStarredApi = {
 
 // ── Mat / matplan ────────────────────────────────────────────────
 
+// Statusene viser alle fire lesingene mot todayIso 2026-07-22 i mat-seksjonen:
+// spist, droppet, ubekreftet (en plan i går ingen har krysset av) og planlagt.
 export const foodMealPlansMock = [
-	{ id: 'fp-1', date: '2026-07-20', mealType: 'dinner' as const, mealId: 'm-1', notes: null, servings: 5, photoUrl: null, mealTitle: 'Taco' },
-	{ id: 'fp-2', date: '2026-07-21', mealType: 'dinner' as const, mealId: 'm-2', notes: null, servings: 5, photoUrl: null, mealTitle: 'Fiskegrateng' },
-	{ id: 'fp-3', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-3', notes: null, servings: 5, photoUrl: null, mealTitle: 'Kyllingform med ris' },
-	{ id: 'fp-4', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-4', notes: null, servings: 2, photoUrl: null, mealTitle: 'Pastasalat (barnevariant)' }
+	{ id: 'fp-1', date: '2026-07-20', mealType: 'dinner' as const, mealId: 'm-1', notes: 'Doblet porsjonen', servings: 5, photoUrl: null, mealTitle: 'Taco', status: 'eaten' as const },
+	{ id: 'fp-2', date: '2026-07-21', mealType: 'dinner' as const, mealId: 'm-2', notes: null, servings: 5, photoUrl: null, mealTitle: 'Fiskegrateng', status: 'planned' as const },
+	{ id: 'fp-5', date: '2026-07-21', mealType: 'dinner' as const, mealId: 'm-5', notes: null, servings: 5, photoUrl: null, mealTitle: 'Peppes pizza', status: 'skipped' as const, takeaway: true },
+	{ id: 'fp-3', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-3', notes: null, servings: 5, photoUrl: null, mealTitle: 'Kyllingform med ris', status: 'planned' as const },
+	{ id: 'fp-4', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-4', notes: null, servings: 2, photoUrl: null, mealTitle: 'Pastasalat (barnevariant)', status: 'planned' as const }
 ];
 
+// confirmedAt mot todayIso 2026-07-22: havregryn og kylling er ferske, eplene
+// står med en gammel bekreftelse (⚠), brødet har buffer på 1.
 export const foodPantryMock = [
-	{ id: 'pi-1', name: 'Havregryn', location: 'pantry' as const, quantity: '1', unit: 'pk', expiresAt: null, isStaple: false },
-	{ id: 'pi-2', name: 'Epler', location: 'fridge' as const, quantity: '4', unit: 'stk', expiresAt: null, isStaple: true },
-	{ id: 'pi-3', name: 'Cashewnøtter', location: 'pantry' as const, quantity: '0', unit: 'pose', expiresAt: null, isStaple: true },
-	{ id: 'pi-4', name: 'Kyllingfilet', location: 'freezer' as const, quantity: '2', unit: 'pk', expiresAt: '2026-07-24', isStaple: false }
+	{ id: 'pi-1', name: 'Havregryn', location: 'pantry' as const, quantity: '1', unit: 'pk', expiresAt: null, isStaple: false, targetQuantity: null, confirmedAt: '2026-07-18T08:00:00Z' },
+	{ id: 'pi-2', name: 'Epler', location: 'fridge' as const, quantity: '4', unit: 'stk', expiresAt: null, isStaple: true, targetQuantity: null, confirmedAt: '2026-06-01T08:00:00Z' },
+	{ id: 'pi-3', name: 'Cashewnøtter', location: 'pantry' as const, quantity: '0', unit: 'pose', expiresAt: null, isStaple: true, targetQuantity: null, confirmedAt: '2026-07-20T08:00:00Z' },
+	{ id: 'pi-4', name: 'Kyllingfilet', location: 'freezer' as const, quantity: '2', unit: 'pk', expiresAt: '2026-07-24', isStaple: false, targetQuantity: null, confirmedAt: '2026-07-21T08:00:00Z' },
+	{ id: 'pi-5', name: 'Brød', location: 'freezer' as const, quantity: '0', unit: null, expiresAt: null, isStaple: true, targetQuantity: '1', confirmedAt: '2026-07-21T08:00:00Z' }
 ];
 
 export const foodShoppingListItemsMock = [
-	{ id: 'sl-1', name: 'Kjøttdeig (800 g)', normalizedName: 'kjøttdeig', quantity: 800, unit: 'g', sources: ['Taco'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=kj%C3%B8ttdeig' },
+	{ id: 'sl-1', name: 'Kjøttdeig', normalizedName: 'kjøttdeig', quantity: 400, unit: 'g', sources: ['Taco', 'Lasagne'], checked: false, manual: false, note: 'Har 400 g hjemme', odaUrl: 'https://oda.com/no/search/?q=kj%C3%B8ttdeig' },
 	{ id: 'sl-2', name: 'Taco-lefser', normalizedName: 'taco-lefser', quantity: 2, unit: 'pk', sources: ['Taco'], checked: true, manual: false, odaUrl: 'https://oda.com/no/search/?q=taco-lefser' },
 	{ id: 'sl-3', name: 'Fløte', normalizedName: 'fløte', quantity: 0.5, unit: 'l', sources: ['Fiskegrateng'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=fl%C3%B8te' },
+	{ id: 'sl-6', name: 'Ris', normalizedName: 'ris', quantity: null, unit: null, sources: ['Kyllingform med ris'], checked: false, manual: false, uncertain: true, note: 'Trolig nok hjemme (1 kg), men bekreftet for 7 uker siden', odaUrl: 'https://oda.com/no/search/?q=ris' },
+	{ id: 'sl-7', name: 'Brød', normalizedName: 'brød', quantity: 1, unit: null, sources: ['buffer'], checked: false, manual: false, note: 'Ønsker 1 hjemme, har 0', odaUrl: 'https://oda.com/no/search/?q=br%C3%B8d' },
 	{ id: 'sl-4', name: 'Cashewnøtter', normalizedName: 'cashewnøtter', quantity: null, unit: null, sources: ['fast vare'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=cashewn%C3%B8tter' },
 	{ id: 'sl-5', name: 'Tannkrem barn', normalizedName: 'tannkrem barn', quantity: null, unit: null, sources: ['manuell'], checked: false, manual: true, odaUrl: 'https://oda.com/no/search/?q=tannkrem%20barn' }
 ];

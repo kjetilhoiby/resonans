@@ -14,7 +14,12 @@
 	import GroceryReceiptCard from './food/GroceryReceiptCard.svelte';
 	import MatplanOnboarding from './food/MatplanOnboarding.svelte';
 	import BottomSheet from '../ui/BottomSheet.svelte';
+	import DinnerSheet from './food/DinnerSheet.svelte';
+	import MealCardSheet from './food/MealCardSheet.svelte';
+	import PantryItemSheet from './food/PantryItemSheet.svelte';
 	import type { FoodShoppingListSummary } from '$lib/client/dashboard-cache';
+	import { readMealStatus, MEAL_LOG_READING_LABEL, type MealPlanStatus } from '$lib/domains/food/meal-log';
+	import { describeStockAge, isStockStale } from '$lib/domains/food/shopping-needs';
 
 	interface MealPlanRow {
 		id: string;
@@ -25,6 +30,8 @@
 		servings: number;
 		photoUrl: string | null;
 		mealTitle?: string | null;
+		status?: MealPlanStatus | string | null;
+		takeaway?: boolean;
 	}
 
 	interface PantryRow {
@@ -35,6 +42,8 @@
 		unit: string | null;
 		expiresAt: string | null;
 		isStaple?: boolean;
+		targetQuantity?: string | null;
+		confirmedAt?: string | null;
 	}
 
 	interface Props {
@@ -52,9 +61,39 @@
 		};
 		onOpenChat?: (prefill: string) => void;
 		onRefresh?: () => void;
+		/** Dagens dato i Oslo (YYYY-MM-DD). Settes av /design for faste skjermbilder. */
+		todayIso?: string;
 	}
 
-	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, groceryBudgetWeekly = null, onboarded = true, nextWeek, onOpenChat, onRefresh }: Props = $props();
+	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, groceryBudgetWeekly = null, onboarded = true, nextWeek, onOpenChat, onRefresh, todayIso }: Props = $props();
+
+	const today = $derived(todayIso ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' }));
+	// Alder på lagerbekreftelser måles mot dagen som vises — fast i /design.
+	const now = $derived(todayIso ? new Date(todayIso + 'T12:00:00Z') : new Date());
+
+	// Middagen er fasit: ett trykk åpner arket der den kan registreres, byttes og
+	// flyttes. Serveren speiler endringen til «middag: …» i ukelista.
+	let dinnerPlan = $state<MealPlanRow | null>(null);
+	let cardMealId = $state<string | null>(null);
+	let pantrySheetItem = $state<PantryRow | null>(null);
+
+	function readingFor(plan: MealPlanRow) {
+		return readMealStatus((plan.status ?? 'planned') as MealPlanStatus, plan.date, today);
+	}
+
+	const READING_MARK: Record<string, string> = { eaten: '✓', skipped: '✕', unconfirmed: '?', planned: '' };
+
+	/** Mandag–søndag i uka datoen ligger i. */
+	function weekDatesFor(dateIso: string): string[] {
+		const base = new Date(dateIso + 'T12:00:00Z');
+		const monday = new Date(base);
+		monday.setUTCDate(base.getUTCDate() - ((base.getUTCDay() + 6) % 7));
+		return Array.from({ length: 7 }, (_, i) => {
+			const d = new Date(monday);
+			d.setUTCDate(monday.getUTCDate() + i);
+			return d.toISOString().slice(0, 10);
+		});
+	}
 
 	// Vis oppsett-CTA til onboardingen er fullført/hoppet over. Lokal state så
 	// «Sett opp»-kortet forsvinner umiddelbart etter fullføring.
@@ -202,8 +241,10 @@
 					<li class="fd-day">
 						<span class="fd-day-date">{formatNorwegianDate(day.date)}</span>
 						<span class="fd-day-meals">
-							{#each day.plans as plan}
-								<span class="fd-meal">{MEAL_TYPES[plan.mealType].emoji} {plan.mealTitle ?? '—'}</span>
+							{#each day.plans as plan (plan.id)}
+								<button class="fd-meal fd-meal-btn" onclick={() => (dinnerPlan = plan)} data-track="matplan:apne-middag-neste-uke">
+									{MEAL_TYPES[plan.mealType].emoji} <span class="fd-meal-title">{plan.mealTitle ?? '—'}</span>
+								</button>
 							{/each}
 						</span>
 					</li>
@@ -254,11 +295,19 @@
 					<li class="fd-day">
 						<span class="fd-day-date">{formatNorwegianDate(day.date)}</span>
 						<span class="fd-day-meals">
-							{#each day.plans as plan}
-								<span class="fd-meal">
-									{MEAL_TYPES[plan.mealType].emoji} {plan.mealTitle ?? '—'}
+							{#each day.plans as plan (plan.id)}
+								{@const reading = readingFor(plan)}
+								<button
+									class="fd-meal fd-meal-btn"
+									data-reading={reading}
+									onclick={() => (dinnerPlan = plan)}
+									aria-label={`${plan.mealTitle ?? 'Middag'}, ${MEAL_LOG_READING_LABEL[reading]}`}
+									data-track="matplan:apne-middag"
+								>
+									{MEAL_TYPES[plan.mealType].emoji} <span class="fd-meal-title">{plan.mealTitle ?? '—'}</span>
 									{#if plan.servings && plan.servings !== FAMILY_DEFAULT_SERVINGS}<span class="fd-servings">×{plan.servings}</span>{/if}
-								</span>
+									{#if READING_MARK[reading]}<span class="fd-mark">{READING_MARK[reading]}</span>{/if}
+								</button>
 							{/each}
 						</span>
 					</li>
@@ -284,7 +333,7 @@
 	<!-- Lager -->
 	<section>
 		<SectionLabel tag="h3">Lager</SectionLabel>
-		<p class="fd-staple-hint">⭐ = fast vare — legges automatisk på handlelista når den er tom.</p>
+		<p class="fd-staple-hint">⭐ = fast vare. Trykk på en vare for å bekrefte beholdningen eller sette en buffer. ⚠ = ikke bekreftet på over to uker.</p>
 		<div class="fd-locations">
 			{#each Object.entries(PANTRY_LOCATIONS) as [loc, meta]}
 				<div class="fd-location">
@@ -302,12 +351,23 @@
 										aria-label={item.isStaple ? `Fjern ${item.name} som fast vare` : `Gjør ${item.name} til fast vare`}
 										data-track="matplan:fast-vare"
 									>{item.isStaple ? '⭐' : '☆'}</button>
-									<span>
+									<button
+										class="fd-pantry-name"
+										onclick={() => (pantrySheetItem = item)}
+										title={describeStockAge(item.confirmedAt ?? null, now)}
+										data-track="lager:apne-vare"
+									>
 										{item.name}
 										{#if item.quantity}
-											<span class="fd-muted">({item.quantity}{item.unit ? ' ' + item.unit : ''})</span>
+											<span class="fd-muted">({Number(item.quantity).toLocaleString('no-NO')}{item.unit ? ' ' + item.unit : ''})</span>
 										{/if}
-									</span>
+										{#if item.isStaple && item.targetQuantity}
+											<span class="fd-muted">· ønsker {Number(item.targetQuantity).toLocaleString('no-NO')}</span>
+										{/if}
+										{#if isStockStale(item.confirmedAt ?? null, now)}
+											<span class="fd-stale" aria-label={describeStockAge(item.confirmedAt ?? null, now)}>⚠</span>
+										{/if}
+									</button>
 								</li>
 							{/each}
 						</ul>
@@ -350,6 +410,28 @@
 		onOpenChat={onOpenChat}
 		oncompleted={() => onRefresh?.()}
 	/>
+{/if}
+
+{#if dinnerPlan}
+	<DinnerSheet
+		plan={dinnerPlan}
+		weekDates={weekDatesFor(dinnerPlan.date)}
+		todayIso={today}
+		onchanged={() => onRefresh?.()}
+		onclose={() => (dinnerPlan = null)}
+		onopencard={(mealId) => {
+			dinnerPlan = null;
+			cardMealId = mealId;
+		}}
+	/>
+{/if}
+
+{#if cardMealId}
+	<MealCardSheet mealId={cardMealId} onclose={() => (cardMealId = null)} onchanged={() => onRefresh?.()} />
+{/if}
+
+{#if pantrySheetItem}
+	<PantryItemSheet item={pantrySheetItem} onchanged={() => onRefresh?.()} onclose={() => (pantrySheetItem = null)} />
 {/if}
 
 {#if onboardingOpen}
@@ -506,6 +588,42 @@
 		display: inline-flex;
 		align-items: baseline;
 		gap: 4px;
+	}
+	.fd-meal-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		text-align: left;
+	}
+	.fd-meal-btn[data-reading='skipped'] .fd-meal-title {
+		text-decoration: line-through;
+		color: var(--text-secondary);
+	}
+	.fd-mark {
+		font-size: var(--font-size-caption, 0.72rem);
+		color: var(--text-secondary);
+	}
+	.fd-meal-btn[data-reading='eaten'] .fd-mark {
+		color: var(--success-text);
+	}
+	.fd-meal-btn[data-reading='unconfirmed'] .fd-mark {
+		color: var(--warning-text);
+	}
+	.fd-pantry-name {
+		background: none;
+		border: none;
+		padding: 0;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.fd-stale {
+		color: var(--warning-text);
+		font-size: var(--font-size-caption, 0.72rem);
 	}
 	.fd-servings,
 	.fd-muted {

@@ -128,8 +128,8 @@ Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bil
 - query_food: les retter (meals, med favoritt og sist spist), planen (meal_plan), historikken (history — hva vi faktisk spiste), pantry-innhold eller varer som snart går ut
 - manage_recipe: opprett/oppdater/slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, tilberedningstid, porsjoner, bilde). favorite=true for en familiefavoritt, takeaway=true for takeaway/restaurant
 - manage_meal_plan: planen OG historikken — samme rad, status skiller dem: planned (standard), eaten (spist), skipped (droppet). Koble til et lagret måltid via mealId, eller send mealName
-- manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, remove, use (kan dekrementere quantity)
-- generate_shopping_list: bygg handleliste fra ukemenyens måltider minus pantry-innhold (returnerer items klare for sjekkliste)
+- manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, confirm («det stemmer»), remove, use (kan dekrementere quantity). Faste varer kan ha buffer: isStaple=true + targetQuantity («ett brød i fryseren»)
+- generate_shopping_list: bygg handleliste fra ukemenyens måltider, i mengder, minus lageret og pluss buffer. Varer merket uncertain skal sjekkes hjemme før de kjøpes — si det, ikke stryk dem
 - manage_lunchbox: matpakker — get_suggestions (dagens forslag per barn), log_packed, log_return («hadde med 2 skiver hjem»), set_preferences (liker/liker ikke/allergier/appetitt), add_component (pålegg/frukt/grønt i biblioteket)
 - find_recipes: søk ekte oppskrifter på norske sider (search: ingredienser default fra lageret, utløpsvarer prioriteres, barnas allergier ekskluderes; import: lagre valgt URL i kartoteket)
 - manage_food_settings: familiens ukerytme (weekRhythmNote — faste mønstre/føringer) og ukebudsjett på husholdningsnivå
@@ -142,6 +142,9 @@ Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bil
 - "vi spiste ramen i går" → query_food meal_plan for gårsdagen → planlagt ramen: update status='eaten'; noe annet planlagt: sett det til 'skipped' og create ramen med status='eaten'
 - "vi tok pizza fra Peppes" → manage_meal_plan create med status='eaten' og takeaway=true
 - "når hadde vi taco sist?" / "hva spiser vi mest?" → query_food history (eller meals, som har lastEaten)
+- "vi flytter tacoen til torsdag" / "bytt fredagsmiddagen" → manage_meal_plan update på samme plan (date eller mealId) — aldri slett og opprett, da forsvinner historikken
+- Lager-tall har en dato (confirmedText). Er det gammelt (stale), si når det sist ble bekreftet og spør, ikke lov at noe finnes
+- To skrivemåter av samme rett (possibleDuplicates i query_food meals) → spør, så manage_recipe merge
 - Skriv aldri «Spist» i notes — status finnes for det. En plan på en dag som har vært uten bekreftelse er 'unconfirmed': si at den var planlagt, ikke at den ble spist
 - "Nils spiste ikke salamien i dag" → manage_lunchbox log_return (childName='Nils', itemName='salami')
 - "Hva kan jeg lage med kyllingen i fryseren?" → find_recipes search (query='kylling') → vis kandidater → import ved valg → tilby manage_meal_plan

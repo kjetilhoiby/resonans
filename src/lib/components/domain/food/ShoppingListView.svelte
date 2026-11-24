@@ -17,6 +17,9 @@
 		checked: boolean;
 		manual: boolean;
 		odaUrl?: string;
+		/** Usikker beholdning — sjekk hjemme før du kjøper (shopping-needs.ts). */
+		uncertain?: boolean;
+		note?: string | null;
 	};
 
 	interface Props {
@@ -97,11 +100,15 @@
 				<li class="slv-row" class:checked={item.checked}>
 					<ChecklistCheckbox checked={item.checked} onclick={() => toggle(item)} />
 					<div class="slv-main">
-						<span class="slv-name">{item.name}</span>
+						<span class="slv-name">
+							{item.name}
+							{#if item.uncertain}<span class="slv-uncertain" aria-label="Usikker beholdning — sjekk hjemme">sjekk hjemme</span>{/if}
+						</span>
 						<span class="slv-meta">
 							{#if quantityLabel(item)}{quantityLabel(item)} · {/if}
 							{item.sources.join(', ')}
 						</span>
+						{#if item.note}<span class="slv-note">{item.note}</span>{/if}
 					</div>
 					{#if odaMode && item.odaUrl}
 						<a
@@ -189,6 +196,20 @@
 	}
 	.slv-name {
 		font-size: 0.92rem;
+	}
+	.slv-uncertain {
+		margin-left: 6px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		font-size: var(--font-size-caption, 0.72rem);
+		background: var(--warning-bg);
+		border: 1px solid var(--warning-border);
+		color: var(--warning-text);
+		white-space: nowrap;
+	}
+	.slv-note {
+		font-size: var(--font-size-caption, 0.72rem);
+		color: var(--text-secondary);
 	}
 	.slv-meta {
 		font-size: 0.74rem;

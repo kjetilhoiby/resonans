@@ -232,6 +232,11 @@ skrive «Spist» i notatfeltet for å etterregistrere middager. Se
 | Planen ble ikke fulgt | gammel rad `skipped`, ny rad `eaten` |
 | Takeaway | `manage_meal_plan` `takeaway: true` |
 | Favoritt | `manage_recipe` `favorite: true` |
+| To skrivemåter av samme rett | `query_food` `meals` gir `possibleDuplicates`; `manage_recipe` `merge`: `id` er duplikaten som forsvinner, `mergeIntoId` retten som beholdes |
+| Hva har vi hjemme? | `query_food` `pantry`: `confirmedText` og `stale` sier hvor gammelt tallet er |
+| Det stemmer / vi har 2 | `manage_pantry` `confirm`, eller `update` med `quantity` (bekrefter også) |
+| Alltid ett brød i fryseren | `manage_pantry` `update` med `isStaple: true`, `targetQuantity: 1` |
+| Handleliste | `generate_shopping_list`: `uncertain`-varer skal sjekkes hjemme, `covered` er det lageret dekket |
 
 - **Plan og historikk er samme rad; `meal_plans.status` skiller dem** (`planned`, `eaten`,
   `skipped`). Reglene står i `$lib/domains/food/meal-log.ts`.

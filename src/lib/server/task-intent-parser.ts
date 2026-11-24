@@ -1,5 +1,6 @@
 import { and, eq, ilike } from 'drizzle-orm';
 import { db } from '$lib/db';
+import { findMealByNormalizedTitle } from '$lib/server/services/meal-catalog';
 import { goals, meals, tasks } from '$lib/db/schema';
 import { detectMealPrefix, FAMILY_DEFAULT_SERVINGS, type MealType } from '$lib/domains/food';
 import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
@@ -158,6 +159,11 @@ export async function findOrCreateMealId(
 			: ((await tryQuery(safe)) ?? (await tryQuery(`${safe}%`)) ?? (await tryQuery(`%${safe}%`)));
 
 	if (existing) return existing;
+
+	// «Taco-fredag» og «taco fredag» er samme rett: et ILIKE-treff fanger ikke
+	// tegnsetting, og en duplikat i kartoteket splitter historikken i to.
+	const sameDish = await findMealByNormalizedTitle(userId, trimmed);
+	if (sameDish) return sameDish.id;
 
 	// Navn-bare måltider antas å mette familien (skala 1× i handlelisten).
 	const [created] = await db

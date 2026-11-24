@@ -630,6 +630,21 @@ Se `docs/changelog/2026-11-02-middagsplan-og-historikk.md`. Reglene står i
   (`readMealStatus`). Den lagres aldri slik, og den telles aldri som spist.
 - **Takeaway og favoritt er TAGGER på retten** (`takeaway`, `favoritt`). Takeaway foreslås
   aldri å lage. `wantMore` er en ambisjon, ikke en favoritt.
+- **En middag flyttet til en dag som ikke har vært, er `planned` igjen**
+  (`moveMealPlanToDate`). Alle avkryssingsveier — også delt lenke — kaller
+  `afterMealItemStateChanged`. Se `docs/changelog/2026-11-24-middagsplanen-som-fasit.md`.
+- **Middagskortet samler retten** (`getMealCard`, `$lib/domains/food/meal-card.ts`).
+  Erfaringer er `meal_plans.notes` — de bor på kvelden de gjelder, ikke på retten.
+- **Samme rett opprettes ikke to ganger:** alt som lager en rett slår opp på
+  `normalizeMealTitle` først. Duplikater slås sammen med `mergeMeals`, som PEKER OM
+  planer, sjekklistepunkter, tasks og finds i én transaksjon — aldri kopier, aldri
+  slett historikk.
+- **Lageret har `confirmedAt`; over `PANTRY_STALE_DAYS` (14) er tallet en gjetning.**
+  Bare en sett mengde («✓ Stemmer», endret mengde, en Oda-ordre) bekrefter.
+  Handlelista regnes i `planShopping` (`$lib/domains/food/shopping-needs.ts`):
+  mengder summert på tvers av retter i felles enhet, minus lageret, pluss
+  `targetQuantity` (buffer på faste varer). **En usikker beholdning legges på lista
+  MERKET, aldri utelatt**, og ulike enheter trekkes aldri fra hverandre.
 
 ### Ekstern API-flate (Akser)
 

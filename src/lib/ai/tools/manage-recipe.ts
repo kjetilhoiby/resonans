@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { meals } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { normalizeComponent } from '$lib/domains/food/composition';
+import { findMealByNormalizedTitle, mergeMeals } from '$lib/server/services/meal-catalog';
 import { TAKEAWAY_TAG, withTag } from '$lib/domains/food/meal-log';
 
 /** favorite/takeaway er tagger; flagget legges oppå tags-lista (eksplisitt eller lagret). */
@@ -43,11 +44,14 @@ To ulike ting, ikke bland dem:
 Begge løfter retten i forslagene. Takeaway/restaurant settes med takeaway=true; slike retter foreslås aldri å lage.
 
 Ukjente mengder: utelat quantity/unit framfor å gjette — et tomt felt er ærlig, et gjettet tall havner på handlelista.
-For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.`,
+For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_plan — ikke denne.
+
+Duplikater: create gjenbruker en rett med samme navn (store/små bokstaver og tegnsetting teller ikke) og svarer duplicate=true — oppdater den med update framfor å lage en ny. Finnes to retter for samme ting (query_food meals viser possibleDuplicates), slå dem sammen med action='merge': id er duplikaten som forsvinner, mergeIntoId retten som beholdes. Planene, erfaringene og historikken flyttes over; ingenting går tapt. Spør brukeren før du slår sammen.`,
 
 	parameters: z.object({
 		userId: z.string(),
-		action: z.enum(['create', 'update', 'delete']),
+		action: z.enum(['create', 'update', 'delete', 'merge']),
+		mergeIntoId: z.string().uuid().optional().describe('merge: retten som beholdes (id er duplikaten som slås inn)'),
 		id: z.string().uuid().optional(),
 		title: z.string().optional(),
 		description: z.string().optional(),
@@ -70,8 +74,9 @@ For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_pl
 
 	execute: async (args: {
 		userId: string;
-		action: 'create' | 'update' | 'delete';
+		action: 'create' | 'update' | 'delete' | 'merge';
 		id?: string;
+		mergeIntoId?: string;
 		title?: string;
 		description?: string;
 		ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null; optional?: boolean }>;
@@ -93,6 +98,14 @@ For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_pl
 		if (args.action === 'create') {
 			if (!args.title) {
 				return { error: 'title required for create' };
+			}
+			const existing = await findMealByNormalizedTitle(args.userId, args.title);
+			if (existing) {
+				return {
+					meal: existing,
+					duplicate: true,
+					note: `«${existing.title}» finnes alt. Bruk action='update' med id ${existing.id} for å legge til oppskrift eller endre den.`
+				};
 			}
 			const [created] = await db
 				.insert(meals)
@@ -154,6 +167,12 @@ For å registrere at retten ble SPIST (eller planlegge den), bruk manage_meal_pl
 				.where(and(eq(meals.id, args.id), eq(meals.userId, args.userId)))
 				.returning();
 			return updated ? { meal: updated } : { error: 'meal not found' };
+		}
+
+		if (args.action === 'merge') {
+			if (!args.id || !args.mergeIntoId) return { error: 'id (duplikaten) og mergeIntoId (den som beholdes) er påkrevd' };
+			const result = await mergeMeals(args.userId, args.mergeIntoId, args.id);
+			return 'error' in result ? result : { meal: result.meal, movedPlans: result.movedPlans, mergedAway: args.id };
 		}
 
 		if (args.action === 'delete') {

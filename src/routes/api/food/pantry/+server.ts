@@ -38,7 +38,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			unit: body.unit ?? null,
 			expiresAt: body.expiresAt ?? null,
 			notes: body.notes ?? null,
-			isStaple: body.isStaple === true
+			isStaple: body.isStaple === true,
+			targetQuantity: body.targetQuantity != null ? String(body.targetQuantity) : null,
+			confirmedAt: new Date()
 		})
 		.returning();
 
@@ -60,6 +62,13 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 	if ('notes' in body) updates.notes = body.notes;
 	if ('lastUsedAt' in body) updates.lastUsedAt = body.lastUsedAt ? new Date(body.lastUsedAt) : null;
 	if ('isStaple' in body) updates.isStaple = body.isStaple === true;
+	if ('targetQuantity' in body) {
+		updates.targetQuantity = body.targetQuantity != null && body.targetQuantity !== '' ? String(body.targetQuantity) : null;
+	}
+	// En mengde noen nettopp har skrevet inn er en bekreftelse, og «✓ Stemmer»
+	// (confirm) bekrefter uten å endre tallet. Se shopping-needs.ts.
+	if ('quantity' in body || body.confirm === true) updates.confirmedAt = new Date();
+	if (Object.keys(updates).length === 0) return json({ error: 'Ingen endringer' }, { status: 400 });
 
 	const [updated] = await db
 		.update(pantryItems)

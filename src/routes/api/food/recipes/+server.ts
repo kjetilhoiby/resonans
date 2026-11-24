@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { meals, mealPlans } from '$lib/db/schema';
 import { eq, desc, and, ilike, ne, sql } from 'drizzle-orm';
 import { escapeLike } from '$lib/utils/like-escape';
+import { findMealByNormalizedTitle } from '$lib/server/services/meal-catalog';
 
 // GET /api/food/recipes?q=&tag=&withStats=1 — oppskriftskartoteket.
 // withStats beriker hver oppskrift med timesPlanned + lastPlannedDate fra meal_plans.
@@ -61,6 +62,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!body.title) {
 		return json({ error: 'title is required' }, { status: 400 });
+	}
+
+	// Samme rett med en annen skrivemåte skal åpnes, ikke dupliseres — en duplikat
+	// deler historikken i to (meal-card.ts).
+	const existing = await findMealByNormalizedTitle(userId, String(body.title));
+	if (existing) {
+		return json({ error: `«${existing.title}» finnes alt i kartoteket`, meal: existing, duplicate: true }, { status: 409 });
 	}
 
 	const [created] = await db
