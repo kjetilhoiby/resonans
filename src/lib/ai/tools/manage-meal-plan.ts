@@ -18,7 +18,11 @@ Skriv ALDRI «Spist» i notes; det er hva status er til. Statusen speiles mot av
 
 Takeaway, restaurant og ferdigmat: sett takeaway=true. Retten tagges da som takeaway, telles i historikken, men foreslås aldri som noe å lage og gir ingen handleliste.
 
-Rett: knytt til et lagret måltid via mealId, eller send mealName — eksakt navn-treff gjenbruker retten, ellers opprettes en ny med bare navnet (oppskrift legges på senere via manage_recipe). Sjekk query_food (meals) først så du ikke lager «Ramen» ved siden av «ramen med egg».
+Flytte eller bytte («taco på torsdag i stedet», «bytt fredagsmiddagen»): update på SAMME rad med ny date eller mealId/mealName. Aldri slett og opprett — da forsvinner planens historikk og koblingen til ukeplanen. En spist middag som flyttes til en dag som ikke har vært, blir 'planned' igjen.
+
+Erfaringer fra kvelden («doblet porsjonen», «barna ville ha mais») skrives i notes på planraden. De vises på middagskortet til retten med dato.
+
+Rett: knytt til et lagret måltid via mealId, eller send mealName — navne-treff (store/små bokstaver og tegnsetting teller ikke) gjenbruker retten, ellers opprettes en ny med bare navnet (oppskrift legges på senere via manage_recipe). Sjekk query_food (meals) først så du ikke lager «Ramen» ved siden av «ramen med egg».
 
 weekContext utledes av date og kan utelates. Endringer speiles til dagens sjekkliste i ukeplanen som «middag: …».`,
 
